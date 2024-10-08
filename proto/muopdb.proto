@@ -1,0 +1,14 @@
+syntax = "proto3";
+package muopdb;
+
+service Aggregator {
+  rpc Get(GetRequest) returns (GetResponse) {}
+}
+
+message GetRequest {
+  string key = 1;
+}
+
+message GetResponse {
+  string value = 1;
+}

@@ -1,0 +1,143 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'muopdb'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--lib",
+          "--package=muopdb"
+        ],
+        "filter": {
+          "name": "muopdb",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'aggregator'",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=aggregator",
+          "--package=muopdb"
+        ],
+        "filter": {
+          "name": "aggregator",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'aggregator' with port 9001",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=aggregator",
+          "--package=muopdb"
+        ],
+        "filter": {
+          "name": "aggregator",
+          "kind": "bin"
+        }
+      },
+      "args": ["-p", "9001"],
+      "env": {
+        "RUST_LOG": "info"
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'aggregator'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=aggregator",
+          "--package=muopdb"
+        ],
+        "filter": {
+          "name": "aggregator",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'cli'",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=cli",
+          "--package=muopdb"
+        ],
+        "filter": {
+          "name": "cli",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'cli' with info log",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=cli",
+          "--package=muopdb"
+        ],
+        "filter": {
+          "name": "cli",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "env": {
+        "RUST_LOG": "info"
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'cli'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=cli",
+          "--package=muopdb"
+        ],
+        "filter": {
+          "name": "cli",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
