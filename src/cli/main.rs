@@ -12,16 +12,16 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-  env_logger::init();
+    env_logger::init();
 
-  let arg = Args::parse();
-  let addr = format!("http://127.0.0.1:{}", arg.port);
-  let mut client = AggregatorClient::connect(addr).await.unwrap();
+    let arg = Args::parse();
+    let addr = format!("http://127.0.0.1:{}", arg.port);
+    let mut client = AggregatorClient::connect(addr).await.unwrap();
 
-  let request = tonic::Request::new(muopdb::muopdb::GetRequest {
-    key: "test".to_string(),
-  });
+    let request = tonic::Request::new(muopdb::muopdb::GetRequest {
+        key: "test".to_string(),
+    });
 
-  let response = client.get(request).await.unwrap();
-  info!("Response: {:?}", response);
+    let response = client.get(request).await.unwrap();
+    info!("Response: {:?}", response);
 }
