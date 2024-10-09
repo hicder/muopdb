@@ -2,7 +2,8 @@
 members = [
     "rs/aggregator", 
     "rs/cli",
-    "rs/proto",
+    "rs/proto", 
+    "rs/quantization",
 ]
 resolver = "2"
 
