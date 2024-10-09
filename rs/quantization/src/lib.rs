@@ -1,2 +1,2 @@
-pub mod quantization;
 pub mod pq;
+pub mod quantization;
