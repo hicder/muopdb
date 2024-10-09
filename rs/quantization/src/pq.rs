@@ -90,7 +90,8 @@ impl ProductQuantizerWriter {
 
         // Write codebook
         let codebook_buffer = quantizer.codebook_to_buffer();
-        let mut codebook_file = File::create(Path::new(&self.base_directory).join(&quantizer.codebook_name)).unwrap();
+        let mut codebook_file =
+            File::create(Path::new(&self.base_directory).join(&quantizer.codebook_name)).unwrap();
         match codebook_file.write(&codebook_buffer) {
             Ok(_) => {}
             Err(e) => {
@@ -99,8 +100,14 @@ impl ProductQuantizerWriter {
         }
 
         // Write config
-        let mut config_file = File::create(Path::new(&self.base_directory).join("product_quantizer_config.yaml")).unwrap();
-        match config_file.write(serde_yaml::to_string(&quantizer.config()).unwrap().as_bytes()) {
+        let mut config_file =
+            File::create(Path::new(&self.base_directory).join("product_quantizer_config.yaml"))
+                .unwrap();
+        match config_file.write(
+            serde_yaml::to_string(&quantizer.config())
+                .unwrap()
+                .as_bytes(),
+        ) {
             Ok(_) => {}
             Err(e) => {
                 return Err(e.to_string());
@@ -240,27 +247,34 @@ mod tests {
         let temp_dir = tempdir::TempDir::new("product_quantizer_test").unwrap();
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
 
-        let pq = ProductQuantizer::new(10, 2, 1, codebook, base_directory.clone(), "test_codebook".to_string());
+        let pq = ProductQuantizer::new(
+            10,
+            2,
+            1,
+            codebook,
+            base_directory.clone(),
+            "test_codebook".to_string(),
+        );
         let value = vec![1.0, 1.0, 3.0, 3.0, 5.0, 5.0, 7.0, 7.0, 9.0, 9.0];
         let quantized_value = pq.quantize(&value);
         assert_eq!(quantized_value, vec![1, 1, 1, 1, 1]);
 
         // Write the codebook
         let writer = ProductQuantizerWriter {
-            base_directory: base_directory.clone()
+            base_directory: base_directory.clone(),
         };
         writer.write(&pq).unwrap();
 
         // Read the quantizer
         let reader = ProductQuantizerReader {
-            base_directory: base_directory.clone()
+            base_directory: base_directory.clone(),
         };
 
         let new_pq = match reader.read() {
             Ok(x) => x,
             Err(msg) => {
                 panic!("{}", msg);
-            },
+            }
         };
         assert_eq!(new_pq.dimension, 10);
         assert_eq!(new_pq.subspace_dimension, 2);
