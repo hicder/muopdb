@@ -32,8 +32,8 @@ impl Quantizer for ProductQuantizer {
         value.chunks_exact(self.subspace_dimension as usize).enumerate().for_each(
             |(subspace_idx, subspace_value)| {
                 let num_centroids = (1 << self.num_bits) as usize;
-                let subspace_size_in_cookbook = self.subspace_dimension * num_centroids;
-                let subspace_offset = subspace_idx * subspace_size_in_cookbook;
+                let subspace_size_in_codebook = self.subspace_dimension * num_centroids;
+                let subspace_offset = subspace_idx * subspace_size_in_codebook;
                 let mut min_centroid_id = 0 as usize;
                 let mut min_distance = std::f32::MAX;
 
