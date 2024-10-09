@@ -1,6 +1,6 @@
 use log::info;
-use muopdb::muopdb::aggregator_server::Aggregator;
-use muopdb::muopdb::{GetRequest, GetResponse};
+use proto::muopdb::aggregator_server::Aggregator;
+use proto::muopdb::{GetRequest, GetResponse};
 
 pub struct AggregatorServerImpl {}
 

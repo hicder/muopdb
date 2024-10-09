@@ -3,7 +3,7 @@ mod aggregator;
 use crate::aggregator::AggregatorServerImpl;
 use clap::Parser;
 use log::info;
-use muopdb::muopdb::aggregator_server::AggregatorServer;
+use proto::muopdb::aggregator_server::AggregatorServer;
 use tonic::transport::Server;
 
 #[derive(Parser, Debug)]

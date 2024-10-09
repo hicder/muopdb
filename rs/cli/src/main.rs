@@ -1,6 +1,7 @@
 use clap::Parser;
 use log::info;
-use muopdb::muopdb::aggregator_client::AggregatorClient;
+use proto::muopdb::aggregator_client::AggregatorClient;
+use proto::muopdb::GetRequest;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -18,7 +19,7 @@ async fn main() {
     let addr = format!("http://127.0.0.1:{}", arg.port);
     let mut client = AggregatorClient::connect(addr).await.unwrap();
 
-    let request = tonic::Request::new(muopdb::muopdb::GetRequest {
+    let request = tonic::Request::new(GetRequest {
         key: "test".to_string(),
     });
 
