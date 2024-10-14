@@ -5,7 +5,7 @@ use std::{fs::File, io::Write, path::Path};
 
 pub struct ProductQuantizer {
     pub dimension: usize,
-    pub subspace_dimension: usize,
+    pub subvector_dimension: usize,
     pub num_bits: u8,
     pub codebook: Vec<f32>,
     pub base_directory: String,
@@ -121,16 +121,15 @@ impl ProductQuantizerWriter {
 impl ProductQuantizer {
     pub fn new(
         dimension: usize,
-        subspace_dimension: usize,
+        subvector_dimension: usize,
         num_bits: u8,
         codebook: Vec<f32>,
-
         base_directory: String,
         codebook_name: String,
     ) -> Self {
         Self {
             dimension,
-            subspace_dimension,
+            subvector_dimension: subvector_dimension,
             num_bits,
             codebook,
             base_directory,
@@ -158,7 +157,7 @@ impl ProductQuantizer {
 
         Self {
             dimension: config.dimension,
-            subspace_dimension: config.subspace_dimension,
+            subvector_dimension: config.subspace_dimension,
             num_bits: config.num_bits,
             codebook,
             base_directory: config.base_directory,
@@ -179,7 +178,7 @@ impl ProductQuantizer {
     pub fn config(&self) -> ProductQuantizerConfig {
         ProductQuantizerConfig {
             dimension: self.dimension,
-            subspace_dimension: self.subspace_dimension,
+            subspace_dimension: self.subvector_dimension,
             num_bits: self.num_bits,
 
             base_directory: self.base_directory.clone(),
@@ -202,20 +201,20 @@ fn compute_l2_distance(a: &[f32], b: &[f32]) -> f32 {
 /// TODO(hicder): Support multiple distance type
 impl Quantizer for ProductQuantizer {
     fn quantize(&self, value: &[f32]) -> Vec<u8> {
-        let mut result = Vec::<u8>::with_capacity(self.dimension / self.subspace_dimension);
+        let mut result = Vec::<u8>::with_capacity(self.dimension / self.subvector_dimension);
         value
-            .chunks_exact(self.subspace_dimension as usize)
+            .chunks_exact(self.subvector_dimension as usize)
             .enumerate()
             .for_each(|(subspace_idx, subspace_value)| {
                 let num_centroids = (1 << self.num_bits) as usize;
-                let subspace_size_in_codebook = self.subspace_dimension * num_centroids;
+                let subspace_size_in_codebook = self.subvector_dimension * num_centroids;
                 let subspace_offset = subspace_idx * subspace_size_in_codebook;
                 let mut min_centroid_id = 0 as usize;
                 let mut min_distance = std::f32::MAX;
 
                 for i in 0..num_centroids {
-                    let offset = subspace_offset + i * self.subspace_dimension;
-                    let centroid = &self.codebook[offset..offset + self.subspace_dimension];
+                    let offset = subspace_offset + i * self.subvector_dimension;
+                    let centroid = &self.codebook[offset..offset + self.subvector_dimension];
                     let distance = compute_l2_distance(subspace_value, centroid);
                     if distance < min_distance {
                         min_distance = distance;
@@ -225,6 +224,34 @@ impl Quantizer for ProductQuantizer {
                 result.push(min_centroid_id as u8);
             });
         result
+    }
+
+    fn quantized_dimension(&self) -> usize {
+        self.dimension / self.subvector_dimension
+    }
+
+    /// Get the original vector from the quantized vector.
+    fn original_vector(&self, quantized_vector: &[u8]) -> Vec<f32> {
+        let mut result = vec![];
+        let num_centroids = 1 << self.num_bits;
+        quantized_vector
+            .into_iter()
+            .enumerate()
+            .for_each(|(idx, quantized_value)| {
+                let offset = idx * self.subvector_dimension * num_centroids;
+                let centroid_offset =
+                    offset + (*quantized_value as usize) * self.subvector_dimension;
+                for i in 0..self.subvector_dimension {
+                    result.push(self.codebook[centroid_offset + i]);
+                }
+            });
+        result
+    }
+
+    fn distance(&self, a: &[u8], b: &[u8]) -> f32 {
+        let orginal_a = self.original_vector(a);
+        let orginal_b = self.original_vector(b);
+        compute_l2_distance(&orginal_a, &orginal_b)
     }
 }
 
@@ -277,7 +304,7 @@ mod tests {
             }
         };
         assert_eq!(new_pq.dimension, 10);
-        assert_eq!(new_pq.subspace_dimension, 2);
+        assert_eq!(new_pq.subvector_dimension, 2);
         assert_eq!(new_pq.num_bits, 1);
     }
 }

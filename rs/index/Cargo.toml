@@ -1,0 +1,11 @@
+[package]
+name = "index"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+quantization.workspace = true
+utils.workspace = true
+rand.workspace = true
+ordered-float.workspace = true
+tempdir.workspace = true
