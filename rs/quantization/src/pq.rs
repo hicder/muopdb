@@ -15,7 +15,7 @@ pub struct ProductQuantizer {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ProductQuantizerConfig {
     pub dimension: usize,
-    pub subspace_dimension: usize,
+    pub subvector_dimension: usize,
     pub num_bits: u8,
     pub base_directory: String,
     pub codebook_name: String,
@@ -23,7 +23,7 @@ pub struct ProductQuantizerConfig {
 
 impl ProductQuantizerConfig {
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.dimension % self.subspace_dimension != 0 {
+        if self.dimension % self.subvector_dimension != 0 {
             return Err("Dimensions are not valid");
         }
 
@@ -142,13 +142,13 @@ impl ProductQuantizer {
 
         let codebook_buffer = std::fs::read(codebook_path).unwrap();
         let num_centroids = (1 << config.num_bits) as usize;
-        let num_subspace = config.dimension / config.subspace_dimension;
+        let num_subvector = config.dimension / config.subvector_dimension;
 
         let mut offset = 0 as usize;
         let mut codebook = vec![];
-        codebook.reserve_exact(num_subspace * num_centroids);
+        codebook.reserve_exact(num_subvector * num_centroids);
 
-        for _ in 0..num_subspace * num_centroids {
+        for _ in 0..num_subvector * num_centroids {
             let val = f32::from_le_bytes(codebook_buffer[offset..offset + 4].try_into().unwrap());
             codebook.push(val);
 
@@ -157,7 +157,7 @@ impl ProductQuantizer {
 
         Self {
             dimension: config.dimension,
-            subvector_dimension: config.subspace_dimension,
+            subvector_dimension: config.subvector_dimension,
             num_bits: config.num_bits,
             codebook,
             base_directory: config.base_directory,
@@ -178,7 +178,7 @@ impl ProductQuantizer {
     pub fn config(&self) -> ProductQuantizerConfig {
         ProductQuantizerConfig {
             dimension: self.dimension,
-            subspace_dimension: self.subvector_dimension,
+            subvector_dimension: self.subvector_dimension,
             num_bits: self.num_bits,
 
             base_directory: self.base_directory.clone(),
@@ -205,17 +205,17 @@ impl Quantizer for ProductQuantizer {
         value
             .chunks_exact(self.subvector_dimension as usize)
             .enumerate()
-            .for_each(|(subspace_idx, subspace_value)| {
+            .for_each(|(subvector_idx, subvector)| {
                 let num_centroids = (1 << self.num_bits) as usize;
                 let subspace_size_in_codebook = self.subvector_dimension * num_centroids;
-                let subspace_offset = subspace_idx * subspace_size_in_codebook;
+                let subspace_offset = subvector_idx * subspace_size_in_codebook;
                 let mut min_centroid_id = 0 as usize;
                 let mut min_distance = std::f32::MAX;
 
                 for i in 0..num_centroids {
                     let offset = subspace_offset + i * self.subvector_dimension;
                     let centroid = &self.codebook[offset..offset + self.subvector_dimension];
-                    let distance = compute_l2_distance(subspace_value, centroid);
+                    let distance = compute_l2_distance(subvector, centroid);
                     if distance < min_distance {
                         min_distance = distance;
                         min_centroid_id = i;
