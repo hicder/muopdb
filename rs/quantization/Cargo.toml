@@ -7,3 +7,5 @@ edition = "2021"
 serde_yaml.workspace = true
 serde.workspace = true
 tempdir.workspace = true
+kmeans.workspace = true
+rand.workspace = true

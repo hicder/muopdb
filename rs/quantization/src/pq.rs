@@ -74,6 +74,10 @@ pub struct ProductQuantizerWriter {
 }
 
 impl ProductQuantizerWriter {
+    pub fn new(base_directory: String) -> Self {
+        Self { base_directory }
+    }
+
     pub fn write(&self, quantizer: &ProductQuantizer) -> Result<(), String> {
         let config_path = Path::new(&self.base_directory).join("product_quantizer_config.yaml");
         if config_path.exists() {
