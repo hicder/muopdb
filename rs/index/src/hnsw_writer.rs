@@ -1,5 +1,5 @@
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{BufReader, BufWriter, Read, Write},
 };
 
@@ -9,7 +9,12 @@ pub struct HnswWriter {
     base_directory: String,
 }
 
-struct Header {
+pub enum Version {
+    V0,
+}
+
+pub struct Header {
+    pub version: Version,
     pub num_layers: u32,
     pub edges_len: u64,
     pub points_len: u64,
@@ -102,17 +107,23 @@ impl HnswWriter {
         level_offsets_buffer_writer.flush().unwrap();
 
         let header: Header = Header {
+            version: Version::V0,
             num_layers: index_builder.layers.len() as u32,
-            level_offsets_len,
             edges_len,
             points_len,
             edge_offsets_len: edges_offset_len,
+            level_offsets_len,
         };
 
-        match self.combine_files(header) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e),
-        }
+        self.combine_files(header)?;
+
+        // Remove edges, points, edge_offsets, level_offsets. Ok to ignore errors
+        fs::remove_file(format!("{}/edges", self.base_directory)).unwrap_or_default();
+        fs::remove_file(format!("{}/points", self.base_directory)).unwrap_or_default();
+        fs::remove_file(format!("{}/edge_offsets", self.base_directory)).unwrap_or_default();
+        fs::remove_file(format!("{}/level_offsets", self.base_directory)).unwrap_or_default();
+
+        Ok(())
     }
 
     #[inline]
@@ -147,11 +158,15 @@ impl HnswWriter {
         header: Header,
         writer: &mut BufWriter<&mut File>,
     ) -> Result<(), String> {
+        let version_value: u8 = match header.version {
+            Version::V0 => 0,
+        };
+        self.wrap_write(writer, &version_value.to_le_bytes())?;
         self.wrap_write(writer, &header.num_layers.to_le_bytes())?;
-        self.wrap_write(writer, &header.level_offsets_len.to_le_bytes())?;
         self.wrap_write(writer, &header.edges_len.to_le_bytes())?;
         self.wrap_write(writer, &header.points_len.to_le_bytes())?;
         self.wrap_write(writer, &header.edge_offsets_len.to_le_bytes())?;
+        self.wrap_write(writer, &header.level_offsets_len.to_le_bytes())?;
         Ok(())
     }
 
@@ -183,7 +198,7 @@ impl HnswWriter {
 #[cfg(test)]
 mod tests {
     use quantization::{
-        pq::ProductQuantizerConfig,
+        pq::{ProductQuantizerConfig, ProductQuantizerWriter},
         pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig},
     };
     use rand::Rng;
@@ -222,12 +237,14 @@ mod tests {
         };
 
         // Train a product quantizer
+        let pq_writer = ProductQuantizerWriter::new(pq_config.base_directory.clone());
         let mut pq_builder = ProductQuantizerBuilder::new(pq_config, pq_builder_config);
 
         for i in 0..1000 {
             pq_builder.add(datapoints[i].clone());
         }
         let pq = pq_builder.build().unwrap();
+        pq_writer.write(&pq).unwrap();
 
         // Create a HNSW Builder
         let mut hnsw_builder = HnswBuilder::new(10, 128, 20, Box::new(pq));
@@ -239,7 +256,7 @@ mod tests {
         match writer.write(&hnsw_builder) {
             Ok(()) => {
                 assert!(true);
-            },
+            }
             Err(_) => {
                 assert!(false);
             }

@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 hdf5.workspace = true
+rand.workspace = true

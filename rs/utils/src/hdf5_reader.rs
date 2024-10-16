@@ -30,7 +30,7 @@ pub fn read_hdf5_sift_128(path: &str) -> Result<(), Box<dyn std::error::Error>> 
             println!("Rows: {}, Cols: {}", nrows, ncols);
 
             for i in 0..20 {
-                for j in 0 .. 10 {
+                for j in 0..10 {
                     print!("{:?},", res.get((i, j)).unwrap());
                 }
                 println!();
@@ -42,7 +42,6 @@ pub fn read_hdf5_sift_128(path: &str) -> Result<(), Box<dyn std::error::Error>> 
         }
     }
 
-    
     println!("HDF5 file opened successfully!");
     Ok(())
 }
