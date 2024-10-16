@@ -61,3 +61,32 @@ impl Hnsw {
         return utils::mem::transmute_u8_to_slice(slice);
     }
 }
+
+// Test
+#[cfg(test)]
+mod tests {
+    use std::io::Read;
+
+    #[test]
+    fn test_hnsw() {
+        println!("{}", env!("CARGO_MANIFEST_DIR"));
+        let dataset_file = std::fs::File::open(format!(
+            "{}/resources/10000_rows_128_dim",
+            env!("CARGO_MANIFEST_DIR")
+        ));
+
+        let mut buffer_reader = std::io::BufReader::new(dataset_file.unwrap());
+        let mut buffer: [u8; 4] = [0; 4];
+        let mut dataset: Vec<Vec<f32>> = vec![];
+        for _ in 0..10000 {
+            let mut v = Vec::<f32>::with_capacity(128);
+            for _i in 0..128 {
+                buffer_reader.read(&mut buffer).unwrap();
+                v.push(f32::from_le_bytes(buffer));
+            }
+            dataset.push(v);
+        }
+
+        assert_eq!(dataset.len(), 10000);
+    }
+}
