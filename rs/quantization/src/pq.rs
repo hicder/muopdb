@@ -198,7 +198,6 @@ fn compute_l2_distance(a: &[f32], b: &[f32]) -> f32 {
         .zip(b.iter())
         .map(|(a, b)| (a - b).powi(2))
         .sum::<f32>()
-        .sqrt()
 }
 
 /// TODO(hicder): Make this faster
@@ -236,7 +235,7 @@ impl Quantizer for ProductQuantizer {
 
     /// Get the original vector from the quantized vector.
     fn original_vector(&self, quantized_vector: &[u8]) -> Vec<f32> {
-        let mut result = vec![];
+        let mut result = Vec::<f32>::with_capacity(self.dimension);
         let num_centroids = 1 << self.num_bits;
         quantized_vector
             .into_iter()
@@ -245,6 +244,7 @@ impl Quantizer for ProductQuantizer {
                 let offset = idx * self.subvector_dimension * num_centroids;
                 let centroid_offset =
                     offset + (*quantized_value as usize) * self.subvector_dimension;
+                // TODO(hicder): This seems to be the hot path. SIMD this.
                 for i in 0..self.subvector_dimension {
                     result.push(self.codebook[centroid_offset + i]);
                 }
@@ -253,9 +253,21 @@ impl Quantizer for ProductQuantizer {
     }
 
     fn distance(&self, a: &[u8], b: &[u8]) -> f32 {
-        let orginal_a = self.original_vector(a);
-        let orginal_b = self.original_vector(b);
-        compute_l2_distance(&orginal_a, &orginal_b)
+        let num_centroids = 1 << self.num_bits;
+        a.iter().zip(b.iter()).enumerate().map(|(subvector_idx, quantized_values)|{
+            let a_quantized_value = quantized_values.0;
+            let b_quantized_value = quantized_values.1;
+
+            let offset = subvector_idx * self.subvector_dimension * num_centroids;
+            let a_centroid_offset =
+                offset + (*a_quantized_value as usize) * self.subvector_dimension;
+            let b_centroid_offset =
+                offset + (*b_quantized_value as usize) * self.subvector_dimension;
+
+            let a_vec = &self.codebook[a_centroid_offset..a_centroid_offset + self.subvector_dimension];
+            let b_vec = &self.codebook[b_centroid_offset..b_centroid_offset + self.subvector_dimension];
+            compute_l2_distance(a_vec, b_vec)
+        }).sum::<f32>().sqrt()
     }
 }
 

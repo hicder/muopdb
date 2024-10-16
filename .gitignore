@@ -3,3 +3,5 @@
 .envrc
 .vscode
 */target
+flamegraph.svg
+perf.data*
