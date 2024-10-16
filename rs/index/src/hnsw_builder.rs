@@ -3,12 +3,12 @@ use quantization::quantization::Quantizer;
 use rand::Rng;
 use std::{
     cmp::min,
-    collections::{BinaryHeap, HashMap},
+    collections::{BinaryHeap, HashMap, HashSet},
 };
 
 /// TODO(hicder): support bare vector in addition to quantized one.
-struct Layer {
-    edges: HashMap<u32, Vec<PointAndDistance>>,
+pub struct Layer {
+    pub edges: HashMap<u32, Vec<PointAndDistance>>,
 }
 
 /// The actual builder
@@ -16,8 +16,8 @@ pub struct HnswBuilder {
     vectors: Vec<Vec<u8>>,
 
     max_neighbors: usize,
-    layers: Vec<Layer>,
-    current_top_layer: u8,
+    pub layers: Vec<Layer>,
+    pub current_top_layer: u8,
     quantizer: Box<dyn Quantizer>,
     ef_contruction: u32,
     entry_point: Vec<u32>,
@@ -30,12 +30,13 @@ struct BuildContext {
 
 /// A point and its distance to the query.
 #[derive(PartialEq, Eq, Ord, PartialOrd, Clone, Debug)]
-struct PointAndDistance {
-    point_id: u32,
+pub struct PointAndDistance {
+    pub point_id: u32,
     distance: NotNan<f32>,
 }
 
 // TODO(hicder): support bare vector in addition to quantized one.
+// TODO(hicder): Reindex to make all connected points have close ids so that we fetch together.
 impl HnswBuilder {
     pub fn new(
         max_neighbors: usize,
@@ -150,6 +151,22 @@ impl HnswBuilder {
         } else if layer == self.current_top_layer {
             self.entry_point.push(point_id);
         }
+    }
+
+    pub fn get_nodes_from_non_bottom_layer(&self) -> Vec<u32> {
+        let mut nodes = vec![];
+        let mut current_layer = self.current_top_layer;
+        let mut visited: HashSet<u32> = HashSet::new();
+        while current_layer > 0 {
+            for (point_id, _) in self.layers[current_layer as usize].edges.iter() {
+                if !visited.contains(point_id) {
+                    nodes.push(*point_id);
+                    visited.insert(*point_id);
+                }
+            }
+            current_layer -= 1;
+        }
+        nodes
     }
 
     fn distance(&self, query: &[u8], point_id: u32) -> f32 {

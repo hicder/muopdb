@@ -252,6 +252,7 @@ impl Quantizer for ProductQuantizer {
         result
     }
 
+    // TODO(hicder): SIMD this
     fn distance(&self, a: &[u8], b: &[u8]) -> f32 {
         let orginal_a = self.original_vector(a);
         let orginal_b = self.original_vector(b);
