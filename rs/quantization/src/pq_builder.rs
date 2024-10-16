@@ -14,7 +14,10 @@ pub struct ProductQuantizerBuilder {
 
 impl ProductQuantizerBuilder {
     /// Create a new ProductQuantizerBuilder
-    pub fn new(config: ProductQuantizerConfig, builder_config: ProductQuantizerBuilderConfig) -> Self {
+    pub fn new(
+        config: ProductQuantizerConfig,
+        builder_config: ProductQuantizerBuilderConfig,
+    ) -> Self {
         Self {
             pq_config: config,
             builder_config,
@@ -57,8 +60,11 @@ impl ProductQuantizerBuilder {
                     )
                 })
                 .build();
-            let kmean: KMeans<_, 8> =
-                KMeans::new(samples, self.dataset.len(), self.pq_config.subvector_dimension);
+            let kmean: KMeans<_, 8> = KMeans::new(
+                samples,
+                self.dataset.len(),
+                self.pq_config.subvector_dimension,
+            );
             let result = kmean.kmeans_minibatch(
                 self.builder_config.batch_size,
                 1 << self.pq_config.num_bits,

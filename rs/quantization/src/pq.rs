@@ -254,20 +254,27 @@ impl Quantizer for ProductQuantizer {
 
     fn distance(&self, a: &[u8], b: &[u8]) -> f32 {
         let num_centroids = 1 << self.num_bits;
-        a.iter().zip(b.iter()).enumerate().map(|(subvector_idx, quantized_values)|{
-            let a_quantized_value = quantized_values.0;
-            let b_quantized_value = quantized_values.1;
+        a.iter()
+            .zip(b.iter())
+            .enumerate()
+            .map(|(subvector_idx, quantized_values)| {
+                let a_quantized_value = quantized_values.0;
+                let b_quantized_value = quantized_values.1;
 
-            let offset = subvector_idx * self.subvector_dimension * num_centroids;
-            let a_centroid_offset =
-                offset + (*a_quantized_value as usize) * self.subvector_dimension;
-            let b_centroid_offset =
-                offset + (*b_quantized_value as usize) * self.subvector_dimension;
+                let offset = subvector_idx * self.subvector_dimension * num_centroids;
+                let a_centroid_offset =
+                    offset + (*a_quantized_value as usize) * self.subvector_dimension;
+                let b_centroid_offset =
+                    offset + (*b_quantized_value as usize) * self.subvector_dimension;
 
-            let a_vec = &self.codebook[a_centroid_offset..a_centroid_offset + self.subvector_dimension];
-            let b_vec = &self.codebook[b_centroid_offset..b_centroid_offset + self.subvector_dimension];
-            compute_l2_distance(a_vec, b_vec)
-        }).sum::<f32>().sqrt()
+                let a_vec =
+                    &self.codebook[a_centroid_offset..a_centroid_offset + self.subvector_dimension];
+                let b_vec =
+                    &self.codebook[b_centroid_offset..b_centroid_offset + self.subvector_dimension];
+                compute_l2_distance(a_vec, b_vec)
+            })
+            .sum::<f32>()
+            .sqrt()
     }
 }
 

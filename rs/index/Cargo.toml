@@ -9,3 +9,5 @@ utils.workspace = true
 rand.workspace = true
 ordered-float.workspace = true
 tempdir.workspace = true
+memmap2.workspace = true
+byteorder.workspace = true
