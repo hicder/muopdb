@@ -695,6 +695,7 @@ version = "0.1.0"
 dependencies = [
  "byteorder",
  "memmap2",
+ "num-traits",
  "ordered-float",
  "quantization",
  "rand 0.8.5",
