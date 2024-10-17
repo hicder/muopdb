@@ -14,6 +14,11 @@ pub struct Hnsw {
     mmap: Mmap,
     header: Header,
     data_offset: usize,
+    edges_offset: usize,
+    points_offset: usize,
+    edge_offsets_offset: usize,
+    level_offsets_offset: usize,
+
     quantizer: Box<dyn Quantizer>,
 
     // TODO(hicder): Populate this as well.
@@ -27,6 +32,10 @@ impl Hnsw {
         mmap: Mmap,
         header: Header,
         data_offset: usize,
+        edges_offset: usize,
+        points_offset: usize,
+        edge_offsets_offset: usize,
+        level_offsets_offset: usize,
         base_directory: String,
     ) -> Self {
         // Read quantizer
@@ -38,6 +47,10 @@ impl Hnsw {
             mmap,
             header,
             data_offset,
+            edges_offset,
+            points_offset,
+            edge_offsets_offset,
+            level_offsets_offset,
             quantizer: Box::new(pq),
             vectors: vec![],
         }
@@ -78,38 +91,35 @@ impl Hnsw {
         &self.vectors[point_id as usize]
     }
 
-    fn get_edges_slice(&self) -> &[u32] {
-        let start = self.data_offset;
+    pub fn get_edges_slice(&self) -> &[u32] {
+        let start = self.edges_offset;
         utils::mem::transmute_u8_to_slice(&self.mmap[start..start + self.header.edges_len as usize])
     }
 
-    fn get_points_slice(&self) -> &[u32] {
-        let start = self.data_offset + self.header.edges_len as usize;
+    pub fn get_points_slice(&self) -> &[u32] {
+        let start = self.points_offset;
         utils::mem::transmute_u8_to_slice(
             &self.mmap[start..start + self.header.points_len as usize],
         )
     }
 
     /// Returns the edge offsets slice
-    fn get_edge_offsets_slice(&self) -> &[u64] {
-        let start =
-            self.data_offset + self.header.edges_len as usize + self.header.points_len as usize;
+    pub fn get_edge_offsets_slice(&self) -> &[u64] {
+        let start = self.edge_offsets_offset;
         utils::mem::transmute_u8_to_slice(
             &self.mmap[start..start + self.header.edge_offsets_len as usize],
         )
     }
 
     /// Returns the level offsets slice
-    fn get_level_offsets_slice(&self) -> &[u64] {
-        let start = self.data_offset
-            + self.header.edges_len as usize
-            + self.header.points_len as usize
-            + self.header.edge_offsets_len as usize;
-        let slice = &self.mmap[start..start + self.header.level_offsets_len as usize];
+    pub fn get_level_offsets_slice(&self) -> &[u64] {
+        let start = self.level_offsets_offset;
+        let slice =
+            &self.mmap[self.level_offsets_offset..start + self.header.level_offsets_len as usize];
         return utils::mem::transmute_u8_to_slice(slice);
     }
 
-    fn get_entry_point_top_layer(&self) -> u32 {
+    pub fn get_entry_point_top_layer(&self) -> u32 {
         // If we only have bottom layer, just return a random one.
         if self.header.num_layers == 1 {
             let mut idx = 0;
@@ -153,11 +163,12 @@ impl GraphTraversal for Hnsw {
 
         if layer > 0 {
             let points = &self.get_points_slice()[level_idx_start..level_idx_end];
-            let _ = points.iter().enumerate().map(|(idx, point)| {
-                if *point == point_id {
-                    idx_at_layer = idx as i64;
+            for i in 0..points.len() {
+                if points[i] == point_id {
+                    idx_at_layer = i as i64;
+                    break;
                 }
-            });
+            }
         } else {
             // At layer 0, we have all points.
             // TODO(hicder): Check that point_id is within range.
@@ -172,9 +183,7 @@ impl GraphTraversal for Hnsw {
         let start_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx];
         let end_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx + 1];
 
-        // This could only happen at layer 0.
         if start_idx_edges == end_idx_edges {
-            assert!(layer == 0);
             return None;
         }
 

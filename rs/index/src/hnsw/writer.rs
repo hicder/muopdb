@@ -11,6 +11,7 @@ pub struct HnswWriter {
     base_directory: String,
 }
 
+#[derive(PartialEq, Debug)]
 pub enum Version {
     V0,
 }
@@ -166,39 +167,41 @@ impl HnswWriter {
         &self,
         path: &str,
         writer: &mut BufWriter<&mut File>,
-    ) -> Result<(), String> {
+    ) -> Result<usize, String> {
         let input_file = File::open(path).unwrap();
         let mut buffer_reader = BufReader::new(&input_file);
         let mut buffer: [u8; 4096] = [0; 4096];
+        let mut written = 0;
         loop {
             let read = buffer_reader.read(&mut buffer).unwrap();
-            wrap_write(writer, &buffer[0..read])?;
+            written += wrap_write(writer, &buffer[0..read])?;
             if read < 4096 {
                 break;
             }
         }
-        Ok(())
+        Ok(written)
     }
 
     fn write_header(
         &self,
         header: Header,
         writer: &mut BufWriter<&mut File>,
-    ) -> Result<(), String> {
+    ) -> Result<usize, String> {
         let version_value: u8 = match header.version {
             Version::V0 => 0,
         };
-        wrap_write(writer, &version_value.to_le_bytes())?;
-        wrap_write(writer, &header.num_layers.to_le_bytes())?;
-        wrap_write(writer, &header.edges_len.to_le_bytes())?;
-        wrap_write(writer, &header.points_len.to_le_bytes())?;
-        wrap_write(writer, &header.edge_offsets_len.to_le_bytes())?;
-        wrap_write(writer, &header.level_offsets_len.to_le_bytes())?;
-        Ok(())
+        let mut written = 0;
+        written += wrap_write(writer, &version_value.to_le_bytes())?;
+        written += wrap_write(writer, &header.num_layers.to_le_bytes())?;
+        written += wrap_write(writer, &header.edges_len.to_le_bytes())?;
+        written += wrap_write(writer, &header.points_len.to_le_bytes())?;
+        written += wrap_write(writer, &header.edge_offsets_len.to_le_bytes())?;
+        written += wrap_write(writer, &header.level_offsets_len.to_le_bytes())?;
+        Ok(written)
     }
 
     /// Combine all individual files into one final index file
-    fn combine_files(&self, header: Header) -> Result<(), String> {
+    fn combine_files(&self, header: Header) -> Result<usize, String> {
         let edges_path = format!("{}/edges", self.base_directory);
         let points_path = format!("{}/points", self.base_directory);
         let edge_offsets_path = format!("{}/edge_offsets", self.base_directory);
@@ -208,14 +211,26 @@ impl HnswWriter {
         let mut combined_file = File::create(combined_path).unwrap();
         let mut combined_buffer_writer = BufWriter::new(&mut combined_file);
 
-        self.write_header(header, &mut combined_buffer_writer)?;
-        self.append_file_to_writer(&edges_path, &mut combined_buffer_writer)?;
-        self.append_file_to_writer(&points_path, &mut combined_buffer_writer)?;
-        self.append_file_to_writer(&edge_offsets_path, &mut combined_buffer_writer)?;
-        self.append_file_to_writer(&level_offsets_path, &mut combined_buffer_writer)?;
+        let mut written = self.write_header(header, &mut combined_buffer_writer)?;
+        // Compute pading for alignment to 4 bytes
+        let mut padding = 4 - (written % 4);
+        if padding != 4 {
+            let padding_buffer = vec![0; padding];
+            written += wrap_write(&mut combined_buffer_writer, &padding_buffer)?;
+        }
+        written += self.append_file_to_writer(&edges_path, &mut combined_buffer_writer)?;
+        written += self.append_file_to_writer(&points_path, &mut combined_buffer_writer)?;
+
+        padding = 8 - (written % 8);
+        if padding != 8 {
+            let padding_buffer = vec![0; padding];
+            written += wrap_write(&mut combined_buffer_writer, &padding_buffer)?;
+        }
+        written += self.append_file_to_writer(&edge_offsets_path, &mut combined_buffer_writer)?;
+        written += self.append_file_to_writer(&level_offsets_path, &mut combined_buffer_writer)?;
 
         match combined_buffer_writer.flush() {
-            Ok(_) => Ok(()),
+            Ok(_) => Ok(written),
             Err(e) => return Err(e.to_string()),
         }
     }
@@ -224,13 +239,162 @@ impl HnswWriter {
 // Test
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use ordered_float::NotNan;
     use quantization::{
         pq::{ProductQuantizerConfig, ProductQuantizerWriter},
         pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig},
     };
     use utils::test_utils::generate_random_vector;
 
+    use crate::hnsw::{
+        builder::Layer,
+        reader::HnswReader,
+        utils::{GraphTraversal, PointAndDistance},
+    };
+
     use super::*;
+
+    fn construct_layers(hnsw_builder: &mut HnswBuilder) {
+        // Prepare all layers
+        for _ in 0..3 {
+            hnsw_builder.layers.push(Layer {
+                edges: HashMap::new(),
+            });
+        }
+        // layer 2
+        {
+            let layer = hnsw_builder.layers.get_mut(2).unwrap();
+            layer.edges.insert(1, vec![]);
+        }
+        // Layer 1
+        {
+            let layer = hnsw_builder.layers.get_mut(1).unwrap();
+            layer.edges.insert(
+                1,
+                vec![
+                    PointAndDistance {
+                        point_id: 4,
+                        distance: NotNan::new(1.0).unwrap(),
+                    },
+                    PointAndDistance {
+                        point_id: 5,
+                        distance: NotNan::new(2.0).unwrap(),
+                    },
+                ],
+            );
+            layer.edges.insert(
+                4,
+                vec![
+                    PointAndDistance {
+                        point_id: 1,
+                        distance: NotNan::new(1.0).unwrap(),
+                    },
+                    PointAndDistance {
+                        point_id: 5,
+                        distance: NotNan::new(3.0).unwrap(),
+                    },
+                ],
+            );
+            layer.edges.insert(
+                5,
+                vec![
+                    PointAndDistance {
+                        point_id: 1,
+                        distance: NotNan::new(2.0).unwrap(),
+                    },
+                    PointAndDistance {
+                        point_id: 4,
+                        distance: NotNan::new(3.0).unwrap(),
+                    },
+                ],
+            );
+        }
+
+        // layer 0
+        {
+            let layer = hnsw_builder.layers.get_mut(0).unwrap();
+            layer.edges.insert(
+                1,
+                vec![
+                    PointAndDistance {
+                        point_id: 4,
+                        distance: NotNan::new(1.0).unwrap(),
+                    },
+                    PointAndDistance {
+                        point_id: 5,
+                        distance: NotNan::new(2.0).unwrap(),
+                    },
+                ],
+            );
+            layer.edges.insert(
+                4,
+                vec![
+                    PointAndDistance {
+                        point_id: 1,
+                        distance: NotNan::new(1.0).unwrap(),
+                    },
+                    PointAndDistance {
+                        point_id: 5,
+                        distance: NotNan::new(3.0).unwrap(),
+                    },
+                ],
+            );
+            layer.edges.insert(
+                5,
+                vec![
+                    PointAndDistance {
+                        point_id: 1,
+                        distance: NotNan::new(2.0).unwrap(),
+                    },
+                    PointAndDistance {
+                        point_id: 4,
+                        distance: NotNan::new(3.0).unwrap(),
+                    },
+                ],
+            );
+            layer.edges.insert(
+                2,
+                vec![
+                    PointAndDistance {
+                        point_id: 1,
+                        distance: NotNan::new(1.0).unwrap(),
+                    },
+                    PointAndDistance {
+                        point_id: 3,
+                        distance: NotNan::new(2.0).unwrap(),
+                    },
+                ],
+            );
+            layer.edges.insert(
+                3,
+                vec![
+                    PointAndDistance {
+                        point_id: 2,
+                        distance: NotNan::new(1.0).unwrap(),
+                    },
+                    PointAndDistance {
+                        point_id: 4,
+                        distance: NotNan::new(2.0).unwrap(),
+                    },
+                ],
+            );
+            layer.edges.insert(
+                0,
+                vec![
+                    PointAndDistance {
+                        point_id: 1,
+                        distance: NotNan::new(3.0).unwrap(),
+                    },
+                    PointAndDistance {
+                        point_id: 2,
+                        distance: NotNan::new(4.0).unwrap(),
+                    },
+                ],
+            );
+        }
+    }
 
     #[test]
     fn test_write() {
@@ -265,19 +429,44 @@ mod tests {
 
         // Create a HNSW Builder
         let mut hnsw_builder = HnswBuilder::new(10, 128, 20, Box::new(pq));
-        for i in 0..datapoints.len() {
-            hnsw_builder.insert(i as u64, &datapoints[i]);
-        }
 
+        // Artificially construct the graph, since inserting is not deterministic.
+        // 3 layers: 0 to 2
+        hnsw_builder.current_top_layer = 2;
+        construct_layers(&mut hnsw_builder);
+        hnsw_builder.entry_point = vec![1];
+
+        // Write to disk
         let writer = HnswWriter::new(base_directory.clone());
         match writer.write(&hnsw_builder) {
-            Ok(()) => {
+            Ok(_) => {
                 assert!(true);
             }
             Err(_) => {
                 assert!(false);
             }
         }
-        println!("DONE");
+
+        let reader = HnswReader::new(base_directory.clone());
+        let hnsw = reader.read();
+        {
+            let egdes = hnsw.get_edges_for_point(1, 2);
+            assert!(egdes.is_none());
+        }
+        {
+            let edges = hnsw.get_edges_for_point(1, 1).unwrap();
+            assert_eq!(edges.len(), 2);
+            assert!(edges.contains(&4));
+            assert!(edges.contains(&5));
+        }
+        {
+            let edges = hnsw.get_edges_for_point(0, 0).unwrap();
+            assert_eq!(edges.len(), 2);
+            assert!(edges.contains(&1));
+            assert!(edges.contains(&2));
+        }
+
+        assert_eq!(hnsw.get_header().version, Version::V0);
+        assert_eq!(hnsw.get_header().num_layers, 3);
     }
 }
