@@ -3,7 +3,9 @@ use std::{
     io::{BufReader, BufWriter, Read, Write},
 };
 
-use crate::hnsw_builder::HnswBuilder;
+use utils::io::wrap_write;
+
+use crate::hnsw::builder::HnswBuilder;
 
 pub struct HnswWriter {
     base_directory: String,
@@ -34,71 +36,104 @@ impl HnswWriter {
         let edges_path = format!("{}/edges", self.base_directory);
         let mut edges_file = File::create(edges_path).unwrap();
         let mut edges_buffer_writer = BufWriter::new(&mut edges_file);
-        let mut edges_len = 0 as u64;
+        let mut edges_file_len = 0 as u64;
 
         // Points writer
         let points_path = format!("{}/points", self.base_directory);
         let mut points_file = File::create(points_path).unwrap();
         let mut points_buffer_writer = BufWriter::new(&mut points_file);
-        let mut points_len = 0 as u64;
+        let mut points_file_len = 0 as u64;
 
         // Edge offsets writer
         let edge_offsets_path = format!("{}/edge_offsets", self.base_directory);
         let mut edge_offsets_file = File::create(edge_offsets_path).unwrap();
         let mut edge_offsets_buffer_writer = BufWriter::new(&mut edge_offsets_file);
-        let mut edges_offset_len = 0 as u64;
+        let mut edge_offsets_file_len = 0 as u64;
 
         // Level offsets writer
         let level_offsets_path = format!("{}/level_offsets", self.base_directory);
         let mut level_offsets_file = File::create(level_offsets_path).unwrap();
         let mut level_offsets_buffer_writer = BufWriter::new(&mut level_offsets_file);
-        let mut level_offsets_len = 0 as u64;
+        let mut level_offsets_file_len = 0 as u64;
 
-        let mut current_layer = index_builder.current_top_layer;
-        let mut level_offsets = vec![];
-        while current_layer > 0 {
-            let mut edges_buffer = vec![];
-            let mut point_buffer = vec![];
-            let mut edges_offset = vec![];
+        let mut current_layer = index_builder.current_top_layer as i32;
+        let mut level_offsets = Vec::<usize>::new();
+        let mut edge_offsets = Vec::<usize>::new();
+
+        let mut num_edges = 0 as usize;
+
+        // In each level, we append edges and points to file.
+        // TODO(hicder): We might not need to write points for level 0...
+        while current_layer >= 0 {
+            level_offsets.push(edge_offsets.len());
+
+            let mut edges = vec![];
+            let mut points = vec![];
+
             let layer = &index_builder.layers[current_layer as usize];
-            for point_id in non_bottom_layer_nodes.iter() {
-                if layer.edges.contains_key(point_id) {
-                    point_buffer.push(*point_id);
-                    let edges = &layer.edges[point_id];
-                    for edge in edges {
-                        edges_buffer.push(edge.point_id);
+            if current_layer > 0 {
+                for point_id in non_bottom_layer_nodes.iter() {
+                    if layer.edges.contains_key(point_id) {
+                        // Edge offsets will be the starting index of edges for this point
+
+                        let edges_for_point = &layer.edges[point_id];
+                        for edge in edges_for_point {
+                            edges.push(edge.point_id);
+                        }
+
+                        edge_offsets.push(num_edges);
+                        num_edges += edges_for_point.len();
+
+                        points.push(*point_id);
                     }
-                    edges_offset.push(edges_buffer.len());
                 }
+            } else {
+                // Bottom layer, iterate from 0 to max_point_id.
+                // Don't need to write points file, since bottom-most layers contain all points
+                let max_point_id = *layer.edges.keys().max().unwrap_or(&0);
+                for point_id in 0..=max_point_id {
+                    edge_offsets.push(num_edges);
+                    if layer.edges.contains_key(&point_id) {
+                        let edges_for_point = &layer.edges[&point_id];
+                        for edge in edges_for_point {
+                            edges.push(edge.point_id);
+                        }
+                        num_edges += edges_for_point.len();
+                    }
+                }
+
+                // For convienience, after layer 0, just append a level_offset so we can safely do
+                // level_offsets[i + 1] - level_offsets[i]
+                edge_offsets.push(num_edges);
+                level_offsets.push(edge_offsets.len());
             }
+
             // write edges
-            for edge in edges_buffer.iter() {
-                edges_len += self.wrap_write(&mut edges_buffer_writer, &edge.to_le_bytes())? as u64;
+            for edge in edges.iter() {
+                edges_file_len += wrap_write(&mut edges_buffer_writer, &edge.to_le_bytes())? as u64;
             }
 
             // write points
-            for point in point_buffer.iter() {
-                points_len +=
-                    self.wrap_write(&mut points_buffer_writer, &point.to_le_bytes())? as u64;
+            for point in points.iter() {
+                points_file_len +=
+                    wrap_write(&mut points_buffer_writer, &point.to_le_bytes())? as u64;
             }
-
-            // write edges offsets
-            for offset in edges_offset.iter() {
-                // In x86, usize is the same as u64, but it's safer to use u64 here
-                let o = *offset as u64;
-                edges_offset_len +=
-                    self.wrap_write(&mut edge_offsets_buffer_writer, &o.to_le_bytes())? as u64;
-            }
-
-            level_offsets.push(edges_offset.len());
             current_layer -= 1;
         }
 
-        // write level offsets
+        // write edge_offsets to file
+        for offset in edge_offsets.iter() {
+            // In x86_64, usize is the same as u64, but it's safer to use u64 here
+            let o = *offset as u64;
+            edge_offsets_file_len +=
+                wrap_write(&mut edge_offsets_buffer_writer, &o.to_le_bytes())? as u64;
+        }
+
+        // write level_offsets to file
         for offset in level_offsets.iter() {
             let o = *offset as u64;
-            level_offsets_len +=
-                self.wrap_write(&mut level_offsets_buffer_writer, &o.to_le_bytes())? as u64;
+            level_offsets_file_len +=
+                wrap_write(&mut level_offsets_buffer_writer, &o.to_le_bytes())? as u64;
         }
 
         edges_buffer_writer.flush().unwrap();
@@ -109,10 +144,10 @@ impl HnswWriter {
         let header: Header = Header {
             version: Version::V0,
             num_layers: index_builder.layers.len() as u32,
-            edges_len,
-            points_len,
-            edge_offsets_len: edges_offset_len,
-            level_offsets_len,
+            edges_len: edges_file_len,
+            points_len: points_file_len,
+            edge_offsets_len: edge_offsets_file_len,
+            level_offsets_len: level_offsets_file_len,
         };
 
         self.combine_files(header)?;
@@ -126,14 +161,6 @@ impl HnswWriter {
         Ok(())
     }
 
-    #[inline]
-    fn wrap_write(&self, writer: &mut BufWriter<&mut File>, buf: &[u8]) -> Result<usize, String> {
-        match writer.write(buf) {
-            Ok(len) => Ok(len),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
     /// Read file and append to the writer
     fn append_file_to_writer(
         &self,
@@ -145,7 +172,7 @@ impl HnswWriter {
         let mut buffer: [u8; 4096] = [0; 4096];
         loop {
             let read = buffer_reader.read(&mut buffer).unwrap();
-            self.wrap_write(writer, &buffer[0..read])?;
+            wrap_write(writer, &buffer[0..read])?;
             if read < 4096 {
                 break;
             }
@@ -161,12 +188,12 @@ impl HnswWriter {
         let version_value: u8 = match header.version {
             Version::V0 => 0,
         };
-        self.wrap_write(writer, &version_value.to_le_bytes())?;
-        self.wrap_write(writer, &header.num_layers.to_le_bytes())?;
-        self.wrap_write(writer, &header.edges_len.to_le_bytes())?;
-        self.wrap_write(writer, &header.points_len.to_le_bytes())?;
-        self.wrap_write(writer, &header.edge_offsets_len.to_le_bytes())?;
-        self.wrap_write(writer, &header.level_offsets_len.to_le_bytes())?;
+        wrap_write(writer, &version_value.to_le_bytes())?;
+        wrap_write(writer, &header.num_layers.to_le_bytes())?;
+        wrap_write(writer, &header.edges_len.to_le_bytes())?;
+        wrap_write(writer, &header.points_len.to_le_bytes())?;
+        wrap_write(writer, &header.edge_offsets_len.to_le_bytes())?;
+        wrap_write(writer, &header.level_offsets_len.to_le_bytes())?;
         Ok(())
     }
 
@@ -201,19 +228,9 @@ mod tests {
         pq::{ProductQuantizerConfig, ProductQuantizerWriter},
         pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig},
     };
-    use rand::Rng;
+    use utils::test_utils::generate_random_vector;
 
     use super::*;
-
-    // Generate a random vector with a given dimension
-    fn generate_random_vector(dimension: usize) -> Vec<f32> {
-        let mut rng = rand::thread_rng();
-        let mut vector = vec![];
-        for _ in 0..dimension {
-            vector.push(rng.gen::<f32>());
-        }
-        vector
-    }
 
     #[test]
     fn test_write() {
@@ -261,5 +278,6 @@ mod tests {
                 assert!(false);
             }
         }
+        println!("DONE");
     }
 }

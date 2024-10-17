@@ -6,6 +6,8 @@ use std::{
     collections::{BinaryHeap, HashMap, HashSet},
 };
 
+use super::utils::{GraphTraversal, PointAndDistance, SearchContext};
+
 /// TODO(hicder): support bare vector in addition to quantized one.
 pub struct Layer {
     pub edges: HashMap<u32, Vec<PointAndDistance>>,
@@ -22,17 +24,6 @@ pub struct HnswBuilder {
     ef_contruction: u32,
     entry_point: Vec<u32>,
     max_layer: u8,
-}
-
-struct BuildContext {
-    visited: Vec<u32>,
-}
-
-/// A point and its distance to the query.
-#[derive(PartialEq, Eq, Ord, PartialOrd, Clone, Debug)]
-pub struct PointAndDistance {
-    pub point_id: u32,
-    distance: NotNan<f32>,
 }
 
 // TODO(hicder): support bare vector in addition to quantized one.
@@ -66,7 +57,7 @@ impl HnswBuilder {
 
     /// Insert a vector into the index
     pub fn insert(&mut self, doc_id: u64, vector: &[f32]) {
-        let mut context = BuildContext { visited: vec![] };
+        let mut context = SearchContext::new();
         let quantized_query = self.quantizer.quantize(vector);
         // TODO(hicder): Use id provider instead of doc_id
         let point_id = doc_id as u32;
@@ -169,11 +160,6 @@ impl HnswBuilder {
         nodes
     }
 
-    fn distance(&self, query: &[u8], point_id: u32) -> f32 {
-        let point = self.get_vector(point_id);
-        self.quantizer.distance(query, point)
-    }
-
     /// Compute the distance between two points.
     /// The vectors are quantized.
     fn distance_two_points(&self, a: u32, b: u32) -> f32 {
@@ -191,83 +177,6 @@ impl HnswBuilder {
         let random = rng.gen::<f32>();
         ((-random.ln() / (self.max_neighbors as f32).ln()).floor() as u32)
             .min(self.max_layer as u32) as u8
-    }
-
-    fn search_layer(
-        &self,
-        context: &mut BuildContext,
-        query: &[u8],
-        entry_point: u32,
-        ef_construction: u32,
-        layer: u8,
-    ) -> Vec<PointAndDistance> {
-        // Mark the entry point as visited so that we don't visit it again
-        context.visited.push(entry_point);
-
-        // candidate is min heap while working list is max heap
-        // TODO(hicder): Probably use the comparator instead of this hack?
-        let mut candidates = BinaryHeap::new();
-        let mut working_list = BinaryHeap::new();
-
-        candidates.push(PointAndDistance {
-            point_id: entry_point,
-            distance: NotNan::new(-self.distance(query, entry_point)).unwrap(),
-        });
-        working_list.push(PointAndDistance {
-            point_id: entry_point,
-            distance: NotNan::new(self.distance(query, entry_point)).unwrap(),
-        });
-
-        while !candidates.is_empty() {
-            let point_and_distance = candidates.pop().unwrap();
-            let point_id = point_and_distance.point_id;
-            let distance: f32 = -*point_and_distance.distance;
-
-            let mut furthest_element_from_working_list = working_list.peek().unwrap();
-            if distance > *furthest_element_from_working_list.distance {
-                // All elements in W are evaluated, so we can stop
-                break;
-            }
-
-            if !self.layers[layer as usize].edges.contains_key(&point_id) {
-                continue;
-            }
-
-            for e in self.layers[layer as usize]
-                .edges
-                .get(&point_id)
-                .unwrap()
-                .iter()
-            {
-                if context.visited.contains(&e.point_id) {
-                    continue;
-                }
-                context.visited.push(e.point_id);
-                furthest_element_from_working_list = working_list.peek().unwrap();
-                let distance_e_q = self.distance(query, e.point_id);
-                if distance_e_q < *furthest_element_from_working_list.distance
-                    || working_list.len() < ef_construction as usize
-                {
-                    candidates.push(PointAndDistance {
-                        point_id: e.point_id,
-                        distance: NotNan::new(-distance_e_q).unwrap(),
-                    });
-                    working_list.push(PointAndDistance {
-                        point_id: e.point_id,
-                        distance: NotNan::new(distance_e_q).unwrap(),
-                    });
-                    if working_list.len() > ef_construction as usize {
-                        working_list.pop();
-                    }
-                }
-            }
-        }
-
-        // Probably should return the distance as well, and let customers decide
-        // whether to drop the distance or not
-        let mut result: Vec<PointAndDistance> = working_list.into_iter().collect();
-        result.sort();
-        result
     }
 
     fn select_neighbors_heuristic(
@@ -344,6 +253,21 @@ impl HnswBuilder {
         }
 
         true
+    }
+}
+
+impl GraphTraversal for HnswBuilder {
+    fn distance(&self, query: &[u8], point_id: u32) -> f32 {
+        self.quantizer.distance(query, self.get_vector(point_id))
+    }
+
+    fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<PointAndDistance>> {
+        let layer = &self.layers[layer as usize];
+        if !layer.edges.contains_key(&point_id) {
+            return None;
+        }
+
+        Some(layer.edges[&point_id].clone())
     }
 }
 
