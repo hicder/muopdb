@@ -21,11 +21,24 @@ impl HnswReader {
         let mmap = unsafe { Mmap::map(&backing_file).unwrap() };
 
         let (header, offset) = self.read_header(&mmap);
+        let edges_padding = (4 - (offset % 4)) % 4;
+        let edges_offset = offset + edges_padding as usize;
+        let points_offset = edges_offset + header.edges_len as usize;
+
+        let edge_offsets_padding = (8 - ((points_offset + header.points_len as usize) % 8)) % 8;
+        let edge_offsets_offset =
+            points_offset + header.points_len as usize + edge_offsets_padding as usize;
+        let level_offsets_offset = edge_offsets_offset + header.edge_offsets_len as usize;
+
         Hnsw::new(
             backing_file,
             mmap,
             header,
             offset,
+            edges_offset,
+            points_offset,
+            edge_offsets_offset,
+            level_offsets_offset,
             self.base_directory.clone(),
         )
     }

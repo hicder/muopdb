@@ -22,7 +22,7 @@ pub struct HnswBuilder {
     pub current_top_layer: u8,
     quantizer: Box<dyn Quantizer>,
     ef_contruction: u32,
-    entry_point: Vec<u32>,
+    pub entry_point: Vec<u32>,
     max_layer: u8,
 }
 
@@ -266,7 +266,7 @@ impl GraphTraversal for HnswBuilder {
         if !layer.edges.contains_key(&point_id) {
             return None;
         }
-        Some(layer.edges[&point_id].iter().map(|x|x.point_id).collect())
+        Some(layer.edges[&point_id].iter().map(|x| x.point_id).collect())
     }
 }
 
