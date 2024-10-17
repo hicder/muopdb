@@ -5,3 +5,4 @@
 */target
 flamegraph.svg
 perf.data*
+rs/proto/src/muopdb.rs

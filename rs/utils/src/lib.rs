@@ -1,4 +1,5 @@
 pub mod hdf5_reader;
+pub mod io;
 pub mod l2;
 pub mod mem;
 pub mod test_utils;

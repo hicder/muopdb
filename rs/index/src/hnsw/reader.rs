@@ -2,9 +2,9 @@ use byteorder::{ByteOrder, LittleEndian};
 use memmap2::Mmap;
 use std::fs::File;
 
-use crate::{
-    hnsw::Hnsw,
-    hnsw_writer::{Header, Version},
+use crate::hnsw::{
+    index::Hnsw,
+    writer::{Header, Version},
 };
 
 pub struct HnswReader {
@@ -21,7 +21,13 @@ impl HnswReader {
         let mmap = unsafe { Mmap::map(&backing_file).unwrap() };
 
         let (header, offset) = self.read_header(&mmap);
-        Hnsw::new(backing_file, mmap, header, offset)
+        Hnsw::new(
+            backing_file,
+            mmap,
+            header,
+            offset,
+            self.base_directory.clone(),
+        )
     }
 
     /// Read the header from the mmap and return the header and the offset of data page
@@ -60,7 +66,7 @@ impl HnswReader {
 // Test
 #[cfg(test)]
 mod tests {
-    use crate::{hnsw_builder::HnswBuilder, hnsw_writer::HnswWriter};
+    use crate::hnsw::{builder::HnswBuilder, writer::HnswWriter};
 
     use super::*;
     use quantization::{
