@@ -1,10 +1,9 @@
 use memmap2::Mmap;
-use ordered_float::NotNan;
 use quantization::{pq::ProductQuantizerReader, quantization::Quantizer};
 use rand::Rng;
 use std::{fs::File, vec};
 
-use crate::hnsw::{utils::PointAndDistance, writer::Header};
+use crate::hnsw::writer::Header;
 
 use super::utils::{GraphTraversal, SearchContext};
 
@@ -142,7 +141,7 @@ impl GraphTraversal for Hnsw {
         self.quantizer.distance(query, self.get_vector(point_id))
     }
 
-    fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<PointAndDistance>> {
+    fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>> {
         let num_layers = self.header.num_layers as usize;
         let level_idx_start =
             self.get_level_offsets_slice()[num_layers - 1 - layer as usize] as usize;
@@ -180,16 +179,7 @@ impl GraphTraversal for Hnsw {
         }
 
         let edges = &self.get_edges_slice()[start_idx_edges as usize..end_idx_edges as usize];
-        // TODO(hicder): Persist the distance and populate here.
-        return Some(
-            edges
-                .iter()
-                .map(|x| PointAndDistance {
-                    point_id: *x,
-                    distance: NotNan::new(0.0).unwrap(),
-                })
-                .collect(),
-        );
+        Some(edges.to_vec())
     }
 }
 

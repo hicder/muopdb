@@ -27,7 +27,7 @@ pub trait GraphTraversal {
     fn distance(&self, query: &[u8], point_id: u32) -> f32;
 
     /// Get the edges for a point
-    fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<PointAndDistance>>;
+    fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>>;
 
     fn search_layer(
         &self,
@@ -71,21 +71,21 @@ pub trait GraphTraversal {
             }
 
             for e in edges.unwrap().iter() {
-                if context.visited.contains(&e.point_id) {
+                if context.visited.contains(&e) {
                     continue;
                 }
-                context.visited.insert(e.point_id);
+                context.visited.insert(*e);
                 furthest_element_from_working_list = working_list.peek().unwrap();
-                let distance_e_q = self.distance(query, e.point_id);
+                let distance_e_q = self.distance(query, *e);
                 if distance_e_q < *furthest_element_from_working_list.distance
                     || working_list.len() < ef_construction as usize
                 {
                     candidates.push(PointAndDistance {
-                        point_id: e.point_id,
+                        point_id: *e,
                         distance: NotNan::new(-distance_e_q).unwrap(),
                     });
                     working_list.push(PointAndDistance {
-                        point_id: e.point_id,
+                        point_id: *e,
                         distance: NotNan::new(distance_e_q).unwrap(),
                     });
                     if working_list.len() > ef_construction as usize {

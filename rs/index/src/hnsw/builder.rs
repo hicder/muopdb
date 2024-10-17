@@ -261,13 +261,12 @@ impl GraphTraversal for HnswBuilder {
         self.quantizer.distance(query, self.get_vector(point_id))
     }
 
-    fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<PointAndDistance>> {
+    fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>> {
         let layer = &self.layers[layer as usize];
         if !layer.edges.contains_key(&point_id) {
             return None;
         }
-
-        Some(layer.edges[&point_id].clone())
+        Some(layer.edges[&point_id].iter().map(|x|x.point_id).collect())
     }
 }
 
