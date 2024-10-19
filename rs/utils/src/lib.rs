@@ -1,3 +1,6 @@
+#![feature(portable_simd)]
+#![feature(test)]
+
 pub mod hdf5_reader;
 pub mod io;
 pub mod l2;
