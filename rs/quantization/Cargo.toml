@@ -9,3 +9,4 @@ serde.workspace = true
 tempdir.workspace = true
 kmeans.workspace = true
 rand.workspace = true
+utils.workspace = true
