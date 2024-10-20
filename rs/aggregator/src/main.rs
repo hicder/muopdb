@@ -1,10 +1,11 @@
 mod aggregator;
 
-use crate::aggregator::AggregatorServerImpl;
 use clap::Parser;
 use log::info;
 use proto::muopdb::aggregator_server::AggregatorServer;
 use tonic::transport::Server;
+
+use crate::aggregator::AggregatorServerImpl;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]

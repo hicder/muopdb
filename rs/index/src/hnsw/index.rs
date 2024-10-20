@@ -1,11 +1,13 @@
-use memmap2::Mmap;
-use quantization::{pq::ProductQuantizerReader, quantization::Quantizer};
-use rand::Rng;
-use std::{fs::File, vec};
+use std::fs::File;
+use std::vec;
 
-use crate::hnsw::writer::Header;
+use memmap2::Mmap;
+use quantization::pq::ProductQuantizerReader;
+use quantization::quantization::Quantizer;
+use rand::Rng;
 
 use super::utils::{GraphTraversal, SearchContext};
+use crate::hnsw::writer::Header;
 
 pub struct Hnsw {
     // Need this for mmap

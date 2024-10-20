@@ -1,7 +1,11 @@
-use crate::quantization::Quantizer;
 use core::result::Result;
+use std::fs::File;
+use std::io::Write;
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
-use std::{fs::File, io::Write, path::Path};
+
+use crate::quantization::Quantizer;
 
 pub struct ProductQuantizer {
     pub dimension: usize,

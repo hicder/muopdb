@@ -1,5 +1,6 @@
-use hdf5::File;
 use std::path::Path;
+
+use hdf5::File;
 
 /// Sample function to read a HDF5 file
 /// TODO(hicder): Fix this function to make it generic
