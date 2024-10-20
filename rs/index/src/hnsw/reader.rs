@@ -1,11 +1,10 @@
-use byteorder::{ByteOrder, LittleEndian};
-use memmap2::Mmap;
 use std::fs::File;
 
-use crate::hnsw::{
-    index::Hnsw,
-    writer::{Header, Version},
-};
+use byteorder::{ByteOrder, LittleEndian};
+use memmap2::Mmap;
+
+use crate::hnsw::index::Hnsw;
+use crate::hnsw::writer::{Header, Version};
 
 pub struct HnswReader {
     base_directory: String,
@@ -79,14 +78,13 @@ impl HnswReader {
 // Test
 #[cfg(test)]
 mod tests {
-    use crate::hnsw::{builder::HnswBuilder, writer::HnswWriter};
+    use quantization::pq::{ProductQuantizerConfig, ProductQuantizerWriter};
+    use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
+    use utils::test_utils::generate_random_vector;
 
     use super::*;
-    use quantization::{
-        pq::{ProductQuantizerConfig, ProductQuantizerWriter},
-        pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig},
-    };
-    use utils::test_utils::generate_random_vector;
+    use crate::hnsw::builder::HnswBuilder;
+    use crate::hnsw::writer::HnswWriter;
 
     #[test]
     fn test_read_header() {

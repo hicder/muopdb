@@ -1,4 +1,5 @@
-use std::{fs::OpenOptions, vec};
+use std::fs::OpenOptions;
+use std::vec;
 
 use num_traits::ToBytes;
 

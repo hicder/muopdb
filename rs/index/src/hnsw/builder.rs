@@ -1,10 +1,9 @@
+use std::cmp::min;
+use std::collections::{BinaryHeap, HashMap, HashSet};
+
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 use rand::Rng;
-use std::{
-    cmp::min,
-    collections::{BinaryHeap, HashMap, HashSet},
-};
 
 use super::utils::{GraphTraversal, PointAndDistance, SearchContext};
 
@@ -273,8 +272,9 @@ impl GraphTraversal for HnswBuilder {
 // Test
 #[cfg(test)]
 mod tests {
-    use super::*;
     use quantization::pq::ProductQuantizer;
+
+    use super::*;
 
     fn generate_random_vector(dimension: usize) -> Vec<f32> {
         let mut rng = rand::thread_rng();

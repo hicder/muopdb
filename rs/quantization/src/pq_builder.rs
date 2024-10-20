@@ -1,5 +1,6 @@
-use crate::pq::{ProductQuantizer, ProductQuantizerConfig};
 use kmeans::*;
+
+use crate::pq::{ProductQuantizer, ProductQuantizerConfig};
 
 pub struct ProductQuantizerBuilderConfig {
     pub max_iteration: usize,
