@@ -1,7 +1,5 @@
-use std::{
-    fs::{self, File},
-    io::{BufReader, BufWriter, Read, Write},
-};
+use std::fs::{self, File};
+use std::io::{BufReader, BufWriter, Read, Write};
 
 use utils::io::wrap_write;
 
@@ -242,19 +240,14 @@ mod tests {
     use std::collections::HashMap;
 
     use ordered_float::NotNan;
-    use quantization::{
-        pq::{ProductQuantizerConfig, ProductQuantizerWriter},
-        pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig},
-    };
+    use quantization::pq::{ProductQuantizerConfig, ProductQuantizerWriter};
+    use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
     use utils::test_utils::generate_random_vector;
 
-    use crate::hnsw::{
-        builder::Layer,
-        reader::HnswReader,
-        utils::{GraphTraversal, PointAndDistance},
-    };
-
     use super::*;
+    use crate::hnsw::builder::Layer;
+    use crate::hnsw::reader::HnswReader;
+    use crate::hnsw::utils::{GraphTraversal, PointAndDistance};
 
     fn construct_layers(hnsw_builder: &mut HnswBuilder) {
         // Prepare all layers

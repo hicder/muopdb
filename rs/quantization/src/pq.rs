@@ -1,7 +1,13 @@
-use crate::quantization::Quantizer;
 use core::result::Result;
+use std::fs::File;
+use std::io::Write;
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
-use std::{fs::File, io::Write, path::Path};
+use utils::l2::L2DistanceCalculator;
+use utils::DistanceCalculator;
+
+use crate::quantization::Quantizer;
 
 pub struct ProductQuantizer {
     pub dimension: usize,
@@ -10,6 +16,7 @@ pub struct ProductQuantizer {
     pub codebook: Vec<f32>,
     pub base_directory: String,
     pub codebook_name: String,
+    pub distance_calculator: L2DistanceCalculator,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -138,6 +145,7 @@ impl ProductQuantizer {
             codebook,
             base_directory,
             codebook_name,
+            distance_calculator: L2DistanceCalculator::new(),
         }
     }
 
@@ -166,6 +174,7 @@ impl ProductQuantizer {
             codebook,
             base_directory: config.base_directory,
             codebook_name: config.codebook_name,
+            distance_calculator: L2DistanceCalculator::new(),
         }
     }
 
@@ -191,15 +200,6 @@ impl ProductQuantizer {
     }
 }
 
-/// Compute L2 distance between two vectors
-/// TODO: Move this to a separate file
-fn compute_l2_distance(a: &[f32], b: &[f32]) -> f32 {
-    a.iter()
-        .zip(b.iter())
-        .map(|(a, b)| (a - b).powi(2))
-        .sum::<f32>()
-}
-
 /// TODO(hicder): Make this faster
 /// TODO(hicder): Support multiple distance type
 impl Quantizer for ProductQuantizer {
@@ -218,7 +218,7 @@ impl Quantizer for ProductQuantizer {
                 for i in 0..num_centroids {
                     let offset = subspace_offset + i * self.subvector_dimension;
                     let centroid = &self.codebook[offset..offset + self.subvector_dimension];
-                    let distance = compute_l2_distance(subvector, centroid);
+                    let distance = self.distance_calculator.calculate(&subvector, &centroid);
                     if distance < min_distance {
                         min_distance = distance;
                         min_centroid_id = i;
@@ -271,7 +271,7 @@ impl Quantizer for ProductQuantizer {
                     &self.codebook[a_centroid_offset..a_centroid_offset + self.subvector_dimension];
                 let b_vec =
                     &self.codebook[b_centroid_offset..b_centroid_offset + self.subvector_dimension];
-                compute_l2_distance(a_vec, b_vec)
+                self.distance_calculator.calculate(&a_vec, &b_vec)
             })
             .sum::<f32>()
             .sqrt()
