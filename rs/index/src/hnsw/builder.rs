@@ -323,6 +323,11 @@ impl HnswBuilder {
         }
     }
 
+    #[cfg(test)]
+    pub fn vectors(&mut self) -> &mut Vec<Vec<u8>> {
+        &mut self.vectors
+    }
+
     #[allow(dead_code)]
     fn validate(&self) -> bool {
         // Traverse layers in reverse order

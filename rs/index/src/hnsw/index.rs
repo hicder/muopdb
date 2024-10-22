@@ -166,6 +166,15 @@ impl Hnsw {
         let mut rng = rand::thread_rng();
         points[rng.gen_range(0..points.len())]
     }
+
+    #[cfg(test)]
+    pub fn get_doc_id_test(&self, point_ids: &[u32]) -> Vec<u64> {
+        let doc_id_mapping = self.get_doc_id_mapping_slice();
+        point_ids
+            .iter()
+            .map(|x| doc_id_mapping[*x as usize])
+            .collect()
+    }
 }
 
 impl GraphTraversal for Hnsw {

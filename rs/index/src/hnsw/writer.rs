@@ -30,13 +30,14 @@ impl HnswWriter {
         Self { base_directory }
     }
 
-    pub fn write(&self, index_builder: &mut HnswBuilder) -> anyhow::Result<()> {
+    pub fn write(&self, index_builder: &mut HnswBuilder, reindex: bool) -> anyhow::Result<()> {
         let non_bottom_layer_nodes = index_builder.get_nodes_from_non_bottom_layer();
-        // Reindex the HNSW to efficient lookup
-        index_builder
-            .reindex()
-            .context("failed to reindex during write")?;
-
+        if reindex {
+            // Reindex the HNSW to efficient lookup
+            index_builder
+                .reindex()
+                .context("failed to reindex during write")?;
+        }
         // Doc_id mapping writer
         let doc_id_mapping_path = format!("{}/doc_id_mapping", self.base_directory);
         let mut doc_id_mapping_file = File::create(doc_id_mapping_path).unwrap();
@@ -451,20 +452,17 @@ mod tests {
 
         // Artificially construct the graph, since inserting is not deterministic.
         // 3 layers: 0 to 2
+        let vectors = hnsw_builder.vectors();
+        vectors.extend_from_slice(&vec![vec![]; 6]);
+        hnsw_builder.doc_id_mapping = vec![1, 2, 3, 4, 5, 6];
         hnsw_builder.current_top_layer = 2;
         construct_layers(&mut hnsw_builder);
         hnsw_builder.entry_point = vec![1];
 
         // Write to disk
         let writer = HnswWriter::new(base_directory.clone());
-        match writer.write(&mut hnsw_builder) {
-            Ok(_) => {
-                assert!(true);
-            }
-            Err(_) => {
-                assert!(false);
-            }
-        }
+
+        writer.write(&mut hnsw_builder, false).unwrap();
 
         let reader = HnswReader::new(base_directory.clone());
         let hnsw = reader.read();
@@ -484,6 +482,11 @@ mod tests {
             assert!(edges.contains(&1));
             assert!(edges.contains(&2));
         }
+
+        assert_eq!(
+            hnsw.get_doc_id_test(&[0, 1, 2, 3, 4, 5]),
+            vec![1, 2, 3, 4, 5, 6]
+        );
 
         assert_eq!(hnsw.get_header().version, Version::V0);
         assert_eq!(hnsw.get_header().num_layers, 3);
