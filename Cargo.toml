@@ -13,6 +13,7 @@ resolver = "2"
 debug = 1
 
 [workspace.dependencies]
+anyhow = "1.0.90"
 aggregator = {path='./rs/aggregator'}
 criterion = "0.4"
 proto = {path='./rs/proto'}
