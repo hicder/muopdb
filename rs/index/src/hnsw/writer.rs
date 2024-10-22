@@ -1,6 +1,7 @@
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 
+use anyhow::Context;
 use utils::io::wrap_write;
 
 use crate::hnsw::builder::HnswBuilder;
@@ -21,6 +22,7 @@ pub struct Header {
     pub points_len: u64,
     pub edge_offsets_len: u64,
     pub level_offsets_len: u64,
+    pub doc_id_mapping_len: u64,
 }
 
 impl HnswWriter {
@@ -28,8 +30,18 @@ impl HnswWriter {
         Self { base_directory }
     }
 
-    pub fn write(&self, index_builder: &HnswBuilder) -> Result<(), String> {
+    pub fn write(&self, index_builder: &mut HnswBuilder) -> anyhow::Result<()> {
         let non_bottom_layer_nodes = index_builder.get_nodes_from_non_bottom_layer();
+        // Reindex the HNSW to efficient lookup
+        index_builder
+            .reindex()
+            .context("failed to reindex during write")?;
+
+        // Doc_id mapping writer
+        let doc_id_mapping_path = format!("{}/doc_id_mapping", self.base_directory);
+        let mut doc_id_mapping_file = File::create(doc_id_mapping_path).unwrap();
+        let mut doc_id_mapping_buffer_writer = BufWriter::new(&mut doc_id_mapping_file);
+        let mut doc_id_mapping_file_len = 0 as u64;
 
         // Edges writer
         let edges_path = format!("{}/edges", self.base_directory);
@@ -135,10 +147,17 @@ impl HnswWriter {
                 wrap_write(&mut level_offsets_buffer_writer, &o.to_le_bytes())? as u64;
         }
 
+        // write doc_id_mapping to file, id_mapping should be from 0 to n-1 where n is the number of points
+        for doc_id in &index_builder.doc_id_mapping {
+            doc_id_mapping_file_len +=
+                wrap_write(&mut doc_id_mapping_buffer_writer, &doc_id.to_le_bytes())? as u64;
+        }
+
         edges_buffer_writer.flush().unwrap();
         points_buffer_writer.flush().unwrap();
         edge_offsets_buffer_writer.flush().unwrap();
         level_offsets_buffer_writer.flush().unwrap();
+        doc_id_mapping_buffer_writer.flush().unwrap();
 
         let header: Header = Header {
             version: Version::V0,
@@ -147,6 +166,7 @@ impl HnswWriter {
             points_len: points_file_len,
             edge_offsets_len: edge_offsets_file_len,
             level_offsets_len: level_offsets_file_len,
+            doc_id_mapping_len: doc_id_mapping_file_len,
         };
 
         self.combine_files(header)?;
@@ -156,6 +176,7 @@ impl HnswWriter {
         fs::remove_file(format!("{}/points", self.base_directory)).unwrap_or_default();
         fs::remove_file(format!("{}/edge_offsets", self.base_directory)).unwrap_or_default();
         fs::remove_file(format!("{}/level_offsets", self.base_directory)).unwrap_or_default();
+        fs::remove_file(format!("{}/doc_id_mapping", self.base_directory)).unwrap_or_default();
 
         Ok(())
     }
@@ -165,7 +186,7 @@ impl HnswWriter {
         &self,
         path: &str,
         writer: &mut BufWriter<&mut File>,
-    ) -> Result<usize, String> {
+    ) -> anyhow::Result<usize> {
         let input_file = File::open(path).unwrap();
         let mut buffer_reader = BufReader::new(&input_file);
         let mut buffer: [u8; 4096] = [0; 4096];
@@ -184,7 +205,7 @@ impl HnswWriter {
         &self,
         header: Header,
         writer: &mut BufWriter<&mut File>,
-    ) -> Result<usize, String> {
+    ) -> anyhow::Result<usize> {
         let version_value: u8 = match header.version {
             Version::V0 => 0,
         };
@@ -195,21 +216,25 @@ impl HnswWriter {
         written += wrap_write(writer, &header.points_len.to_le_bytes())?;
         written += wrap_write(writer, &header.edge_offsets_len.to_le_bytes())?;
         written += wrap_write(writer, &header.level_offsets_len.to_le_bytes())?;
+        written += wrap_write(writer, &header.doc_id_mapping_len.to_le_bytes())?;
         Ok(written)
     }
 
     /// Combine all individual files into one final index file
-    fn combine_files(&self, header: Header) -> Result<usize, String> {
+    fn combine_files(&self, header: Header) -> anyhow::Result<usize> {
         let edges_path = format!("{}/edges", self.base_directory);
         let points_path = format!("{}/points", self.base_directory);
         let edge_offsets_path = format!("{}/edge_offsets", self.base_directory);
         let level_offsets_path = format!("{}/level_offsets", self.base_directory);
+        let doc_id_mapping_path = format!("{}/doc_id_mapping", self.base_directory);
         let combined_path = format!("{}/index", self.base_directory);
 
         let mut combined_file = File::create(combined_path).unwrap();
         let mut combined_buffer_writer = BufWriter::new(&mut combined_file);
 
-        let mut written = self.write_header(header, &mut combined_buffer_writer)?;
+        let mut written = self
+            .write_header(header, &mut combined_buffer_writer)
+            .context("failed to write header")?;
         // Compute pading for alignment to 4 bytes
         let mut padding = 4 - (written % 4);
         if padding != 4 {
@@ -226,11 +251,12 @@ impl HnswWriter {
         }
         written += self.append_file_to_writer(&edge_offsets_path, &mut combined_buffer_writer)?;
         written += self.append_file_to_writer(&level_offsets_path, &mut combined_buffer_writer)?;
+        written += self.append_file_to_writer(&doc_id_mapping_path, &mut combined_buffer_writer)?;
 
-        match combined_buffer_writer.flush() {
-            Ok(_) => Ok(written),
-            Err(e) => return Err(e.to_string()),
-        }
+        combined_buffer_writer
+            .flush()
+            .context("failed to flush combined buffer")?;
+        Ok(written)
     }
 }
 
@@ -431,7 +457,7 @@ mod tests {
 
         // Write to disk
         let writer = HnswWriter::new(base_directory.clone());
-        match writer.write(&hnsw_builder) {
+        match writer.write(&mut hnsw_builder) {
             Ok(_) => {
                 assert!(true);
             }

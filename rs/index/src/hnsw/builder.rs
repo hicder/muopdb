@@ -48,11 +48,10 @@ pub struct HnswBuilder {
     ef_contruction: u32,
     pub entry_point: Vec<u32>,
     max_layer: u8,
-    id_provider: HashMap<u32, u64>,
+    pub doc_id_mapping: Vec<u64>,
 }
 
 // TODO(hicder): support bare vector in addition to quantized one.
-// TODO(hicder): Reindex to make all connected points have close ids so that we fetch together.
 impl HnswBuilder {
     pub fn new(
         max_neighbors: usize,
@@ -69,7 +68,7 @@ impl HnswBuilder {
             quantizer: quantizer,
             ef_contruction: ef_construction,
             entry_point: vec![],
-            id_provider: HashMap::new(),
+            doc_id_mapping: Vec::new(),
         }
     }
 
@@ -82,8 +81,8 @@ impl HnswBuilder {
     }
 
     fn generate_id(&mut self, doc_id: u64) -> u32 {
-        let generated_id = self.id_provider.len() as u32;
-        self.id_provider.insert(generated_id, doc_id);
+        let generated_id = self.doc_id_mapping.len() as u32;
+        self.doc_id_mapping.push(doc_id);
         return generated_id;
     }
 
@@ -131,13 +130,13 @@ impl HnswBuilder {
                 .reindex(&assigned_ids)
                 .context(format!("failed to reindex layer {}", i))?
         }
-        let tmp_id_provider = self.id_provider.drain().collect::<Vec<_>>();
-        for (id, doc_id) in tmp_id_provider {
-            let new_id = assigned_ids.get(id as usize).ok_or(anyhow!(
+        let tmp_id_provider = self.doc_id_mapping.clone();
+        for (id, doc_id) in tmp_id_provider.into_iter().enumerate() {
+            let new_id = assigned_ids.get(id).ok_or(anyhow!(
                 "id in id_provider {} is larger than size of vectors",
                 id
             ))?;
-            self.id_provider.insert(*new_id as u32, doc_id);
+            self.doc_id_mapping[*new_id as usize] = doc_id;
         }
         for entry in self.entry_point.iter_mut() {
             let new_id = assigned_ids.get(*entry as usize).ok_or(anyhow!(
@@ -153,7 +152,6 @@ impl HnswBuilder {
     pub fn insert(&mut self, doc_id: u64, vector: &[f32]) {
         let mut context = SearchContext::new();
         let quantized_query = self.quantizer.quantize(vector);
-        // TODO(hicder): Use id provider instead of doc_id
         let point_id = self.generate_id(doc_id);
 
         let empty_graph = self.vectors.is_empty();
@@ -382,7 +380,7 @@ mod tests {
 
     #[test]
     fn test_hnsw_builder_reindex() {
-        let id_provider = HashMap::from([(0, 100), (1, 101), (2, 102)]);
+        let id_provider = vec![100, 101, 102];
         let edges = HashMap::from([
             (
                 0,
@@ -443,12 +441,15 @@ mod tests {
             ef_contruction: 0,
             entry_point: vec![0, 1],
             max_layer: 0,
-            id_provider: id_provider,
+            doc_id_mapping: id_provider,
         };
         builder.reindex().unwrap();
         for i in 0..3 {
             assert_eq!(
-                builder.id_provider.get(&expected_mapping[i]).unwrap(),
+                builder
+                    .doc_id_mapping
+                    .get(expected_mapping[i] as usize)
+                    .unwrap(),
                 &((i + 100) as u64)
             );
         }

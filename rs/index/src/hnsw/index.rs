@@ -20,6 +20,7 @@ pub struct Hnsw {
     points_offset: usize,
     edge_offsets_offset: usize,
     level_offsets_offset: usize,
+    doc_id_mapping_offset: usize,
 
     quantizer: Box<dyn Quantizer>,
 
@@ -38,6 +39,7 @@ impl Hnsw {
         points_offset: usize,
         edge_offsets_offset: usize,
         level_offsets_offset: usize,
+        doc_id_mapping_offset: usize,
         base_directory: String,
     ) -> Self {
         // Read quantizer
@@ -53,12 +55,21 @@ impl Hnsw {
             points_offset,
             edge_offsets_offset,
             level_offsets_offset,
+            doc_id_mapping_offset,
             quantizer: Box::new(pq),
             vectors: vec![],
         }
     }
 
-    pub fn ann_search(&self, query: &[f32], k: usize, ef: u32) -> Vec<u32> {
+    fn map_point_id_to_doc_id(&self, point_ids: &[u32]) -> Vec<u64> {
+        let doc_id_mapping = self.get_doc_id_mapping_slice();
+        point_ids
+            .iter()
+            .map(|x| doc_id_mapping[*x as usize])
+            .collect()
+    }
+
+    pub fn ann_search(&self, query: &[f32], k: usize, ef: u32) -> Vec<u64> {
         let mut context = SearchContext::new();
         let quantized_query = self.quantizer.quantize(query);
         let mut current_layer: i32 = self.header.num_layers as i32 - 1;
@@ -78,7 +89,8 @@ impl Hnsw {
         working_set = self.search_layer(&mut context, &quantized_query, ep, ef, 0);
         working_set.sort_by(|x, y| x.distance.cmp(&y.distance));
         working_set.truncate(k);
-        working_set.iter().map(|x| x.point_id).collect()
+        let point_ids: Vec<u32> = working_set.iter().map(|x| x.point_id).collect();
+        self.map_point_id_to_doc_id(&point_ids)
     }
 
     pub fn get_header(&self) -> &Header {
@@ -118,6 +130,14 @@ impl Hnsw {
         let start = self.level_offsets_offset;
         let slice =
             &self.mmap[self.level_offsets_offset..start + self.header.level_offsets_len as usize];
+        return utils::mem::transmute_u8_to_slice(slice);
+    }
+
+    /// Returns the doc_id_mapping slice
+    pub fn get_doc_id_mapping_slice(&self) -> &[u64] {
+        let start = self.doc_id_mapping_offset;
+        let slice =
+            &self.mmap[self.doc_id_mapping_offset..start + self.header.doc_id_mapping_len as usize];
         return utils::mem::transmute_u8_to_slice(slice);
     }
 
