@@ -325,6 +325,11 @@ impl HnswBuilder {
         }
     }
 
+    #[cfg(test)]
+    pub fn vectors(&mut self) -> &mut Vec<Vec<u8>> {
+        &mut self.vectors
+    }
+
     #[allow(dead_code)]
     fn validate(&self) -> bool {
         // Traverse layers in reverse order
@@ -383,21 +388,33 @@ mod tests {
     fn test_hnsw_builder_reindex() {
         let id_provider = vec![100, 101, 102];
         let edges = HashMap::from([
-            (0, vec![PointAndDistance {
-                point_id: 2,
-                distance: NotNan::new(1.0).unwrap(),
-            }]),
-            (1, vec![PointAndDistance {
-                point_id: 2,
-                distance: NotNan::new(2.0).unwrap(),
-            }]),
-            (2, vec![PointAndDistance {
-                point_id: 1,
-                distance: NotNan::new(2.0).unwrap(),
-            }, PointAndDistance {
-                point_id: 0,
-                distance: NotNan::new(1.0).unwrap(),
-            }]),
+            (
+                0,
+                vec![PointAndDistance {
+                    point_id: 2,
+                    distance: NotNan::new(1.0).unwrap(),
+                }],
+            ),
+            (
+                1,
+                vec![PointAndDistance {
+                    point_id: 2,
+                    distance: NotNan::new(2.0).unwrap(),
+                }],
+            ),
+            (
+                2,
+                vec![
+                    PointAndDistance {
+                        point_id: 1,
+                        distance: NotNan::new(2.0).unwrap(),
+                    },
+                    PointAndDistance {
+                        point_id: 0,
+                        distance: NotNan::new(1.0).unwrap(),
+                    },
+                ],
+            ),
         ]);
         let expected_mapping = vec![0, 2, 1];
         let layer = Layer { edges };
@@ -414,7 +431,7 @@ mod tests {
         // Create a temp directory
         let temp_dir = tempdir::TempDir::new("product_quantizer_test").unwrap();
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
-        let mut builder = HnswBuilder{
+        let mut builder = HnswBuilder {
             vectors: vec![vec![]; 3],
             max_neighbors: 1,
             layers: vec![layer],
@@ -430,28 +447,46 @@ mod tests {
             ef_contruction: 0,
             entry_point: vec![0, 1],
             max_layer: 0,
-            doc_id_mapping: id_provider
+            doc_id_mapping: id_provider,
         };
         builder.reindex().unwrap();
         for i in 0..3 {
-            assert_eq!(builder.doc_id_mapping.get(expected_mapping[i] as usize).unwrap(), &((i + 100) as u64));
+            assert_eq!(
+                builder
+                    .doc_id_mapping
+                    .get(expected_mapping[i] as usize)
+                    .unwrap(),
+                &((i + 100) as u64)
+            );
         }
         assert_eq!(builder.entry_point, vec![0, 2]);
-        assert_eq!(builder.layers[0].edges.get(&0).unwrap(), &vec![PointAndDistance {
-            point_id: 1,
-            distance: NotNan::new(1.0).unwrap(),
-        }]);
-        assert_eq!(builder.layers[0].edges.get(&1).unwrap(), &vec![PointAndDistance {
-            point_id: 0,
-            distance: NotNan::new(1.0).unwrap(),
-        }, PointAndDistance {
-            point_id: 2,
-            distance: NotNan::new(2.0).unwrap(),
-        }]);
-        assert_eq!(builder.layers[0].edges.get(&2).unwrap(), &vec![PointAndDistance {
-            point_id: 1,
-            distance: NotNan::new(2.0).unwrap(),
-        }]);
+        assert_eq!(
+            builder.layers[0].edges.get(&0).unwrap(),
+            &vec![PointAndDistance {
+                point_id: 1,
+                distance: NotNan::new(1.0).unwrap(),
+            }]
+        );
+        assert_eq!(
+            builder.layers[0].edges.get(&1).unwrap(),
+            &vec![
+                PointAndDistance {
+                    point_id: 0,
+                    distance: NotNan::new(1.0).unwrap(),
+                },
+                PointAndDistance {
+                    point_id: 2,
+                    distance: NotNan::new(2.0).unwrap(),
+                }
+            ]
+        );
+        assert_eq!(
+            builder.layers[0].edges.get(&2).unwrap(),
+            &vec![PointAndDistance {
+                point_id: 1,
+                distance: NotNan::new(2.0).unwrap(),
+            }]
+        );
     }
     #[test]
     fn test_layer_reindex() {

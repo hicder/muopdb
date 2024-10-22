@@ -1,8 +1,8 @@
+use anyhow::Context;
 use std::{
     fs::{self, File},
     io::{BufReader, BufWriter, Read, Write},
 };
-use anyhow::Context;
 
 use utils::io::wrap_write;
 
@@ -24,7 +24,7 @@ pub struct Header {
     pub points_len: u64,
     pub edge_offsets_len: u64,
     pub level_offsets_len: u64,
-    pub doc_id_mapping_len: u64
+    pub doc_id_mapping_len: u64,
 }
 
 impl HnswWriter {
@@ -32,11 +32,14 @@ impl HnswWriter {
         Self { base_directory }
     }
 
-    pub fn write(&self, index_builder: & mut HnswBuilder) -> anyhow::Result<()> {
+    pub fn write(&self, index_builder: &mut HnswBuilder, reindex: bool) -> anyhow::Result<()> {
         let non_bottom_layer_nodes = index_builder.get_nodes_from_non_bottom_layer();
-        // Reindex the HNSW to efficient lookup
-        index_builder.reindex().context("failed to reindex during write")?;
-
+        if reindex {
+            // Reindex the HNSW to efficient lookup
+            index_builder
+                .reindex()
+                .context("failed to reindex during write")?;
+        }
         // Doc_id mapping writer
         let doc_id_mapping_path = format!("{}/doc_id_mapping", self.base_directory);
         let mut doc_id_mapping_file = File::create(doc_id_mapping_path).unwrap();
@@ -232,7 +235,9 @@ impl HnswWriter {
         let mut combined_file = File::create(combined_path).unwrap();
         let mut combined_buffer_writer = BufWriter::new(&mut combined_file);
 
-        let mut written = self.write_header(header, &mut combined_buffer_writer).context("failed to write header")?;
+        let mut written = self
+            .write_header(header, &mut combined_buffer_writer)
+            .context("failed to write header")?;
         // Compute pading for alignment to 4 bytes
         let mut padding = 4 - (written % 4);
         if padding != 4 {
@@ -251,7 +256,9 @@ impl HnswWriter {
         written += self.append_file_to_writer(&level_offsets_path, &mut combined_buffer_writer)?;
         written += self.append_file_to_writer(&doc_id_mapping_path, &mut combined_buffer_writer)?;
 
-        combined_buffer_writer.flush().context("failed to flush combined buffer")?;
+        combined_buffer_writer
+            .flush()
+            .context("failed to flush combined buffer")?;
         Ok(written)
     }
 }
@@ -452,20 +459,16 @@ mod tests {
 
         // Artificially construct the graph, since inserting is not deterministic.
         // 3 layers: 0 to 2
+        let vectors = hnsw_builder.vectors();
+        vectors.extend_from_slice(&vec![vec![]; 6]);
+        hnsw_builder.doc_id_mapping = vec![1, 2, 3, 4, 5, 6];
         hnsw_builder.current_top_layer = 2;
         construct_layers(&mut hnsw_builder);
         hnsw_builder.entry_point = vec![1];
 
         // Write to disk
         let writer = HnswWriter::new(base_directory.clone());
-        match writer.write(& mut hnsw_builder) {
-            Ok(_) => {
-                assert!(true);
-            }
-            Err(_) => {
-                assert!(false);
-            }
-        }
+        writer.write(&mut hnsw_builder, false).unwrap();
 
         let reader = HnswReader::new(base_directory.clone());
         let hnsw = reader.read();
@@ -485,6 +488,11 @@ mod tests {
             assert!(edges.contains(&1));
             assert!(edges.contains(&2));
         }
+
+        assert_eq!(
+            hnsw.get_doc_id_test(&[0, 1, 2, 3, 4, 5]),
+            vec![1, 2, 3, 4, 5, 6]
+        );
 
         assert_eq!(hnsw.get_header().version, Version::V0);
         assert_eq!(hnsw.get_header().num_layers, 3);

@@ -131,7 +131,7 @@ mod tests {
         }
 
         let writer = HnswWriter::new(base_directory.clone());
-        match writer.write(&mut hnsw_builder) {
+        match writer.write(&mut hnsw_builder, false) {
             Ok(()) => {
                 assert!(true);
             }
