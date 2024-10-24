@@ -32,7 +32,7 @@ log = "0.4.22"
 env_logger = "0.11.5"
 tempdir = "0.3.7"
 ordered-float = "4.3.0"
-hdf5 = "0.8.1"
+hdf5 = { package = "hdf5-metno", version = "0.9.0" }
 kmeans = "0.11.0"
 memmap2 = "0.9.5"
 byteorder = "1.5.0"
