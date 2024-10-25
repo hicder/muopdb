@@ -138,8 +138,20 @@ impl<T: ToBytes + Clone> VectorStorage<T> for FileBackedVectorStorage<T> {
             return Some(&self.resident_vectors[id as usize]);
         }
 
-        // TODO(hicder): Fix this
-        None
+        let overall_offset = id as usize * self.num_features * std::mem::size_of::<T>();
+        let file_num = overall_offset / self.backing_file_size;
+        if file_num >= self.mmaps.len() {
+            return None;
+        }
+
+        let file_offset = overall_offset % self.backing_file_size;
+        if file_offset >= self.mmaps[file_num].len() {
+            return None;
+        }
+
+        let mmap = &self.mmaps[file_num];
+        let slice = &mmap[file_offset..file_offset + self.num_features * std::mem::size_of::<T>()];
+        Some(unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const T, self.num_features) })
     }
 
     fn append(&mut self, vector: Vec<T>) -> Result<(), String> {
@@ -194,5 +206,17 @@ mod tests {
             .unwrap_or_else(|_| panic!("append failed"));
         assert!(!storage.is_resident());
         storage.flush().unwrap_or_else(|_| panic!("flush failed"));
+
+        let vec = storage.get(0).unwrap();
+        assert_eq!(vec[0], 1);
+        assert_eq!(vec[1], 2);
+        assert_eq!(vec[2], 3);
+        assert_eq!(vec[3], 4);
+
+        let vec = storage.get(64).unwrap();
+        assert_eq!(vec[0], 5);
+        assert_eq!(vec[1], 6);
+        assert_eq!(vec[2], 7);
+        assert_eq!(vec[3], 8);
     }
 }
