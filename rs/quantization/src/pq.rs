@@ -271,7 +271,10 @@ impl Quantizer for ProductQuantizer {
                     &self.codebook[a_centroid_offset..a_centroid_offset + self.subvector_dimension];
                 let b_vec =
                     &self.codebook[b_centroid_offset..b_centroid_offset + self.subvector_dimension];
-                self.distance_calculator.calculate(&a_vec, &b_vec)
+
+                // TODO(hicder): Temp fix. Need better API for this
+                let dist = self.distance_calculator.calculate(&a_vec, &b_vec);
+                dist * dist
             })
             .sum::<f32>()
             .sqrt()
