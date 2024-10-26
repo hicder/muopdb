@@ -1374,7 +1374,9 @@ name = "quantization"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "env_logger",
  "kmeans",
+ "log",
  "rand 0.8.5",
  "serde",
  "serde_yaml",

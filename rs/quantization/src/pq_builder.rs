@@ -1,4 +1,5 @@
 use kmeans::*;
+use log::debug;
 
 use crate::pq::{ProductQuantizer, ProductQuantizerConfig};
 
@@ -50,9 +51,9 @@ impl ProductQuantizerBuilder {
                 }
             }
             let conf = KMeansConfig::build()
-                .init_done(&|_| println!("Initialization completed."))
+                .init_done(&|_| debug!("Initialization completed."))
                 .iteration_done(&|s, nr, new_distsum| {
-                    println!(
+                    debug!(
                         "Iteration {} - Error: {:.2} -> {:.2} | Improvement: {:.2}",
                         nr,
                         s.distsum,
@@ -74,7 +75,7 @@ impl ProductQuantizerBuilder {
                 &conf,
             );
             result.centroids.iter().for_each(|x| codebook.push(*x));
-            println!("Error: {}", result.distsum);
+            debug!("Error: {}", result.distsum);
         }
         Ok(ProductQuantizer::new(
             self.pq_config.dimension,
@@ -96,6 +97,7 @@ mod tests {
 
     #[test]
     fn test_product_quantizer_builder() {
+        env_logger::init();
         const DIMENSION: usize = 128;
         let mut pqb = ProductQuantizerBuilder::new(
             ProductQuantizerConfig {

@@ -11,6 +11,8 @@ kmeans.workspace = true
 rand.workspace = true
 utils.workspace = true
 criterion.workspace = true
+log.workspace = true
+env_logger.workspace = true
 
 [[bench]]
 name = "pq_dist"
