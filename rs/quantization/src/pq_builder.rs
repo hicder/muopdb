@@ -90,13 +90,16 @@ impl ProductQuantizerBuilder {
 // Test
 #[cfg(test)]
 mod tests {
+    use utils::test_utils::generate_random_vector;
+
     use super::*;
 
     #[test]
     fn test_product_quantizer_builder() {
+        const DIMENSION: usize = 128;
         let mut pqb = ProductQuantizerBuilder::new(
             ProductQuantizerConfig {
-                dimension: 128,
+                dimension: DIMENSION,
                 subvector_dimension: 8,
                 num_bits: 8,
                 base_directory: "test".to_string(),
@@ -109,11 +112,7 @@ mod tests {
         );
         // Generate 10000 vectors of f32, dimension 128
         for _ in 0..10000 {
-            let mut vec = vec![];
-            for _ in 0..128 {
-                vec.push(rand::random());
-            }
-            pqb.add(vec);
+            pqb.add(generate_random_vector(DIMENSION));
         }
 
         match pqb.build() {
