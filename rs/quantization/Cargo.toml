@@ -10,3 +10,8 @@ tempdir.workspace = true
 kmeans.workspace = true
 rand.workspace = true
 utils.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "pq_dist"
+harness = false

@@ -14,6 +14,7 @@ debug = 1
 
 [workspace.dependencies]
 aggregator = {path='./rs/aggregator'}
+criterion = "0.4"
 proto = {path='./rs/proto'}
 quantization = {path='./rs/quantization'}
 utils = {path='./rs/utils'}
