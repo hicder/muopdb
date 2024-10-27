@@ -5,6 +5,7 @@ use quantization::quantization::Quantizer;
 use utils::test_utils::generate_random_vector;
 
 fn bench_pq_distance(c: &mut Criterion) {
+    env_logger::init();
     for dimension in [128, 256].iter() {
         for subvector_dimension in [4, 8, 16, 32, 64, 128].iter() {
             for num_bits in [4, 8, 16].iter() {
