@@ -150,7 +150,7 @@ impl Hnsw {
 
 impl GraphTraversal for Hnsw {
     fn distance(&self, query: &[u8], point_id: u32) -> f32 {
-        self.quantizer.distance(query, self.get_vector(point_id))
+        self.quantizer.distance(query, self.get_vector(point_id), 2)
     }
 
     fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>> {
