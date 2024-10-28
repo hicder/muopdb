@@ -1,6 +1,7 @@
 use std::cmp::min;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 
+use anyhow::{anyhow, Context};
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 use rand::Rng;
@@ -8,8 +9,32 @@ use rand::Rng;
 use super::utils::{GraphTraversal, PointAndDistance, SearchContext};
 
 /// TODO(hicder): support bare vector in addition to quantized one.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Layer {
     pub edges: HashMap<u32, Vec<PointAndDistance>>,
+}
+
+impl Layer {
+    // Reindex the edges in place based on the id mapping
+    fn reindex(&mut self, id_mapping: &[i32]) -> anyhow::Result<()> {
+        // Drain so we don't create extra Vec
+        let tmp_edges = self.edges.drain().collect::<Vec<_>>();
+        for (point_id, mut edges) in tmp_edges {
+            let new_point_id = id_mapping.get(point_id as usize).ok_or(anyhow!(
+                "point_id {} is larger than size of mapping",
+                point_id
+            ))?;
+            for edge in edges.iter_mut() {
+                let new_point_id = id_mapping.get(edge.point_id as usize).ok_or(anyhow!(
+                    "point_id {} is larger than size of mapping",
+                    edge.point_id
+                ))?;
+                edge.point_id = *new_point_id as u32;
+            }
+            self.edges.insert(*new_point_id as u32, edges);
+        }
+        anyhow::Ok(())
+    }
 }
 
 /// The actual builder
@@ -23,10 +48,10 @@ pub struct HnswBuilder {
     ef_contruction: u32,
     pub entry_point: Vec<u32>,
     max_layer: u8,
+    pub doc_id_mapping: Vec<u64>,
 }
 
 // TODO(hicder): support bare vector in addition to quantized one.
-// TODO(hicder): Reindex to make all connected points have close ids so that we fetch together.
 impl HnswBuilder {
     pub fn new(
         max_neighbors: usize,
@@ -43,6 +68,7 @@ impl HnswBuilder {
             quantizer: quantizer,
             ef_contruction: ef_construction,
             entry_point: vec![],
+            doc_id_mapping: Vec::new(),
         }
     }
 
@@ -54,12 +80,79 @@ impl HnswBuilder {
         self.vectors[point_id as usize] = vector.to_vec();
     }
 
+    fn generate_id(&mut self, doc_id: u64) -> u32 {
+        let generated_id = self.doc_id_mapping.len() as u32;
+        self.doc_id_mapping.push(doc_id);
+        return generated_id;
+    }
+
+    // Reindex the vectors based on the bottom layer
+    // Vectors that are connected should have their id close to each other
+    // This optimization is useful for disk-based indexing
+    pub fn reindex(&mut self) -> anyhow::Result<()> {
+        // Assign new ids to the vectors based on BFS on the bottom layer
+        // Assuming our vectors are index from 0 to n-1
+        let graph = &mut self.layers[0];
+        let vector_length = self.vectors.len();
+        // If a vector is visited, it means it's already assigned an id
+        // its id should be non-negative
+        let mut assigned_ids = vec![-1; vector_length];
+        let mut current_id = 0;
+        let mut queue: VecDeque<u32> = VecDeque::with_capacity(vector_length);
+        for i in 0..vector_length {
+            if assigned_ids[i] >= 0 {
+                continue;
+            }
+            queue.push_back(i as u32);
+            assigned_ids[i] = current_id;
+            current_id += 1;
+            while let Some(node) = queue.pop_front() {
+                let edges = graph.edges.get_mut(&node);
+                if let Some(edges) = edges {
+                    edges.sort_by_key(|x| x.distance);
+                    for edge in edges {
+                        if *assigned_ids.get(edge.point_id as usize).ok_or(anyhow!(
+                            "point_id {} is larger than size of vectors",
+                            edge.point_id
+                        ))? >= 0
+                        {
+                            continue;
+                        }
+                        queue.push_back(edge.point_id);
+                        assigned_ids[edge.point_id as usize] = current_id;
+                        current_id += 1;
+                    }
+                }
+            }
+        }
+        for (i, layer) in self.layers.iter_mut().enumerate() {
+            layer
+                .reindex(&assigned_ids)
+                .context(format!("failed to reindex layer {}", i))?
+        }
+        let tmp_id_provider = self.doc_id_mapping.clone();
+        for (id, doc_id) in tmp_id_provider.into_iter().enumerate() {
+            let new_id = assigned_ids.get(id).ok_or(anyhow!(
+                "id in id_provider {} is larger than size of vectors",
+                id
+            ))?;
+            self.doc_id_mapping[*new_id as usize] = doc_id;
+        }
+        for entry in self.entry_point.iter_mut() {
+            let new_id = assigned_ids.get(*entry as usize).ok_or(anyhow!(
+                "entrypoint id {} is larger than size of vectors",
+                *entry
+            ))?;
+            *entry = *new_id as u32;
+        }
+        anyhow::Ok(())
+    }
+
     /// Insert a vector into the index
     pub fn insert(&mut self, doc_id: u64, vector: &[f32]) {
         let mut context = SearchContext::new();
         let quantized_query = self.quantizer.quantize(vector);
-        // TODO(hicder): Use id provider instead of doc_id
-        let point_id = doc_id as u32;
+        let point_id = self.generate_id(doc_id);
 
         let empty_graph = self.vectors.is_empty();
         // Save the vector
@@ -230,6 +323,11 @@ impl HnswBuilder {
         }
     }
 
+    #[cfg(test)]
+    pub fn vectors(&mut self) -> &mut Vec<Vec<u8>> {
+        &mut self.vectors
+    }
+
     #[allow(dead_code)]
     fn validate(&self) -> bool {
         // Traverse layers in reverse order
@@ -283,6 +381,151 @@ mod tests {
             vector.push(rng.gen::<f32>());
         }
         vector
+    }
+
+    #[test]
+    fn test_hnsw_builder_reindex() {
+        let id_provider = vec![100, 101, 102];
+        let edges = HashMap::from([
+            (
+                0,
+                vec![PointAndDistance {
+                    point_id: 2,
+                    distance: NotNan::new(1.0).unwrap(),
+                }],
+            ),
+            (
+                1,
+                vec![PointAndDistance {
+                    point_id: 2,
+                    distance: NotNan::new(2.0).unwrap(),
+                }],
+            ),
+            (
+                2,
+                vec![
+                    PointAndDistance {
+                        point_id: 1,
+                        distance: NotNan::new(2.0).unwrap(),
+                    },
+                    PointAndDistance {
+                        point_id: 0,
+                        distance: NotNan::new(1.0).unwrap(),
+                    },
+                ],
+            ),
+        ]);
+        let expected_mapping = vec![0, 2, 1];
+        let layer = Layer { edges };
+
+        let mut codebook = vec![];
+        for subvector_idx in 0..5 {
+            for i in 0..(1 << 1) {
+                let x = (subvector_idx * 2 + i) as f32;
+                let y = (subvector_idx * 2 + i) as f32;
+                codebook.push(x);
+                codebook.push(y);
+            }
+        }
+        // Create a temp directory
+        let temp_dir = tempdir::TempDir::new("product_quantizer_test").unwrap();
+        let base_directory = temp_dir.path().to_str().unwrap().to_string();
+        let mut builder = HnswBuilder {
+            vectors: vec![vec![]; 3],
+            max_neighbors: 1,
+            layers: vec![layer],
+            current_top_layer: 0,
+            quantizer: Box::new(ProductQuantizer::new(
+                10,
+                2,
+                1,
+                codebook,
+                base_directory.clone(),
+                "test_codebook".to_string(),
+            )),
+            ef_contruction: 0,
+            entry_point: vec![0, 1],
+            max_layer: 0,
+            doc_id_mapping: id_provider,
+        };
+        builder.reindex().unwrap();
+        for i in 0..3 {
+            assert_eq!(
+                builder
+                    .doc_id_mapping
+                    .get(expected_mapping[i] as usize)
+                    .unwrap(),
+                &((i + 100) as u64)
+            );
+        }
+        assert_eq!(builder.entry_point, vec![0, 2]);
+        assert_eq!(
+            builder.layers[0].edges.get(&0).unwrap(),
+            &vec![PointAndDistance {
+                point_id: 1,
+                distance: NotNan::new(1.0).unwrap(),
+            }]
+        );
+        assert_eq!(
+            builder.layers[0].edges.get(&1).unwrap(),
+            &vec![
+                PointAndDistance {
+                    point_id: 0,
+                    distance: NotNan::new(1.0).unwrap(),
+                },
+                PointAndDistance {
+                    point_id: 2,
+                    distance: NotNan::new(2.0).unwrap(),
+                }
+            ]
+        );
+        assert_eq!(
+            builder.layers[0].edges.get(&2).unwrap(),
+            &vec![PointAndDistance {
+                point_id: 1,
+                distance: NotNan::new(2.0).unwrap(),
+            }]
+        );
+    }
+    #[test]
+    fn test_layer_reindex() {
+        let mut edges = HashMap::new();
+        for i in 0..10 {
+            edges.insert(
+                i,
+                vec![
+                    PointAndDistance {
+                        point_id: (i + 1) % 10,
+                        distance: NotNan::new(1.0).unwrap(),
+                    },
+                    PointAndDistance {
+                        point_id: (i + 5) % 10,
+                        distance: NotNan::new(2.0).unwrap(),
+                    },
+                ],
+            );
+        }
+        let og_layer = Layer { edges };
+        let mut layer = og_layer.clone();
+        // Similar mapping do not change
+        layer.reindex(&vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
+        assert_eq!(layer, og_layer);
+
+        // Reverse mapping
+        layer.reindex(&vec![9, 8, 7, 6, 5, 4, 3, 2, 1, 0]).unwrap();
+        for i in 0..10 {
+            let expected_edges = vec![
+                PointAndDistance {
+                    point_id: ((i as i32 - 1 + 10) % 10) as u32,
+                    distance: NotNan::new(1.0).unwrap(),
+                },
+                PointAndDistance {
+                    point_id: ((i as i32 - 5 + 10) % 10) as u32,
+                    distance: NotNan::new(2.0).unwrap(),
+                },
+            ];
+            assert_eq!(layer.edges.get(&i).unwrap(), &expected_edges);
+        }
     }
 
     #[test]

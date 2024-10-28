@@ -28,6 +28,7 @@ impl HnswReader {
         let edge_offsets_offset =
             points_offset + header.points_len as usize + edge_offsets_padding as usize;
         let level_offsets_offset = edge_offsets_offset + header.edge_offsets_len as usize;
+        let doc_id_mapping_offset = level_offsets_offset + header.level_offsets_len as usize;
 
         Hnsw::new(
             backing_file,
@@ -38,6 +39,7 @@ impl HnswReader {
             points_offset,
             edge_offsets_offset,
             level_offsets_offset,
+            doc_id_mapping_offset,
             self.base_directory.clone(),
         )
     }
@@ -60,6 +62,8 @@ impl HnswReader {
         offset += 8;
         let level_offsets_len = LittleEndian::read_u64(&buffer[offset..]);
         offset += 8;
+        let doc_id_mapping_len = LittleEndian::read_u64(&buffer[offset..]);
+        offset += 8;
 
         (
             Header {
@@ -69,6 +73,7 @@ impl HnswReader {
                 edges_len,
                 points_len,
                 edge_offsets_len,
+                doc_id_mapping_len,
             },
             offset,
         )
@@ -124,7 +129,7 @@ mod tests {
         }
 
         let writer = HnswWriter::new(base_directory.clone());
-        match writer.write(&hnsw_builder) {
+        match writer.write(&mut hnsw_builder, false) {
             Ok(()) => {
                 assert!(true);
             }
@@ -136,6 +141,6 @@ mod tests {
         // Read from file
         let reader = HnswReader::new(base_directory.clone());
         let hnsw = reader.read();
-        assert_eq!(37, hnsw.get_data_offset());
+        assert_eq!(45, hnsw.get_data_offset());
     }
 }
