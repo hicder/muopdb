@@ -164,7 +164,7 @@ impl HnswBuilder {
     fn distance_two_points(&self, a: u32, b: u32) -> f32 {
         let a_vector = self.get_vector(a);
         let b_vector = self.get_vector(b);
-        self.quantizer.distance(a_vector, b_vector)
+        self.quantizer.distance(a_vector, b_vector, 2)
     }
 
     fn get_vector(&self, point_id: u32) -> &[u8] {
@@ -257,7 +257,7 @@ impl HnswBuilder {
 
 impl GraphTraversal for HnswBuilder {
     fn distance(&self, query: &[u8], point_id: u32) -> f32 {
-        self.quantizer.distance(query, self.get_vector(point_id))
+        self.quantizer.distance(query, self.get_vector(point_id), 2)
     }
 
     fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>> {

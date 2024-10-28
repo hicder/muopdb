@@ -9,5 +9,5 @@ pub trait Quantizer {
     fn original_vector(&self, quantized_vector: &[u8]) -> Vec<f32>;
 
     /// Compute the distance between two quantized points
-    fn distance(&self, query: &[u8], point: &[u8]) -> f32;
+    fn distance(&self, query: &[u8], point: &[u8], mode: u8) -> f32;
 }
