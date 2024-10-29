@@ -1,8 +1,8 @@
-use core::result::Result;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use utils::l2::L2DistanceCalculatorImpl::{Scalar, SIMD};
 use utils::l2::{L2DistanceCalculator, L2DistanceCalculatorImpl};
@@ -10,13 +10,14 @@ use utils::{DistanceCalculator, StreamingDistanceCalculator};
 
 use crate::quantization::Quantizer;
 
+const CODEBOOK_NAME: &str = "codebook";
+
 pub struct ProductQuantizer {
     pub dimension: usize,
     pub subvector_dimension: usize,
     pub num_bits: u8,
     pub codebook: Vec<f32>,
     pub base_directory: String,
-    pub codebook_name: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -24,8 +25,6 @@ pub struct ProductQuantizerConfig {
     pub dimension: usize,
     pub subvector_dimension: usize,
     pub num_bits: u8,
-    pub base_directory: String,
-    pub codebook_name: String,
 }
 
 impl ProductQuantizerConfig {
@@ -33,13 +32,7 @@ impl ProductQuantizerConfig {
         if self.dimension % self.subvector_dimension != 0 {
             return Err("Dimensions are not valid");
         }
-
-        let codebook_path = Path::new(&self.base_directory).join(&self.codebook_name);
-        if !codebook_path.exists() || !codebook_path.is_file() {
-            return Err("Codebook does not exists");
-        }
-
-        return Ok(());
+        Ok(())
     }
 }
 pub struct ProductQuantizerReader {
@@ -66,7 +59,7 @@ impl ProductQuantizerReader {
 
         match config.validate() {
             Ok(_) => {
-                let pq = ProductQuantizer::load(config);
+                let pq = ProductQuantizer::load(config, &self.base_directory);
                 return Ok(pq);
             }
             Err(e) => {
@@ -85,7 +78,7 @@ impl ProductQuantizerWriter {
         Self { base_directory }
     }
 
-    pub fn write(&self, quantizer: &ProductQuantizer) -> Result<(), String> {
+    pub fn write(&self, quantizer: &ProductQuantizer) -> Result<()> {
         let config_path = Path::new(&self.base_directory).join("product_quantizer_config.yaml");
         if config_path.exists() {
             // Delete the file if exists
@@ -93,7 +86,7 @@ impl ProductQuantizerWriter {
         }
 
         // Write the codebook to a file
-        let codebook_path = Path::new(&self.base_directory).join(&quantizer.codebook_name);
+        let codebook_path = Path::new(&self.base_directory).join(&CODEBOOK_NAME);
         if codebook_path.exists() {
             // Delete the file if exists
             std::fs::remove_file(codebook_path).unwrap();
@@ -102,29 +95,18 @@ impl ProductQuantizerWriter {
         // Write codebook
         let codebook_buffer = quantizer.codebook_to_buffer();
         let mut codebook_file =
-            File::create(Path::new(&self.base_directory).join(&quantizer.codebook_name)).unwrap();
-        match codebook_file.write(&codebook_buffer) {
-            Ok(_) => {}
-            Err(e) => {
-                return Err(e.to_string());
-            }
-        }
+            File::create(Path::new(&self.base_directory).join(&CODEBOOK_NAME)).unwrap();
+        codebook_file.write(&codebook_buffer)?;
 
         // Write config
         let mut config_file =
             File::create(Path::new(&self.base_directory).join("product_quantizer_config.yaml"))
                 .unwrap();
-        match config_file.write(
+        config_file.write(
             serde_yaml::to_string(&quantizer.config())
                 .unwrap()
                 .as_bytes(),
-        ) {
-            Ok(_) => {}
-            Err(e) => {
-                return Err(e.to_string());
-            }
-        }
-
+        )?;
         Ok(())
     }
 }
@@ -136,20 +118,18 @@ impl ProductQuantizer {
         num_bits: u8,
         codebook: Vec<f32>,
         base_directory: String,
-        codebook_name: String,
     ) -> Self {
         Self {
             dimension,
-            subvector_dimension: subvector_dimension,
+            subvector_dimension,
             num_bits,
             codebook,
             base_directory,
-            codebook_name,
         }
     }
 
-    pub fn load(config: ProductQuantizerConfig) -> Self {
-        let codebook_path = Path::new(&config.base_directory).join(&config.codebook_name);
+    pub fn load(config: ProductQuantizerConfig, base_directory: &str) -> Self {
+        let codebook_path = Path::new(&base_directory).join("codebook");
 
         let codebook_buffer = std::fs::read(codebook_path).unwrap();
         let num_centroids = (1 << config.num_bits) as usize;
@@ -171,8 +151,7 @@ impl ProductQuantizer {
             subvector_dimension: config.subvector_dimension,
             num_bits: config.num_bits,
             codebook,
-            base_directory: config.base_directory,
-            codebook_name: config.codebook_name,
+            base_directory: base_directory.to_string(),
         }
     }
 
@@ -191,9 +170,6 @@ impl ProductQuantizer {
             dimension: self.dimension,
             subvector_dimension: self.subvector_dimension,
             num_bits: self.num_bits,
-
-            base_directory: self.base_directory.clone(),
-            codebook_name: self.codebook_name.clone(),
         }
     }
 }
@@ -329,14 +305,7 @@ mod tests {
         let temp_dir = tempdir::TempDir::new("product_quantizer_test").unwrap();
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
 
-        let pq = ProductQuantizer::new(
-            10,
-            2,
-            1,
-            codebook,
-            base_directory.clone(),
-            "test_codebook".to_string(),
-        );
+        let pq = ProductQuantizer::new(10, 2, 1, codebook, base_directory.clone());
         let value = vec![1.0, 1.0, 3.0, 3.0, 5.0, 5.0, 7.0, 7.0, 9.0, 9.0];
         let quantized_value = pq.quantize(&value);
         assert_eq!(quantized_value, vec![1, 1, 1, 1, 1]);

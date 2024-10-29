@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow.workspace = true
 serde_yaml.workspace = true
 serde.workspace = true
 tempdir.workspace = true
