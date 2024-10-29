@@ -1,10 +1,10 @@
 [package]
-name = "utils"
+name = "index_writer"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.90"
+anyhow.workspace = true
+clap.workspace = true
 hdf5.workspace = true
 ndarray.workspace = true
-rand.workspace = true

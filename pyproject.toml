@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "muopdb"
+version = "0.1.0"
+authors = [
+  { name="Hieu Pham", email="hieupham@cs.stanford.edu" },
+]
+dependencies = [
+    "h5py>=3.10.0",
+    "numpy>=1.24.0",
+]

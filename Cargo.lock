@@ -845,6 +845,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "index_writer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.20",
+ "hdf5-metno",
+ "ndarray",
+]
+
+[[package]]
 name = "indexmap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1963,6 +1973,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hdf5-metno",
+ "ndarray",
  "rand 0.8.5",
 ]
 
