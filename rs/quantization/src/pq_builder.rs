@@ -2,6 +2,7 @@ use kmeans::*;
 use log::debug;
 
 use crate::pq::{ProductQuantizer, ProductQuantizerConfig};
+use crate::quantization::Quantizer;
 
 pub struct ProductQuantizerBuilderConfig {
     pub max_iteration: usize,
@@ -125,5 +126,38 @@ mod tests {
                 assert!(false);
             }
         }
+    }
+
+    #[test]
+    fn test_product_quantizer_distance() {
+        const DIMENSION: usize = 128;
+        let mut pqb = ProductQuantizerBuilder::new(
+            ProductQuantizerConfig {
+                dimension: DIMENSION,
+                subvector_dimension: 8,
+                num_bits: 8,
+                base_directory: "test".to_string(),
+                codebook_name: "test".to_string(),
+            },
+            ProductQuantizerBuilderConfig {
+                max_iteration: 1000,
+                batch_size: 4,
+            },
+        );
+        // Generate 10000 vectors of f32, dimension 128
+        for _ in 0..10000 {
+            pqb.add(generate_random_vector(DIMENSION));
+        }
+
+        let pq = pqb.build().unwrap();
+        let point = pq.quantize(&generate_random_vector(DIMENSION));
+        let query = pq.quantize(&generate_random_vector(DIMENSION));
+        let dist_scalar = pq.distance(&query, &point, 0);
+        let dist_simd = pq.distance(&query, &point, 1);
+        let dist_stream = pq.distance(&query, &point, 2);
+
+        let epsilon = 1e-5;
+        assert!((dist_simd - dist_scalar).abs() < epsilon);
+        assert!((dist_stream - dist_scalar).abs() < epsilon);
     }
 }

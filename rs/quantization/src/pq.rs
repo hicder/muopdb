@@ -282,11 +282,10 @@ impl Quantizer for ProductQuantizer {
                 .sum::<f32>()
                 .sqrt()
         } else {
-            let _ = a
-                .iter()
+            a.iter()
                 .zip(b.iter())
                 .enumerate()
-                .map(|(subvector_idx, quantized_values)| {
+                .for_each(|(subvector_idx, quantized_values)| {
                     let a_quantized_value = quantized_values.0;
                     let b_quantized_value = quantized_values.1;
 

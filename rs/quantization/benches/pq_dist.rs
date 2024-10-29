@@ -7,9 +7,9 @@ use utils::test_utils::generate_random_vector;
 fn bench_pq_distance(c: &mut Criterion) {
     env_logger::init();
     let mut group = c.benchmark_group("PQ Distance");
-    for dimension in [128].iter() {
-        for subvector_dimension in [4].iter() {
-            for num_bits in [4].iter() {
+    for dimension in [128, 256].iter() {
+        for subvector_dimension in [4, 8, 16, 32, 64, 128].iter() {
+            for num_bits in [4, 8, 16].iter() {
                 let mut pqb = ProductQuantizerBuilder::new(
                     ProductQuantizerConfig {
                         dimension: *dimension,
