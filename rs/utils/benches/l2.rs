@@ -1,12 +1,13 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use utils::l2::L2DistanceCalculator;
 use utils::test_utils::generate_random_vector;
+use utils::DistanceCalculator;
 
 fn bench_l2_distance(c: &mut Criterion) {
     let mut group = c.benchmark_group("L2 Distance");
     let mut distance_calculator = L2DistanceCalculator::new();
     for size in [
-        16, 32, 64, 128, 256, 512, 1024, 2048, 4096,
+        8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096,
         384,  // VECTOR_DIM_SENTENCE_TRANSFORMERS_MINI_LM
         768,  // VECTOR_DIM_SENTENCE_TRANSFORMERS_MPNET
         1536, // VECTOR_DIM_OPENAI_SMALL
@@ -23,6 +24,10 @@ fn bench_l2_distance(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("SIMD", *size), &size, |bencher, _| {
             bencher.iter(|| distance_calculator.calculate_simd(black_box(&a), black_box(&b)))
+        });
+
+        group.bench_with_input(BenchmarkId::new("Calculate", *size), &size, |bencher, _| {
+            bencher.iter(|| distance_calculator.calculate(black_box(&a), black_box(&b)))
         });
     }
     group.finish();

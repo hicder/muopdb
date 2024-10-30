@@ -78,8 +78,13 @@ impl L2DistanceCalculator {
 }
 
 impl DistanceCalculator for L2DistanceCalculator {
-    fn calculate(&self, a: &[f32], b: &[f32]) -> f32 {
-        self.calculate_scalar(a, b)
+    fn calculate(&mut self, a: &[f32], b: &[f32]) -> f32 {
+        let num_elements = a.len();
+        if num_elements < 32 {
+            self.calculate_scalar(a, b)
+        } else {
+            self.calculate_simd(a, b)
+        }
     }
 }
 
