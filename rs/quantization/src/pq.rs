@@ -4,7 +4,8 @@ use std::io::Write;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use utils::l2::L2DistanceCalculator;
+use utils::l2::L2DistanceCalculatorImpl::{Scalar, SIMD};
+use utils::l2::{L2DistanceCalculator, L2DistanceCalculatorImpl};
 use utils::{DistanceCalculator, StreamingDistanceCalculator};
 
 use crate::quantization::Quantizer;
@@ -249,60 +250,62 @@ impl Quantizer for ProductQuantizer {
         result
     }
 
-    fn distance(&self, a: &[u8], b: &[u8], mode: u8) -> f32 {
+    fn distance(&self, a: &[u8], b: &[u8], implem: L2DistanceCalculatorImpl) -> f32 {
         let num_centroids = 1 << self.num_bits;
         let mut distance_calculator = L2DistanceCalculator::new();
-        if mode < 2 {
-            a.iter()
-                .zip(b.iter())
-                .enumerate()
-                .map(|(subvector_idx, quantized_values)| {
-                    let a_quantized_value = quantized_values.0;
-                    let b_quantized_value = quantized_values.1;
+        let get_subvectors =
+            |subvector_idx: usize, (a_quantized_value, b_quantized_value): (&u8, &u8)| {
+                let offset = subvector_idx * self.subvector_dimension * num_centroids;
+                let a_centroid_offset =
+                    offset + (*a_quantized_value as usize) * self.subvector_dimension;
+                let b_centroid_offset =
+                    offset + (*b_quantized_value as usize) * self.subvector_dimension;
 
-                    let offset = subvector_idx * self.subvector_dimension * num_centroids;
-                    let a_centroid_offset =
-                        offset + (*a_quantized_value as usize) * self.subvector_dimension;
-                    let b_centroid_offset =
-                        offset + (*b_quantized_value as usize) * self.subvector_dimension;
+                let a_vec =
+                    &self.codebook[a_centroid_offset..a_centroid_offset + self.subvector_dimension];
+                let b_vec =
+                    &self.codebook[b_centroid_offset..b_centroid_offset + self.subvector_dimension];
 
-                    let a_vec = &self.codebook
-                        [a_centroid_offset..a_centroid_offset + self.subvector_dimension];
-                    let b_vec = &self.codebook
-                        [b_centroid_offset..b_centroid_offset + self.subvector_dimension];
+                (a_vec, b_vec)
+            };
 
-                    // TODO(hicder): Temp fix. Need better API for this
-                    let dist = if mode == 0 {
-                        distance_calculator.calculate(&a_vec, &b_vec)
-                    } else {
-                        distance_calculator.calculate_simd(&a_vec, &b_vec)
-                    };
-                    dist * dist
-                })
-                .sum::<f32>()
-                .sqrt()
-        } else {
-            a.iter()
-                .zip(b.iter())
-                .enumerate()
-                .for_each(|(subvector_idx, quantized_values)| {
-                    let a_quantized_value = quantized_values.0;
-                    let b_quantized_value = quantized_values.1;
+        match implem {
+            Scalar | SIMD => {
+                fn get_distance_fn(
+                    implem: L2DistanceCalculatorImpl,
+                ) -> impl Fn(&mut L2DistanceCalculator, &[f32], &[f32]) -> f32 {
+                    move |calculator, a, b| {
+                        if implem == Scalar {
+                            calculator.calculate(a, b)
+                        } else {
+                            calculator.calculate_simd(a, b)
+                        }
+                    }
+                }
 
-                    let offset = subvector_idx * self.subvector_dimension * num_centroids;
-                    let a_centroid_offset =
-                        offset + (*a_quantized_value as usize) * self.subvector_dimension;
-                    let b_centroid_offset =
-                        offset + (*b_quantized_value as usize) * self.subvector_dimension;
+                let calculate_distance = get_distance_fn(implem);
 
-                    let a_vec = &self.codebook
-                        [a_centroid_offset..a_centroid_offset + self.subvector_dimension];
-                    let b_vec = &self.codebook
-                        [b_centroid_offset..b_centroid_offset + self.subvector_dimension];
-
-                    distance_calculator.stream(&a_vec, &b_vec);
-                });
-            distance_calculator.finalize()
+                a.iter()
+                    .zip(b.iter())
+                    .enumerate()
+                    .map(|(idx, (a_val, b_val))| {
+                        let (a_vec, b_vec) = get_subvectors(idx, (a_val, b_val));
+                        let dist = calculate_distance(&mut distance_calculator, a_vec, b_vec);
+                        dist * dist
+                    })
+                    .sum::<f32>()
+                    .sqrt()
+            }
+            _ => {
+                a.iter()
+                    .zip(b.iter())
+                    .enumerate()
+                    .for_each(|(idx, (a_val, b_val))| {
+                        let (a_vec, b_vec) = get_subvectors(idx, (a_val, b_val));
+                        distance_calculator.stream(a_vec, b_vec);
+                    });
+                distance_calculator.finalize()
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
 use kmeans::*;
 use log::debug;
+use utils::l2::L2DistanceCalculatorImpl::{Scalar, StreamingWithSIMD, SIMD};
 
 use crate::pq::{ProductQuantizer, ProductQuantizerConfig};
 use crate::quantization::Quantizer;
@@ -152,9 +153,9 @@ mod tests {
         let pq = pqb.build().unwrap();
         let point = pq.quantize(&generate_random_vector(DIMENSION));
         let query = pq.quantize(&generate_random_vector(DIMENSION));
-        let dist_scalar = pq.distance(&query, &point, 0);
-        let dist_simd = pq.distance(&query, &point, 1);
-        let dist_stream = pq.distance(&query, &point, 2);
+        let dist_scalar = pq.distance(&query, &point, Scalar);
+        let dist_simd = pq.distance(&query, &point, SIMD);
+        let dist_stream = pq.distance(&query, &point, StreamingWithSIMD);
 
         let epsilon = 1e-5;
         assert!((dist_simd - dist_scalar).abs() < epsilon);

@@ -2,6 +2,8 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use quantization::pq::ProductQuantizerConfig;
 use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
 use quantization::quantization::Quantizer;
+use strum::IntoEnumIterator;
+use utils::l2::L2DistanceCalculatorImpl;
 use utils::test_utils::generate_random_vector;
 
 fn bench_pq_distance(c: &mut Criterion) {
@@ -31,25 +33,24 @@ fn bench_pq_distance(c: &mut Criterion) {
                 let pq = pqb.build().unwrap();
                 let point = pq.quantize(&generate_random_vector(*dimension));
                 let query = pq.quantize(&generate_random_vector(*dimension));
-                for mode in 0..3 {
-                    let mode_str = if mode == 0 {
-                        "Scalar"
-                    } else if mode == 1 {
-                        "SIMD"
-                    } else {
-                        "StreamSIMD"
-                    };
+                for implementation in L2DistanceCalculatorImpl::iter() {
                     group.bench_with_input(
                         BenchmarkId::new(
                             &format!(
                                 "pq_distance_{}_{}_{}",
                                 *dimension, *subvector_dimension, *num_bits
                             ),
-                            mode_str,
+                            &format!("{:?}", &implementation),
                         ),
-                        &mode,
+                        &implementation,
                         |bencher, _| {
-                            bencher.iter(|| pq.distance(black_box(&query), black_box(&point), mode))
+                            bencher.iter(|| {
+                                pq.distance(
+                                    black_box(&query),
+                                    black_box(&point),
+                                    implementation.clone(),
+                                )
+                            })
                         },
                     );
                 }
