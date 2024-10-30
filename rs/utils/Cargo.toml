@@ -8,3 +8,4 @@ anyhow = "1.0.90"
 hdf5.workspace = true
 ndarray.workspace = true
 rand.workspace = true
+strum.workspace = true

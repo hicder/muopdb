@@ -2,7 +2,16 @@ use std::ops::Mul;
 use std::simd::num::SimdFloat;
 use std::simd::{f32x4, f32x8};
 
+use strum::EnumIter;
+
 use crate::{DistanceCalculator, StreamingDistanceCalculator};
+
+#[derive(Debug, EnumIter, PartialEq, Clone)]
+pub enum L2DistanceCalculatorImpl {
+    Scalar,
+    SIMD,
+    StreamingWithSIMD,
+}
 
 pub struct L2DistanceCalculator {
     dist_simd_8: f32x8,
