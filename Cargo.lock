@@ -1995,6 +1995,7 @@ name = "utils"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "criterion",
  "hdf5-metno",
  "ndarray",
  "rand 0.8.5",

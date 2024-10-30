@@ -9,3 +9,8 @@ hdf5.workspace = true
 ndarray.workspace = true
 rand.workspace = true
 strum.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "l2"
+harness = false
