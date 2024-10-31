@@ -49,7 +49,7 @@ impl IndexWriter {
             pq_builder.add(row.data.to_vec());
             num_added += 1;
         }
-        let pq = pq_builder.build(pg_temp_dir)?;
+        let pq = pq_builder.build(pg_temp_dir.clone())?;
 
         info!("Start writing product quantizer");
         let pq_directory = format!("{}/quantizer", self.config.output_path);
@@ -62,7 +62,7 @@ impl IndexWriter {
         let vector_directory = format!("{}/vectors", self.config.output_path);
         std::fs::create_dir_all(&vector_directory)?;
         let vectors = Box::new(FileBackedVectorStorage::<u8>::new(
-            vector_directory,
+            vector_directory.clone(),
             self.config.max_memory_size,
             self.config.file_size,
             self.config.dimension / self.config.subvector_dimension,
@@ -89,6 +89,10 @@ impl IndexWriter {
         info!("Start writing index");
         let hnsw_writer = HnswWriter::new(hnsw_directory);
         hnsw_writer.write(&mut hnsw_builder, true)?;
+
+        // Cleanup tmp directory. It's ok to fail
+        std::fs::remove_dir_all(&pg_temp_dir).unwrap_or_default();
+        std::fs::remove_dir_all(&vector_directory).unwrap_or_default();
         Ok(())
     }
 }
