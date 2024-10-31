@@ -83,6 +83,8 @@ impl HnswReader {
 // Test
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use quantization::pq::{ProductQuantizerConfig, ProductQuantizerWriter};
     use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
     use utils::test_utils::generate_random_vector;
@@ -90,6 +92,7 @@ mod tests {
     use super::*;
     use crate::hnsw::builder::HnswBuilder;
     use crate::hnsw::writer::HnswWriter;
+    use crate::vector::file::FileBackedVectorStorage;
 
     #[test]
     fn test_read_header() {
@@ -99,6 +102,12 @@ mod tests {
         // Create a temporary directory
         let temp_dir = tempdir::TempDir::new("product_quantizer_test").unwrap();
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
+        let vector_dir = format!("{}/vectors", base_directory);
+        fs::create_dir_all(vector_dir.clone()).unwrap();
+        let vectors = Box::new(FileBackedVectorStorage::<u8>::new(
+            vector_dir, 1024, 4096, 16,
+        ));
+
         let pq_config = ProductQuantizerConfig {
             dimension: 128,
             subvector_dimension: 8,
@@ -121,9 +130,9 @@ mod tests {
         pq_writer.write(&pq).unwrap();
 
         // Create a HNSW Builder
-        let mut hnsw_builder = HnswBuilder::new(10, 128, 20, Box::new(pq));
+        let mut hnsw_builder = HnswBuilder::new(10, 128, 20, Box::new(pq), vectors);
         for i in 0..datapoints.len() {
-            hnsw_builder.insert(i as u64, &datapoints[i]);
+            hnsw_builder.insert(i as u64, &datapoints[i]).unwrap();
         }
 
         let writer = HnswWriter::new(base_directory.clone());

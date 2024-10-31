@@ -42,6 +42,12 @@ struct Args {
 
     #[arg(short, long, default_value_t = 500)]
     batch_size: usize,
+
+    #[arg(short, long, default_value_t = 1 << 25)]
+    vector_storage_memory_size: usize,
+
+    #[arg(short, long, default_value_t = 1 << 30)]
+    vector_storage_page_size: usize,
 }
 
 fn main() {
@@ -59,6 +65,8 @@ fn main() {
     config.num_training_rows = arg.num_training_rows;
     config.max_iteration = arg.max_iteration;
     config.batch_size = arg.batch_size;
+    config.max_memory_size = arg.vector_storage_memory_size;
+    config.file_size = arg.vector_storage_page_size;
 
     // Open input
     let mut input = Hdf5Reader::new(1000, &arg.dataset_name, &arg.input_path).unwrap();

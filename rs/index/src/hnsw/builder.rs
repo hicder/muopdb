@@ -1,13 +1,14 @@
 use std::cmp::min;
 use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, Context, Ok, Result};
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 use rand::Rng;
 use utils::l2::L2DistanceCalculatorImpl::StreamingWithSIMD;
 
 use super::utils::{GraphTraversal, PointAndDistance, SearchContext};
+use crate::vector::VectorStorage;
 
 /// TODO(hicder): support bare vector in addition to quantized one.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,7 +41,7 @@ impl Layer {
 
 /// The actual builder
 pub struct HnswBuilder {
-    vectors: Vec<Vec<u8>>,
+    vectors: Box<dyn VectorStorage<u8>>,
 
     max_neighbors: usize,
     pub layers: Vec<Layer>,
@@ -59,9 +60,10 @@ impl HnswBuilder {
         max_layers: u8,
         ef_construction: u32,
         quantizer: Box<dyn Quantizer>,
+        vectors: Box<dyn VectorStorage<u8>>,
     ) -> Self {
         Self {
-            vectors: vec![],
+            vectors: vectors,
             max_neighbors,
             max_layer: max_layers,
             layers: vec![],
@@ -73,12 +75,8 @@ impl HnswBuilder {
         }
     }
 
-    pub fn save_vector(&mut self, vector: &[u8], point_id: u32) {
-        // Check if vectors are large enough. If not extend the vectors
-        if self.vectors.len() < point_id as usize + 1 {
-            self.vectors.resize(point_id as usize + 1, vec![]);
-        }
-        self.vectors[point_id as usize] = vector.to_vec();
+    pub fn append_vector_to_storage(&mut self, vector: &[u8]) -> Result<()> {
+        self.vectors.append(vector)
     }
 
     fn generate_id(&mut self, doc_id: u64) -> u32 {
@@ -150,14 +148,13 @@ impl HnswBuilder {
     }
 
     /// Insert a vector into the index
-    pub fn insert(&mut self, doc_id: u64, vector: &[f32]) {
+    pub fn insert(&mut self, doc_id: u64, vector: &[f32]) -> Result<()> {
         let mut context = SearchContext::new();
         let quantized_query = self.quantizer.quantize(vector);
         let point_id = self.generate_id(doc_id);
 
-        let empty_graph = self.vectors.is_empty();
-        // Save the vector
-        self.save_vector(&quantized_query, point_id);
+        let empty_graph = point_id == 0;
+        self.append_vector_to_storage(&quantized_query)?;
         let layer = self.get_random_layer();
 
         if empty_graph {
@@ -169,7 +166,7 @@ impl HnswBuilder {
                 });
             }
             self.current_top_layer = layer;
-            return;
+            return Ok(());
         }
 
         let mut entry_point = self.entry_point[0];
@@ -235,6 +232,7 @@ impl HnswBuilder {
         } else if layer == self.current_top_layer {
             self.entry_point.push(point_id);
         }
+        Ok(())
     }
 
     pub fn get_nodes_from_non_bottom_layer(&self) -> Vec<u32> {
@@ -263,7 +261,7 @@ impl HnswBuilder {
     }
 
     fn get_vector(&self, point_id: u32) -> &[u8] {
-        &self.vectors[point_id as usize]
+        self.vectors.get(point_id).unwrap()
     }
 
     fn get_random_layer(&self) -> u8 {
@@ -325,8 +323,7 @@ impl HnswBuilder {
         }
     }
 
-    #[cfg(test)]
-    pub fn vectors(&mut self) -> &mut Vec<Vec<u8>> {
+    pub fn vectors(&mut self) -> &mut Box<dyn VectorStorage<u8>> {
         &mut self.vectors
     }
 
@@ -373,9 +370,12 @@ impl GraphTraversal for HnswBuilder {
 // Test
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use quantization::pq::ProductQuantizer;
 
     use super::*;
+    use crate::vector::file::FileBackedVectorStorage;
 
     fn generate_random_vector(dimension: usize) -> Vec<f32> {
         let mut rng = rand::thread_rng();
@@ -433,8 +433,17 @@ mod tests {
         // Create a temp directory
         let temp_dir = tempdir::TempDir::new("product_quantizer_test").unwrap();
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
+        let vector_dir = format!("{}/vectors", base_directory);
+        fs::create_dir_all(vector_dir.clone()).unwrap();
+        let mut vectors = Box::new(FileBackedVectorStorage::<u8>::new(
+            vector_dir, 1024, 4096, 5,
+        ));
+        vectors.append(&vec![0, 0, 0, 0, 0]).unwrap();
+        vectors.append(&vec![1, 1, 1, 1, 1]).unwrap();
+        vectors.append(&vec![2, 2, 2, 2, 2]).unwrap();
+
         let mut builder = HnswBuilder {
-            vectors: vec![vec![]; 3],
+            vectors: vectors,
             max_neighbors: 1,
             layers: vec![layer],
             current_top_layer: 0,
@@ -549,6 +558,12 @@ mod tests {
         let temp_dir = tempdir::TempDir::new("product_quantizer_test").unwrap();
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
 
+        let vector_dir = format!("{}/vectors", base_directory);
+        fs::create_dir_all(vector_dir.clone()).unwrap();
+        let vectors = Box::new(FileBackedVectorStorage::<u8>::new(
+            vector_dir, 1024, 4096, 5,
+        ));
+
         let pq = ProductQuantizer::new(
             dimension,
             subvector_dimension,
@@ -557,10 +572,12 @@ mod tests {
             base_directory.clone(),
         );
 
-        let mut builder = HnswBuilder::new(5, 10, 20, Box::new(pq));
+        let mut builder = HnswBuilder::new(5, 10, 20, Box::new(pq), vectors);
 
         for i in 0..100 {
-            builder.insert(i, &generate_random_vector(dimension));
+            builder
+                .insert(i, &generate_random_vector(dimension))
+                .unwrap();
         }
 
         assert!(builder.validate());

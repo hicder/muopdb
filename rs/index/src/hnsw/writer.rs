@@ -68,6 +68,11 @@ impl HnswWriter {
         let mut level_offsets_buffer_writer = BufWriter::new(&mut level_offsets_file);
         let mut level_offsets_file_len = 0 as u64;
 
+        let vectors_path = format!("{}/vector_storage", self.base_directory);
+        let mut vectors_file = File::create(vectors_path).unwrap();
+        let mut vectors_buffer_writer = BufWriter::new(&mut vectors_file);
+        index_builder.vectors().write(&mut vectors_buffer_writer)?;
+
         let mut current_layer = index_builder.current_top_layer as i32;
         let mut level_offsets = Vec::<usize>::new();
         let mut edge_offsets = Vec::<usize>::new();
@@ -265,6 +270,7 @@ impl HnswWriter {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::vec;
 
     use ordered_float::NotNan;
     use quantization::pq::{ProductQuantizerConfig, ProductQuantizerWriter};
@@ -275,6 +281,7 @@ mod tests {
     use crate::hnsw::builder::Layer;
     use crate::hnsw::reader::HnswReader;
     use crate::hnsw::utils::{GraphTraversal, PointAndDistance};
+    use crate::vector::file::FileBackedVectorStorage;
 
     fn construct_layers(hnsw_builder: &mut HnswBuilder) {
         // Prepare all layers
@@ -424,6 +431,11 @@ mod tests {
         // Create a temporary directory
         let temp_dir = tempdir::TempDir::new("product_quantizer_test").unwrap();
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
+        let vector_dir = format!("{}/vectors", base_directory);
+        fs::create_dir_all(vector_dir.clone()).unwrap();
+        let vectors = Box::new(FileBackedVectorStorage::<u8>::new(
+            vector_dir, 1024, 4096, 128,
+        ));
         let pq_config = ProductQuantizerConfig {
             dimension: 128,
             subvector_dimension: 8,
@@ -446,12 +458,10 @@ mod tests {
         pq_writer.write(&pq).unwrap();
 
         // Create a HNSW Builder
-        let mut hnsw_builder = HnswBuilder::new(10, 128, 20, Box::new(pq));
+        let mut hnsw_builder = HnswBuilder::new(10, 128, 20, Box::new(pq), vectors);
 
         // Artificially construct the graph, since inserting is not deterministic.
         // 3 layers: 0 to 2
-        let vectors = hnsw_builder.vectors();
-        vectors.extend_from_slice(&vec![vec![]; 6]);
         hnsw_builder.doc_id_mapping = vec![1, 2, 3, 4, 5, 6];
         hnsw_builder.current_top_layer = 2;
         construct_layers(&mut hnsw_builder);
