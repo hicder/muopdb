@@ -444,7 +444,6 @@ mod tests {
                 1,
                 codebook,
                 base_directory.clone(),
-                "test_codebook".to_string(),
             )),
             ef_contruction: 0,
             entry_point: vec![0, 1],
@@ -556,7 +555,6 @@ mod tests {
             num_bits,
             codebook,
             base_directory.clone(),
-            "test_codebook".to_string(),
         );
 
         let mut builder = HnswBuilder::new(5, 10, 20, Box::new(pq));

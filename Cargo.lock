@@ -850,8 +850,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap 4.5.20",
+ "env_logger",
  "hdf5-metno",
+ "index",
+ "log",
  "ndarray",
+ "quantization",
+ "tempdir",
 ]
 
 [[package]]
@@ -1384,6 +1389,7 @@ dependencies = [
 name = "quantization"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "criterion",
  "env_logger",
  "kmeans",

@@ -428,8 +428,6 @@ mod tests {
             dimension: 128,
             subvector_dimension: 8,
             num_bits: 8,
-            base_directory: base_directory.clone(),
-            codebook_name: "codebook".to_string(),
         };
 
         let pq_builder_config = ProductQuantizerBuilderConfig {
@@ -438,13 +436,13 @@ mod tests {
         };
 
         // Train a product quantizer
-        let pq_writer = ProductQuantizerWriter::new(pq_config.base_directory.clone());
+        let pq_writer = ProductQuantizerWriter::new(base_directory.clone());
         let mut pq_builder = ProductQuantizerBuilder::new(pq_config, pq_builder_config);
 
         for i in 0..1000 {
             pq_builder.add(datapoints[i].clone());
         }
-        let pq = pq_builder.build().unwrap();
+        let pq = pq_builder.build(base_directory.clone()).unwrap();
         pq_writer.write(&pq).unwrap();
 
         // Create a HNSW Builder

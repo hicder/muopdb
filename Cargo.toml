@@ -20,6 +20,7 @@ criterion = "0.4"
 proto = {path='./rs/proto'}
 quantization = {path='./rs/quantization'}
 utils = {path='./rs/utils'}
+index = {path='./rs/index'}
 tonic = "0.8"
 prost = "0.11"
 tonic-build = "0.8"

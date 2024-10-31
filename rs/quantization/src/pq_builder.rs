@@ -1,9 +1,8 @@
+use anyhow::Result;
 use kmeans::*;
 use log::debug;
-use utils::l2::L2DistanceCalculatorImpl::{Scalar, StreamingWithSIMD, SIMD};
 
 use crate::pq::{ProductQuantizer, ProductQuantizerConfig};
-use crate::quantization::Quantizer;
 
 pub struct ProductQuantizerBuilderConfig {
     pub max_iteration: usize,
@@ -35,7 +34,7 @@ impl ProductQuantizerBuilder {
     }
 
     /// Train kmeans on the dataset, and returns the product quantizer
-    pub fn build(&mut self) -> Result<ProductQuantizer, String> {
+    pub fn build(&mut self, base_directory: String) -> Result<ProductQuantizer> {
         let num_subvector = self.pq_config.dimension / self.pq_config.subvector_dimension;
         let mut codebook = Vec::<f32>::with_capacity(
             num_subvector * self.pq_config.subvector_dimension * (1 << self.pq_config.num_bits),
@@ -84,8 +83,7 @@ impl ProductQuantizerBuilder {
             self.pq_config.subvector_dimension,
             self.pq_config.num_bits,
             codebook,
-            self.pq_config.base_directory.clone(),
-            self.pq_config.codebook_name.clone(),
+            base_directory,
         ))
     }
 }
@@ -93,21 +91,23 @@ impl ProductQuantizerBuilder {
 // Test
 #[cfg(test)]
 mod tests {
+    use utils::l2::L2DistanceCalculatorImpl::{Scalar, StreamingWithSIMD, SIMD};
     use utils::test_utils::generate_random_vector;
 
     use super::*;
+    use crate::quantization::Quantizer;
 
     #[test]
     fn test_product_quantizer_builder() {
         env_logger::init();
+        let base_directory = tempdir::TempDir::new("product_quantizer_test").unwrap();
+
         const DIMENSION: usize = 128;
         let mut pqb = ProductQuantizerBuilder::new(
             ProductQuantizerConfig {
                 dimension: DIMENSION,
                 subvector_dimension: 8,
                 num_bits: 8,
-                base_directory: "test".to_string(),
-                codebook_name: "test".to_string(),
             },
             ProductQuantizerBuilderConfig {
                 max_iteration: 1000,
@@ -119,7 +119,7 @@ mod tests {
             pqb.add(generate_random_vector(DIMENSION));
         }
 
-        match pqb.build() {
+        match pqb.build(base_directory.path().to_str().unwrap().to_string()) {
             Ok(_) => {
                 assert!(true);
             }
@@ -137,8 +137,6 @@ mod tests {
                 dimension: DIMENSION,
                 subvector_dimension: 8,
                 num_bits: 8,
-                base_directory: "test".to_string(),
-                codebook_name: "test".to_string(),
             },
             ProductQuantizerBuilderConfig {
                 max_iteration: 1000,
@@ -150,7 +148,10 @@ mod tests {
             pqb.add(generate_random_vector(DIMENSION));
         }
 
-        let pq = pqb.build().unwrap();
+        let base_directory = tempdir::TempDir::new("product_quantizer_test").unwrap();
+        let pq = pqb
+            .build(base_directory.path().to_str().unwrap().to_string())
+            .unwrap();
         let point = pq.quantize(&generate_random_vector(DIMENSION));
         let query = pq.quantize(&generate_random_vector(DIMENSION));
         let dist_scalar = pq.distance(&query, &point, Scalar);

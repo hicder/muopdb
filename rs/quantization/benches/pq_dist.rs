@@ -12,13 +12,12 @@ fn bench_pq_distance(c: &mut Criterion) {
     for dimension in [128, 256].iter() {
         for subvector_dimension in [4, 8, 16, 32, 64, 128].iter() {
             for num_bits in [4, 8, 16].iter() {
+                let tmpdir = tempdir::TempDir::new("pq_bench").unwrap();
                 let mut pqb = ProductQuantizerBuilder::new(
                     ProductQuantizerConfig {
                         dimension: *dimension,
                         subvector_dimension: *subvector_dimension,
                         num_bits: *num_bits,
-                        base_directory: "bm".to_string(),
-                        codebook_name: "bm".to_string(),
                     },
                     ProductQuantizerBuilderConfig {
                         max_iteration: 1000,
@@ -30,7 +29,9 @@ fn bench_pq_distance(c: &mut Criterion) {
                     pqb.add(generate_random_vector(*dimension));
                 }
 
-                let pq = pqb.build().unwrap();
+                let pq = pqb
+                    .build(tmpdir.path().to_str().unwrap().to_string())
+                    .unwrap();
                 let point = pq.quantize(&generate_random_vector(*dimension));
                 let query = pq.quantize(&generate_random_vector(*dimension));
                 for implementation in L2DistanceCalculatorImpl::iter() {
