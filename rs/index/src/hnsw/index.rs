@@ -1,5 +1,4 @@
 use std::fs::File;
-use std::vec;
 
 use memmap2::Mmap;
 use quantization::pq::ProductQuantizerReader;
@@ -13,7 +12,10 @@ pub struct Hnsw {
     // Need this for mmap
     #[allow(dead_code)]
     backing_file: File,
+    #[allow(dead_code)]
+    vector_storage_file: File,
     mmap: Mmap,
+    vector_storage_mmap: Mmap,
     header: Header,
     data_offset: usize,
     edges_offset: usize,
@@ -23,16 +25,12 @@ pub struct Hnsw {
     doc_id_mapping_offset: usize,
 
     quantizer: Box<dyn Quantizer>,
-
-    // TODO(hicder): Populate this as well.
-    // TODO(hicder): mmap this so we don't store all vectors in memory.
-    vectors: Vec<Vec<u8>>,
 }
 
 impl Hnsw {
     pub fn new(
         backing_file: File,
-        mmap: Mmap,
+        vector_storage_file: File,
         header: Header,
         data_offset: usize,
         edges_offset: usize,
@@ -46,9 +44,14 @@ impl Hnsw {
         let pq_reader = ProductQuantizerReader::new(base_directory.clone());
         let pq = pq_reader.read().unwrap();
 
+        let index_mmap = unsafe { Mmap::map(&backing_file).unwrap() };
+        let vector_storage_mmap = unsafe { Mmap::map(&vector_storage_file).unwrap() };
+
         Self {
             backing_file,
-            mmap,
+            vector_storage_file,
+            mmap: index_mmap,
+            vector_storage_mmap,
             header,
             data_offset,
             edges_offset,
@@ -57,7 +60,6 @@ impl Hnsw {
             level_offsets_offset,
             doc_id_mapping_offset,
             quantizer: Box::new(pq),
-            vectors: vec![],
         }
     }
 
@@ -102,7 +104,13 @@ impl Hnsw {
     }
 
     fn get_vector(&self, point_id: u32) -> &[u8] {
-        &self.vectors[point_id as usize]
+        &self.get_vector_storage_slice()[point_id as usize
+            * self.header.quantized_dimension as usize
+            ..(point_id + 1) as usize * self.header.quantized_dimension as usize]
+    }
+
+    fn get_vector_storage_slice(&self) -> &[u8] {
+        utils::mem::transmute_u8_to_slice(&self.vector_storage_mmap)
     }
 
     pub fn get_edges_slice(&self) -> &[u32] {
