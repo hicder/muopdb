@@ -1,7 +1,9 @@
 use std::fs::OpenOptions;
 use std::vec;
 
+use anyhow::{anyhow, Result};
 use num_traits::ToBytes;
+use utils::io::wrap_write;
 
 use super::VectorStorage;
 
@@ -154,9 +156,9 @@ impl<T: ToBytes + Clone> VectorStorage<T> for FileBackedVectorStorage<T> {
         Some(unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const T, self.num_features) })
     }
 
-    fn append(&mut self, vector: Vec<T>) -> Result<(), String> {
+    fn append(&mut self, vector: &[T]) -> Result<()> {
         if vector.len() != self.num_features {
-            return Err("no".to_string());
+            return Err(anyhow!("vector length mismatch"));
         }
 
         let size_required = vector.len() * std::mem::size_of::<T>();
@@ -169,7 +171,7 @@ impl<T: ToBytes + Clone> VectorStorage<T> for FileBackedVectorStorage<T> {
         // Good case, where file is still resident
         if self.resident {
             self.size_bytes = new_size_required;
-            self.resident_vectors.push(vector);
+            self.resident_vectors.push(vector.to_vec());
             return Ok(());
         }
 
@@ -179,8 +181,27 @@ impl<T: ToBytes + Clone> VectorStorage<T> for FileBackedVectorStorage<T> {
             self.flush_resident_to_disk();
         }
 
-        self.append_vector_to_disk(&vector);
+        self.append_vector_to_disk(vector);
+        self.size_bytes = new_size_required;
         Ok(())
+    }
+
+    fn len(&self) -> usize {
+        self.size_bytes / (self.num_features * std::mem::size_of::<T>())
+    }
+
+    // TODO(hicder): Just copy the backed file to the output file for optimization
+    fn write(&self, writer: &mut std::io::BufWriter<&mut std::fs::File>) -> Result<usize> {
+        let num_vectors = self.len();
+        let mut len = 0;
+        len += wrap_write(writer, &num_vectors.to_le_bytes())?;
+        for i in 0..num_vectors {
+            let vector = self.get(i as u32).unwrap();
+            for j in 0..self.num_features {
+                len += wrap_write(writer, vector[j].to_le_bytes().as_ref())?;
+            }
+        }
+        Ok(len)
     }
 }
 
@@ -194,15 +215,17 @@ mod tests {
         let tempdir = tempdir::TempDir::new("vector_storage_test").unwrap();
         let base_directory = tempdir.path().to_str().unwrap().to_string();
         let mut storage = FileBackedVectorStorage::<u32>::new(base_directory, 1024, 1024, 4);
+        let first_vector = vec![1, 2, 3, 4];
+        let second_vector = vec![5, 6, 7, 8];
         for _ in 0..64 {
             storage
-                .append(vec![1, 2, 3, 4])
+                .append(&first_vector)
                 .unwrap_or_else(|_| panic!("append failed"));
         }
         assert!(storage.is_resident());
 
         storage
-            .append(vec![5, 6, 7, 8])
+            .append(&second_vector)
             .unwrap_or_else(|_| panic!("append failed"));
         assert!(!storage.is_resident());
         storage.flush().unwrap_or_else(|_| panic!("flush failed"));

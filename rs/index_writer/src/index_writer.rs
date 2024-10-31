@@ -1,6 +1,7 @@
 use anyhow::Result;
 use index::hnsw::builder::HnswBuilder;
 use index::hnsw::writer::HnswWriter;
+use index::vector::file::FileBackedVectorStorage;
 use log::info;
 use quantization::pq::{ProductQuantizerConfig, ProductQuantizerWriter};
 use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
@@ -58,18 +59,26 @@ impl IndexWriter {
         pq_writer.write(&pq)?;
 
         info!("Start building index");
-        // Then, build the index
+        let vector_directory = format!("{}/vectors", self.config.output_path);
+        std::fs::create_dir_all(&vector_directory)?;
+        let vectors = Box::new(FileBackedVectorStorage::<u8>::new(
+            vector_directory,
+            self.config.max_memory_size,
+            self.config.file_size,
+            self.config.dimension / self.config.subvector_dimension,
+        ));
         let mut hnsw_builder = HnswBuilder::new(
             self.config.max_num_neighbors,
             self.config.num_layers,
             self.config.ef_construction,
             Box::new(pq),
+            vectors,
         );
 
         input.reset();
         while input.has_next() {
             let row = input.next();
-            hnsw_builder.insert(row.id, row.data);
+            hnsw_builder.insert(row.id, row.data)?;
         }
 
         hnsw_builder.reindex()?;

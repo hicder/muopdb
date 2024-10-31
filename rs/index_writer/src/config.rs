@@ -25,4 +25,8 @@ pub struct IndexWriterConfig {
     // Quantizer builder parameters
     pub max_iteration: usize,
     pub batch_size: usize,
+
+    // Vector storage parameters
+    pub max_memory_size: usize,
+    pub file_size: usize,
 }
