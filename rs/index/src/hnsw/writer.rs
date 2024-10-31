@@ -17,6 +17,7 @@ pub enum Version {
 
 pub struct Header {
     pub version: Version,
+    pub quantized_dimension: u32,
     pub num_layers: u32,
     pub edges_len: u64,
     pub points_len: u64,
@@ -167,6 +168,7 @@ impl HnswWriter {
 
         let header: Header = Header {
             version: Version::V0,
+            quantized_dimension: index_builder.quantizer.quantized_dimension() as u32,
             num_layers: index_builder.layers.len() as u32,
             edges_len: edges_file_len,
             points_len: points_file_len,
@@ -217,6 +219,7 @@ impl HnswWriter {
         };
         let mut written = 0;
         written += wrap_write(writer, &version_value.to_le_bytes())?;
+        written += wrap_write(writer, &header.quantized_dimension.to_le_bytes())?;
         written += wrap_write(writer, &header.num_layers.to_le_bytes())?;
         written += wrap_write(writer, &header.edges_len.to_le_bytes())?;
         written += wrap_write(writer, &header.points_len.to_le_bytes())?;

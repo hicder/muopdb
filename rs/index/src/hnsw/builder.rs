@@ -46,7 +46,7 @@ pub struct HnswBuilder {
     max_neighbors: usize,
     pub layers: Vec<Layer>,
     pub current_top_layer: u8,
-    quantizer: Box<dyn Quantizer>,
+    pub quantizer: Box<dyn Quantizer>,
     ef_contruction: u32,
     pub entry_point: Vec<u32>,
     max_layer: u8,

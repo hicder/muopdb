@@ -17,6 +17,7 @@ impl HnswReader {
 
     pub fn read(&self) -> Hnsw {
         let backing_file = File::open(format!("{}/index", self.base_directory)).unwrap();
+        let vector_storage_file = File::open(format!("{}/vector_storage", self.base_directory)).unwrap();
         let mmap = unsafe { Mmap::map(&backing_file).unwrap() };
 
         let (header, offset) = self.read_header(&mmap);
@@ -32,7 +33,7 @@ impl HnswReader {
 
         Hnsw::new(
             backing_file,
-            mmap,
+            vector_storage_file,
             header,
             offset,
             edges_offset,
@@ -52,6 +53,9 @@ impl HnswReader {
         };
 
         let mut offset = 1;
+        let quantized_dimension = LittleEndian::read_u32(&buffer[offset..]);
+        offset += 4;
+
         let num_layers = LittleEndian::read_u32(&buffer[offset..]);
         offset += 4;
         let edges_len = LittleEndian::read_u64(&buffer[offset..]);
@@ -68,6 +72,7 @@ impl HnswReader {
         (
             Header {
                 version,
+                quantized_dimension,
                 num_layers,
                 level_offsets_len,
                 edges_len,
@@ -148,6 +153,7 @@ mod tests {
         // Read from file
         let reader = HnswReader::new(base_directory.clone());
         let hnsw = reader.read();
-        assert_eq!(45, hnsw.get_data_offset());
-    }
+        assert_eq!(49, hnsw.get_data_offset());
+        assert_eq!(16, hnsw.get_header().quantized_dimension);
+    } 
 }
