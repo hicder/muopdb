@@ -63,6 +63,10 @@ impl Input for Hdf5Reader {
             data: slice,
         }
     }
+
+    fn num_rows(&self) -> usize {
+        self.num_rows
+    }
 }
 
 // test

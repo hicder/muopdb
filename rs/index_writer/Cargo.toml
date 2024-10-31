@@ -13,3 +13,4 @@ index.workspace = true
 ndarray.workspace = true
 quantization.workspace = true
 tempdir.workspace = true
+rand.workspace = true
