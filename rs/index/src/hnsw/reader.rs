@@ -17,7 +17,8 @@ impl HnswReader {
 
     pub fn read(&self) -> Hnsw {
         let backing_file = File::open(format!("{}/index", self.base_directory)).unwrap();
-        let vector_storage_file = File::open(format!("{}/vector_storage", self.base_directory)).unwrap();
+        let vector_storage_file =
+            File::open(format!("{}/vector_storage", self.base_directory)).unwrap();
         let mmap = unsafe { Mmap::map(&backing_file).unwrap() };
 
         let (header, offset) = self.read_header(&mmap);
@@ -155,5 +156,5 @@ mod tests {
         let hnsw = reader.read();
         assert_eq!(49, hnsw.get_data_offset());
         assert_eq!(16, hnsw.get_header().quantized_dimension);
-    } 
+    }
 }

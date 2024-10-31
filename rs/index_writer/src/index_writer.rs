@@ -1,3 +1,6 @@
+use std::cmp::min;
+use std::collections::HashSet;
+
 use anyhow::Result;
 use index::hnsw::builder::HnswBuilder;
 use index::hnsw::writer::HnswWriter;
@@ -5,6 +8,7 @@ use index::vector::file::FileBackedVectorStorage;
 use log::info;
 use quantization::pq::{ProductQuantizerConfig, ProductQuantizerWriter};
 use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
+use rand::seq::SliceRandom;
 
 use crate::config::{IndexWriterConfig, QuantizerType};
 use crate::input::Input;
@@ -16,6 +20,12 @@ pub struct IndexWriter {
 impl IndexWriter {
     pub fn new(config: IndexWriterConfig) -> Self {
         Self { config }
+    }
+
+    fn get_random_rows(num_rows: usize, num_random_rows: usize) -> HashSet<u64> {
+        let mut v = (0..num_rows).map(|x| x as u64).collect::<Vec<_>>();
+        v.shuffle(&mut rand::thread_rng());
+        v.into_iter().take(num_random_rows).collect::<HashSet<_>>()
     }
 
     // TODO(hicder): Support multiple inputs
@@ -41,13 +51,14 @@ impl IndexWriter {
         };
 
         info!("Start training product quantizer");
-
-        // TODO(hicder): Sample instead of getting the first rows
-        let mut num_added = 0;
-        while input.has_next() && num_added < self.config.num_training_rows {
+        let random_rows = Self::get_random_rows(input.num_rows(), self.config.num_training_rows);
+        let mut row_idx = 0;
+        while input.has_next() {
             let row = input.next();
-            pq_builder.add(row.data.to_vec());
-            num_added += 1;
+            if random_rows.contains(&row_idx) {
+                pq_builder.add(row.data.to_vec());
+            }
+            row_idx += 1;
         }
         let pq = pq_builder.build(pg_temp_dir.clone())?;
 

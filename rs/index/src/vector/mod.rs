@@ -1,4 +1,5 @@
-use std::{fs::File, io::BufWriter};
+use std::fs::File;
+use std::io::BufWriter;
 
 use anyhow::Result;
 use num_traits::ops::bytes::ToBytes;
