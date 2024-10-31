@@ -179,12 +179,13 @@ impl ProductQuantizer {
 impl Quantizer for ProductQuantizer {
     fn quantize(&self, value: &[f32]) -> Vec<u8> {
         let mut result = Vec::<u8>::with_capacity(self.dimension / self.subvector_dimension);
+        let num_centroids = (1 << self.num_bits) as usize;
+        let subspace_size_in_codebook = self.subvector_dimension * num_centroids;
+
         value
             .chunks_exact(self.subvector_dimension as usize)
             .enumerate()
             .for_each(|(subvector_idx, subvector)| {
-                let num_centroids = (1 << self.num_bits) as usize;
-                let subspace_size_in_codebook = self.subvector_dimension * num_centroids;
                 let subspace_offset = subvector_idx * subspace_size_in_codebook;
                 let mut min_centroid_id = 0 as usize;
                 let mut min_distance = std::f32::MAX;
