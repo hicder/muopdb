@@ -32,6 +32,7 @@ clap = { version = "4.1.4", features = ["derive"] }
 tonic-reflection = "0.6.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
+serde_json = "=1.0.1"
 rand = "0.8.5"
 log = "0.4.22"
 env_logger = "0.11.5"

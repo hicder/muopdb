@@ -1,0 +1,130 @@
+use std::sync::Arc;
+
+use log::{info, warn};
+use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
+
+use crate::index_catalog::IndexCatalog;
+use crate::index_provider::IndexProvider;
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct IndexConfig {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct IndexManagerConfig {
+    pub indices: Vec<IndexConfig>,
+}
+
+pub struct IndexManager {
+    config_path: String,
+    index_provider: IndexProvider,
+    index_catalog: Arc<Mutex<IndexCatalog>>,
+    latest_version: u64,
+}
+
+impl IndexManager {
+    pub fn new(
+        config_path: String,
+        index_provider: IndexProvider,
+        index_catalog: Arc<Mutex<IndexCatalog>>,
+    ) -> Self {
+        Self {
+            config_path,
+            index_provider,
+            index_catalog,
+            latest_version: 0,
+        }
+    }
+
+    fn get_indexes_to_add(
+        current_index_names: &[String],
+        new_index_names: &[String],
+    ) -> Vec<String> {
+        let mut indexes_to_add = vec![];
+        for new_index_name in new_index_names {
+            if !current_index_names.contains(&new_index_name) {
+                indexes_to_add.push(new_index_name.clone());
+            }
+        }
+        indexes_to_add
+    }
+
+    #[allow(dead_code)]
+    fn get_indexes_to_remove(
+        current_index_names: &[String],
+        new_index_names: &[String],
+    ) -> Vec<String> {
+        let mut indexes_to_remove = vec![];
+        for current_index_name in current_index_names {
+            if !new_index_names.contains(&current_index_name) {
+                indexes_to_remove.push(current_index_name.clone());
+            }
+        }
+        indexes_to_remove
+    }
+
+    pub async fn check_for_update(&mut self) {
+        let latest_version = Self::get_latest_version(&self.config_path);
+        if latest_version > self.latest_version {
+            info!("New version available: {}", latest_version);
+            let latest_config_path = format!("{}/version_{}", self.config_path, latest_version);
+
+            let config: IndexManagerConfig =
+                serde_json::from_str(&std::fs::read_to_string(latest_config_path).unwrap())
+                    .unwrap();
+            let new_index_names = config
+                .indices
+                .iter()
+                .map(|x| x.name.clone())
+                .collect::<Vec<String>>();
+
+            self.latest_version = latest_version;
+            let current_index_names = self
+                .index_catalog
+                .lock()
+                .await
+                .get_all_index_names_sorted()
+                .await;
+
+            // TODO(hicder): Remove indexes that are not in the new config
+            let indexes_to_add = Self::get_indexes_to_add(&current_index_names, &new_index_names);
+            for index_name in indexes_to_add.iter() {
+                info!("Fetching index {}", index_name);
+                let index = self.index_provider.read_index(index_name);
+                if let Some(index) = index {
+                    let idx = Arc::new(index);
+                    self.index_catalog
+                        .lock()
+                        .await
+                        .add_index(index_name.clone(), idx)
+                        .await;
+                } else {
+                    warn!("Failed to fetch index {}", index_name);
+                }
+            }
+        } else {
+            info!("No new version available");
+        }
+    }
+
+    // Get latest version from the config directory
+    fn get_latest_version(config_path: &str) -> u64 {
+        // List all files in the directory
+        let mut latest_version = 0;
+        for entry in std::fs::read_dir(config_path).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let filename = path.file_name().unwrap().to_str().unwrap();
+            if filename.starts_with("version_") {
+                let version = filename.split("_").last().unwrap();
+                let version = version.parse::<u64>().unwrap();
+                if version > latest_version {
+                    latest_version = version;
+                }
+            }
+        }
+        latest_version
+    }
+}
