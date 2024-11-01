@@ -437,7 +437,7 @@ mod tests {
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
         let vectors = Box::new(FileBackedVectorStorage::<u8>::new(
-            vector_dir, 1024, 4096, 128,
+            vector_dir, 1024, 4096, 16,
         ));
         let pq_config = ProductQuantizerConfig {
             dimension: 128,
@@ -462,6 +462,30 @@ mod tests {
 
         // Create a HNSW Builder
         let mut hnsw_builder = HnswBuilder::new(10, 128, 20, Box::new(pq), vectors);
+        hnsw_builder
+            .vectors()
+            .append(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+            .unwrap();
+        hnsw_builder
+            .vectors()
+            .append(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+            .unwrap();
+        hnsw_builder
+            .vectors()
+            .append(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+            .unwrap();
+        hnsw_builder
+            .vectors()
+            .append(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+            .unwrap();
+        hnsw_builder
+            .vectors()
+            .append(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+            .unwrap();
+        hnsw_builder
+            .vectors()
+            .append(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+            .unwrap();
 
         // Artificially construct the graph, since inserting is not deterministic.
         // 3 layers: 0 to 2
