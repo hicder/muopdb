@@ -852,6 +852,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "index_server"
+version = "0.1.0"
+dependencies = [
+ "clap 4.5.20",
+ "env_logger",
+ "futures",
+ "log",
+ "prost",
+ "proto",
+ "rand 0.8.5",
+ "serde",
+ "serde_yaml",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-reflection",
+]
+
+[[package]]
 name = "index_writer"
 version = "0.1.0"
 dependencies = [

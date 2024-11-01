@@ -3,6 +3,7 @@ members = [
     "rs/aggregator", 
     "rs/cli", 
     "rs/index", 
+    "rs/index_server", 
     "rs/index_writer",
     "rs/proto", 
     "rs/quantization", 
