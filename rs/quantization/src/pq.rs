@@ -139,7 +139,7 @@ impl ProductQuantizer {
         let mut codebook = vec![];
         codebook.reserve_exact(num_subvector * num_centroids);
 
-        for _ in 0..num_subvector * num_centroids {
+        for _ in 0..num_subvector * num_centroids * config.subvector_dimension {
             let val = f32::from_le_bytes(codebook_buffer[offset..offset + 4].try_into().unwrap());
             codebook.push(val);
 
@@ -180,18 +180,18 @@ impl Quantizer for ProductQuantizer {
     fn quantize(&self, value: &[f32]) -> Vec<u8> {
         let mut result = Vec::<u8>::with_capacity(self.dimension / self.subvector_dimension);
         let num_centroids = (1 << self.num_bits) as usize;
-        let subspace_size_in_codebook = self.subvector_dimension * num_centroids;
+        let subvector_size_in_codebook = self.subvector_dimension * num_centroids;
 
         value
             .chunks_exact(self.subvector_dimension as usize)
             .enumerate()
             .for_each(|(subvector_idx, subvector)| {
-                let subspace_offset = subvector_idx * subspace_size_in_codebook;
+                let subvector_offset = subvector_idx * subvector_size_in_codebook;
                 let mut min_centroid_id = 0 as usize;
                 let mut min_distance = std::f32::MAX;
 
                 for i in 0..num_centroids {
-                    let offset = subspace_offset + i * self.subvector_dimension;
+                    let offset = subvector_offset + i * self.subvector_dimension;
                     let centroid = &self.codebook[offset..offset + self.subvector_dimension];
                     let distance = L2DistanceCalculator::new().calculate(&subvector, &centroid);
                     if distance < min_distance {

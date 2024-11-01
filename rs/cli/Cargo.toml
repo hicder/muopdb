@@ -10,3 +10,4 @@ log.workspace = true
 proto.workspace = true
 tokio.workspace = true
 tonic.workspace = true
+rand.workspace = true

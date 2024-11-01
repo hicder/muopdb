@@ -7,6 +7,7 @@ use rand::Rng;
 
 use super::utils::{GraphTraversal, SearchContext};
 use crate::hnsw::writer::Header;
+use crate::index::Index;
 
 pub struct Hnsw {
     // Need this for mmap
@@ -24,7 +25,7 @@ pub struct Hnsw {
     level_offsets_offset: usize,
     doc_id_mapping_offset: usize,
 
-    quantizer: Box<dyn Quantizer>,
+    quantizer: Box<dyn Quantizer + Send + Sync>,
 }
 
 impl Hnsw {
@@ -41,7 +42,8 @@ impl Hnsw {
         base_directory: String,
     ) -> Self {
         // Read quantizer
-        let pq_reader = ProductQuantizerReader::new(base_directory.clone());
+        let pq_directory = format!("{}/quantizer", base_directory);
+        let pq_reader = ProductQuantizerReader::new(pq_directory);
         let pq = pq_reader.read().unwrap();
 
         let index_mmap = unsafe { Mmap::map(&backing_file).unwrap() };
@@ -235,6 +237,13 @@ impl GraphTraversal for Hnsw {
 
         let edges = &self.get_edges_slice()[start_idx_edges as usize..end_idx_edges as usize];
         Some(edges.to_vec())
+    }
+}
+
+impl Index for Hnsw {
+    fn search(&self, query: &[f32], k: usize) -> Option<Vec<u64>> {
+        // TODO(hicder): Add ef parameter
+        Some(self.ann_search(query, k, 10))
     }
 }
 
