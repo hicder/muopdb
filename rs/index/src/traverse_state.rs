@@ -1,5 +1,6 @@
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::BinaryHeap;
 
+use bit_vec::BitVec;
 use ordered_float::NotNan;
 
 #[derive(PartialEq, Eq)]
@@ -29,7 +30,7 @@ impl PartialOrd for PointAndDistance {
 /// Hold the state of the traversal.
 #[derive(Default)]
 pub struct TraverseState {
-    pub visited: HashSet<u64>,
+    pub visited: BitVec,
     pub min_heap: BinaryHeap<PointAndDistance>,
 }
 
@@ -39,11 +40,11 @@ impl TraverseState {
             distance: NotNan::new(distance).unwrap(),
             point_id,
         });
-        self.visited.insert(point_id);
+        self.visited.set(point_id as usize, true);
     }
 
     pub fn is_visited(&self, point_id: u64) -> bool {
-        self.visited.contains(&point_id)
+        self.visited.get(point_id as usize).unwrap_or(false)
     }
 }
 

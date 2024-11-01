@@ -1,15 +1,16 @@
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::BinaryHeap;
 
+use bit_vec::BitVec;
 use ordered_float::NotNan;
 
 pub struct SearchContext {
-    pub visited: HashSet<u32>,
+    pub visited: BitVec,
 }
 
 impl SearchContext {
-    pub fn new() -> Self {
+    pub fn with_max_num_vectors(nbits: usize) -> Self {
         Self {
-            visited: HashSet::new(),
+            visited: BitVec::from_elem(nbits, false),
         }
     }
 }
@@ -38,7 +39,7 @@ pub trait GraphTraversal {
         layer: u8,
     ) -> Vec<PointAndDistance> {
         // Mark the entry point as visited so that we don't visit it again
-        context.visited.insert(entry_point);
+        context.visited.set(entry_point as usize, true);
 
         // candidate is min heap while working list is max heap
         // TODO(hicder): Probably use the comparator instead of this hack?
@@ -71,10 +72,10 @@ pub trait GraphTraversal {
             }
 
             for e in edges.unwrap().iter() {
-                if context.visited.contains(&e) {
+                if context.visited.get(*e as usize).unwrap_or(false) {
                     continue;
                 }
-                context.visited.insert(*e);
+                context.visited.set(*e as usize, true);
                 furthest_element_from_working_list = working_list.peek().unwrap();
                 let distance_e_q = self.distance(query, *e);
                 if distance_e_q < *furthest_element_from_working_list.distance

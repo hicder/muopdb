@@ -1,7 +1,8 @@
 use std::cmp::min;
-use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
+use std::collections::{BinaryHeap, HashMap, VecDeque};
 
 use anyhow::{anyhow, Context, Ok, Result};
+use bit_vec::BitVec;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 use rand::Rng;
@@ -149,9 +150,9 @@ impl HnswBuilder {
 
     /// Insert a vector into the index
     pub fn insert(&mut self, doc_id: u64, vector: &[f32]) -> Result<()> {
-        let mut context = SearchContext::new();
         let quantized_query = self.quantizer.quantize(vector);
         let point_id = self.generate_id(doc_id);
+        let mut context = SearchContext::with_max_num_vectors(self.doc_id_mapping.len() + 1);
 
         let empty_graph = point_id == 0;
         self.append_vector_to_storage(&quantized_query)?;
@@ -238,12 +239,12 @@ impl HnswBuilder {
     pub fn get_nodes_from_non_bottom_layer(&self) -> Vec<u32> {
         let mut nodes = vec![];
         let mut current_layer = self.current_top_layer;
-        let mut visited: HashSet<u32> = HashSet::new();
+        let mut visited = BitVec::from_elem(self.vectors.len(), false);
         while current_layer > 0 {
             for (point_id, _) in self.layers[current_layer as usize].edges.iter() {
-                if !visited.contains(point_id) {
+                if !visited.get(*point_id as usize).unwrap_or(false) {
                     nodes.push(*point_id);
-                    visited.insert(*point_id);
+                    visited.set(*point_id as usize, true);
                 }
             }
             current_layer -= 1;

@@ -72,7 +72,10 @@ impl Hnsw {
     }
 
     pub fn ann_search(&self, query: &[f32], k: usize, ef: u32) -> Vec<u64> {
-        let mut context = SearchContext::new();
+        let mut context = SearchContext::with_max_num_vectors(
+            self.get_vector_storage_slice().len() / self.header.quantized_dimension as usize,
+        );
+
         let quantized_query = self.quantizer.quantize(query);
         let mut current_layer: i32 = self.header.num_layers as i32 - 1;
         let mut ep = self.get_entry_point_top_layer();
