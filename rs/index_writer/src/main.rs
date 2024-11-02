@@ -10,16 +10,16 @@ struct Args {
     #[arg(short, long)]
     input_path: String,
 
-    #[arg(short, long)]
+    #[arg(long)]
     dataset_name: String,
 
     #[arg(short, long)]
     output_path: String,
 
-    #[arg(short, long, default_value_t = 8)]
+    #[arg(long, default_value_t = 8)]
     num_layers: u8,
 
-    #[arg(short, long, default_value_t = 10)]
+    #[arg(long, default_value_t = 10)]
     max_num_neighbors: usize,
 
     #[arg(short, long, default_value_t = 10)]
@@ -31,10 +31,10 @@ struct Args {
     #[arg(short, long, default_value_t = 8)]
     subvector_dimension: usize,
 
-    #[arg(short, long, default_value_t = 8)]
+    #[arg(long, default_value_t = 8)]
     num_bits: u8,
 
-    #[arg(short, long, default_value_t = 1000)]
+    #[arg(long, default_value_t = 1000)]
     num_training_rows: usize,
 
     #[arg(short, long, default_value_t = 5)]
@@ -43,10 +43,10 @@ struct Args {
     #[arg(short, long, default_value_t = 500)]
     batch_size: usize,
 
-    #[arg(short, long, default_value_t = 1 << 25)]
+    #[arg(long, default_value_t = 1 << 25)]
     vector_storage_memory_size: usize,
 
-    #[arg(short, long, default_value_t = 1 << 30)]
+    #[arg(long, default_value_t = 1 << 30)]
     vector_storage_page_size: usize,
 }
 
