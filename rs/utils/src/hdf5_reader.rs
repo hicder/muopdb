@@ -1,6 +1,8 @@
+use std::cmp::min;
 use std::path::Path;
 
 use hdf5::File;
+use ndarray::{s, Array2};
 
 /// Sample function to read a HDF5 file
 /// TODO(hicder): Fix this function to make it generic
@@ -37,8 +39,17 @@ pub fn read_hdf5_sift_128(path: &str) -> Result<(), Box<dyn std::error::Error>> 
                 println!();
             }
         } else {
-            let res = dataset.read_2d::<f32>().unwrap();
-            let (nrows, ncols) = res.dim();
+            let nrows = dataset.shape()[0];
+            let ncols = dataset.shape()[1];
+
+            let chunk_size = 100;
+            let i = 0;
+            let selection = s![i..min(i + chunk_size, nrows), ..];
+            let chunk: Array2<f32> = dataset.read_slice_2d(selection).unwrap();
+            for row in chunk.axis_iter(ndarray::Axis(0)) {
+                let v = row.to_vec();
+                println!("{:?}", v);
+            }
             println!("Rows: {}, Cols: {}", nrows, ncols);
         }
     }
