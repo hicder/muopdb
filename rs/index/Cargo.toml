@@ -14,3 +14,4 @@ memmap2.workspace = true
 byteorder.workspace = true
 num-traits.workspace = true
 bit-vec.workspace = true
+roaring.workspace = true
