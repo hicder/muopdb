@@ -238,6 +238,68 @@ impl GraphTraversal for Hnsw {
         let edges = &self.get_edges_slice()[start_idx_edges as usize..end_idx_edges as usize];
         Some(edges.to_vec())
     }
+
+    fn print_graph(&self, layer: u8, predicate: impl Fn(u8, u32) -> bool) {
+        let num_layers = self.header.num_layers as usize;
+        if layer as usize >= num_layers {
+            println!("Layer {} is out of range.", layer);
+            return;
+        }
+
+        let level_idx_start =
+            self.get_level_offsets_slice()[num_layers - 1 - layer as usize] as usize;
+        let level_idx_end = self.get_level_offsets_slice()[num_layers - layer as usize] as usize;
+
+        if layer > 0 {
+            let points = &self.get_points_slice()[level_idx_start..level_idx_end];
+            for i in 0..points.len() {
+                if !predicate(layer, i as u32) {
+                    continue;
+                }
+                let idx = i as usize;
+
+                let start_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx];
+                let end_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx + 1];
+
+                print!("{} -> ", points[idx]);
+
+                if start_idx_edges == end_idx_edges {
+                    return;
+                }
+
+                let edges =
+                    &self.get_edges_slice()[start_idx_edges as usize..end_idx_edges as usize];
+                for e in edges {
+                    print!("{}, ", e);
+                }
+                println!("");
+            }
+        } else {
+            let num_points = level_idx_end - level_idx_start;
+            for i in 0..num_points {
+                if !predicate(layer, i as u32) {
+                    continue;
+                }
+
+                let idx = i as usize;
+                let start_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx];
+                let end_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx + 1];
+
+                print!("{} -> ", idx);
+
+                if start_idx_edges == end_idx_edges {
+                    return;
+                }
+
+                let edges =
+                    &self.get_edges_slice()[start_idx_edges as usize..end_idx_edges as usize];
+                for e in edges {
+                    print!("{}, ", e);
+                }
+                println!("");
+            }
+        }
+    }
 }
 
 impl Index for Hnsw {

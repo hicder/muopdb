@@ -1,3 +1,4 @@
+use core::num;
 use std::collections::BinaryHeap;
 
 use bit_vec::BitVec;
@@ -102,4 +103,7 @@ pub trait GraphTraversal {
         result.sort();
         result
     }
+
+    /// Print the graph for debugging purposes
+    fn print_graph(&self, layer: u8, predicate: impl Fn(u8, u32) -> bool);
 }
