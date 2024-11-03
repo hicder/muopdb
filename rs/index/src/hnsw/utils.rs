@@ -1,25 +1,28 @@
 use std::collections::BinaryHeap;
 
+use bit_vec::BitVec;
 use ordered_float::NotNan;
-use roaring::RoaringBitmap;
+// use roaring::RoaringBitmap;
 
-pub struct SearchContext {
-    visited: RoaringBitmap,
+pub struct BuilderContext {
+    visited: BitVec,
 }
 
-impl SearchContext {
-    pub fn new() -> Self {
+impl BuilderContext {
+    pub fn new(max_id: u32) -> Self {
         Self {
-            visited: RoaringBitmap::new(),
+            visited: BitVec::from_elem(max_id as usize, false),
         }
     }
+}
 
-    pub fn visited(&self, i: u32) -> bool {
-        self.visited.contains(i)
+impl TraversalContext for BuilderContext {
+    fn visited(&self, i: u32) -> bool {
+        self.visited.get(i as usize).unwrap_or(false)
     }
 
-    pub fn set_visited(&mut self, i: u32) {
-        self.visited.insert(i);
+    fn set_visited(&mut self, i: u32) {
+        self.visited.set(i as usize, true);
     }
 }
 
@@ -30,8 +33,15 @@ pub struct PointAndDistance {
     pub distance: NotNan<f32>,
 }
 
+pub trait TraversalContext {
+    fn visited(&self, i: u32) -> bool;
+    fn set_visited(&mut self, i: u32);
+}
+
 /// Move the traversal logic out, since it's used in both indexing and query path
 pub trait GraphTraversal {
+    type ContextT: TraversalContext;
+
     /// Distance between the query and point_id
     fn distance(&self, query: &[u8], point_id: u32) -> f32;
 
@@ -40,7 +50,7 @@ pub trait GraphTraversal {
 
     fn search_layer(
         &self,
-        context: &mut SearchContext,
+        context: &mut Self::ContextT,
         query: &[u8],
         entry_point: u32,
         ef_construction: u32,

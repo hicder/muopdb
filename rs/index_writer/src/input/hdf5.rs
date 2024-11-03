@@ -11,6 +11,8 @@ pub struct Hdf5Reader {
     row_idx: usize,
     num_rows: usize,
     chunk: Vec<Vec<f32>>,
+
+    first_chunk_fetched: bool,
 }
 
 impl Hdf5Reader {
@@ -24,10 +26,12 @@ impl Hdf5Reader {
             row_idx: 0,
             num_rows,
             chunk: vec![],
+            first_chunk_fetched: false,
         })
     }
 
     pub fn fetch_next_chunk(&mut self) {
+        self.first_chunk_fetched = true;
         self.chunk.clear();
         let end_idx = min(self.row_idx + self.chunk_size, self.num_rows);
         let selection = s![self.row_idx..end_idx, ..];
@@ -71,7 +75,7 @@ impl Input for Hdf5Reader {
     fn skip_to(&mut self, row_idx: usize) {
         let current_chunk_idx = self.row_idx / self.chunk_size;
         let new_chunk_idx = row_idx / self.chunk_size;
-        if new_chunk_idx != current_chunk_idx {
+        if new_chunk_idx != current_chunk_idx || !self.first_chunk_fetched {
             self.row_idx = row_idx / self.chunk_size * self.chunk_size;
             self.fetch_next_chunk();
         }
