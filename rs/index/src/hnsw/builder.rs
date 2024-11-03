@@ -8,7 +8,7 @@ use quantization::quantization::Quantizer;
 use rand::Rng;
 use utils::l2::L2DistanceCalculatorImpl::StreamingWithSIMD;
 
-use super::utils::{GraphTraversal, PointAndDistance, SearchContext};
+use super::utils::{BuilderContext, GraphTraversal, PointAndDistance};
 use crate::vector::VectorStorage;
 
 /// TODO(hicder): support bare vector in addition to quantized one.
@@ -152,7 +152,7 @@ impl HnswBuilder {
     pub fn insert(&mut self, doc_id: u64, vector: &[f32]) -> Result<()> {
         let quantized_query = self.quantizer.quantize(vector);
         let point_id = self.generate_id(doc_id);
-        let mut context = SearchContext::new();
+        let mut context = BuilderContext::new(point_id + 1);
 
         let empty_graph = point_id == 0;
         self.append_vector_to_storage(&quantized_query)?;
@@ -354,6 +354,8 @@ impl HnswBuilder {
 }
 
 impl GraphTraversal for HnswBuilder {
+    type ContextT = BuilderContext;
+
     fn distance(&self, query: &[u8], point_id: u32) -> f32 {
         self.quantizer
             .distance(query, self.get_vector(point_id), StreamingWithSIMD)

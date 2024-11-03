@@ -1,0 +1,48 @@
+{
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "[MUOPDB] Debug executable 'index_server'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=index_server",
+                    "--package=index_server"
+                ],
+                "filter": {
+                    "name": "index_server",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "--node-id=0",
+                "--index-config-path=/mnt/muopdb/indices",
+                "--index-data-path=/mnt/muopdb/data"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "[MUOPDB] Debug executable 'index_writer'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=index_writer",
+                    "--package=index_writer"
+                ],
+                "filter": {
+                    "name": "index_writer",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "--input-path=/home/hieu/Downloads/sift-128-euclidean.hdf5",
+                "--output-path=/tmp/test_hieu",
+                "--dataset-name=/train"
+            ],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

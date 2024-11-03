@@ -4,10 +4,33 @@ use memmap2::Mmap;
 use quantization::pq::ProductQuantizerReader;
 use quantization::quantization::Quantizer;
 use rand::Rng;
+use roaring::RoaringBitmap;
 
-use super::utils::{GraphTraversal, SearchContext};
+use super::utils::{GraphTraversal, TraversalContext};
 use crate::hnsw::writer::Header;
 use crate::index::Index;
+
+pub struct SearchContext {
+    visited: RoaringBitmap,
+}
+
+impl SearchContext {
+    pub fn new() -> Self {
+        Self {
+            visited: RoaringBitmap::new(),
+        }
+    }
+}
+
+impl TraversalContext for SearchContext {
+    fn visited(&self, i: u32) -> bool {
+        self.visited.contains(i)
+    }
+
+    fn set_visited(&mut self, i: u32) {
+        self.visited.insert(i);
+    }
+}
 
 pub struct Hnsw {
     // Need this for mmap
@@ -189,6 +212,8 @@ impl Hnsw {
 }
 
 impl GraphTraversal for Hnsw {
+    type ContextT = SearchContext;
+
     fn distance(&self, query: &[u8], point_id: u32) -> f32 {
         self.quantizer.distance(
             query,
