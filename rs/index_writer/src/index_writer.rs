@@ -1,10 +1,8 @@
-use std::collections::HashSet;
-
 use anyhow::Result;
 use index::hnsw::builder::HnswBuilder;
 use index::hnsw::writer::HnswWriter;
 use index::vector::file::FileBackedVectorStorage;
-use log::info;
+use log::{debug, info};
 use quantization::pq::{ProductQuantizerConfig, ProductQuantizerWriter};
 use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
 use rand::seq::SliceRandom;
@@ -21,10 +19,12 @@ impl IndexWriter {
         Self { config }
     }
 
-    fn get_random_rows(num_rows: usize, num_random_rows: usize) -> HashSet<u64> {
+    fn get_sorted_random_rows(num_rows: usize, num_random_rows: usize) -> Vec<u64> {
         let mut v = (0..num_rows).map(|x| x as u64).collect::<Vec<_>>();
         v.shuffle(&mut rand::thread_rng());
-        v.into_iter().take(num_random_rows).collect::<HashSet<_>>()
+        let mut ret = v.into_iter().take(num_random_rows).collect::<Vec<u64>>();
+        ret.sort();
+        ret
     }
 
     // TODO(hicder): Support multiple inputs
@@ -50,15 +50,13 @@ impl IndexWriter {
         };
 
         info!("Start training product quantizer");
-        let random_rows = Self::get_random_rows(input.num_rows(), self.config.num_training_rows);
-        let mut row_idx = 0;
-        while input.has_next() {
-            let row = input.next();
-            if random_rows.contains(&row_idx) {
-                pq_builder.add(row.data.to_vec());
-            }
-            row_idx += 1;
+        let sorted_random_rows =
+            Self::get_sorted_random_rows(input.num_rows(), self.config.num_training_rows);
+        for row_idx in sorted_random_rows {
+            input.skip_to(row_idx as usize);
+            pq_builder.add(input.next().data.to_vec());
         }
+
         let pq = pq_builder.build(pg_temp_dir.clone())?;
 
         info!("Start writing product quantizer");
@@ -89,6 +87,9 @@ impl IndexWriter {
         while input.has_next() {
             let row = input.next();
             hnsw_builder.insert(row.id, row.data)?;
+            if row.id % 10000 == 0 {
+                debug!("Inserted {} rows", row.id);
+            }
         }
 
         hnsw_builder.reindex()?;

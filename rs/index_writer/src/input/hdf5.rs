@@ -67,6 +67,17 @@ impl Input for Hdf5Reader {
     fn num_rows(&self) -> usize {
         self.num_rows
     }
+
+    fn skip_to(&mut self, row_idx: usize) {
+        let current_chunk_idx = self.row_idx / self.chunk_size;
+        let new_chunk_idx = row_idx / self.chunk_size;
+        if new_chunk_idx != current_chunk_idx {
+            self.row_idx = row_idx / self.chunk_size * self.chunk_size;
+            self.fetch_next_chunk();
+        }
+
+        self.row_idx = row_idx;
+    }
 }
 
 // test

@@ -18,4 +18,7 @@ pub trait Input {
 
     // Return the number of rows in the input
     fn num_rows(&self) -> usize;
+
+    // Skip to a specific row
+    fn skip_to(&mut self, row_idx: usize);
 }
