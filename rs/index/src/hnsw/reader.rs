@@ -108,6 +108,8 @@ mod tests {
         // Create a temporary directory
         let temp_dir = tempdir::TempDir::new("product_quantizer_test").unwrap();
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
+        let pq_dir = format!("{}/quantizer", base_directory);
+        fs::create_dir_all(pq_dir.clone()).unwrap();
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
         let vectors = Box::new(FileBackedVectorStorage::<u8>::new(
@@ -126,7 +128,7 @@ mod tests {
         };
 
         // Train a product quantizer
-        let pq_writer = ProductQuantizerWriter::new(base_directory.clone());
+        let pq_writer = ProductQuantizerWriter::new(pq_dir);
         let mut pq_builder = ProductQuantizerBuilder::new(pq_config, pq_builder_config);
 
         for i in 0..1000 {
@@ -141,7 +143,9 @@ mod tests {
             hnsw_builder.insert(i as u64, &datapoints[i]).unwrap();
         }
 
-        let writer = HnswWriter::new(base_directory.clone());
+        let hnsw_dir = format!("{}/hnsw", base_directory);
+        fs::create_dir_all(hnsw_dir.clone()).unwrap();
+        let writer = HnswWriter::new(hnsw_dir);
         match writer.write(&mut hnsw_builder, false) {
             Ok(()) => {
                 assert!(true);

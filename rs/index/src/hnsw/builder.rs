@@ -152,7 +152,7 @@ impl HnswBuilder {
     pub fn insert(&mut self, doc_id: u64, vector: &[f32]) -> Result<()> {
         let quantized_query = self.quantizer.quantize(vector);
         let point_id = self.generate_id(doc_id);
-        let mut context = SearchContext::with_max_num_vectors(self.doc_id_mapping.len() + 1);
+        let mut context = SearchContext::new();
 
         let empty_graph = point_id == 0;
         self.append_vector_to_storage(&quantized_query)?;
