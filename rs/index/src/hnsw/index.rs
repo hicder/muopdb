@@ -275,6 +275,7 @@ impl GraphTraversal for Hnsw {
 
         if layer > 0 {
             let points = &self.get_points_slice()[level_idx_start..level_idx_end];
+            println!("Layer {}, number of points: {}", layer, points.len());
             for i in 0..points.len() {
                 if !predicate(layer, i as u32) {
                     continue;
@@ -299,6 +300,7 @@ impl GraphTraversal for Hnsw {
             }
         } else {
             let num_points = level_idx_end - level_idx_start;
+            println!("Layer {}, number of points: {}", layer, num_points);
             for i in 0..num_points {
                 if !predicate(layer, i as u32) {
                     continue;
