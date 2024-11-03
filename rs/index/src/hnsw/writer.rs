@@ -15,6 +15,7 @@ pub enum Version {
     V0,
 }
 
+#[derive(Debug)]
 pub struct Header {
     pub version: Version,
     pub quantized_dimension: u32,

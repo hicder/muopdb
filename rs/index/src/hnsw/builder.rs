@@ -366,6 +366,11 @@ impl GraphTraversal for HnswBuilder {
         }
         Some(layer.edges[&point_id].iter().map(|x| x.point_id).collect())
     }
+
+    fn print_graph(&self, _layer: u8, _predicate: impl Fn(u8, u32) -> bool) {
+        // TODO
+        return;
+    }
 }
 
 // Test
