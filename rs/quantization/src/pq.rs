@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
 use utils::l2::L2DistanceCalculatorImpl::{Scalar, SIMD};
 use utils::l2::{L2DistanceCalculator, L2DistanceCalculatorImpl};
@@ -28,9 +28,9 @@ pub struct ProductQuantizerConfig {
 }
 
 impl ProductQuantizerConfig {
-    pub fn validate(&self) -> Result<(), &'static str> {
+    pub fn validate(&self) -> Result<()> {
         if self.dimension % self.subvector_dimension != 0 {
-            return Err("Dimensions are not valid");
+            return Err(Error::msg("Dimensions are not valid"));
         }
         Ok(())
     }
@@ -44,14 +44,14 @@ impl ProductQuantizerReader {
         Self { base_directory }
     }
 
-    pub fn read(&self) -> Result<ProductQuantizer, &'static str> {
+    pub fn read(&self) -> Result<ProductQuantizer> {
         let config_path = Path::new(&self.base_directory).join("product_quantizer_config.yaml");
         if !config_path.exists() {
-            return Err("Config file does not exist");
+            return Err(Error::msg("Config file does not exist"));
         }
 
         if !config_path.is_file() {
-            return Err("Config file is not a file");
+            return Err(Error::msg("Config file is not a file"));
         }
 
         let config_buffer = std::fs::read(config_path).unwrap();
@@ -59,8 +59,7 @@ impl ProductQuantizerReader {
 
         match config.validate() {
             Ok(_) => {
-                let pq = ProductQuantizer::load(config, &self.base_directory);
-                return Ok(pq);
+                return ProductQuantizer::load(config, &self.base_directory);
             }
             Err(e) => {
                 return Err(e);
@@ -118,17 +117,23 @@ impl ProductQuantizer {
         num_bits: u8,
         codebook: Vec<f32>,
         base_directory: String,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        // TODO(tyb0807): maybe lift this restriction in the future.
+        if dimension % subvector_dimension != 0 {
+            return Err(Error::msg(
+                "Vector dimension needs to be divisible by the subvector dimension.",
+            ));
+        }
+        Ok(Self {
             dimension,
             subvector_dimension,
             num_bits,
             codebook,
             base_directory,
-        }
+        })
     }
 
-    pub fn load(config: ProductQuantizerConfig, base_directory: &str) -> Self {
+    pub fn load(config: ProductQuantizerConfig, base_directory: &str) -> Result<Self> {
         let codebook_path = Path::new(&base_directory).join("codebook");
 
         let codebook_buffer = std::fs::read(codebook_path).unwrap();
@@ -146,13 +151,13 @@ impl ProductQuantizer {
             offset += 4;
         }
 
-        Self {
-            dimension: config.dimension,
-            subvector_dimension: config.subvector_dimension,
-            num_bits: config.num_bits,
+        Self::new(
+            config.dimension,
+            config.subvector_dimension,
+            config.num_bits,
             codebook,
-            base_directory: base_directory.to_string(),
-        }
+            base_directory.to_string(),
+        )
     }
 
     pub fn codebook_to_buffer(&self) -> Vec<u8> {
@@ -306,7 +311,8 @@ mod tests {
         let temp_dir = tempdir::TempDir::new("product_quantizer_test").unwrap();
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
 
-        let pq = ProductQuantizer::new(10, 2, 1, codebook, base_directory.clone());
+        let pq = ProductQuantizer::new(10, 2, 1, codebook, base_directory.clone())
+            .expect("ProductQuantizer should be created.");
         let value = vec![1.0, 1.0, 3.0, 3.0, 5.0, 5.0, 7.0, 7.0, 9.0, 9.0];
         let quantized_value = pq.quantize(&value);
         assert_eq!(quantized_value, vec![1, 1, 1, 1, 1]);

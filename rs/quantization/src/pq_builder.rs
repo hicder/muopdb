@@ -78,13 +78,13 @@ impl ProductQuantizerBuilder {
             result.centroids.iter().for_each(|x| codebook.push(*x));
             debug!("Error: {}", result.distsum);
         }
-        Ok(ProductQuantizer::new(
+        ProductQuantizer::new(
             self.pq_config.dimension,
             self.pq_config.subvector_dimension,
             self.pq_config.num_bits,
             codebook,
             base_directory,
-        ))
+        )
     }
 }
 

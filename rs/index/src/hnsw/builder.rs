@@ -455,13 +455,10 @@ mod tests {
             max_neighbors: 1,
             layers: vec![layer],
             current_top_layer: 0,
-            quantizer: Box::new(ProductQuantizer::new(
-                10,
-                2,
-                1,
-                codebook,
-                base_directory.clone(),
-            )),
+            quantizer: Box::new(
+                ProductQuantizer::new(10, 2, 1, codebook, base_directory.clone())
+                    .expect("ProductQuantizer should be created."),
+            ),
             ef_contruction: 0,
             entry_point: vec![0, 1],
             max_layer: 0,
@@ -578,7 +575,8 @@ mod tests {
             num_bits,
             codebook,
             base_directory.clone(),
-        );
+        )
+        .expect("ProductQuantizer should be created.");
 
         let mut builder = HnswBuilder::new(5, 10, 20, Box::new(pq), vectors);
 
