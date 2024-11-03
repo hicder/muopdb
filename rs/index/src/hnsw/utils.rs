@@ -1,4 +1,3 @@
-use core::num;
 use std::collections::BinaryHeap;
 
 use bit_vec::BitVec;
