@@ -859,6 +859,8 @@ dependencies = [
  "anyhow",
  "bit-vec",
  "byteorder",
+ "env_logger",
+ "kmeans",
  "log",
  "memmap2",
  "num-traits 0.2.19",
