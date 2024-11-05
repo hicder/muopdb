@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::File;
 
 use memmap2::Mmap;
@@ -14,13 +15,33 @@ use crate::vector::fixed_file::FixedFileVectorStorage;
 
 pub struct SearchContext {
     visited: RoaringBitmap,
+    record_pages: bool,
+    visited_pages: Option<HashSet<String>>,
 }
 
 impl SearchContext {
-    pub fn new() -> Self {
-        Self {
-            visited: RoaringBitmap::new(),
+    pub fn new(record_pages: bool) -> Self {
+        if !record_pages {
+            Self {
+                visited: RoaringBitmap::new(),
+                record_pages: false,
+                visited_pages: None,
+            }
+        } else {
+            Self {
+                visited: RoaringBitmap::new(),
+                record_pages: true,
+                visited_pages: Some(HashSet::new()),
+            }
         }
+    }
+
+    pub fn num_pages_accessed(&self) -> usize {
+        if !self.record_pages {
+            return 0;
+        }
+
+        self.visited_pages.as_ref().unwrap().len()
     }
 }
 
@@ -31,6 +52,19 @@ impl TraversalContext for SearchContext {
 
     fn set_visited(&mut self, i: u32) {
         self.visited.insert(i);
+    }
+
+    fn should_record_pages(&self) -> bool {
+        self.record_pages
+    }
+
+    fn record_pages(&mut self, page_id: String) {
+        match &mut self.visited_pages {
+            Some(visited_pages) => {
+                visited_pages.insert(page_id);
+            }
+            None => {}
+        }
     }
 }
 
@@ -96,16 +130,19 @@ impl Hnsw {
             .collect()
     }
 
-    pub fn ann_search(&self, query: &[f32], k: usize, ef: u32) -> Vec<IdWithScore> {
-        let mut context = SearchContext::new();
-
+    pub fn ann_search(
+        &self,
+        query: &[f32],
+        k: usize,
+        ef: u32,
+        context: &mut SearchContext,
+    ) -> Vec<IdWithScore> {
         let quantized_query = self.quantizer.quantize(query);
         let mut current_layer: i32 = self.header.num_layers as i32 - 1;
         let mut ep = self.get_entry_point_top_layer();
         let mut working_set;
         while current_layer > 0 {
-            working_set =
-                self.search_layer(&mut context, &quantized_query, ep, 1, current_layer as u8);
+            working_set = self.search_layer(context, &quantized_query, ep, 1, current_layer as u8);
             ep = working_set
                 .iter()
                 .min_by(|x, y| x.distance.cmp(&y.distance))
@@ -114,7 +151,7 @@ impl Hnsw {
             current_layer -= 1;
         }
 
-        working_set = self.search_layer(&mut context, &quantized_query, ep, ef, 0);
+        working_set = self.search_layer(context, &quantized_query, ep, ef, 0);
         working_set.sort_by(|x, y| x.distance.cmp(&y.distance));
         working_set.truncate(k);
         let point_ids: Vec<u32> = working_set.iter().map(|x| x.point_id).collect();
@@ -137,8 +174,8 @@ impl Hnsw {
         self.data_offset
     }
 
-    fn get_vector(&self, point_id: u32) -> &[u8] {
-        self.vector_storage.get(point_id as usize).unwrap()
+    fn get_vector(&self, point_id: u32, context: &mut SearchContext) -> &[u8] {
+        self.vector_storage.get(point_id as usize, context).unwrap()
     }
 
     pub fn get_edges_slice(&self) -> &[u32] {
@@ -216,10 +253,10 @@ impl Hnsw {
 impl GraphTraversal for Hnsw {
     type ContextT = SearchContext;
 
-    fn distance(&self, query: &[u8], point_id: u32) -> f32 {
+    fn distance(&self, query: &[u8], point_id: u32, context: &mut SearchContext) -> f32 {
         self.quantizer.distance(
             query,
-            self.get_vector(point_id),
+            self.get_vector(point_id, context),
             utils::l2::L2DistanceCalculatorImpl::StreamingWithSIMD,
         )
     }
@@ -330,9 +367,14 @@ impl GraphTraversal for Hnsw {
 }
 
 impl Index for Hnsw {
-    fn search(&self, query: &[f32], k: usize) -> Option<Vec<IdWithScore>> {
+    fn search(
+        &self,
+        query: &[f32],
+        k: usize,
+        context: &mut SearchContext,
+    ) -> Option<Vec<IdWithScore>> {
         // TODO(hicder): Add ef parameter
-        Some(self.ann_search(query, k, 10))
+        Some(self.ann_search(query, k, 10, context))
     }
 }
 

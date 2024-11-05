@@ -24,6 +24,12 @@ impl TraversalContext for BuilderContext {
     fn set_visited(&mut self, i: u32) {
         self.visited.set(i as usize, true);
     }
+
+    fn should_record_pages(&self) -> bool {
+        false
+    }
+
+    fn record_pages(&mut self, _page_id: String) {}
 }
 
 /// A point and its distance to the query.
@@ -36,6 +42,8 @@ pub struct PointAndDistance {
 pub trait TraversalContext {
     fn visited(&self, i: u32) -> bool;
     fn set_visited(&mut self, i: u32);
+    fn should_record_pages(&self) -> bool;
+    fn record_pages(&mut self, page_id: String);
 }
 
 /// Move the traversal logic out, since it's used in both indexing and query path
@@ -43,7 +51,7 @@ pub trait GraphTraversal {
     type ContextT: TraversalContext;
 
     /// Distance between the query and point_id
-    fn distance(&self, query: &[u8], point_id: u32) -> f32;
+    fn distance(&self, query: &[u8], point_id: u32, context: &mut Self::ContextT) -> f32;
 
     /// Get the edges for a point
     fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>>;
@@ -66,11 +74,11 @@ pub trait GraphTraversal {
 
         candidates.push(PointAndDistance {
             point_id: entry_point,
-            distance: NotNan::new(-self.distance(query, entry_point)).unwrap(),
+            distance: NotNan::new(-self.distance(query, entry_point, context)).unwrap(),
         });
         working_list.push(PointAndDistance {
             point_id: entry_point,
-            distance: NotNan::new(self.distance(query, entry_point)).unwrap(),
+            distance: NotNan::new(self.distance(query, entry_point, context)).unwrap(),
         });
 
         while !candidates.is_empty() {
@@ -95,7 +103,7 @@ pub trait GraphTraversal {
                 }
                 context.set_visited(*e);
                 furthest_element_from_working_list = working_list.peek().unwrap();
-                let distance_e_q = self.distance(query, *e);
+                let distance_e_q = self.distance(query, *e, context);
                 if distance_e_q < *furthest_element_from_working_list.distance
                     || working_list.len() < ef_construction as usize
                 {

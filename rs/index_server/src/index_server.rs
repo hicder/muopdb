@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use index::hnsw::index::SearchContext;
 use log::info;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{SearchRequest, SearchResponse};
@@ -27,10 +28,12 @@ impl IndexServer for IndexServerImpl {
         let index_name = req.index_name;
         let vec = req.vector;
         let k = req.top_k;
+        let record_metrics = req.record_metrics;
 
         let index = self.index_catalog.lock().await.get_index(&index_name).await;
         if let Some(index) = index {
-            let result = index.search(&vec, k as usize);
+            let mut search_context = SearchContext::new(record_metrics);
+            let result = index.search(&vec, k as usize, &mut search_context);
             info!("Search result: {:?}", result);
 
             match result {
@@ -41,12 +44,17 @@ impl IndexServer for IndexServerImpl {
                         ids.push(id_with_score.id);
                         scores.push(id_with_score.score);
                     }
-                    return Ok(tonic::Response::new(SearchResponse { ids, scores }));
+                    return Ok(tonic::Response::new(SearchResponse {
+                        ids: ids,
+                        scores: scores,
+                        num_pages_accessed: search_context.num_pages_accessed() as u64,
+                    }));
                 }
                 None => {
                     return Ok(tonic::Response::new(SearchResponse {
                         ids: vec![],
                         scores: vec![],
+                        num_pages_accessed: 0,
                     }));
                 }
             }
@@ -54,6 +62,7 @@ impl IndexServer for IndexServerImpl {
         Ok(tonic::Response::new(SearchResponse {
             ids: vec![],
             scores: vec![],
+            num_pages_accessed: 0,
         }))
     }
 }

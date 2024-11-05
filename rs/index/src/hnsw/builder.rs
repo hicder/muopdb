@@ -356,7 +356,7 @@ impl HnswBuilder {
 impl GraphTraversal for HnswBuilder {
     type ContextT = BuilderContext;
 
-    fn distance(&self, query: &[u8], point_id: u32) -> f32 {
+    fn distance(&self, query: &[u8], point_id: u32, _context: &mut BuilderContext) -> f32 {
         self.quantizer
             .distance(query, self.get_vector(point_id), StreamingWithSIMD)
     }
