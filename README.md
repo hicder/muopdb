@@ -34,5 +34,10 @@ export HDF5_DIR="$(brew --prefix hdf5)"
 Build:
 ```
 # from top-level workspace
-cargo build
+cargo build --release
+```
+
+Test:
+```
+cargo test --release
 ```
