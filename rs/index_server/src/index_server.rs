@@ -33,11 +33,23 @@ impl IndexServer for IndexServerImpl {
             let result = index.search(&vec, k as usize);
             info!("Search result: {:?}", result);
 
-            // TODO: return scores
-            return Ok(tonic::Response::new(SearchResponse {
-                ids: result.unwrap_or(vec![]),
-                scores: vec![],
-            }));
+            match result {
+                Some(result) => {
+                    let mut ids = vec![];
+                    let mut scores = vec![];
+                    for id_with_score in result {
+                        ids.push(id_with_score.id);
+                        scores.push(id_with_score.score);
+                    }
+                    return Ok(tonic::Response::new(SearchResponse { ids, scores }));
+                }
+                None => {
+                    return Ok(tonic::Response::new(SearchResponse {
+                        ids: vec![],
+                        scores: vec![],
+                    }));
+                }
+            }
         }
         Ok(tonic::Response::new(SearchResponse {
             ids: vec![],
