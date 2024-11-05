@@ -39,6 +39,9 @@ impl IndexServer for IndexServerImpl {
                 scores: vec![],
             }));
         }
-        Ok(tonic::Response::new(SearchResponse { ids: vec![], scores: vec![] }))
+        Ok(tonic::Response::new(SearchResponse {
+            ids: vec![],
+            scores: vec![],
+        }))
     }
 }
