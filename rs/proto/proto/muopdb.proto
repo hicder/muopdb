@@ -9,10 +9,16 @@ message GetRequest {
   string index = 1;
   repeated float vector = 2;
   uint32 top_k = 3;
+
+  // For metrics, don't set by default
+  bool record_metrics = 4;
 }
 
 message GetResponse {
   repeated uint64 ids = 1;
+
+  // For metrics, not enabled by default
+  uint64 num_pages_accessed = 2;
 }
 
 service IndexServer {
@@ -24,10 +30,14 @@ message SearchRequest {
   repeated float vector = 2;
   uint32 top_k = 3;
 
-  // TODO(hicder): Support different distance metrics
+  // For metrics, don't set by default
+  bool record_metrics = 4;
 }
 
 message SearchResponse {
   repeated uint64 ids = 1;
   repeated float scores = 2;
+
+  // For metrics, not enabled by default
+  uint64 num_pages_accessed = 3;
 }

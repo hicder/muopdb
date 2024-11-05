@@ -31,6 +31,7 @@ async fn main() {
             index: "test".to_string(),
             vector: vec![1.0, 2.0, 3.0],
             top_k: 10,
+            record_metrics: true,
         });
 
         let response = client.get(request).await.unwrap();
@@ -42,6 +43,7 @@ async fn main() {
             index_name: "hieu-1".to_string(),
             vector: vec,
             top_k: 10,
+            record_metrics: true,
         });
         let response = client.search(request).await.unwrap();
         info!("Response: {:?}", response);

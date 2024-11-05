@@ -7,12 +7,18 @@ pub struct GetRequest {
     pub vector: ::prost::alloc::vec::Vec<f32>,
     #[prost(uint32, tag = "3")]
     pub top_k: u32,
+    /// For metrics, don't set by default
+    #[prost(bool, tag = "4")]
+    pub record_metrics: bool,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetResponse {
     #[prost(uint64, repeated, tag = "1")]
     pub ids: ::prost::alloc::vec::Vec<u64>,
+    /// For metrics, not enabled by default
+    #[prost(uint64, tag = "2")]
+    pub num_pages_accessed: u64,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -23,6 +29,9 @@ pub struct SearchRequest {
     pub vector: ::prost::alloc::vec::Vec<f32>,
     #[prost(uint32, tag = "3")]
     pub top_k: u32,
+    /// For metrics, don't set by default
+    #[prost(bool, tag = "4")]
+    pub record_metrics: bool,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -31,6 +40,9 @@ pub struct SearchResponse {
     pub ids: ::prost::alloc::vec::Vec<u64>,
     #[prost(float, repeated, tag = "2")]
     pub scores: ::prost::alloc::vec::Vec<f32>,
+    /// For metrics, not enabled by default
+    #[prost(uint64, tag = "3")]
+    pub num_pages_accessed: u64,
 }
 /// Generated client implementations.
 pub mod aggregator_client {

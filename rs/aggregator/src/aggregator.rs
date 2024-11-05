@@ -63,6 +63,7 @@ impl Aggregator for AggregatorServerImpl {
             node_infos.iter().map(|x| (x.node_id, x.clone())).collect();
 
         let mut vecs_and_scores: Vec<IdAndScore> = vec![];
+        let mut num_pages_accessed: usize = 0;
 
         // TODO: parallelize
         for shard_node in shard_nodes.iter() {
@@ -78,6 +79,7 @@ impl Aggregator for AggregatorServerImpl {
                     index_name: index_name_for_shard,
                     vector: req.vector.clone(),
                     top_k: req.top_k,
+                    record_metrics: req.record_metrics,
                 }))
                 .await
                 .unwrap();
@@ -92,6 +94,7 @@ impl Aggregator for AggregatorServerImpl {
                         id: *id,
                         score: *score,
                     });
+                    num_pages_accessed += inner.num_pages_accessed as usize;
                 });
         }
 
@@ -100,6 +103,7 @@ impl Aggregator for AggregatorServerImpl {
 
         Ok(tonic::Response::new(GetResponse {
             ids: vecs_and_scores.iter().map(|x| x.id.clone()).collect(),
+            num_pages_accessed: num_pages_accessed as u64,
         }))
     }
 }
