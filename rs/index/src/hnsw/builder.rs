@@ -383,7 +383,7 @@ mod tests {
     use quantization::pq::ProductQuantizer;
 
     use super::*;
-    use crate::vector::file::FileBackedVectorStorage;
+    use crate::vector::file::FileBackedAppendableVectorStorage;
 
     fn generate_random_vector(dimension: usize) -> Vec<f32> {
         let mut rng = rand::thread_rng();
@@ -443,7 +443,7 @@ mod tests {
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
-        let mut vectors = Box::new(FileBackedVectorStorage::<u8>::new(
+        let mut vectors = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
             vector_dir, 1024, 4096, 5,
         ));
         vectors.append(&vec![0, 0, 0, 0, 0]).unwrap();
@@ -568,7 +568,7 @@ mod tests {
 
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
-        let vectors = Box::new(FileBackedVectorStorage::<u8>::new(
+        let vectors = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
             vector_dir, 1024, 4096, 5,
         ));
 

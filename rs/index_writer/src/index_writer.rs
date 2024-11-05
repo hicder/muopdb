@@ -1,7 +1,7 @@
 use anyhow::Result;
 use index::hnsw::builder::HnswBuilder;
 use index::hnsw::writer::HnswWriter;
-use index::vector::file::FileBackedVectorStorage;
+use index::vector::file::FileBackedAppendableVectorStorage;
 use log::{debug, info};
 use quantization::pq::{ProductQuantizerConfig, ProductQuantizerWriter};
 use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
@@ -69,7 +69,7 @@ impl IndexWriter {
         info!("Start building index");
         let vector_directory = format!("{}/vectors", self.config.output_path);
         std::fs::create_dir_all(&vector_directory)?;
-        let vectors = Box::new(FileBackedVectorStorage::<u8>::new(
+        let vectors = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
             vector_directory.clone(),
             self.config.max_memory_size,
             self.config.file_size,

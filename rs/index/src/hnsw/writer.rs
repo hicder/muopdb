@@ -285,7 +285,7 @@ mod tests {
     use crate::hnsw::builder::Layer;
     use crate::hnsw::reader::HnswReader;
     use crate::hnsw::utils::{GraphTraversal, PointAndDistance};
-    use crate::vector::file::FileBackedVectorStorage;
+    use crate::vector::file::FileBackedAppendableVectorStorage;
 
     fn construct_layers(hnsw_builder: &mut HnswBuilder) {
         // Prepare all layers
@@ -439,7 +439,7 @@ mod tests {
         fs::create_dir_all(pq_dir.clone()).unwrap();
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
-        let vectors = Box::new(FileBackedVectorStorage::<u8>::new(
+        let vectors = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
             vector_dir, 1024, 4096, 16,
         ));
         let pq_config = ProductQuantizerConfig {

@@ -7,7 +7,7 @@ use utils::io::wrap_write;
 
 use super::VectorStorage;
 
-pub struct FileBackedVectorStorage<T> {
+pub struct FileBackedAppendableVectorStorage<T> {
     memory_threshold: usize,
     backing_file_size: usize,
     num_features: usize,
@@ -24,7 +24,7 @@ pub struct FileBackedVectorStorage<T> {
     current_offset: usize,
 }
 
-impl<T: ToBytes + Clone> FileBackedVectorStorage<T> {
+impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
     pub fn new(
         base_directory: String,
         memory_threshold: usize,
@@ -131,7 +131,7 @@ impl<T: ToBytes + Clone> FileBackedVectorStorage<T> {
     }
 }
 
-impl<T: ToBytes + Clone> VectorStorage<T> for FileBackedVectorStorage<T> {
+impl<T: ToBytes + Clone> VectorStorage<T> for FileBackedAppendableVectorStorage<T> {
     fn get(&self, id: u32) -> Option<&[T]> {
         if self.resident {
             if id as usize >= self.resident_vectors.len() {
@@ -214,7 +214,8 @@ mod tests {
     fn test_file_backed_vector_storage() {
         let tempdir = tempdir::TempDir::new("vector_storage_test").unwrap();
         let base_directory = tempdir.path().to_str().unwrap().to_string();
-        let mut storage = FileBackedVectorStorage::<u32>::new(base_directory, 1024, 1024, 4);
+        let mut storage =
+            FileBackedAppendableVectorStorage::<u32>::new(base_directory, 1024, 1024, 4);
         let first_vector = vec![1, 2, 3, 4];
         let second_vector = vec![5, 6, 7, 8];
         for _ in 0..64 {
