@@ -2,13 +2,17 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetRequest {
     #[prost(string, tag = "1")]
-    pub key: ::prost::alloc::string::String,
+    pub index: ::prost::alloc::string::String,
+    #[prost(float, repeated, tag = "2")]
+    pub vector: ::prost::alloc::vec::Vec<f32>,
+    #[prost(uint32, tag = "3")]
+    pub top_k: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetResponse {
-    #[prost(string, tag = "1")]
-    pub value: ::prost::alloc::string::String,
+    #[prost(uint64, repeated, tag = "1")]
+    pub ids: ::prost::alloc::vec::Vec<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -25,6 +29,8 @@ pub struct SearchRequest {
 pub struct SearchResponse {
     #[prost(uint64, repeated, tag = "1")]
     pub ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(float, repeated, tag = "2")]
+    pub scores: ::prost::alloc::vec::Vec<f32>,
 }
 /// Generated client implementations.
 pub mod aggregator_client {

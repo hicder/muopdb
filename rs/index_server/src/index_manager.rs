@@ -3,6 +3,7 @@ use std::sync::Arc;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+use utils::io::get_latest_version;
 
 use crate::index_catalog::IndexCatalog;
 use crate::index_provider::IndexProvider;
@@ -66,7 +67,7 @@ impl IndexManager {
     }
 
     pub async fn check_for_update(&mut self) {
-        let latest_version = Self::get_latest_version(&self.config_path);
+        let latest_version = get_latest_version(&self.config_path);
         if latest_version > self.latest_version {
             info!("New version available: {}", latest_version);
             let latest_config_path = format!("{}/version_{}", self.config_path, latest_version);
@@ -107,24 +108,5 @@ impl IndexManager {
         } else {
             info!("No new version available");
         }
-    }
-
-    // Get latest version from the config directory
-    fn get_latest_version(config_path: &str) -> u64 {
-        // List all files in the directory
-        let mut latest_version = 0;
-        for entry in std::fs::read_dir(config_path).unwrap() {
-            let entry = entry.unwrap();
-            let path = entry.path();
-            let filename = path.file_name().unwrap().to_str().unwrap();
-            if filename.starts_with("version_") {
-                let version = filename.split("_").last().unwrap();
-                let version = version.parse::<u64>().unwrap();
-                if version > latest_version {
-                    latest_version = version;
-                }
-            }
-        }
-        latest_version
     }
 }
