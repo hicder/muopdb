@@ -5,6 +5,7 @@ use memmap2::Mmap;
 
 use crate::hnsw::index::Hnsw;
 use crate::hnsw::writer::{Header, Version};
+use crate::vector::fixed_file::FixedFileVectorStorage;
 
 pub struct HnswReader {
     base_directory: String,
@@ -17,11 +18,16 @@ impl HnswReader {
 
     pub fn read(&self) -> Hnsw {
         let backing_file = File::open(format!("{}/hnsw/index", self.base_directory)).unwrap();
-        let vector_storage_file =
-            File::open(format!("{}/hnsw/vector_storage", self.base_directory)).unwrap();
         let mmap = unsafe { Mmap::map(&backing_file).unwrap() };
 
         let (header, offset) = self.read_header(&mmap);
+
+        let vector_storage_path = format!("{}/hnsw/vector_storage", self.base_directory);
+        let vector_storage = FixedFileVectorStorage::<u8>::new(
+            vector_storage_path,
+            header.quantized_dimension as usize,
+        )
+        .unwrap();
         let edges_padding = (4 - (offset % 4)) % 4;
         let edges_offset = offset + edges_padding as usize;
         let points_offset = edges_offset + header.edges_len as usize;
@@ -34,7 +40,7 @@ impl HnswReader {
 
         Hnsw::new(
             backing_file,
-            vector_storage_file,
+            vector_storage,
             header,
             offset,
             edges_offset,
