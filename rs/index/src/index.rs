@@ -1,8 +1,13 @@
-//! Main trait for index
-//! TODO(hicder): Add more methods
+#[derive(Debug)]
+pub struct IdWithScore {
+    pub id: u64,
+    pub score: f32,
+}
+
+/// Main trait for index
 pub trait Index {
     /// Search for the nearest neighbors of a query vector
-    fn search(&self, query: &[f32], k: usize) -> Option<Vec<u64>>;
+    fn search(&self, query: &[f32], k: usize) -> Option<Vec<IdWithScore>>;
 }
 
 pub type BoxedIndex = Box<dyn Index + Send + Sync>;

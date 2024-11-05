@@ -1,6 +1,7 @@
 use std::fs::File;
 
 use memmap2::Mmap;
+use num_traits::ToPrimitive;
 use quantization::pq::ProductQuantizerReader;
 use quantization::quantization::Quantizer;
 use rand::Rng;
@@ -8,7 +9,7 @@ use roaring::RoaringBitmap;
 
 use super::utils::{GraphTraversal, TraversalContext};
 use crate::hnsw::writer::Header;
-use crate::index::Index;
+use crate::index::{IdWithScore, Index};
 
 pub struct SearchContext {
     visited: RoaringBitmap,
@@ -96,7 +97,7 @@ impl Hnsw {
             .collect()
     }
 
-    pub fn ann_search(&self, query: &[f32], k: usize, ef: u32) -> Vec<u64> {
+    pub fn ann_search(&self, query: &[f32], k: usize, ef: u32) -> Vec<IdWithScore> {
         let mut context = SearchContext::new();
 
         let quantized_query = self.quantizer.quantize(query);
@@ -118,7 +119,15 @@ impl Hnsw {
         working_set.sort_by(|x, y| x.distance.cmp(&y.distance));
         working_set.truncate(k);
         let point_ids: Vec<u32> = working_set.iter().map(|x| x.point_id).collect();
-        self.map_point_id_to_doc_id(&point_ids)
+        let doc_ids = self.map_point_id_to_doc_id(&point_ids);
+        working_set
+            .into_iter()
+            .zip(doc_ids)
+            .map(|(x, y)| IdWithScore {
+                id: y,
+                score: x.distance.to_f32().unwrap(),
+            })
+            .collect()
     }
 
     pub fn get_header(&self) -> &Header {
@@ -328,7 +337,7 @@ impl GraphTraversal for Hnsw {
 }
 
 impl Index for Hnsw {
-    fn search(&self, query: &[f32], k: usize) -> Option<Vec<u64>> {
+    fn search(&self, query: &[f32], k: usize) -> Option<Vec<IdWithScore>> {
         // TODO(hicder): Add ef parameter
         Some(self.ann_search(query, k, 10))
     }
