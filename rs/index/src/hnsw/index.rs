@@ -10,6 +10,7 @@ use roaring::RoaringBitmap;
 use super::utils::{GraphTraversal, TraversalContext};
 use crate::hnsw::writer::Header;
 use crate::index::{IdWithScore, Index};
+use crate::vector::fixed_file::FixedFileVectorStorage;
 
 pub struct SearchContext {
     visited: RoaringBitmap,
@@ -37,10 +38,10 @@ pub struct Hnsw {
     // Need this for mmap
     #[allow(dead_code)]
     backing_file: File,
-    #[allow(dead_code)]
-    vector_storage_file: File,
     mmap: Mmap,
-    vector_storage_mmap: Mmap,
+
+    vector_storage: FixedFileVectorStorage<u8>,
+
     header: Header,
     data_offset: usize,
     edges_offset: usize,
@@ -55,7 +56,7 @@ pub struct Hnsw {
 impl Hnsw {
     pub fn new(
         backing_file: File,
-        vector_storage_file: File,
+        vector_storage: FixedFileVectorStorage<u8>,
         header: Header,
         data_offset: usize,
         edges_offset: usize,
@@ -71,13 +72,11 @@ impl Hnsw {
         let pq = pq_reader.read().unwrap();
 
         let index_mmap = unsafe { Mmap::map(&backing_file).unwrap() };
-        let vector_storage_mmap = unsafe { Mmap::map(&vector_storage_file).unwrap() };
 
         Self {
             backing_file,
-            vector_storage_file,
             mmap: index_mmap,
-            vector_storage_mmap,
+            vector_storage,
             header,
             data_offset,
             edges_offset,
@@ -139,13 +138,7 @@ impl Hnsw {
     }
 
     fn get_vector(&self, point_id: u32) -> &[u8] {
-        &self.get_vector_storage_slice()[point_id as usize
-            * self.header.quantized_dimension as usize
-            ..(point_id + 1) as usize * self.header.quantized_dimension as usize]
-    }
-
-    fn get_vector_storage_slice(&self) -> &[u8] {
-        utils::mem::transmute_u8_to_slice(&self.vector_storage_mmap)
+        self.vector_storage.get(point_id as usize).unwrap()
     }
 
     pub fn get_edges_slice(&self) -> &[u32] {
