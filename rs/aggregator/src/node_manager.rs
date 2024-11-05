@@ -71,48 +71,49 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_nodes() {
-       let temp_dir = TempDir::new("test_node_manager").unwrap();
-       let config_path = temp_dir.path().to_str().unwrap().to_string();
+        let temp_dir = TempDir::new("test_node_manager").unwrap();
+        let config_path = temp_dir.path().to_str().unwrap().to_string();
 
-       let config_v1 = NodeManagerConfig {
-           version: 1,
-           nodes: vec![NodeInfo {
-               node_id: 1,
-               ip: "127.0.0.1".to_string(),
-               port: 9000,
-           }],
-       };
+        let config_v1 = NodeManagerConfig {
+            version: 1,
+            nodes: vec![NodeInfo {
+                node_id: 1,
+                ip: "127.0.0.1".to_string(),
+                port: 9000,
+            }],
+        };
 
-       // Write config to file
-       let config_path_v1 = format!("{}/version_1", config_path);
-       std::fs::write(config_path_v1, serde_json::to_string(&config_v1).unwrap()).unwrap();
+        // Write config to file
+        let config_path_v1 = format!("{}/version_1", config_path);
+        std::fs::write(config_path_v1, serde_json::to_string(&config_v1).unwrap()).unwrap();
 
-       let node_manager = NodeManager::new(config_path.clone());
-       node_manager.check_for_update().await;
-       let nodes = node_manager.get_nodes(&HashSet::from([1])).await;
-       assert_eq!(nodes.len(), 1);
+        let node_manager = NodeManager::new(config_path.clone());
+        node_manager.check_for_update().await;
+        let nodes = node_manager.get_nodes(&HashSet::from([1])).await;
+        assert_eq!(nodes.len(), 1);
 
-       let config_v2 = NodeManagerConfig {
-           version: 2,
-           nodes: vec![NodeInfo {
-               node_id: 1,
-               ip: "127.0.0.1".to_string(),
-               port: 9000,
-           }, 
-               NodeInfo {
-                   node_id: 2,
-                   ip: "127.0.0.1".to_string(),
-                   port: 9001,
-               },
-           ],
-       };
+        let config_v2 = NodeManagerConfig {
+            version: 2,
+            nodes: vec![
+                NodeInfo {
+                    node_id: 1,
+                    ip: "127.0.0.1".to_string(),
+                    port: 9000,
+                },
+                NodeInfo {
+                    node_id: 2,
+                    ip: "127.0.0.1".to_string(),
+                    port: 9001,
+                },
+            ],
+        };
 
-       // Write config to file
-       let config_path_v2 = format!("{}/version_2", config_path);
-       std::fs::write(config_path_v2, serde_json::to_string(&config_v2).unwrap()).unwrap();
+        // Write config to file
+        let config_path_v2 = format!("{}/version_2", config_path);
+        std::fs::write(config_path_v2, serde_json::to_string(&config_v2).unwrap()).unwrap();
 
-       node_manager.check_for_update().await;
-       let nodes = node_manager.get_nodes(&HashSet::from([1,2])).await;
-       assert_eq!(nodes.len(), 2);
+        node_manager.check_for_update().await;
+        let nodes = node_manager.get_nodes(&HashSet::from([1, 2])).await;
+        assert_eq!(nodes.len(), 2);
     }
 }

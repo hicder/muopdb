@@ -73,12 +73,24 @@ mod tests {
         let config_v1 = ShardManagerConfig {
             version: 1,
             indices_to_shards: HashMap::from([
-                ("index1".to_string(), vec![ShardIdNodeId { shard_id: 0, node_id: 1 }]),
-                ("index2".to_string(), vec![ShardIdNodeId { shard_id: 0, node_id: 2 }]),
+                (
+                    "index1".to_string(),
+                    vec![ShardIdNodeId {
+                        shard_id: 0,
+                        node_id: 1,
+                    }],
+                ),
+                (
+                    "index2".to_string(),
+                    vec![ShardIdNodeId {
+                        shard_id: 0,
+                        node_id: 2,
+                    }],
+                ),
             ]),
         };
 
-        // Write config to file 
+        // Write config to file
         let config_path_v1 = format!("{}/version_1", config_path);
         std::fs::write(config_path_v1, serde_json::to_string(&config_v1).unwrap()).unwrap();
 
@@ -90,13 +102,31 @@ mod tests {
         let config_v2 = ShardManagerConfig {
             version: 2,
             indices_to_shards: HashMap::from([
-                ("index1".to_string(), vec![ShardIdNodeId { shard_id: 0, node_id: 1 }]),
-                ("index2".to_string(), vec![ShardIdNodeId { shard_id: 0, node_id: 2 }]),
-                ("index3".to_string(), vec![ShardIdNodeId { shard_id: 0, node_id: 3 }]),
+                (
+                    "index1".to_string(),
+                    vec![ShardIdNodeId {
+                        shard_id: 0,
+                        node_id: 1,
+                    }],
+                ),
+                (
+                    "index2".to_string(),
+                    vec![ShardIdNodeId {
+                        shard_id: 0,
+                        node_id: 2,
+                    }],
+                ),
+                (
+                    "index3".to_string(),
+                    vec![ShardIdNodeId {
+                        shard_id: 0,
+                        node_id: 3,
+                    }],
+                ),
             ]),
         };
 
-        // Write config to file 
+        // Write config to file
         let config_path_v2 = format!("{}/version_2", config_path);
         std::fs::write(config_path_v2, serde_json::to_string(&config_v2).unwrap()).unwrap();
 
