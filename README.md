@@ -3,19 +3,22 @@
 ## Introduction
 
 MuopDB is a vector database for machine learning. This project is done under [TechCare Coaching](https://techcarecoaching.com/). It plans to support the following features:
-
-- [ ] Query path
+### V0 (Done)
+- [x] Query path
   - [x] Vector similarity search
-  - [ ] Inverted File (IVF)
   - [x] Hierarchical Navigable Small Worlds (HNSW)
   - [x] Product Quantization (PQ)
-- [ ] Indexing path
+- [x] Indexing path
   - [x] Support periodic offline indexing
-  - [ ] Support realtime indexing
-- [ ] Database Management
+- [x] Database Management
   - [x] Doc-sharding & query fan-out with aggregator-leaf architecture
   - [x] In-memory & disk-based storage with mmap
-
+### V1
+- [ ] Query path
+  - [ ] Inverted File (IVF)
+  - [ ] Improve locality for HNSW
+- [ ] Indexing path
+  - [ ] Support realtime indexing
 ## Why MuopDB?
 This is an educational project for me to learn Rust & vector database.
 
