@@ -1,8 +1,36 @@
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
 use log::info;
 use proto::muopdb::aggregator_server::Aggregator;
-use proto::muopdb::{GetRequest, GetResponse};
+use proto::muopdb::index_server_client::IndexServerClient;
+use proto::muopdb::{GetRequest, GetResponse, SearchRequest};
+use tokio::sync::RwLock;
 
-pub struct AggregatorServerImpl {}
+use crate::node_manager::{self, NodeManager};
+use crate::shard_manager::ShardManager;
+
+pub struct AggregatorServerImpl {
+    shard_manager: Arc<RwLock<ShardManager>>,
+    node_manager: Arc<RwLock<NodeManager>>,
+}
+
+impl AggregatorServerImpl {
+    pub fn new(
+        shard_manager: Arc<RwLock<ShardManager>>,
+        node_manager: Arc<RwLock<NodeManager>>,
+    ) -> Self {
+        Self {
+            shard_manager,
+            node_manager,
+        }
+    }
+}
+
+struct IdAndScore {
+    id: u64,
+    score: f32,
+}
 
 #[tonic::async_trait]
 impl Aggregator for AggregatorServerImpl {
@@ -11,8 +39,67 @@ impl Aggregator for AggregatorServerImpl {
         request: tonic::Request<GetRequest>,
     ) -> Result<tonic::Response<GetResponse>, tonic::Status> {
         info!("Got a request: {:?}", request);
+        let req = request.into_inner();
+        let index_name = &req.index;
+        let shard_nodes = self
+            .shard_manager
+            .read()
+            .await
+            .get_nodes_for_index(index_name)
+            .await;
+
+        let node_infos = self
+            .node_manager
+            .read()
+            .await
+            .get_nodes(
+                &shard_nodes
+                    .iter()
+                    .map(|x| x.node_id)
+                    .collect::<HashSet<u32>>(),
+            )
+            .await;
+        let node_id_to_node_info: HashMap<u32, node_manager::NodeInfo> =
+            node_infos.iter().map(|x| (x.node_id, x.clone())).collect();
+
+        let mut vecs_and_scores: Vec<IdAndScore> = vec![];
+
+        // TODO: parallelize
+        for shard_node in shard_nodes.iter() {
+            let node_info = node_id_to_node_info.get(&shard_node.node_id).unwrap();
+            let mut client =
+                IndexServerClient::connect(format!("{}:{}", node_info.ip, node_info.port))
+                    .await
+                    .unwrap();
+
+            let index_name_for_shard = format!("{}--{}", index_name, shard_node.shard_id);
+            let ret = client
+                .search(tonic::Request::new(SearchRequest {
+                    index_name: index_name_for_shard,
+                    vector: req.vector.clone(),
+                    top_k: req.top_k,
+                }))
+                .await
+                .unwrap();
+
+            let inner = ret.into_inner();
+            inner
+                .ids
+                .iter()
+                .zip(inner.scores.iter())
+                .for_each(|(id, score)| {
+                    vecs_and_scores.push(IdAndScore {
+                        id: *id,
+                        score: *score,
+                    });
+                });
+        }
+
+        // Sort by score
+        vecs_and_scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+
         Ok(tonic::Response::new(GetResponse {
-            value: "Hello, world!".to_string(),
+            ids: vecs_and_scores.iter().map(|x| x.id.clone()).collect(),
         }))
     }
 }

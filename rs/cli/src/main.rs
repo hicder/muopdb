@@ -28,7 +28,9 @@ async fn main() {
     if node_type == 0 {
         let mut client = AggregatorClient::connect(addr).await.unwrap();
         let request = tonic::Request::new(GetRequest {
-            key: "test".to_string(),
+            index: "test".to_string(),
+            vector: vec![1.0, 2.0, 3.0],
+            top_k: 10,
         });
 
         let response = client.get(request).await.unwrap();

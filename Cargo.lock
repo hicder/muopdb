@@ -29,11 +29,14 @@ dependencies = [
  "proto",
  "rand 0.8.5",
  "serde",
+ "serde_json",
  "serde_yaml",
+ "tempdir",
  "tokio",
  "tokio-stream",
  "tonic",
  "tonic-reflection",
+ "utils",
 ]
 
 [[package]]
@@ -885,6 +888,7 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-reflection",
+ "utils",
 ]
 
 [[package]]

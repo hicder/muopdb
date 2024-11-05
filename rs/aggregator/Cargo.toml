@@ -17,3 +17,6 @@ serde_yaml = "0.9"
 rand = "0.8.5"
 log.workspace = true
 env_logger.workspace = true
+utils.workspace = true
+serde_json.workspace = true
+tempdir.workspace = true
