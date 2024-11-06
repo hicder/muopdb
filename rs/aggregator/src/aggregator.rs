@@ -47,6 +47,7 @@ impl Aggregator for AggregatorServerImpl {
             .await
             .get_nodes_for_index(index_name)
             .await;
+        let ef_construction = req.ef_construction;
 
         let node_infos = self
             .node_manager
@@ -80,6 +81,7 @@ impl Aggregator for AggregatorServerImpl {
                     vector: req.vector.clone(),
                     top_k: req.top_k,
                     record_metrics: req.record_metrics,
+                    ef_construction,
                 }))
                 .await
                 .unwrap();

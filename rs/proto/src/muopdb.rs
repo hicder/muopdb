@@ -7,6 +7,8 @@ pub struct GetRequest {
     pub vector: ::prost::alloc::vec::Vec<f32>,
     #[prost(uint32, tag = "3")]
     pub top_k: u32,
+    #[prost(uint32, tag = "5")]
+    pub ef_construction: u32,
     /// For metrics, don't set by default
     #[prost(bool, tag = "4")]
     pub record_metrics: bool,
@@ -29,6 +31,8 @@ pub struct SearchRequest {
     pub vector: ::prost::alloc::vec::Vec<f32>,
     #[prost(uint32, tag = "3")]
     pub top_k: u32,
+    #[prost(uint32, tag = "5")]
+    pub ef_construction: u32,
     /// For metrics, don't set by default
     #[prost(bool, tag = "4")]
     pub record_metrics: bool,

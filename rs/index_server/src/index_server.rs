@@ -29,11 +29,12 @@ impl IndexServer for IndexServerImpl {
         let vec = req.vector;
         let k = req.top_k;
         let record_metrics = req.record_metrics;
+        let ef_construction = req.ef_construction;
 
         let index = self.index_catalog.lock().await.get_index(&index_name).await;
         if let Some(index) = index {
             let mut search_context = SearchContext::new(record_metrics);
-            let result = index.search(&vec, k as usize, &mut search_context);
+            let result = index.search(&vec, k as usize, ef_construction, &mut search_context);
             info!("Search result: {:?}", result);
 
             match result {

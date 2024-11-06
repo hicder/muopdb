@@ -417,10 +417,11 @@ impl Index for Hnsw {
         &self,
         query: &[f32],
         k: usize,
+        ef_construction: u32,
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>> {
         // TODO(hicder): Add ef parameter
-        Some(self.ann_search(query, k, 20, context))
+        Some(self.ann_search(query, k, ef_construction, context))
     }
 }
 
