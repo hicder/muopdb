@@ -13,6 +13,7 @@ pub trait Index {
         &self,
         query: &[f32],
         k: usize,
+        ef_construction: u32,
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>>;
 }

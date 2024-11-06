@@ -36,6 +36,7 @@ async fn main() {
             vector: vec![1.0, 2.0, 3.0],
             top_k: 10,
             record_metrics: true,
+            ef_construction: 100,
         });
 
         let response = client.get(request).await.unwrap();
@@ -48,6 +49,7 @@ async fn main() {
             vector: vec,
             top_k: 10,
             record_metrics: true,
+            ef_construction: 100,
         });
         info!("Request: {:?}", request);
         let response = client.search(request).await.unwrap();
