@@ -1,4 +1,4 @@
-use crate::hnsw::index::SearchContext;
+use crate::utils::SearchContext;
 
 #[derive(Debug)]
 pub struct IdWithScore {
