@@ -1,15 +1,18 @@
 use std::cmp::min;
-use std::collections::{BinaryHeap, HashMap, VecDeque};
+use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 
 use anyhow::{anyhow, Context, Ok, Result};
-use bit_vec::BitVec;
+use log::debug;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 use rand::Rng;
 use utils::l2::L2DistanceCalculatorImpl::StreamingWithSIMD;
 
+use super::index::Hnsw;
 use super::utils::{BuilderContext, GraphTraversal, PointAndDistance};
-use crate::vector::VectorStorage;
+use crate::utils::SearchContext;
+use crate::vector::file::FileBackedAppendableVectorStorage;
+use crate::vector::{VectorStorage, VectorStorageConfig};
 
 /// TODO(hicder): support bare vector in addition to quantized one.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,9 +63,19 @@ impl HnswBuilder {
         max_neighbors: usize,
         max_layers: u8,
         ef_construction: u32,
+        vector_storage_memory_size: usize,
+        vector_storage_file_size: usize,
+        num_features: usize,
         quantizer: Box<dyn Quantizer>,
-        vectors: Box<dyn VectorStorage<u8>>,
+        base_directory: String,
     ) -> Self {
+        let vectors = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
+            base_directory.clone(),
+            vector_storage_memory_size,
+            vector_storage_file_size,
+            num_features,
+        ));
+
         Self {
             vectors: vectors,
             max_neighbors,
@@ -73,6 +86,87 @@ impl HnswBuilder {
             ef_contruction: ef_construction,
             entry_point: vec![],
             doc_id_mapping: Vec::new(),
+        }
+    }
+
+    pub fn from_hnsw(
+        hnsw: Hnsw,
+        output_directory: String,
+        vector_storage_config: VectorStorageConfig,
+        max_neighbors: usize,
+    ) -> Self {
+        let num_layers = hnsw.get_header().num_layers as usize;
+        let mut current_top_layer = (num_layers - 1) as u8;
+        let mut context = SearchContext::new(false);
+
+        let mut layers = vec![];
+        for _ in 0..num_layers {
+            layers.push(Layer {
+                edges: HashMap::new(),
+            });
+        }
+
+        let tmp_vector_storage_dir = format!("{}/vector_storage_tmp", output_directory);
+        let mut vector_storage = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
+            tmp_vector_storage_dir,
+            vector_storage_config.memory_threshold,
+            vector_storage_config.file_size,
+            vector_storage_config.num_features,
+        ));
+
+        // Copy over the vectors
+        for i in 0..hnsw.get_doc_id_mapping_slice().len() {
+            let vector = hnsw.vector_storage.get(i, &mut context).unwrap();
+            vector_storage
+                .append(vector)
+                .unwrap_or_else(|_| panic!("append failed"));
+        }
+
+        loop {
+            let layer = &mut layers[current_top_layer as usize];
+            hnsw.visit(current_top_layer, |from: u32, to: u32| {
+                let distance = hnsw.quantizer.distance(
+                    hnsw.vector_storage
+                        .get(from as usize, &mut context)
+                        .unwrap(),
+                    hnsw.vector_storage.get(to as usize, &mut context).unwrap(),
+                    utils::l2::L2DistanceCalculatorImpl::StreamingWithSIMD,
+                );
+                layer
+                    .edges
+                    .entry(from)
+                    .or_insert_with(|| vec![])
+                    .push(PointAndDistance {
+                        point_id: to,
+                        distance: NotNan::new(distance).unwrap(),
+                    });
+                true
+            });
+
+            debug!(
+                "Layer {}, number of edges: {}",
+                current_top_layer,
+                layer.edges.len()
+            );
+            if current_top_layer == 0 {
+                break;
+            }
+            current_top_layer -= 1;
+        }
+
+        let all_entry_points = hnsw.get_all_entry_points();
+        let doc_id_mapping = hnsw.get_doc_id_mapping_slice().to_vec();
+
+        Self {
+            vectors: vector_storage,
+            max_neighbors: max_neighbors,
+            max_layer: num_layers as u8,
+            layers: layers,
+            current_top_layer: num_layers as u8 - 1,
+            quantizer: hnsw.quantizer,
+            ef_contruction: 100,
+            entry_point: all_entry_points,
+            doc_id_mapping: doc_id_mapping,
         }
     }
 
@@ -89,7 +183,7 @@ impl HnswBuilder {
     // Reindex the vectors based on the bottom layer
     // Vectors that are connected should have their id close to each other
     // This optimization is useful for disk-based indexing
-    pub fn reindex(&mut self) -> anyhow::Result<()> {
+    pub fn reindex(&mut self, temp_dir: String) -> anyhow::Result<()> {
         // Assign new ids to the vectors based on BFS on the bottom layer
         // Assuming our vectors are index from 0 to n-1
         let graph = &mut self.layers[0];
@@ -125,10 +219,11 @@ impl HnswBuilder {
                 }
             }
         }
+
         for (i, layer) in self.layers.iter_mut().enumerate() {
             layer
                 .reindex(&assigned_ids)
-                .context(format!("failed to reindex layer {}", i))?
+                .context(format!("failed to reindex layer {}", i))?;
         }
         let tmp_id_provider = self.doc_id_mapping.clone();
         for (id, doc_id) in tmp_id_provider.into_iter().enumerate() {
@@ -145,6 +240,30 @@ impl HnswBuilder {
             ))?;
             *entry = *new_id as u32;
         }
+
+        // Build reverse assigned ids
+        let mut reverse_assigned_ids = vec![-1; self.doc_id_mapping.len()];
+        for (i, id) in assigned_ids.iter().enumerate() {
+            reverse_assigned_ids[*id as usize] = i as i32;
+        }
+
+        let vector_storage_config = self.vectors.config();
+        let mut new_vector_storage = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
+            temp_dir.clone(),
+            vector_storage_config.memory_threshold,
+            vector_storage_config.file_size,
+            vector_storage_config.num_features,
+        ));
+
+        for i in 0..reverse_assigned_ids.len() {
+            let mapped_id = reverse_assigned_ids[i];
+            let vector = self.vectors.get(mapped_id as u32).unwrap();
+            new_vector_storage
+                .append(vector)
+                .unwrap_or_else(|_| panic!("append failed"));
+        }
+
+        self.vectors = new_vector_storage;
         anyhow::Ok(())
     }
 
@@ -172,7 +291,7 @@ impl HnswBuilder {
 
         let mut entry_point = self.entry_point[0];
         if layer < self.current_top_layer {
-            for l in ((layer + 1)..self.current_top_layer).rev() {
+            for l in ((layer + 1)..=self.current_top_layer).rev() {
                 let nearest_elements =
                     self.search_layer(&mut context, &quantized_query, entry_point, 1, l);
                 entry_point = nearest_elements[0].point_id;
@@ -237,19 +356,16 @@ impl HnswBuilder {
     }
 
     pub fn get_nodes_from_non_bottom_layer(&self) -> Vec<u32> {
-        let mut nodes = vec![];
+        let mut nodes = HashSet::new();
         let mut current_layer = self.current_top_layer;
-        let mut visited = BitVec::from_elem(self.vectors.len(), false);
         while current_layer > 0 {
+            debug!("get nodes from layer: {:?}", current_layer);
             for (point_id, _) in self.layers[current_layer as usize].edges.iter() {
-                if !visited.get(*point_id as usize).unwrap_or(false) {
-                    nodes.push(*point_id);
-                    visited.set(*point_id as usize, true);
-                }
+                nodes.insert(*point_id);
             }
             current_layer -= 1;
         }
-        nodes
+        nodes.into_iter().collect()
     }
 
     /// Compute the distance between two points.
@@ -464,7 +580,7 @@ mod tests {
             max_layer: 0,
             doc_id_mapping: id_provider,
         };
-        builder.reindex().unwrap();
+        builder.reindex(base_directory.clone()).unwrap();
         for i in 0..3 {
             assert_eq!(
                 builder
@@ -563,12 +679,6 @@ mod tests {
         let temp_dir = tempdir::TempDir::new("product_quantizer_test").unwrap();
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
 
-        let vector_dir = format!("{}/vectors", base_directory);
-        fs::create_dir_all(vector_dir.clone()).unwrap();
-        let vectors = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
-            vector_dir, 1024, 4096, 5,
-        ));
-
         let pq = ProductQuantizer::new(
             dimension,
             subvector_dimension,
@@ -578,7 +688,9 @@ mod tests {
         )
         .expect("ProductQuantizer should be created.");
 
-        let mut builder = HnswBuilder::new(5, 10, 20, Box::new(pq), vectors);
+        let vector_dir = format!("{}/vectors", base_directory);
+        fs::create_dir_all(vector_dir.clone()).unwrap();
+        let mut builder = HnswBuilder::new(5, 10, 20, 1024, 4096, 5, Box::new(pq), vector_dir);
 
         for i in 0..100 {
             builder

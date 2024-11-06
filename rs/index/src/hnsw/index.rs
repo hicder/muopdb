@@ -1,5 +1,6 @@
 use std::fs::File;
 
+use log::debug;
 use memmap2::Mmap;
 use num_traits::ToPrimitive;
 use quantization::pq::ProductQuantizerReader;
@@ -41,7 +42,7 @@ pub struct Hnsw {
     backing_file: File,
     mmap: Mmap,
 
-    vector_storage: FixedFileVectorStorage<u8>,
+    pub vector_storage: FixedFileVectorStorage<u8>,
 
     header: Header,
     data_offset: usize,
@@ -51,7 +52,7 @@ pub struct Hnsw {
     level_offsets_offset: usize,
     doc_id_mapping_offset: usize,
 
-    quantizer: Box<dyn Quantizer + Send + Sync>,
+    pub quantizer: Box<dyn Quantizer + Send + Sync>,
 }
 
 impl Hnsw {
@@ -109,7 +110,7 @@ impl Hnsw {
         let mut ep = self.get_entry_point_top_layer();
         let mut working_set;
         while current_layer > 0 {
-            working_set = self.search_layer(context, &quantized_query, ep, 1, current_layer as u8);
+            working_set = self.search_layer(context, &quantized_query, ep, ef, current_layer as u8);
             ep = working_set
                 .iter()
                 .min_by(|x, y| x.distance.cmp(&y.distance))
@@ -123,6 +124,12 @@ impl Hnsw {
         working_set.truncate(k);
         let point_ids: Vec<u32> = working_set.iter().map(|x| x.point_id).collect();
         let doc_ids = self.map_point_id_to_doc_id(&point_ids);
+
+        debug!(
+            "[ANN] number of pages accessed: {:?}",
+            context.num_pages_accessed()
+        );
+
         working_set
             .into_iter()
             .zip(doc_ids)
@@ -181,6 +188,31 @@ impl Hnsw {
         return utils::mem::transmute_u8_to_slice(slice);
     }
 
+    // Return all entry points for this index
+    pub fn get_all_entry_points(&self) -> Vec<u32> {
+        // If we only have bottom layer, just return a random one.
+        if self.header.num_layers == 1 {
+            let mut entry_ponts = vec![];
+            let mut idx = 0;
+            let edge_offsets_slice = self.get_edge_offsets_slice();
+            while idx < edge_offsets_slice.len() - 1 {
+                let edge_offset = edge_offsets_slice[idx];
+                let next_edge_offset = edge_offsets_slice[idx + 1];
+                if next_edge_offset - edge_offset > 0 {
+                    entry_ponts.push(idx as u32);
+                }
+                idx += 1;
+            }
+            return entry_ponts;
+        }
+
+        // Just pick a random point at the top layer.
+        let level_offsets_slice = self.get_level_offsets_slice();
+        let points = &self.get_points_slice()
+            [level_offsets_slice[0] as usize..level_offsets_slice[1] as usize];
+        points.to_vec()
+    }
+
     pub fn get_entry_point_top_layer(&self) -> u32 {
         // If we only have bottom layer, just return a random one.
         if self.header.num_layers == 1 {
@@ -214,6 +246,53 @@ impl Hnsw {
             .iter()
             .map(|x| doc_id_mapping[*x as usize])
             .collect()
+    }
+
+    pub fn visit(&self, layer: u8, mut visitor: impl FnMut(u32, u32) -> bool) {
+        let num_layers = self.header.num_layers as usize;
+        let level_idx_start =
+            self.get_level_offsets_slice()[num_layers - 1 - layer as usize] as usize;
+        let level_idx_end = self.get_level_offsets_slice()[num_layers - layer as usize] as usize;
+        if layer > 0 {
+            let points = &self.get_points_slice()[level_idx_start..level_idx_end];
+            for i in 0..points.len() {
+                let idx = i as usize;
+
+                let start_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx];
+                let end_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx + 1];
+
+                if start_idx_edges == end_idx_edges {
+                    continue;
+                }
+
+                let edges =
+                    &self.get_edges_slice()[start_idx_edges as usize..end_idx_edges as usize];
+                for e in edges {
+                    if !visitor(points[i], *e) {
+                        return;
+                    }
+                }
+            }
+        } else {
+            let num_points = level_idx_end - level_idx_start - 1;
+            for i in 0..num_points {
+                let idx = i as usize;
+                let start_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx];
+                let end_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx + 1];
+
+                if start_idx_edges == end_idx_edges {
+                    continue;
+                }
+
+                let edges =
+                    &self.get_edges_slice()[start_idx_edges as usize..end_idx_edges as usize];
+                for e in edges {
+                    if !visitor(idx as u32, *e) {
+                        return;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -305,7 +384,7 @@ impl GraphTraversal for Hnsw {
                 println!("");
             }
         } else {
-            let num_points = level_idx_end - level_idx_start;
+            let num_points = level_idx_end - level_idx_start - 1;
             println!("Layer {}, number of points: {}", layer, num_points);
             for i in 0..num_points {
                 if !predicate(layer, i as u32) {
@@ -341,7 +420,7 @@ impl Index for Hnsw {
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>> {
         // TODO(hicder): Add ef parameter
-        Some(self.ann_search(query, k, 10, context))
+        Some(self.ann_search(query, k, 20, context))
     }
 }
 

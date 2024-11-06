@@ -859,6 +859,7 @@ dependencies = [
  "anyhow",
  "bit-vec",
  "byteorder",
+ "log",
  "memmap2",
  "num-traits 0.2.19",
  "ordered-float",

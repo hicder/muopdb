@@ -1,7 +1,6 @@
 use anyhow::Result;
 use index::hnsw::builder::HnswBuilder;
 use index::hnsw::writer::HnswWriter;
-use index::vector::file::FileBackedAppendableVectorStorage;
 use log::{debug, info};
 use quantization::pq::{ProductQuantizerConfig, ProductQuantizerWriter};
 use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
@@ -69,18 +68,16 @@ impl IndexWriter {
         info!("Start building index");
         let vector_directory = format!("{}/vectors", self.config.output_path);
         std::fs::create_dir_all(&vector_directory)?;
-        let vectors = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
-            vector_directory.clone(),
-            self.config.max_memory_size,
-            self.config.file_size,
-            self.config.dimension / self.config.subvector_dimension,
-        ));
+
         let mut hnsw_builder = HnswBuilder::new(
             self.config.max_num_neighbors,
             self.config.num_layers,
             self.config.ef_construction,
+            self.config.max_memory_size,
+            self.config.file_size,
+            self.config.dimension / self.config.subvector_dimension,
             Box::new(pq),
-            vectors,
+            vector_directory.clone(),
         );
 
         input.reset();
@@ -92,14 +89,12 @@ impl IndexWriter {
             }
         }
 
-        hnsw_builder.reindex()?;
-
         let hnsw_directory = format!("{}/hnsw", self.config.output_path);
         std::fs::create_dir_all(&hnsw_directory)?;
 
         info!("Start writing index");
         let hnsw_writer = HnswWriter::new(hnsw_directory);
-        hnsw_writer.write(&mut hnsw_builder, true)?;
+        hnsw_writer.write(&mut hnsw_builder, self.config.reindex)?;
 
         // Cleanup tmp directory. It's ok to fail
         std::fs::remove_dir_all(&pg_temp_dir).unwrap_or_default();

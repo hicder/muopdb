@@ -13,6 +13,7 @@ pub struct IndexWriterConfig {
     pub num_layers: u8,
     pub max_num_neighbors: usize,
     pub ef_construction: u32,
+    pub reindex: bool,
 
     // Quantizer parameters
     pub quantizer_type: QuantizerType,
