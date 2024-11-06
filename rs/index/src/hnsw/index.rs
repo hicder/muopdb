@@ -9,8 +9,8 @@ use rand::Rng;
 
 use super::utils::{GraphTraversal, TraversalContext};
 use crate::hnsw::writer::Header;
-use crate::index::{IdWithScore, Index};
-use crate::utils::SearchContext;
+use crate::index::Index;
+use crate::utils::{IdWithScore, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
 
 impl TraversalContext for SearchContext {

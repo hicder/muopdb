@@ -1,10 +1,4 @@
-use crate::utils::SearchContext;
-
-#[derive(Debug)]
-pub struct IdWithScore {
-    pub id: u64,
-    pub score: f32,
-}
+use crate::utils::{IdWithScore, SearchContext};
 
 /// Main trait for index
 pub trait Index {
