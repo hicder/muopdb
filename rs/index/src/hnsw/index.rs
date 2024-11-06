@@ -1,5 +1,6 @@
 use std::fs::File;
 
+use log::info;
 use memmap2::Mmap;
 use num_traits::ToPrimitive;
 use quantization::pq::ProductQuantizerReader;
@@ -123,6 +124,12 @@ impl Hnsw {
         working_set.truncate(k);
         let point_ids: Vec<u32> = working_set.iter().map(|x| x.point_id).collect();
         let doc_ids = self.map_point_id_to_doc_id(&point_ids);
+
+        info!(
+            "[ANN] number of pages accessed: {:?}",
+            context.num_pages_accessed()
+        );
+
         working_set
             .into_iter()
             .zip(doc_ids)

@@ -99,7 +99,7 @@ impl IndexWriter {
 
         info!("Start writing index");
         let hnsw_writer = HnswWriter::new(hnsw_directory);
-        hnsw_writer.write(&mut hnsw_builder, true)?;
+        hnsw_writer.write(&mut hnsw_builder, self.config.reindex)?;
 
         // Cleanup tmp directory. It's ok to fail
         std::fs::remove_dir_all(&pg_temp_dir).unwrap_or_default();
