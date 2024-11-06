@@ -32,7 +32,6 @@ impl IndexServer for IndexServerImpl {
 
         let index = self.index_catalog.lock().await.get_index(&index_name).await;
         if let Some(index) = index {
-            info!("Record metrics: {}", record_metrics);
             let mut search_context = SearchContext::new(record_metrics);
             let result = index.search(&vec, k as usize, &mut search_context);
             info!("Search result: {:?}", result);
