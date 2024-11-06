@@ -1,15 +1,16 @@
 use std::fs::OpenOptions;
+use std::io::Write;
 use std::vec;
 
 use anyhow::{anyhow, Result};
 use num_traits::ToBytes;
 use utils::io::wrap_write;
 
-use super::VectorStorage;
+use super::{VectorStorage, VectorStorageConfig};
 
 pub struct FileBackedAppendableVectorStorage<T> {
-    memory_threshold: usize,
-    backing_file_size: usize,
+    pub memory_threshold: usize,
+    pub backing_file_size: usize,
     num_features: usize,
 
     // Whether it's currently in memory
@@ -131,7 +132,9 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
     }
 }
 
-impl<T: ToBytes + Clone> VectorStorage<T> for FileBackedAppendableVectorStorage<T> {
+impl<T: ToBytes + Clone + std::fmt::Debug> VectorStorage<T>
+    for FileBackedAppendableVectorStorage<T>
+{
     fn get(&self, id: u32) -> Option<&[T]> {
         if self.resident {
             if id as usize >= self.resident_vectors.len() {
@@ -192,16 +195,28 @@ impl<T: ToBytes + Clone> VectorStorage<T> for FileBackedAppendableVectorStorage<
 
     // TODO(hicder): Just copy the backed file to the output file for optimization
     fn write(&self, writer: &mut std::io::BufWriter<&mut std::fs::File>) -> Result<usize> {
-        let num_vectors = self.len();
+        let num_vectors = self.len() as u64;
         let mut len = 0;
         len += wrap_write(writer, &num_vectors.to_le_bytes())?;
         for i in 0..num_vectors {
             let vector = self.get(i as u32).unwrap();
+            if i == 470900 {
+                println!("vector: {:?}", vector);
+            }
             for j in 0..self.num_features {
                 len += wrap_write(writer, vector[j].to_le_bytes().as_ref())?;
             }
+            writer.flush()?;
         }
         Ok(len)
+    }
+
+    fn config(&self) -> VectorStorageConfig {
+        VectorStorageConfig {
+            memory_threshold: self.memory_threshold,
+            file_size: self.backing_file_size,
+            num_features: self.num_features,
+        }
     }
 }
 

@@ -104,7 +104,6 @@ mod tests {
     use super::*;
     use crate::hnsw::builder::HnswBuilder;
     use crate::hnsw::writer::HnswWriter;
-    use crate::vector::file::FileBackedAppendableVectorStorage;
 
     #[test]
     fn test_read_header() {
@@ -116,12 +115,6 @@ mod tests {
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
         let pq_dir = format!("{}/quantizer", base_directory);
         fs::create_dir_all(pq_dir.clone()).unwrap();
-        let vector_dir = format!("{}/vectors", base_directory);
-        fs::create_dir_all(vector_dir.clone()).unwrap();
-        let vectors = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
-            vector_dir, 1024, 4096, 16,
-        ));
-
         let pq_config = ProductQuantizerConfig {
             dimension: 128,
             subvector_dimension: 8,
@@ -144,7 +137,10 @@ mod tests {
         pq_writer.write(&pq).unwrap();
 
         // Create a HNSW Builder
-        let mut hnsw_builder = HnswBuilder::new(10, 128, 20, Box::new(pq), vectors);
+        let vector_dir = format!("{}/vectors", base_directory);
+        fs::create_dir_all(vector_dir.clone()).unwrap();
+        let mut hnsw_builder =
+            HnswBuilder::new(10, 128, 20, 1024, 4096, 16, Box::new(pq), vector_dir);
         for i in 0..datapoints.len() {
             hnsw_builder.insert(i as u64, &datapoints[i]).unwrap();
         }

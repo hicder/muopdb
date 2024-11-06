@@ -2,6 +2,7 @@ use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 
 use anyhow::Context;
+use log::debug;
 use utils::io::wrap_write;
 
 use crate::hnsw::builder::HnswBuilder;
@@ -33,13 +34,18 @@ impl HnswWriter {
     }
 
     pub fn write(&self, index_builder: &mut HnswBuilder, reindex: bool) -> anyhow::Result<()> {
-        let non_bottom_layer_nodes = index_builder.get_nodes_from_non_bottom_layer();
         if reindex {
+            let temp_dir = format!("{}/temp", self.base_directory);
+            fs::create_dir_all(&temp_dir).context("failed to create temp directory")?;
+
             // Reindex the HNSW to efficient lookup
             index_builder
-                .reindex()
+                .reindex(temp_dir)
                 .context("failed to reindex during write")?;
+            debug!("Finish reindexing");
         }
+
+        let non_bottom_layer_nodes = index_builder.get_nodes_from_non_bottom_layer();
         // Doc_id mapping writer
         let doc_id_mapping_path = format!("{}/doc_id_mapping", self.base_directory);
         let mut doc_id_mapping_file = File::create(doc_id_mapping_path).unwrap();
@@ -285,7 +291,6 @@ mod tests {
     use crate::hnsw::builder::Layer;
     use crate::hnsw::reader::HnswReader;
     use crate::hnsw::utils::{GraphTraversal, PointAndDistance};
-    use crate::vector::file::FileBackedAppendableVectorStorage;
 
     fn construct_layers(hnsw_builder: &mut HnswBuilder) {
         // Prepare all layers
@@ -437,11 +442,6 @@ mod tests {
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
         let pq_dir = format!("{}/quantizer", base_directory);
         fs::create_dir_all(pq_dir.clone()).unwrap();
-        let vector_dir = format!("{}/vectors", base_directory);
-        fs::create_dir_all(vector_dir.clone()).unwrap();
-        let vectors = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
-            vector_dir, 1024, 4096, 16,
-        ));
         let pq_config = ProductQuantizerConfig {
             dimension: 128,
             subvector_dimension: 8,
@@ -464,7 +464,11 @@ mod tests {
         pq_writer.write(&pq).unwrap();
 
         // Create a HNSW Builder
-        let mut hnsw_builder = HnswBuilder::new(10, 128, 20, Box::new(pq), vectors);
+        let vector_dir = format!("{}/vectors", base_directory);
+        fs::create_dir_all(vector_dir.clone()).unwrap();
+        let mut hnsw_builder =
+            HnswBuilder::new(10, 128, 20, 1024, 4096, 16, Box::new(pq), vector_dir);
+
         hnsw_builder
             .vectors()
             .append(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])

@@ -42,7 +42,7 @@ async fn main() {
         info!("Response: {:?}", response);
     } else if node_type == 1 {
         let mut client = IndexServerClient::connect(addr).await.unwrap();
-        let vec = (0..128).map(|_| rand::random::<f32>()).collect::<Vec<_>>();
+        let vec = (0..128).map(|_| 0.1).collect::<Vec<_>>();
         let request = tonic::Request::new(SearchRequest {
             index_name: index_name,
             vector: vec,

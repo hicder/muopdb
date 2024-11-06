@@ -19,10 +19,10 @@ struct Args {
     #[arg(long, default_value_t = 8)]
     num_layers: u8,
 
-    #[arg(long, default_value_t = 10)]
+    #[arg(long, default_value_t = 16)]
     max_num_neighbors: usize,
 
-    #[arg(short, long, default_value_t = 10)]
+    #[arg(short, long, default_value_t = 100)]
     ef_construction: u32,
 
     #[arg(short, long, default_value_t = 128)]

@@ -31,8 +31,8 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
     }
 
     pub fn get(&self, index: usize, context: &mut SearchContext) -> Option<&[T]> {
-        let start = index * self.num_features * std::mem::size_of::<T>();
-        let end = (index + 1) * self.num_features * std::mem::size_of::<T>();
+        let start = 8 + index * self.num_features * std::mem::size_of::<T>();
+        let end = 8 + (index + 1) * self.num_features * std::mem::size_of::<T>();
         if end > self.mmaps.len() {
             return None;
         }
@@ -54,6 +54,9 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
 // Test
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+    use std::io::BufWriter;
+
     use super::*;
     use crate::vector::file::FileBackedAppendableVectorStorage;
     use crate::vector::VectorStorage;
@@ -68,10 +71,16 @@ mod tests {
             appendable_storage.append(&vec![i, i, i, i]).unwrap();
         }
 
-        let file_path = format!("{}/vector.bin.0", base_directory);
+        let vectors_path = format!("{}/vector_storage", base_directory);
+        let mut vectors_file = File::create(vectors_path.clone()).unwrap();
+        let mut vectors_buffer_writer = BufWriter::new(&mut vectors_file);
+
+        appendable_storage
+            .write(&mut vectors_buffer_writer)
+            .unwrap();
 
         let mut context = SearchContext::new(true);
-        let storage = FixedFileVectorStorage::<u32>::new(file_path, 4).unwrap();
+        let storage = FixedFileVectorStorage::<u32>::new(vectors_path, 4).unwrap();
         assert_eq!(storage.get(0, &mut context).unwrap(), &[0, 0, 0, 0]);
         assert_eq!(
             storage.get(256, &mut context).unwrap(),
@@ -95,9 +104,17 @@ mod tests {
         appendable_storage
             .append(&vec![9.0, 10.0, 11.0, 12.0])
             .unwrap();
+
+        let vectors_path = format!("{}/vector_storage", base_directory);
+        let mut vectors_file = File::create(vectors_path.clone()).unwrap();
+        let mut vectors_buffer_writer = BufWriter::new(&mut vectors_file);
+
+        appendable_storage
+            .write(&mut vectors_buffer_writer)
+            .unwrap();
+
         let mut context = SearchContext::new(false);
-        let file_path = format!("{}/vector.bin.0", base_directory);
-        let storage = FixedFileVectorStorage::<f32>::new(file_path, 4).unwrap();
+        let storage = FixedFileVectorStorage::<f32>::new(vectors_path, 4).unwrap();
         assert_eq!(storage.get(0, &mut context).unwrap(), &[1.0, 2.0, 3.0, 4.0]);
         assert_eq!(storage.get(1, &mut context).unwrap(), &[5.0, 6.0, 7.0, 8.0]);
         assert_eq!(
