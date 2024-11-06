@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use index::hnsw::index::SearchContext;
+use index::utils::SearchContext;
 use log::info;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{SearchRequest, SearchResponse};
