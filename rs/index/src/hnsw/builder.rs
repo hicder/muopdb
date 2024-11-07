@@ -232,17 +232,12 @@ impl HnswBuilder {
         Ok(())
     }
 
-    // Reindex the vectors based on the bottom layer
-    // Vectors that are connected should have their id close to each other
-    // This optimization is useful for disk-based indexing
-    pub fn reindex(&mut self, temp_dir: String) -> anyhow::Result<()> {
-        // Assign new ids to the vectors based on BFS on the bottom layer
-        // Assuming our vectors are index from 0 to n-1
+    /// Assign new ids to the vectors based on BFS on all layers
+    fn get_reassigned_ids(&mut self) -> Result<Vec<i32>> {
         let vector_length = self.vectors.len();
         let mut assigned_ids = vec![-1; vector_length];
         let mut current_id = 0;
         let num_layers = self.layers.len();
-
         for layer in 0..num_layers {
             self.reindex_layer(
                 (num_layers - 1 - layer) as u8,
@@ -251,7 +246,14 @@ impl HnswBuilder {
                 vector_length,
             )?;
         }
+        Ok(assigned_ids)
+    }
 
+    // Reindex the vectors based on the bottom layer
+    // Vectors that are connected should have their id close to each other
+    // This optimization is useful for disk-based indexing
+    pub fn reindex(&mut self, temp_dir: String) -> Result<()> {
+        let assigned_ids = self.get_reassigned_ids()?;
         for (i, layer) in self.layers.iter_mut().enumerate() {
             layer
                 .reindex(&assigned_ids)
