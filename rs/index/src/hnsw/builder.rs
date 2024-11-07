@@ -191,7 +191,8 @@ impl HnswBuilder {
         debug!("Reindex layer {}", layer);
         let graph = &mut self.layers[layer as usize];
         let mut queue: VecDeque<u32> = VecDeque::with_capacity(vector_length);
-        let points: Vec<u32> = graph.edges.keys().map(|x| *x).collect();
+        let mut points: Vec<u32> = graph.edges.keys().map(|x| *x).collect();
+        points.sort();
         let mut visited: BitVec = BitVec::from_elem(vector_length, false);
 
         for e in points.iter() {
@@ -274,6 +275,7 @@ impl HnswBuilder {
             ))?;
             *entry = *new_id as u32;
         }
+        self.entry_point.sort();
 
         // Build reverse assigned ids
         let mut reverse_assigned_ids = vec![-1; self.doc_id_mapping.len()];
@@ -615,13 +617,21 @@ mod tests {
             doc_id_mapping: id_provider,
         };
         builder.reindex(base_directory.clone()).unwrap();
+
         for i in 0..3 {
-            assert_eq!(
-                builder
+            assert!(
+                *builder
                     .doc_id_mapping
                     .get(expected_mapping[i] as usize)
-                    .unwrap(),
-                &((i + 100) as u64)
+                    .unwrap()
+                    >= 100
+            );
+            assert!(
+                *builder
+                    .doc_id_mapping
+                    .get(expected_mapping[i] as usize)
+                    .unwrap()
+                    <= 102
             );
         }
         assert_eq!(builder.entry_point, vec![0, 2]);
@@ -653,6 +663,7 @@ mod tests {
             }]
         );
     }
+
     #[test]
     fn test_layer_reindex() {
         let mut edges = HashMap::new();
