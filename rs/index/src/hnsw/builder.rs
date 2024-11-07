@@ -2,6 +2,7 @@ use std::cmp::min;
 use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 
 use anyhow::{anyhow, Context, Ok, Result};
+use bit_vec::BitVec;
 use log::debug;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
@@ -180,44 +181,75 @@ impl HnswBuilder {
         return generated_id;
     }
 
+    pub fn reindex_layer(
+        &mut self,
+        layer: u8,
+        assigned_ids: &mut Vec<i32>,
+        current_id: &mut i32,
+        vector_length: usize,
+    ) -> anyhow::Result<()> {
+        debug!("Reindex layer {}", layer);
+        let graph = &mut self.layers[layer as usize];
+        let mut queue: VecDeque<u32> = VecDeque::with_capacity(vector_length);
+        let points: Vec<u32> = graph.edges.keys().map(|x| *x).collect();
+        let mut visited: BitVec = BitVec::from_elem(vector_length, false);
+
+        for e in points.iter() {
+            if visited.get((*e).try_into().unwrap()).unwrap_or(false) {
+                continue;
+            }
+
+            queue.push_back(*e);
+            if assigned_ids[*e as usize] < 0 {
+                assigned_ids[*e as usize] = *current_id;
+                *current_id += 1;
+            }
+            while let Some(node) = queue.pop_front() {
+                visited.set(node.try_into().unwrap(), true);
+                debug!("Visited node {}", node);
+
+                let edges = graph.edges.get_mut(&node);
+                if let Some(edges) = edges {
+                    // Try to get the closest edge to be the nearest assigned id.
+                    edges.sort_by_key(|x| x.distance);
+                    for edge in edges {
+                        if visited
+                            .get(edge.point_id.try_into().unwrap())
+                            .unwrap_or(false)
+                        {
+                            continue;
+                        }
+                        queue.push_back(edge.point_id);
+                        if assigned_ids[edge.point_id as usize] < 0 {
+                            assigned_ids[edge.point_id as usize] = *current_id;
+                            *current_id += 1;
+                        }
+                        visited.set(edge.point_id.try_into().unwrap(), true);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     // Reindex the vectors based on the bottom layer
     // Vectors that are connected should have their id close to each other
     // This optimization is useful for disk-based indexing
     pub fn reindex(&mut self, temp_dir: String) -> anyhow::Result<()> {
         // Assign new ids to the vectors based on BFS on the bottom layer
         // Assuming our vectors are index from 0 to n-1
-        let graph = &mut self.layers[0];
         let vector_length = self.vectors.len();
-        // If a vector is visited, it means it's already assigned an id
-        // its id should be non-negative
         let mut assigned_ids = vec![-1; vector_length];
         let mut current_id = 0;
-        let mut queue: VecDeque<u32> = VecDeque::with_capacity(vector_length);
-        for i in 0..vector_length {
-            if assigned_ids[i] >= 0 {
-                continue;
-            }
-            queue.push_back(i as u32);
-            assigned_ids[i] = current_id;
-            current_id += 1;
-            while let Some(node) = queue.pop_front() {
-                let edges = graph.edges.get_mut(&node);
-                if let Some(edges) = edges {
-                    edges.sort_by_key(|x| x.distance);
-                    for edge in edges {
-                        if *assigned_ids.get(edge.point_id as usize).ok_or(anyhow!(
-                            "point_id {} is larger than size of vectors",
-                            edge.point_id
-                        ))? >= 0
-                        {
-                            continue;
-                        }
-                        queue.push_back(edge.point_id);
-                        assigned_ids[edge.point_id as usize] = current_id;
-                        current_id += 1;
-                    }
-                }
-            }
+        let num_layers = self.layers.len();
+
+        for layer in 0..num_layers {
+            self.reindex_layer(
+                (num_layers - 1 - layer) as u8,
+                &mut assigned_ids,
+                &mut current_id,
+                vector_length,
+            )?;
         }
 
         for (i, layer) in self.layers.iter_mut().enumerate() {
