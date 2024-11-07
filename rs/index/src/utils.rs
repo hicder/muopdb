@@ -1,4 +1,4 @@
-use std::cmp::{Ord, Ordering, Reverse};
+use std::cmp::{Ord, Ordering};
 use std::collections::HashSet;
 
 use roaring::RoaringBitmap;
@@ -131,7 +131,7 @@ mod tests {
 
         scores.sort();
 
-        let mut expected_order = vec![
+        let expected_order = vec![
             IdWithScore { score: 1.0, id: 1 },
             IdWithScore { score: 1.0, id: 2 },
             IdWithScore { score: 2.0, id: 1 },
