@@ -2,7 +2,7 @@ use anyhow::Result;
 use bit_vec::BitVec;
 use ndarray::{Array1, Array2, Axis};
 use ndarray_rand::RandomExt;
-use ndarray_rand::rand_distr::StandardNormal; // TODO: maybe uniform instead?
+use ndarray_rand::rand_distr::StandardNormal;
 use ndarray_linalg::qr::QR;
 use ndarray_linalg::norm::Norm;
 use ndarray_linalg::solve::Inverse;
@@ -100,6 +100,7 @@ impl RabitQBuilder {
             quantization_codes.len(),
             dataset.len_of(Axis(0)));
 
+        // TODO: vectorize this calculation
         let positive_value = 1.0 / (self.dimension as f32).sqrt();
         let negative_value = -1.0 / (self.dimension as f32).sqrt();
 
