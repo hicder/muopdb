@@ -15,6 +15,10 @@ criterion.workspace = true
 log.workspace = true
 env_logger.workspace = true
 strum.workspace = true
+ndarray.workspace = true
+ndarray-rand.workspace = true
+ndarray-linalg.workspace = true
+bit-vec.workspace = true
 
 [[bench]]
 name = "pq_dist"
