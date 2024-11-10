@@ -6,7 +6,8 @@ use ndarray_rand::rand_distr::StandardNormal;
 use ndarray_linalg::qr::QR;
 use ndarray_linalg::norm::Norm;
 use ndarray_linalg::solve::Inverse;
-use std::error::Error;
+
+use crate::rabitq::RabitQ;
 
 pub struct RabitQBuilder {
     dimension: usize,
@@ -29,7 +30,7 @@ impl RabitQBuilder {
         self.dataset.append(&mut data.clone());
     }
 
-    pub fn build(&mut self, _base_directory: &str) -> Result<RabitQ, Box<dyn Error>> {
+    pub fn build(&mut self) -> Result<RabitQ> {
         assert!(self.dataset.len() > 0, "Dataset is empty");
 
         let dataset = self.get_dataset()?;
@@ -44,7 +45,7 @@ impl RabitQBuilder {
             &p);
 
         Ok(RabitQ {
-            p_inv,
+            orthogonal_matrix_inv: p_inv,
             centroid,
             dist_from_centroid,
             quantization_codes,
@@ -52,12 +53,12 @@ impl RabitQBuilder {
         })
     }
 
-    fn get_dataset(&self) -> Result<Array2<f32>, Box<dyn Error>> {
+    fn get_dataset(&self) -> Result<Array2<f32>> {
         let sample_count: usize = self.dataset.len() / self.dimension;
         Ok(Array2::from_shape_vec((sample_count, self.dimension), self.dataset.clone())?)
     }
 
-    fn generate_orthogonal_matrix(&self, d: usize)  -> Result<Array2<f32>, Box<dyn Error>>{
+    fn generate_orthogonal_matrix(&self, d: usize)  -> Result<Array2<f32>>{
         let matrix: Array2<f32> = Array2::random((d, d), StandardNormal);
         let (q, _) = matrix.qr()?;
         return Ok(q);
@@ -117,33 +118,6 @@ impl RabitQBuilder {
     }
 }
 
-pub struct RabitQ {
-    // The inverse of the orthogonal matrix
-    // Notation: $P^{-1}$
-    // Dimension: $D \times D$
-    pub p_inv: Array2<f32>,
-
-    // The centroid of all the data points
-    // Notation: $c$
-    // Dimension: $D$
-    pub centroid: Array1<f32>,
-
-    // The distance of each data point from the centroid
-    // Notation: $||o - c||$
-    // Dimension: $N$
-    pub dist_from_centroid: Array1<f32>,
-
-    // The quantization code for each data point
-    // Notation: $\bar{x}_b$
-    // Dimension: $N \times D$
-    pub quantization_codes: Vec<BitVec>,
-
-    // The dot products of each quantized vector with its data point
-    // Notation: $<\bar{o}, o>$
-    // Dimension: $N$
-    pub quantized_vector_dot_products: Array1<f32>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,7 +130,7 @@ mod tests {
         let mut builder = RabitQBuilder::new(2);
         builder.add(vec![1.0, 2.0]);
 
-        let rabitq = builder.build("foo").unwrap();
+        let rabitq = builder.build().unwrap();
         let _pi: &Array2<f32> = &rabitq.p_inv;
 
         assert_eq!(_pi.shape(), &[2, 2]);
@@ -178,7 +152,7 @@ mod tests {
         builder.add(vec![1.0, 2.0]);
         builder.add(vec![2.0, 3.0]);
 
-        let rabitq = builder.build("foo").unwrap();
+        let rabitq = builder.build().unwrap();
         let centroid = &rabitq.centroid;
 
         assert_eq!(centroid.shape(), &[2]);
@@ -192,7 +166,7 @@ mod tests {
         builder.add(vec![0.0, 0.0]);
         builder.add(vec![0.0, 2.0]);
 
-        let rabitq = builder.build("foo").unwrap();
+        let rabitq = builder.build().unwrap();
 
         assert_abs_diff_eq!(rabitq.dist_from_centroid[0], 1.0, epsilon = EPSILON);
         assert_abs_diff_eq!(rabitq.dist_from_centroid[1], 1.0, epsilon = EPSILON);
@@ -206,7 +180,7 @@ mod tests {
         builder.add(vec![0.0; dimension]);
         builder.add(vec![2.0; dimension]);
 
-        let rabitq = builder.build("foo").unwrap();
+        let rabitq = builder.build().unwrap();
 
         assert_eq!(rabitq.quantization_codes.len(), 2);
         assert_eq!(rabitq.quantization_codes[0].len(), dimension);
@@ -221,7 +195,7 @@ mod tests {
         builder.add(vec![0.0; dimension]);
         builder.add(vec![1.0; dimension]);
 
-        let rabitq = builder.build("foo").unwrap();
+        let rabitq = builder.build().unwrap();
 
         assert_eq!(rabitq.quantized_vector_dot_products.shape(), &[2]);
     }
