@@ -38,13 +38,17 @@ impl RabitQBuilder {
         let centroid: Array1<f32> = self.get_centroid(&dataset);
         let dist_from_centroid = self.get_dist_from_centroid(&dataset, &centroid);
         let quantization_codes = self.get_quantization_codes(&dataset, &p_inv);
+        let quantized_vector_dot_products = self.get_quantized_vector_dot_products(
+            &dataset,
+            &quantization_codes,
+            &p);
 
         Ok(RabitQ {
             p_inv,
             centroid,
             dist_from_centroid,
             quantization_codes,
-            quantized_vector_dot_products: Vec::new(),
+            quantized_vector_dot_products,
         })
     }
 
@@ -88,6 +92,28 @@ impl RabitQBuilder {
 
         return quantization_codes;
     }
+
+    fn get_quantized_vector_dot_products(&self, dataset: &Array2<f32>, quantization_codes: &Vec<BitVec>, p: &Array2<f32>) -> Array1<f32> {
+        debug_assert!(
+            quantization_codes.len() == dataset.len_of(Axis(0)),
+            "The number of quantization codes {} must be equal to the number of data points {}",
+            quantization_codes.len(),
+            dataset.len_of(Axis(0)));
+
+        let positive_value = 1.0 / (self.dimension as f32).sqrt();
+        let negative_value = -1.0 / (self.dimension as f32).sqrt();
+
+        let mut dot_products: Vec<f32> = Vec::new();
+        for (data, code) in dataset.axis_iter(Axis(0)).zip(quantization_codes.iter()) {
+            let x_bar: Vec<f32> = code.iter()
+                    .map(|x| if x { positive_value } else { negative_value })
+                    .collect();
+            let quantized: Array1<f32> = p.dot(&Array1::from_vec(x_bar));
+            dot_products.push(quantized.dot(&data));
+        }
+
+        return Array1::from_vec(dot_products);
+    }
 }
 
 pub struct RabitQ {
@@ -114,7 +140,7 @@ pub struct RabitQ {
     // The dot products of each quantized vector with its data point
     // Notation: $<\bar{o}, o>$
     // Dimension: $N$
-    pub quantized_vector_dot_products: Vec<Vec<f32>>,
+    pub quantized_vector_dot_products: Array1<f32>,
 }
 
 #[cfg(test)]
@@ -180,5 +206,18 @@ mod tests {
         assert_eq!(rabitq.quantization_codes.len(), 2);
         assert_eq!(rabitq.quantization_codes[0].len(), dimension);
         assert_eq!(rabitq.quantization_codes[1].len(), dimension);
+    }
+
+    #[test]
+    fn test_get_quantized_vector_dot_products() {
+        let dimension = 4;
+
+        let mut builder = RabitQBuilder::new(dimension);
+        builder.add(vec![0.0; dimension]);
+        builder.add(vec![1.0; dimension]);
+
+        let rabitq = builder.build("foo").unwrap();
+
+        assert_eq!(rabitq.quantized_vector_dot_products.shape(), &[2]);
     }
 }
