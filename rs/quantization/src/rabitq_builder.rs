@@ -34,14 +34,16 @@ impl RabitQBuilder {
 
         let dataset = self.get_dataset()?;
         let p = self.generate_orthogonal_matrix(self.dimension)?;
+        let p_inv = p.inv()?;
         let centroid: Array1<f32> = self.get_centroid(&dataset);
         let dist_from_centroid = self.get_dist_from_centroid(&dataset, &centroid);
+        let quantization_codes = self.get_quantization_codes(&dataset, &p_inv);
 
         Ok(RabitQ {
-            p_inv: p.inv()?,
+            p_inv,
             centroid,
-            quantization_codes: Vec::new(),
             dist_from_centroid,
+            quantization_codes,
             o_o: Vec::new(),
         })
     }
@@ -70,13 +72,29 @@ impl RabitQBuilder {
 
         return Array1::from_vec(norm);
     }
+
+    fn get_quantization_codes(&self, dataset: &Array2<f32>, p_inv: &Array2<f32>) -> Vec<BitVec>{
+        let mut quantization_codes: Vec<BitVec> = Vec::new();
+
+        // Each data point is quantized as
+        // sign(P^{−1}o) , where `sign` is 1 if the element is positive and 0 otherwise.
+        for row in dataset.axis_iter(Axis(0)) {
+            let mut code = BitVec::with_capacity(self.dimension);
+            for x in p_inv.dot(&row).iter() {
+                code.push(if *x > 0.0 { true } else { false });
+            }
+            quantization_codes.push(code);
+        }
+
+        return quantization_codes;
+    }
 }
 
 pub struct RabitQ {
     pub p_inv: Array2<f32>,
     pub centroid: Array1<f32>,
-    pub quantization_codes: Vec<BitVec>,
     pub dist_from_centroid: Array1<f32>,
+    pub quantization_codes: Vec<BitVec>,
     pub o_o: Vec<Vec<f32>>,
 }
 
@@ -128,5 +146,20 @@ mod tests {
         let rabitq = builder.build("foo").unwrap();
 
         assert_eq!(rabitq.dist_from_centroid, Array1::from_vec(vec![1.0f32, 1.0]));
+    }
+
+    #[test]
+    fn test_get_quantization_code() {
+        let dimension = 4;
+
+        let mut builder = RabitQBuilder::new(dimension);
+        builder.add(vec![0.0; dimension]);
+        builder.add(vec![2.0; dimension]);
+
+        let rabitq = builder.build("foo").unwrap();
+
+        assert_eq!(rabitq.quantization_codes.len(), 2);
+        assert_eq!(rabitq.quantization_codes[0].len(), dimension);
+        assert_eq!(rabitq.quantization_codes[1].len(), dimension);
     }
 }
