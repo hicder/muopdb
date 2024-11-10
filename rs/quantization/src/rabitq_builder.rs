@@ -1,10 +1,11 @@
 use anyhow::Result;
-use approx::assert_abs_diff_eq;
 use bit_vec::BitVec;
 use ndarray::{Array1, Array2, Axis};
+use ndarray_linalg::normalize;
 use ndarray_rand::RandomExt;
-use ndarray_rand::rand_distr::StandardNormal;
+use ndarray_rand::rand_distr::StandardNormal; // TODO: maybe uniform instead?
 use ndarray_linalg::qr::QR;
+use ndarray_linalg::norm::Norm;
 use ndarray_linalg::solve::Inverse;
 use std::error::Error;
 
@@ -38,11 +39,13 @@ impl RabitQBuilder {
         let dataset = Array2::from_shape_vec(shape, self.dataset.clone())?;
         let centroid: Array1<f32> = dataset.mean_axis(Axis(0)).ok_or("Failed to calculate mean")?;
 
+        let dist_from_centroid = self.get_dist_from_centroid(&centroid, &dataset);
+
         Ok(RabitQ {
             p_inv: q.inv()?,
             centroid,
             quantization_codes: Vec::new(),
-            or_c: Vec::new(),
+            dist_from_centroid,
             o_o: Vec::new(),
         })
     }
@@ -52,19 +55,30 @@ impl RabitQBuilder {
         let (q, _) = matrix.qr()?;
         return Ok(q);
     }
+
+    fn get_dist_from_centroid(&self, centroid: &Array1<f32>, dataset: &Array2<f32>) -> Array1<f32> {
+        let differences = dataset - centroid;
+        let mut norm = Vec::new();
+        for row in differences.axis_iter(Axis(0)) {
+            norm.push(row.norm_l2());
+        }
+
+        return Array1::from_vec(norm);
+    }
 }
 
 pub struct RabitQ {
     pub p_inv: Array2<f32>,
     pub centroid: Array1<f32>,
     pub quantization_codes: Vec<BitVec>,
-    pub or_c: Vec<f32>,
+    pub dist_from_centroid: Array1<f32>,
     pub o_o: Vec<Vec<f32>>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_abs_diff_eq;
 
     #[test]
     fn test_create_orthogonal_matrix() {
@@ -98,5 +112,16 @@ mod tests {
 
         assert_eq!(centroid.shape(), &[2]);
         assert_eq!(centroid, &Array1::from_vec(vec![1.5, 2.5]));
+    }
+
+    #[test]
+    fn test_dist_from_centroid() {
+        let mut builder = RabitQBuilder::new(2);
+        builder.add(vec![0.0, 0.0]);
+        builder.add(vec![0.0, 2.0]);
+
+        let rabitq = builder.build("foo").unwrap();
+
+        assert_eq!(rabitq.dist_from_centroid, Array1::from_vec(vec![1.0f32, 1.0]));
     }
 }
