@@ -15,6 +15,7 @@ resolver = "2"
 debug = 1
 
 [workspace.dependencies]
+approx = "0.5"
 anyhow = "1.0.90"
 aggregator = {path='./rs/aggregator'}
 criterion = "0.4"
