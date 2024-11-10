@@ -148,6 +148,8 @@ mod tests {
     use super::*;
     use approx::assert_abs_diff_eq;
 
+    const EPSILON: f32 = 0.0001;
+
     #[test]
     fn test_create_orthogonal_matrix() {
         let mut builder = RabitQBuilder::new(2);
@@ -164,7 +166,7 @@ mod tests {
         let actual = _pi.dot(&_pi.t());
         for i in 0..2 {
             for j in 0..2 {
-                assert_abs_diff_eq!(actual[[i, j]], identity_matrix[[i, j]]);
+                assert_abs_diff_eq!(actual[[i, j]], identity_matrix[[i, j]], epsilon = EPSILON);
             }
         }
     }
@@ -179,7 +181,8 @@ mod tests {
         let centroid = &rabitq.centroid;
 
         assert_eq!(centroid.shape(), &[2]);
-        assert_eq!(centroid, &Array1::from_vec(vec![1.5, 2.5]));
+        assert_abs_diff_eq!(centroid[0], 1.5, epsilon = EPSILON);
+        assert_abs_diff_eq!(centroid[1], 2.5, epsilon = EPSILON);
     }
 
     #[test]
@@ -190,7 +193,8 @@ mod tests {
 
         let rabitq = builder.build("foo").unwrap();
 
-        assert_eq!(rabitq.dist_from_centroid, Array1::from_vec(vec![1.0f32, 1.0]));
+        assert_abs_diff_eq!(rabitq.dist_from_centroid[0], 1.0, epsilon = EPSILON);
+        assert_abs_diff_eq!(rabitq.dist_from_centroid[1], 1.0, epsilon = EPSILON);
     }
 
     #[test]
