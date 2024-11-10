@@ -44,7 +44,7 @@ impl RabitQBuilder {
             centroid,
             dist_from_centroid,
             quantization_codes,
-            o_o: Vec::new(),
+            quantized_vector_dot_products: Vec::new(),
         })
     }
 
@@ -91,11 +91,30 @@ impl RabitQBuilder {
 }
 
 pub struct RabitQ {
+    // The inverse of the orthogonal matrix
+    // Notation: $P^{-1}$
+    // Dimension: $D \times D$
     pub p_inv: Array2<f32>,
+
+    // The centroid of all the data points
+    // Notation: $c$
+    // Dimension: $D$
     pub centroid: Array1<f32>,
+
+    // The distance of each data point from the centroid
+    // Notation: $||o - c||$
+    // Dimension: $N$
     pub dist_from_centroid: Array1<f32>,
+
+    // The quantization code for each data point
+    // Notation: $\bar{x}_b$
+    // Dimension: $N \times D$
     pub quantization_codes: Vec<BitVec>,
-    pub o_o: Vec<Vec<f32>>,
+
+    // The dot products of each quantized vector with its data point
+    // Notation: $<\bar{o}, o>$
+    // Dimension: $N$
+    pub quantized_vector_dot_products: Vec<Vec<f32>>,
 }
 
 #[cfg(test)]
