@@ -1,7 +1,6 @@
 use anyhow::Result;
 use bit_vec::BitVec;
 use ndarray::{Array1, Array2, Axis};
-use ndarray_linalg::normalize;
 use ndarray_rand::RandomExt;
 use ndarray_rand::rand_distr::StandardNormal; // TODO: maybe uniform instead?
 use ndarray_linalg::qr::QR;
@@ -33,16 +32,13 @@ impl RabitQBuilder {
     pub fn build(&mut self, _base_directory: &str) -> Result<RabitQ, Box<dyn Error>> {
         assert!(self.dataset.len() > 0, "Dataset is empty");
 
-        let q = self.create_orthogonal_matrix(self.dimension)?;
-
-        let shape = (self.dataset.len() / self.dimension, self.dimension);
-        let dataset = Array2::from_shape_vec(shape, self.dataset.clone())?;
-        let centroid: Array1<f32> = dataset.mean_axis(Axis(0)).ok_or("Failed to calculate mean")?;
-
-        let dist_from_centroid = self.get_dist_from_centroid(&centroid, &dataset);
+        let dataset = self.get_dataset()?;
+        let p = self.generate_orthogonal_matrix(self.dimension)?;
+        let centroid: Array1<f32> = self.get_centroid(&dataset);
+        let dist_from_centroid = self.get_dist_from_centroid(&dataset, &centroid);
 
         Ok(RabitQ {
-            p_inv: q.inv()?,
+            p_inv: p.inv()?,
             centroid,
             quantization_codes: Vec::new(),
             dist_from_centroid,
@@ -50,13 +46,22 @@ impl RabitQBuilder {
         })
     }
 
-    fn create_orthogonal_matrix(&self, d: usize)  -> Result<Array2<f32>, Box<dyn Error>>{
+    fn get_dataset(&self) -> Result<Array2<f32>, Box<dyn Error>> {
+        let sample_count: usize = self.dataset.len() / self.dimension;
+        Ok(Array2::from_shape_vec((sample_count, self.dimension), self.dataset.clone())?)
+    }
+
+    fn generate_orthogonal_matrix(&self, d: usize)  -> Result<Array2<f32>, Box<dyn Error>>{
         let matrix: Array2<f32> = Array2::random((d, d), StandardNormal);
         let (q, _) = matrix.qr()?;
         return Ok(q);
     }
 
-    fn get_dist_from_centroid(&self, centroid: &Array1<f32>, dataset: &Array2<f32>) -> Array1<f32> {
+    fn get_centroid(&self, dataset: &Array2<f32>) -> Array1<f32> {
+        return dataset.mean_axis(Axis(0)).unwrap();
+    }
+
+    fn get_dist_from_centroid(&self, dataset: &Array2<f32>, centroid: &Array1<f32>) -> Array1<f32> {
         let differences = dataset - centroid;
         let mut norm = Vec::new();
         for row in differences.axis_iter(Axis(0)) {
