@@ -1,9 +1,9 @@
 use std::fs::{self, File};
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{BufWriter, Write};
 
 use anyhow::Context;
 use log::debug;
-use utils::io::wrap_write;
+use utils::io::{append_file_to_writer, wrap_write};
 
 use crate::hnsw::builder::HnswBuilder;
 
@@ -196,26 +196,6 @@ impl HnswWriter {
         Ok(())
     }
 
-    /// Read file and append to the writer
-    fn append_file_to_writer(
-        &self,
-        path: &str,
-        writer: &mut BufWriter<&mut File>,
-    ) -> anyhow::Result<usize> {
-        let input_file = File::open(path).unwrap();
-        let mut buffer_reader = BufReader::new(&input_file);
-        let mut buffer: [u8; 4096] = [0; 4096];
-        let mut written = 0;
-        loop {
-            let read = buffer_reader.read(&mut buffer).unwrap();
-            written += wrap_write(writer, &buffer[0..read])?;
-            if read < 4096 {
-                break;
-            }
-        }
-        Ok(written)
-    }
-
     fn write_header(
         &self,
         header: Header,
@@ -257,17 +237,17 @@ impl HnswWriter {
             let padding_buffer = vec![0; padding];
             written += wrap_write(&mut combined_buffer_writer, &padding_buffer)?;
         }
-        written += self.append_file_to_writer(&edges_path, &mut combined_buffer_writer)?;
-        written += self.append_file_to_writer(&points_path, &mut combined_buffer_writer)?;
+        written += append_file_to_writer(&edges_path, &mut combined_buffer_writer)?;
+        written += append_file_to_writer(&points_path, &mut combined_buffer_writer)?;
 
         padding = 8 - (written % 8);
         if padding != 8 {
             let padding_buffer = vec![0; padding];
             written += wrap_write(&mut combined_buffer_writer, &padding_buffer)?;
         }
-        written += self.append_file_to_writer(&edge_offsets_path, &mut combined_buffer_writer)?;
-        written += self.append_file_to_writer(&level_offsets_path, &mut combined_buffer_writer)?;
-        written += self.append_file_to_writer(&doc_id_mapping_path, &mut combined_buffer_writer)?;
+        written += append_file_to_writer(&edge_offsets_path, &mut combined_buffer_writer)?;
+        written += append_file_to_writer(&level_offsets_path, &mut combined_buffer_writer)?;
+        written += append_file_to_writer(&doc_id_mapping_path, &mut combined_buffer_writer)?;
 
         combined_buffer_writer
             .flush()
