@@ -10,6 +10,7 @@ ndarray.workspace = true
 rand.workspace = true
 strum.workspace = true
 criterion.workspace = true
+tempdir.workspace = true
 
 [[bench]]
 name = "l2"

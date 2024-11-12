@@ -2082,6 +2082,7 @@ dependencies = [
  "ndarray",
  "rand 0.8.5",
  "strum",
+ "tempdir",
 ]
 
 [[package]]
