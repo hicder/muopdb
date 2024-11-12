@@ -413,6 +413,82 @@ mod tests {
     }
 
     #[test]
+    fn test_write_header() {
+        let temp_dir = tempdir::TempDir::new("write_header_test").unwrap();
+        let base_dir = temp_dir.path().to_str().unwrap().to_string();
+        let writer = HnswWriter::new(base_dir.clone());
+
+        let header = Header {
+            version: Version::V0,
+            quantized_dimension: 0,
+            num_layers: 0,
+            edges_len: 0,
+            points_len: 0,
+            edge_offsets_len: 0,
+            level_offsets_len: 0,
+            doc_id_mapping_len: 0,
+        };
+
+        let test_file_path = format!("{}/test", base_dir);
+        let mut test_file = File::create(&test_file_path).unwrap();
+        let mut buffer_writer = BufWriter::new(&mut test_file);
+
+        let result = writer.write_header(header, &mut buffer_writer);
+        assert!(result.is_ok());
+        buffer_writer.flush().unwrap();
+
+        // Read the file and check if the header was written correctly
+        let header_data = fs::read(test_file_path).unwrap();
+        assert_eq!(header_data.len(), 49); // 1 + 4 + 4 + 8 + 8 + 8 + 8 + 8 bytes
+        assert_eq!(header_data[0], 0); // Version::V0
+    }
+
+    #[test]
+    fn test_combine_files() -> anyhow::Result<()> {
+        let temp_dir = tempdir::TempDir::new("combine_files_test")?;
+        let base_directory = temp_dir.path().to_str().unwrap().to_string();
+        let writer = HnswWriter::new(base_directory.clone());
+
+        // Create mock files
+        fs::write(format!("{}/edges", base_directory), b"edges content")?;
+        fs::write(format!("{}/points", base_directory), b"points content")?;
+        fs::write(
+            format!("{}/edge_offsets", base_directory),
+            b"edge offsets content",
+        )?;
+        fs::write(
+            format!("{}/level_offsets", base_directory),
+            b"level offsets content",
+        )?;
+        fs::write(
+            format!("{}/doc_id_mapping", base_directory),
+            b"doc id mapping content",
+        )?;
+
+        let header = Header {
+            version: Version::V0,
+            quantized_dimension: 0,
+            num_layers: 0,
+            edges_len: 0,
+            points_len: 0,
+            edge_offsets_len: 0,
+            level_offsets_len: 0,
+            doc_id_mapping_len: 0,
+        };
+
+        let written = writer.combine_files(header)?;
+
+        // Check if the index file was created
+        assert!(fs::metadata(format!("{}/index", base_directory)).is_ok());
+
+        // The exact size might vary due to padding, but it should be at least the sum of all parts
+        assert!(written >= 49 + 13 + 14 + 21 + 22 + 23); // header + edges + points + edge offsets
+                                                         // + level offsets + doc id mapping
+
+        Ok(())
+    }
+
+    #[test]
     fn test_write() {
         // Generate 10000 vectors of f32, dimension 128
         let datapoints: Vec<Vec<f32>> = (0..10000).map(|_| generate_random_vector(128)).collect();
