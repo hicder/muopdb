@@ -34,21 +34,30 @@ impl RabitQBuilder {
         assert!(self.dataset.len() > 0, "Dataset is empty");
 
         let dataset = self.get_dataset()?;
+
+        // 1. Normalize the set of vectors
+        let centroid: Array1<f32> = self.get_centroid(&dataset);
+        // TODO: normalize the set of vectors
+
+        // 2. Sample a random orthogonal matrix P to construct the codebook Crand
         let p = self.generate_orthogonal_matrix(self.dimension)?;
         let p_inv = p.inv()?;
-        let centroid: Array1<f32> = self.get_centroid(&dataset);
-        let dist_from_centroid = self.get_dist_from_centroid(&dataset, &centroid);
+
+        // 3. Compute the quantization code x_b
         let quantization_codes = self.get_quantization_codes(&dataset, &p_inv);
+
+        // 4. Pre-compute the values of ||o_r - c|| and <\bar{o}, o>
+        let dist_from_centroid: Array1<f32> = self.get_dist_from_centroid(&dataset, &centroid);
         let quantized_vector_dot_products = self.get_quantized_vector_dot_products(
             &dataset,
             &quantization_codes,
             &p);
 
         Ok(RabitQ {
-            orthogonal_matrix_inv: p_inv,
             centroid,
-            dist_from_centroid,
+            orthogonal_matrix_inv: p_inv,
             quantization_codes,
+            dist_from_centroid,
             quantized_vector_dot_products,
         })
     }
@@ -58,24 +67,14 @@ impl RabitQBuilder {
         Ok(Array2::from_shape_vec((sample_count, self.dimension), self.dataset.clone())?)
     }
 
-    fn generate_orthogonal_matrix(&self, d: usize)  -> Result<Array2<f32>>{
-        let matrix: Array2<f32> = Array2::random((d, d), StandardNormal);
-        let (q, _) = matrix.qr()?;
-        return Ok(q);
-    }
-
     fn get_centroid(&self, dataset: &Array2<f32>) -> Array1<f32> {
         return dataset.mean_axis(Axis(0)).unwrap();
     }
 
-    fn get_dist_from_centroid(&self, dataset: &Array2<f32>, centroid: &Array1<f32>) -> Array1<f32> {
-        let differences = dataset - centroid;
-        let mut norm = Vec::new();
-        for row in differences.axis_iter(Axis(0)) {
-            norm.push(row.norm_l2());
-        }
-
-        return Array1::from_vec(norm);
+    fn generate_orthogonal_matrix(&self, d: usize)  -> Result<Array2<f32>>{
+        let matrix: Array2<f32> = Array2::random((d, d), StandardNormal);
+        let (q, _) = matrix.qr()?;
+        return Ok(q);
     }
 
     fn get_quantization_codes(&self, dataset: &Array2<f32>, p_inv: &Array2<f32>) -> Vec<BitVec>{
@@ -92,6 +91,16 @@ impl RabitQBuilder {
         }
 
         return quantization_codes;
+    }
+
+    fn get_dist_from_centroid(&self, dataset: &Array2<f32>, centroid: &Array1<f32>) -> Array1<f32> {
+        let differences = dataset - centroid;
+        let mut norm = Vec::new();
+        for row in differences.axis_iter(Axis(0)) {
+            norm.push(row.norm_l2());
+        }
+
+        return Array1::from_vec(norm);
     }
 
     fn get_quantized_vector_dot_products(&self, dataset: &Array2<f32>, quantization_codes: &Vec<BitVec>, p: &Array2<f32>) -> Array1<f32> {
