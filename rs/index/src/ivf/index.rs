@@ -8,17 +8,17 @@ use crate::utils::{IdWithScore, SearchContext};
 
 pub struct Ivf {
     // The whole dataset. TODO(tyb0807): reduce the memory footprint.
-    dataset: Vec<Vec<f32>>,
+    pub dataset: Vec<Vec<f32>>,
     // Number of clusters.
-    num_clusters: usize,
+    pub num_clusters: usize,
     // Each cluster is represented by a centroid vector. This is all the centroids in our IVF.
-    centroids: Vec<Vec<f32>>,
+    pub centroids: Vec<Vec<f32>>,
     // Inverted index mapping each cluster to the vectors it contains.
     //   key: centroid index in `centroids`
     //   value: vector index in `dataset`
-    inverted_lists: HashMap<usize, Vec<usize>>,
+    pub inverted_lists: HashMap<usize, Vec<usize>>,
     // Number of probed centroids.
-    num_probes: usize,
+    pub num_probes: usize,
 }
 
 impl Ivf {
