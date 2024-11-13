@@ -1,7 +1,7 @@
 use std::cmp::min;
 use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 
-use anyhow::{anyhow, Context, Ok, Result};
+use anyhow::{anyhow, Context, Result};
 use bit_vec::BitVec;
 use log::debug;
 use ordered_float::NotNan;
@@ -23,7 +23,7 @@ pub struct Layer {
 
 impl Layer {
     // Reindex the edges in place based on the id mapping
-    fn reindex(&mut self, id_mapping: &[i32]) -> anyhow::Result<()> {
+    fn reindex(&mut self, id_mapping: &[i32]) -> Result<()> {
         // Drain so we don't create extra Vec
         let tmp_edges = self.edges.drain().collect::<Vec<_>>();
         for (point_id, mut edges) in tmp_edges {
@@ -40,7 +40,7 @@ impl Layer {
             }
             self.edges.insert(*new_point_id as u32, edges);
         }
-        anyhow::Ok(())
+        Ok(())
     }
 }
 
@@ -187,7 +187,7 @@ impl HnswBuilder {
         assigned_ids: &mut Vec<i32>,
         current_id: &mut i32,
         vector_length: usize,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         debug!("Reindex layer {}", layer);
         let graph = &mut self.layers[layer as usize];
         let mut queue: VecDeque<u32> = VecDeque::with_capacity(vector_length);
@@ -300,7 +300,7 @@ impl HnswBuilder {
         }
 
         self.vectors = new_vector_storage;
-        anyhow::Ok(())
+        Ok(())
     }
 
     /// Insert a vector into the index
