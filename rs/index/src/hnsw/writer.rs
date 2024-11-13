@@ -1,7 +1,7 @@
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 
-use anyhow::Context;
+use anyhow::{Context, Result};
 use log::debug;
 use utils::io::{append_file_to_writer, wrap_write};
 
@@ -33,7 +33,7 @@ impl HnswWriter {
         Self { base_directory }
     }
 
-    pub fn write(&self, index_builder: &mut HnswBuilder, reindex: bool) -> anyhow::Result<()> {
+    pub fn write(&self, index_builder: &mut HnswBuilder, reindex: bool) -> Result<()> {
         if reindex {
             let temp_dir = format!("{}/temp", self.base_directory);
             fs::create_dir_all(&temp_dir).context("failed to create temp directory")?;
@@ -196,11 +196,7 @@ impl HnswWriter {
         Ok(())
     }
 
-    fn write_header(
-        &self,
-        header: Header,
-        writer: &mut BufWriter<&mut File>,
-    ) -> anyhow::Result<usize> {
+    fn write_header(&self, header: Header, writer: &mut BufWriter<&mut File>) -> Result<usize> {
         let version_value: u8 = match header.version {
             Version::V0 => 0,
         };
@@ -217,7 +213,7 @@ impl HnswWriter {
     }
 
     /// Combine all individual files into one final index file
-    fn combine_files(&self, header: Header) -> anyhow::Result<usize> {
+    fn combine_files(&self, header: Header) -> Result<usize> {
         let edges_path = format!("{}/edges", self.base_directory);
         let points_path = format!("{}/points", self.base_directory);
         let edge_offsets_path = format!("{}/edge_offsets", self.base_directory);
@@ -444,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn test_combine_files() -> anyhow::Result<()> {
+    fn test_combine_files() -> Result<()> {
         let temp_dir = tempdir::TempDir::new("combine_files_test")?;
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
         let writer = HnswWriter::new(base_directory.clone());
