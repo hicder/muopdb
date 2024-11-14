@@ -200,9 +200,6 @@ impl<T: ToBytes + Clone + std::fmt::Debug> VectorStorage<T>
         len += wrap_write(writer, &num_vectors.to_le_bytes())?;
         for i in 0..num_vectors {
             let vector = self.get(i as u32).unwrap();
-            if i == 470900 {
-                println!("vector: {:?}", vector);
-            }
             for j in 0..self.num_features {
                 len += wrap_write(writer, vector[j].to_le_bytes().as_ref())?;
             }
