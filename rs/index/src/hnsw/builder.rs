@@ -533,18 +533,10 @@ mod tests {
     use std::fs;
 
     use quantization::pq::ProductQuantizer;
+    use utils::test_utils::generate_random_vector;
 
     use super::*;
     use crate::vector::file::FileBackedAppendableVectorStorage;
-
-    fn generate_random_vector(dimension: usize) -> Vec<f32> {
-        let mut rng = rand::thread_rng();
-        let mut vector = vec![];
-        for _ in 0..dimension {
-            vector.push(rng.gen::<f32>());
-        }
-        vector
-    }
 
     #[test]
     fn test_hnsw_builder_reindex() {
