@@ -185,4 +185,37 @@ mod tests {
         assert_eq!(result.assignments[2], result.assignments[5]);
         assert_eq!(result.assignments[2], result.assignments[8]);
     }
+
+    #[test]
+    fn test_kmeans_lloyd_really_large_penalty() {
+        // This test tests the fact that, point (5.0, 5.0) is assigned to cluster 2 even though
+        // it is supposed to be assigned to cluster 1. The penalty for unblackening a cluster is
+        // extremely large, which forces the point to be reassigned to a different cluster.
+        let data = vec![
+            vec![0.0, 0.0],
+            vec![40.0, 40.0],
+            vec![90.0, 90.0],
+            vec![1.0, 1.0],
+            vec![41.0, 41.0],
+            vec![91.0, 91.0],
+            vec![2.0, 2.0],
+            vec![5.0, 5.0],
+            vec![92.0, 92.0],
+        ];
+
+
+
+        let kmeans = KMeans::new(3, 100, 10000.0, 2, KMeansVariant::Lloyd);
+        let data_ref = data.iter().map(|x| x.as_slice()).collect();
+        let result = kmeans.fit(data_ref).unwrap();
+
+        assert_eq!(result.centroids.len(), 3 * 2);
+        assert_eq!(result.assignments[0], result.assignments[3]);
+        assert_eq!(result.assignments[0], result.assignments[6]);
+        assert_eq!(result.assignments[1], result.assignments[4]);
+        assert_eq!(result.assignments[1], result.assignments[7]);
+        assert_eq!(result.assignments[2], result.assignments[5]);
+        assert_eq!(result.assignments[2], result.assignments[8]);
+
+    }
 }
