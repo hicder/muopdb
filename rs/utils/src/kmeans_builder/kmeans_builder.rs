@@ -1,6 +1,10 @@
 use std::vec;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Ok, Result};
+use kmeans::KMeansConfig;
+use log::debug;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::slice::ParallelSlice;
 
 use crate::l2::L2DistanceCalculator;
 use crate::DistanceCalculator;
@@ -10,7 +14,7 @@ pub enum KMeansVariant {
     Lloyd,
 }
 
-pub struct KMeans {
+pub struct KMeansBuilder {
     pub num_cluters: usize,
     pub max_iter: usize,
 
@@ -33,7 +37,7 @@ pub struct KMeansResult {
 // TODO(hicder): Add support for different variants of k-means.
 // TODO(hicder): Add support for different distance metrics.
 // TODO(hicder): Use SIMD for computation.
-impl KMeans {
+impl KMeansBuilder {
     pub fn new(
         num_cluters: usize,
         max_iter: usize,
@@ -50,24 +54,57 @@ impl KMeans {
         }
     }
 
-    pub fn fit(&self, data: Vec<&[f32]>) -> Result<KMeansResult> {
+    // Use as part of benchmarking. Don't use in production.
+    pub fn fit_old(&self, data: Vec<f32>) -> Result<KMeansResult> {
+        let sample_count = data.len() / self.dimension;
+        let conf = KMeansConfig::build()
+            .init_done(&|_| debug!("Initialization completed."))
+            .iteration_done(&|s, nr, new_distsum| {
+                debug!(
+                    "Iteration {} - Error: {:.2} -> {:.2} | Improvement: {:.2}",
+                    nr,
+                    s.distsum,
+                    new_distsum,
+                    s.distsum - new_distsum
+                )
+            })
+            .build();
+        let kmean: kmeans::KMeans<_, 8> = kmeans::KMeans::new(data, sample_count, self.dimension);
+        let result = kmean.kmeans_minibatch(
+            1000,
+            self.num_cluters,
+            self.max_iter,
+            kmeans::KMeans::init_random_sample,
+            &conf,
+        );
+        let kmeans_result = KMeansResult {
+            centroids: result.centroids,
+            assignments: result.assignments,
+        };
+        Ok(kmeans_result)
+    }
+
+    pub fn fit(&self, flattened_data: Vec<f32>) -> Result<KMeansResult> {
         // Validate dimension
-        for data_point in data.iter() {
-            if data_point.len() != self.dimension {
-                return Err(anyhow!(
-                    "Dimension of data point {} is not equal to dimension of KMeans object {}",
-                    data_point.len(),
-                    self.dimension
-                ));
-            }
+        if flattened_data.len() % self.dimension != 0 {
+            return Err(anyhow!(
+                "Dimension of data point {} is not equal to dimension of KMeans object {}",
+                flattened_data.len(),
+                self.dimension
+            )); // TODO(hicder): Better error message
         }
 
         match self.variant {
-            KMeansVariant::Lloyd => self.run_lloyd(data),
+            KMeansVariant::Lloyd => self.run_lloyd(flattened_data),
         }
     }
 
-    fn run_lloyd(&self, data_points: Vec<&[f32]>) -> Result<KMeansResult> {
+    fn run_lloyd(&self, flattened_data_points: Vec<f32>) -> Result<KMeansResult> {
+        let data_points = flattened_data_points
+            .par_chunks_exact(self.dimension)
+            .map(|x| x)
+            .collect::<Vec<&[f32]>>();
+
         let num_data_points = data_points.len();
         let mut cluster_labels = vec![0; num_data_points];
 
@@ -111,30 +148,33 @@ impl KMeans {
                 .for_each(|x| *x.1 = self.tolerance * cluster_sizes[x.0] as f32);
 
             // Reassign points using modified distance (Equation 8)
-            for i in 0..num_data_points {
-                let mut distances = vec![0.0; self.num_cluters];
-                let data_point = &data_points[i];
-
-                // Calculate distance to each centroid
-                for centroid_id in 0..self.num_cluters {
-                    let centroid = centroids
-                        [centroid_id * self.dimension..(centroid_id + 1) * self.dimension]
-                        .as_ref();
-                    let mut distance_calculator = L2DistanceCalculator::new();
-                    let distance = distance_calculator.calculate(data_point, centroid);
-                    distances[centroid_id] = distance;
-                }
-
-                // Assign each point to cluster with minimum cost (which includes size penalty)
-                let mut min_cost = f32::MAX;
-                for j in 0..self.num_cluters {
-                    let cost = distances[j] + penalties[j];
-                    if cost < min_cost {
-                        min_cost = cost;
-                        cluster_labels[i] = j;
+            cluster_labels = data_points
+                .par_iter()
+                .map(|data_point| {
+                    let mut distances = vec![0.0; self.num_cluters];
+                    // Calculate distance to each centroid
+                    for centroid_id in 0..self.num_cluters {
+                        let centroid = centroids
+                            [centroid_id * self.dimension..(centroid_id + 1) * self.dimension]
+                            .as_ref();
+                        let mut distance_calculator = L2DistanceCalculator::new();
+                        let distance = distance_calculator.calculate(data_point, centroid);
+                        distances[centroid_id] = distance;
                     }
-                }
-            }
+
+                    // Assign each point to cluster with minimum cost (which includes size penalty)
+                    let mut min_cost = f32::MAX;
+                    let mut label = 0;
+                    for j in 0..self.num_cluters {
+                        let cost = distances[j] + penalties[j];
+                        if cost < min_cost {
+                            min_cost = cost;
+                            label = j;
+                        }
+                    }
+                    label
+                })
+                .collect::<Vec<usize>>();
 
             // Check convergence
             if cluster_labels == old_labels {
@@ -167,9 +207,15 @@ mod tests {
             vec![92.0, 92.0],
         ];
 
-        let kmeans = KMeans::new(3, 100, 1e-4, 2, KMeansVariant::Lloyd);
-        let data_ref = data.iter().map(|x| x.as_slice()).collect();
-        let result = kmeans.fit(data_ref).unwrap();
+        let flattened_data = data
+            .iter()
+            .map(|x| x.as_slice())
+            .flatten()
+            .cloned()
+            .collect();
+
+        let kmeans = KMeansBuilder::new(3, 100, 1e-4, 2, KMeansVariant::Lloyd);
+        let result = kmeans.fit(flattened_data).unwrap();
 
         assert_eq!(kmeans.num_cluters, 3);
         assert_eq!(kmeans.max_iter, 100);
@@ -203,11 +249,14 @@ mod tests {
             vec![92.0, 92.0],
         ];
 
-
-
-        let kmeans = KMeans::new(3, 100, 10000.0, 2, KMeansVariant::Lloyd);
-        let data_ref = data.iter().map(|x| x.as_slice()).collect();
-        let result = kmeans.fit(data_ref).unwrap();
+        let flattened_data = data
+            .iter()
+            .map(|x| x.as_slice())
+            .flatten()
+            .cloned()
+            .collect();
+        let kmeans = KMeansBuilder::new(3, 100, 10000.0, 2, KMeansVariant::Lloyd);
+        let result = kmeans.fit(flattened_data).unwrap();
 
         assert_eq!(result.centroids.len(), 3 * 2);
         assert_eq!(result.assignments[0], result.assignments[3]);
@@ -216,7 +265,6 @@ mod tests {
         assert_eq!(result.assignments[1], result.assignments[7]);
         assert_eq!(result.assignments[2], result.assignments[5]);
         assert_eq!(result.assignments[2], result.assignments[8]);
-
     }
 
     #[test]
@@ -233,11 +281,14 @@ mod tests {
             vec![92.0, 92.0],
         ];
 
-
-
-        let kmeans = KMeans::new(3, 100, 0.0, 2, KMeansVariant::Lloyd);
-        let data_ref = data.iter().map(|x| x.as_slice()).collect();
-        let result = kmeans.fit(data_ref).unwrap();
+        let flattened_data = data
+            .iter()
+            .map(|x| x.as_slice())
+            .flatten()
+            .cloned()
+            .collect();
+        let kmeans = KMeansBuilder::new(3, 100, 0.0, 2, KMeansVariant::Lloyd);
+        let result = kmeans.fit(flattened_data).unwrap();
 
         assert_eq!(result.centroids.len(), 3 * 2);
         assert_eq!(result.assignments[0], result.assignments[3]);

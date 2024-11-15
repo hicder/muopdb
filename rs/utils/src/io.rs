@@ -45,10 +45,11 @@ pub fn get_latest_version(config_path: &str) -> u64 {
 // Test
 #[cfg(test)]
 mod tests {
+    use std::fs::{read, write};
+
     use tempdir::TempDir;
 
     use super::*;
-    use std::fs::{write, read};
 
     #[test]
     fn test_append_file_to_writer() -> Result<()> {
