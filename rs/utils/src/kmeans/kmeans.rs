@@ -218,4 +218,35 @@ mod tests {
         assert_eq!(result.assignments[2], result.assignments[8]);
 
     }
+
+    #[test]
+    fn test_kmeans_no_distance_penalty() {
+        let data = vec![
+            vec![0.0, 0.0],
+            vec![40.0, 40.0],
+            vec![90.0, 90.0],
+            vec![1.0, 1.0],
+            vec![41.0, 41.0],
+            vec![91.0, 91.0],
+            vec![2.0, 2.0],
+            vec![5.0, 5.0],
+            vec![92.0, 92.0],
+        ];
+
+
+
+        let kmeans = KMeans::new(3, 100, 0.0, 2, KMeansVariant::Lloyd);
+        let data_ref = data.iter().map(|x| x.as_slice()).collect();
+        let result = kmeans.fit(data_ref).unwrap();
+
+        assert_eq!(result.centroids.len(), 3 * 2);
+        assert_eq!(result.assignments[0], result.assignments[3]);
+        assert_eq!(result.assignments[0], result.assignments[6]);
+        assert_eq!(result.assignments[1], result.assignments[4]);
+        // point 7 belongs to the same cluster as point 0 and 3 and 6, since there is no
+        // unbalanced penalty.
+        assert_eq!(result.assignments[0], result.assignments[7]);
+        assert_eq!(result.assignments[2], result.assignments[5]);
+        assert_eq!(result.assignments[2], result.assignments[8]);
+    }
 }
