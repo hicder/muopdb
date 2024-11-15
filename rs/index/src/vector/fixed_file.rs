@@ -64,11 +64,38 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
 #[cfg(test)]
 mod tests {
     use std::fs::File;
-    use std::io::BufWriter;
+    use std::io::{BufWriter, Write};
 
     use super::*;
     use crate::vector::file::FileBackedAppendableVectorStorage;
     use crate::vector::VectorStorage;
+
+    fn create_test_file_err(base_dir: &String, num_vectors: usize, num_features: usize) -> String {
+        let file_path = format!("{}/vectors", base_dir);
+        let mut file = File::create(file_path.clone()).unwrap();
+
+        // Write number of vectors (8 bytes)
+        file.write_all(&[num_vectors as u8; 8]).unwrap();
+
+        // Write test data
+        for i in 0..num_vectors + 1 {
+            for j in 0..num_features {
+                let value = (i * num_features + j) as f32;
+                file.write_all(&value.to_le_bytes()).unwrap();
+            }
+        }
+        file.flush().unwrap();
+        file_path
+    }
+
+    #[test]
+    fn test_fixed_file_vector_storage_new() {
+        let tempdir = tempdir::TempDir::new("test").unwrap();
+        let base_dir = tempdir.path().to_str().unwrap().to_string();
+        let file_path = create_test_file_err(&base_dir, 10, 4);
+        let storage = FixedFileVectorStorage::<f32>::new(file_path, 4);
+        assert!(storage.is_err());
+    }
 
     #[test]
     fn test_fixed_file_vector_storage() {
