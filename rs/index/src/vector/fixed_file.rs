@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use memmap2::Mmap;
 use num_traits::ToBytes;
 use utils::mem::transmute_u8_to_slice;
@@ -12,6 +12,7 @@ pub struct FixedFileVectorStorage<T> {
     _marker: PhantomData<T>,
 
     mmaps: Mmap,
+    pub num_vectors: usize,
     num_features: usize,
     file_path: String,
 }
@@ -22,32 +23,40 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
             .read(true)
             .open(file_path.clone())?;
         let mmap = unsafe { Mmap::map(&file) }?;
+        let num_vectors = usize::from_le_bytes(mmap[0..8].try_into().unwrap());
+        if num_vectors * Self::vector_size_in_bytes(num_features) != mmap.len() - 8 {
+            return Err(anyhow!("number of vectors mismatch"));
+        }
         Ok(Self {
             _marker: PhantomData,
             mmaps: mmap,
+            num_vectors,
             num_features,
             file_path,
         })
     }
 
     pub fn get(&self, index: usize, context: &mut SearchContext) -> Option<&[T]> {
-        let start = 8 + index * self.num_features * std::mem::size_of::<T>();
-        let end = 8 + (index + 1) * self.num_features * std::mem::size_of::<T>();
-        if end > self.mmaps.len() {
+        if index > self.num_vectors {
             return None;
         }
+        let start = 8 + index * Self::vector_size_in_bytes(self.num_features);
 
         if context.should_record_pages() {
             let page_id = format!("{}::{}", self.file_path, self.get_page_id(start));
             context.record_pages(page_id);
         }
 
-        let slice = &self.mmaps[start..end];
+        let slice = &self.mmaps[start..start + Self::vector_size_in_bytes(self.num_features)];
         Some(transmute_u8_to_slice::<T>(slice))
     }
 
     fn get_page_id(&self, index: usize) -> usize {
         index / 4096
+    }
+
+    fn vector_size_in_bytes(num_features: usize) -> usize {
+        num_features * std::mem::size_of::<T>()
     }
 }
 
@@ -115,11 +124,20 @@ mod tests {
 
         let mut context = SearchContext::new(false);
         let storage = FixedFileVectorStorage::<f32>::new(vectors_path, 4).unwrap();
+        assert_eq!(storage.num_vectors, 3);
         assert_eq!(storage.get(0, &mut context).unwrap(), &[1.0, 2.0, 3.0, 4.0]);
         assert_eq!(storage.get(1, &mut context).unwrap(), &[5.0, 6.0, 7.0, 8.0]);
         assert_eq!(
             storage.get(2, &mut context).unwrap(),
             &[9.0, 10.0, 11.0, 12.0]
         );
+    }
+
+    #[test]
+    fn test_vector_size_in_bytes() {
+        assert_eq!(FixedFileVectorStorage::<f32>::vector_size_in_bytes(3), 12); // 3 features * 4 bytes (size of f32)
+        assert_eq!(FixedFileVectorStorage::<u64>::vector_size_in_bytes(3), 24); // 3 features * 8 bytes (size of u64)
+        assert_eq!(FixedFileVectorStorage::<u8>::vector_size_in_bytes(4), 4); // 4 features * 1 byte (size of u8)
+        assert_eq!(FixedFileVectorStorage::<u16>::vector_size_in_bytes(4), 8); // 4 features * 2 bytes (size of u16)
     }
 }
