@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn test_kmeans_lloyd_really_large_penalty() {
         // This test tests the fact that, point (5.0, 5.0) is assigned to cluster 2 even though
-        // it is supposed to be assigned to cluster 1. The penalty for unblackening a cluster is
+        // it is supposed to be assigned to cluster 1. The penalty for unbalancing a cluster is
         // extremely large, which forces the point to be reassigned to a different cluster.
         let data = vec![
             vec![0.0, 0.0],
