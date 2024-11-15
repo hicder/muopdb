@@ -8,6 +8,12 @@ use utils::io::wrap_write;
 
 use super::{VectorStorage, VectorStorageConfig};
 
+pub struct FileBackedAppendableVectorStorageConfig {
+    memory_threshold: usize,
+    backing_file_size: usize,
+    num_features: usize,
+}
+
 pub struct FileBackedAppendableVectorStorage<T> {
     pub memory_threshold: usize,
     pub backing_file_size: usize,
@@ -46,6 +52,18 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
             current_backing_id: -1,
             current_offset: 0,
         }
+    }
+
+    pub fn new_with_config(
+        base_directory: String,
+        config: FileBackedAppendableVectorStorageConfig,
+    ) -> Self {
+        Self::new(
+            base_directory,
+            config.memory_threshold,
+            config.backing_file_size,
+            config.num_features,
+        )
     }
 
     pub fn is_resident(&self) -> bool {
