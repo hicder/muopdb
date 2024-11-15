@@ -1,32 +1,68 @@
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::BufWriter;
+
 use kmeans::*;
 use log::debug;
 
 use crate::ivf::index::Ivf;
+use crate::utils::SearchContext;
+use crate::vector::file::FileBackedAppendableVectorStorage;
+use crate::vector::fixed_file::FixedFileVectorStorage;
+use crate::vector::{VectorStorage, VectorStorageConfig};
 
 pub struct IvfBuilderConfig {
     pub max_iteration: usize,
     pub batch_size: usize,
     pub num_clusters: usize,
     pub num_probes: usize,
+    // Parameters for vector storage.
+    pub base_directory: String,
+    pub vector_storage_memory_size: usize,
+    pub vector_storage_file_size: usize,
+    pub num_features: usize,
 }
 
 pub struct IvfBuilder {
     config: IvfBuilderConfig,
-    dataset: Vec<Vec<f32>>,
+    vectors: Box<dyn VectorStorage<f32>>,
 }
 
 impl IvfBuilder {
     /// Create a new IvfBuilder
     pub fn new(config: IvfBuilderConfig) -> Self {
-        Self {
-            config,
-            dataset: Vec::new(),
-        }
+        let vectors = Box::new(FileBackedAppendableVectorStorage::<f32>::new(
+            config.base_directory.clone(),
+            config.vector_storage_memory_size,
+            config.vector_storage_file_size,
+            config.num_features,
+        ));
+        Self { config, vectors }
     }
 
     /// Add a new vector to the dataset for training
     pub fn add(&mut self, data: Vec<f32>) {
-        self.dataset.push(data);
+        self.vectors
+            .append(&data)
+            .unwrap_or_else(|_| panic!("append to Ivf failed"));
+    }
+
+    pub fn build_inverted_lists(
+        vector_storage: &FixedFileVectorStorage<f32>,
+        centroids: &Vec<Vec<f32>>,
+    ) -> HashMap<usize, Vec<usize>> {
+        let mut context = SearchContext::new(false);
+        let mut inverted_lists = HashMap::new();
+        // Assign vectors to nearest centroid
+        for i in 0..vector_storage.num_vectors {
+            let vector = vector_storage.get(i, &mut context).unwrap().to_vec();
+            let nearest_centroid = Ivf::find_nearest_centroids(&vector, &centroids, 1);
+            inverted_lists
+                .entry(nearest_centroid[0])
+                .or_insert_with(Vec::new)
+                .push(i);
+        }
+        inverted_lists
     }
 
     /// Train kmeans on the dataset, and returns the Ivf index
@@ -43,9 +79,16 @@ impl IvfBuilder {
                 )
             })
             .build();
-        let flattened_dataset: Vec<f32> = self.dataset.iter().flatten().cloned().collect();
-        let dim = self.dataset[0].len();
-        let kmeans: KMeans<_, 8> = KMeans::new(flattened_dataset, self.dataset.len(), dim);
+        let mut flattened_dataset: Vec<f32> = Vec::new();
+        let num_vectors = self.vectors.len();
+        for i in 0..num_vectors {
+            if let Some(vector) = self.vectors.get(i as u32) {
+                flattened_dataset.extend_from_slice(vector);
+            }
+        }
+
+        let kmeans: KMeans<_, 8> =
+            KMeans::new(flattened_dataset, num_vectors, self.config.num_features);
         let result = kmeans.kmeans_minibatch(
             self.config.batch_size,
             self.config.num_clusters,
@@ -57,12 +100,22 @@ impl IvfBuilder {
 
         let centroids = result
             .centroids
-            .chunks(dim)
+            .chunks(self.config.num_features)
             .map(|chunk| chunk.to_vec())
             .collect();
-        let inverted_lists = Ivf::build_inverted_lists(&self.dataset, &centroids);
+
+        let vectors_path = format!("{}/immutable_vector_storage", self.config.base_directory);
+        let mut vectors_file = File::create(vectors_path.clone()).unwrap();
+        let mut vectors_buffer_writer = BufWriter::new(&mut vectors_file);
+
+        self.vectors.write(&mut vectors_buffer_writer).unwrap();
+
+        let mut context = SearchContext::new(false);
+        let storage =
+            FixedFileVectorStorage::<f32>::new(vectors_path, self.config.num_features).unwrap();
+        let inverted_lists = Self::build_inverted_lists(&storage, &centroids);
         Ivf::new(
-            self.dataset.clone(),
+            storage,
             centroids,
             inverted_lists,
             self.config.num_clusters,
@@ -74,6 +127,8 @@ impl IvfBuilder {
 // Test
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use utils::test_utils::generate_random_vector;
 
     use super::*;
@@ -85,11 +140,17 @@ mod tests {
         env_logger::init();
 
         const DIMENSION: usize = 128;
+        let temp_dir = tempdir::TempDir::new("ivf_builder_test").unwrap();
+        let base_directory = temp_dir.path().to_str().unwrap().to_string();
         let mut builder = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters: 10,
             num_probes: 3,
+            base_directory,
+            vector_storage_memory_size: 1024,
+            vector_storage_file_size: 4096,
+            num_features: DIMENSION,
         });
         // Generate 10000 vectors of f32, dimension 128
         for _ in 0..10000 {
