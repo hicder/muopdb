@@ -1,7 +1,6 @@
 use kmeans::*;
 use log::debug;
 
-use crate::index::Index;
 use crate::ivf::index::Ivf;
 
 pub struct IvfBuilderConfig {
@@ -78,7 +77,7 @@ mod tests {
     use utils::test_utils::generate_random_vector;
 
     use super::*;
-    use crate::utils::SearchContext;
+    use crate::{index::Index, utils::SearchContext};
 
     #[test]
     fn test_ivf_builder() {

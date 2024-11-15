@@ -1,8 +1,7 @@
-use std::fs::{read, read_dir, write, File};
+use std::fs::{read_dir, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 
 use anyhow::Result;
-use tempdir::TempDir;
 
 /// Convenient wrapper for going from io::Result<usize> to Result<usize, String>
 pub fn wrap_write(writer: &mut BufWriter<&mut File>, buf: &[u8]) -> Result<usize> {
@@ -46,7 +45,10 @@ pub fn get_latest_version(config_path: &str) -> u64 {
 // Test
 #[cfg(test)]
 mod tests {
+    use tempdir::TempDir;
+
     use super::*;
+    use std::fs::{write, read};
 
     #[test]
     fn test_append_file_to_writer() -> Result<()> {

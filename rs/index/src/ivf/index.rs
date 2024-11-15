@@ -78,8 +78,8 @@ impl Index for Ivf {
         &self,
         query: &[f32],
         k: usize,
-        ef_construction: u32,
-        context: &mut SearchContext,
+        _ef_construction: u32,
+        _context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>> {
         // TODO(tyb0807): maybe do something with `context`.
         let mut heap = BinaryHeap::with_capacity(k);
