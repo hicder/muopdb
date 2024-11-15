@@ -77,7 +77,8 @@ mod tests {
     use utils::test_utils::generate_random_vector;
 
     use super::*;
-    use crate::{index::Index, utils::SearchContext};
+    use crate::index::Index;
+    use crate::utils::SearchContext;
 
     #[test]
     fn test_ivf_builder() {

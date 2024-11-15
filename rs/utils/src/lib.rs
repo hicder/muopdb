@@ -1,9 +1,9 @@
 #![feature(portable_simd)]
 pub mod io;
+pub mod kmeans_builder;
 pub mod l2;
 pub mod mem;
 pub mod test_utils;
-pub mod kmeans;
 
 pub trait DistanceCalculator {
     /// Compute distance between two vectors.

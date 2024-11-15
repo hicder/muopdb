@@ -2079,8 +2079,11 @@ dependencies = [
  "anyhow",
  "criterion",
  "hdf5-metno",
+ "kmeans",
+ "log",
  "ndarray",
  "rand 0.8.5",
+ "rayon",
  "strum",
  "tempdir",
 ]
