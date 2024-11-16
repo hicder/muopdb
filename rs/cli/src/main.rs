@@ -3,6 +3,7 @@ use log::info;
 use proto::muopdb::aggregator_client::AggregatorClient;
 use proto::muopdb::index_server_client::IndexServerClient;
 use proto::muopdb::{GetRequest, SearchRequest};
+use anyhow::{Result, Context};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -19,7 +20,7 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     env_logger::init();
 
     let arg = Args::parse();
@@ -29,30 +30,50 @@ async fn main() {
     let node_type = arg.node_type;
     info!("Node type: {}", node_type);
 
-    if node_type == 0 {
-        let mut client = AggregatorClient::connect(addr).await.unwrap();
-        let request = tonic::Request::new(GetRequest {
-            index: index_name,
-            vector: vec![1.0, 2.0, 3.0],
-            top_k: 10,
-            record_metrics: true,
-            ef_construction: 100,
-        });
+    match node_type {
+        0 => {
+            let mut client = AggregatorClient::connect(addr)
+                .await
+                .context("Failed to connect to Aggregator")?;
 
-        let response = client.get(request).await.unwrap();
-        info!("Response: {:?}", response);
-    } else if node_type == 1 {
-        let mut client = IndexServerClient::connect(addr).await.unwrap();
-        let vec = (0..128).map(|_| 0.1).collect::<Vec<_>>();
-        let request = tonic::Request::new(SearchRequest {
-            index_name: index_name,
-            vector: vec,
-            top_k: 10,
-            record_metrics: true,
-            ef_construction: 100,
-        });
-        info!("Request: {:?}", request);
-        let response = client.search(request).await.unwrap();
-        info!("Response: {:?}", response);
+            let request = tonic::Request::new(GetRequest {
+                index: index_name,
+                vector: vec![1.0, 2.0, 3.0],
+                top_k: 10,
+                record_metrics: true,
+                ef_construction: 100,
+            });
+
+            let response = client.get(request)
+                .await
+                .context("Failed to get response from Aggregator")?;
+
+            info!("Response: {:?}", response);
+        },
+        1 => {
+            let mut client = IndexServerClient::connect(addr)
+                .await
+                .context("Failed to connect to IndexServer")?;
+
+            let vec = (0..128).map(|_| 0.1).collect::<Vec<_>>();
+            let request = tonic::Request::new(SearchRequest {
+                index_name,
+                vector: vec,
+                top_k: 10,
+                record_metrics: true,
+                ef_construction: 100,
+            });
+
+            info!("Request: {:?}", request);
+
+            let response = client.search(request)
+                .await
+                .context("Failed to get search response from IndexServer")?;
+
+            info!("Response: {:?}", response);
+        },
+        _ => return Err(anyhow::anyhow!("Invalid node type: {}", node_type)),
     }
+
+    Ok(())
 }
