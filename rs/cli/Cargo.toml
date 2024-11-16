@@ -20,3 +20,4 @@ tokio.workspace = true
 tonic.workspace = true
 rand.workspace = true
 index.workspace = true
+anyhow.workspace = true

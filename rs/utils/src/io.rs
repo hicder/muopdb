@@ -28,22 +28,18 @@ pub fn get_latest_version(config_path: &str) -> Result<u64> {
     // List all files in the directory
     let mut latest_version = 0;
     for entry in read_dir(config_path)? {
-        let entry = entry.unwrap();
-        let path = entry.path();
+        let path = entry?.path();
         let filename = path
             .file_name()
-            .unwrap()
-            .to_str()
-            .ok_or_else(|| anyhow!("Cannot get filename"))?;
+            .and_then(|os_str| os_str.to_str())
+            .ok_or_else(|| anyhow!("Invalid filename"))?;
         if filename.starts_with("version_") {
             let version = filename
-                .split("_")
+                .split('_')
                 .last()
-                .ok_or_else(|| anyhow!("Cannot get version"))?;
-            let version = version.parse::<u64>()?;
-            if version > latest_version {
-                latest_version = version;
-            }
+                .ok_or_else(|| anyhow!("Invalid version format"))?
+                .parse::<u64>()?;
+            latest_version = latest_version.max(version);
         }
     }
     Ok(latest_version)
@@ -61,7 +57,11 @@ mod tests {
     #[test]
     fn test_append_file_to_writer() -> Result<()> {
         let temp_dir = TempDir::new("append_file_to_writer_test")?;
-        let base_directory = temp_dir.path().to_str().unwrap().to_string();
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Failed to convert temp directory path to string"))?
+            .to_string();
 
         // Create a test file
         let test_content = b"Hello, World!";

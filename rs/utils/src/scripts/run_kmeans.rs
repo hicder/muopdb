@@ -13,5 +13,7 @@ fn main() {
     }
 
     let kmeans = KMeansBuilder::new(10000, 5, 0.0, dimension, KMeansVariant::Lloyd);
-    let _result = kmeans.fit(flattened_dataset).unwrap();
+    let _result = kmeans
+        .fit(flattened_dataset)
+        .expect("Failed to run KMeans model");
 }
