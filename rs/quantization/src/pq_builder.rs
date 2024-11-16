@@ -91,7 +91,7 @@ impl ProductQuantizerBuilder {
 // Test
 #[cfg(test)]
 mod tests {
-    use utils::l2::L2DistanceCalculatorImpl::{Scalar, StreamingWithSIMD, SIMD};
+    use utils::distance::l2::L2DistanceCalculatorImpl::{Scalar, StreamingWithSIMD, SIMD};
     use utils::test_utils::generate_random_vector;
 
     use super::*;

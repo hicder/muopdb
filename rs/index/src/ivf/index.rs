@@ -1,6 +1,6 @@
 use std::collections::{BinaryHeap, HashMap};
 
-use utils::l2::L2DistanceCalculator;
+use utils::distance::l2::L2DistanceCalculator;
 use utils::DistanceCalculator;
 
 use crate::index::Index;

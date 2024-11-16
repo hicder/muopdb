@@ -1,7 +1,7 @@
 #![feature(portable_simd)]
 pub mod io;
 pub mod kmeans_builder;
-pub mod l2;
+pub mod distance;
 pub mod mem;
 pub mod test_utils;
 

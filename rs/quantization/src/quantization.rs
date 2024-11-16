@@ -1,4 +1,5 @@
-use utils::l2::L2DistanceCalculatorImpl;
+use utils::distance::l2::L2DistanceCalculatorImpl;
+
 pub trait Quantizer {
     /// Quantize a vector
     fn quantize(&self, value: &[f32]) -> Vec<u8>;

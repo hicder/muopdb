@@ -1,6 +1,7 @@
+use core::simd;
 use std::ops::Mul;
 use std::simd::num::SimdFloat;
-use std::simd::{f32x4, f32x8};
+use std::simd::{f32x16, f32x4, f32x8, Simd};
 
 use strum::EnumIter;
 
@@ -36,21 +37,19 @@ impl L2DistanceCalculator {
 
     fn accumulate(&mut self, a: &[f32], b: &[f32]) {
         let mut i = 0;
-        let mut step = self.dist_simd_8.len();
-        while i + step <= a.len() {
-            let a_slice = f32x8::from_slice(&a[i..]);
-            let b_slice = f32x8::from_slice(&b[i..]);
+        while i + 8 <= a.len() && i + 8 <= b.len() {
+            let a_slice = f32x8::from_slice(&a[i..i + 8]);
+            let b_slice = f32x8::from_slice(&b[i..i + 8]);
             let diff = a_slice - b_slice;
             self.dist_simd_8 += diff.mul(diff);
-            i += step;
+            i += 8;
         }
-        step = self.dist_simd_4.len();
-        while i + step <= a.len() {
-            let a_slice = f32x4::from_slice(&a[i..]);
-            let b_slice = f32x4::from_slice(&b[i..]);
+        while i + 4 <= a.len() && i + 4 <= b.len() {
+            let a_slice = f32x4::from_slice(&a[i..i + 4]);
+            let b_slice = f32x4::from_slice(&b[i..i + 4]);
             let diff = a_slice - b_slice;
             self.dist_simd_4 += diff.mul(diff);
-            i += step;
+            i += 4;
         }
         for j in i..a.len() {
             self.dist_simd_1 += (a[j] - b[j]).powi(2);
@@ -97,6 +96,33 @@ impl StreamingDistanceCalculator for L2DistanceCalculator {
         let res = self.reduce();
         self.reset_distance_accumulators();
         res
+    }
+}
+
+pub struct NonStreamingL2DistanceCalculator {}
+
+impl NonStreamingL2DistanceCalculator {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub fn calculate_squared(&self, a: &[f32], b: &[f32]) -> f32 {
+        let mut simd = f32x16::splat(0.0);
+        let mut i = 0;
+        while i + 16 <= a.len() && i + 16 <= b.len() {
+            let a_slice = f32x16::from_slice(&a[i..i + 16]);
+            let b_slice = f32x16::from_slice(&b[i..i + 16]);
+            let diff = a_slice - b_slice;
+            simd += diff.mul(diff);
+            i += 16;
+        }
+        simd.reduce_sum()
+    }
+}
+
+impl DistanceCalculator for NonStreamingL2DistanceCalculator {
+    fn calculate(&mut self, a: &[f32], b: &[f32]) -> f32 {
+        self.calculate_squared(a, b).sqrt()
     }
 }
 

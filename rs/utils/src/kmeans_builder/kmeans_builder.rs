@@ -1,13 +1,10 @@
-use std::vec;
-
 use anyhow::{anyhow, Ok, Result};
 use kmeans::KMeansConfig;
 use log::debug;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::slice::ParallelSlice;
 
-use crate::l2::L2DistanceCalculator;
-use crate::DistanceCalculator;
+use crate::distance::l2::NonStreamingL2DistanceCalculator;
 
 #[derive(PartialEq, Debug)]
 pub enum KMeansVariant {
@@ -69,9 +66,8 @@ impl KMeansBuilder {
                 )
             })
             .build();
-        let kmean: kmeans::KMeans<_, 8> = kmeans::KMeans::new(data, sample_count, self.dimension);
-        let result = kmean.kmeans_minibatch(
-            1000,
+        let kmean: kmeans::KMeans<_, 16> = kmeans::KMeans::new(data, sample_count, self.dimension);
+        let result = kmean.kmeans_lloyd(
             self.num_cluters,
             self.max_iter,
             kmeans::KMeans::init_random_sample,
@@ -148,28 +144,24 @@ impl KMeansBuilder {
                 .for_each(|x| *x.1 = self.tolerance * cluster_sizes[x.0] as f32);
 
             // Reassign points using modified distance (Equation 8)
+
+            let distance_calculator = NonStreamingL2DistanceCalculator::new();
             cluster_labels = data_points
                 .par_iter()
                 .map(|data_point| {
-                    let mut distances = vec![0.0; self.num_cluters];
                     // Calculate distance to each centroid
+                    let mut min_cost = f32::MAX;
+                    let mut label = 0;
                     for centroid_id in 0..self.num_cluters {
                         let centroid = centroids
                             [centroid_id * self.dimension..(centroid_id + 1) * self.dimension]
                             .as_ref();
-                        let mut distance_calculator = L2DistanceCalculator::new();
-                        let distance = distance_calculator.calculate(data_point, centroid);
-                        distances[centroid_id] = distance;
-                    }
+                        let distance = distance_calculator.calculate_squared(data_point, centroid)
+                            + penalties[centroid_id];
 
-                    // Assign each point to cluster with minimum cost (which includes size penalty)
-                    let mut min_cost = f32::MAX;
-                    let mut label = 0;
-                    for j in 0..self.num_cluters {
-                        let cost = distances[j] + penalties[j];
-                        if cost < min_cost {
-                            min_cost = cost;
-                            label = j;
+                        if distance < min_cost {
+                            min_cost = distance;
+                            label = centroid_id;
                         }
                     }
                     label

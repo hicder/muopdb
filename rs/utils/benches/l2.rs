@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use utils::l2::L2DistanceCalculator;
+use utils::distance::l2::L2DistanceCalculator;
 use utils::test_utils::generate_random_vector;
 use utils::DistanceCalculator;
 

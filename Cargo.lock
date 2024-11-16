@@ -2078,6 +2078,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "criterion",
+ "env_logger",
  "hdf5-metno",
  "kmeans",
  "log",
