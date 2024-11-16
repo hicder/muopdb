@@ -67,7 +67,7 @@ impl IndexManager {
     }
 
     pub async fn check_for_update(&mut self) {
-        let latest_version = get_latest_version(&self.config_path);
+        let latest_version = get_latest_version(&self.config_path).unwrap();
         if latest_version > self.latest_version {
             info!("New version available: {}", latest_version);
             let latest_config_path = format!("{}/version_{}", self.config_path, latest_version);

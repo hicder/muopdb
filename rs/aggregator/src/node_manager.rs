@@ -46,7 +46,7 @@ impl NodeManager {
     }
 
     pub async fn check_for_update(&self) {
-        let latest_version = get_latest_version(&self.config_path);
+        let latest_version = get_latest_version(&self.config_path).unwrap();
         if latest_version > self.nodes.read().await.clone().version {
             self.load_version(latest_version).await;
         }

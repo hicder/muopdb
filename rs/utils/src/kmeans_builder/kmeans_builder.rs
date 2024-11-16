@@ -215,7 +215,9 @@ mod tests {
             .collect();
 
         let kmeans = KMeansBuilder::new(3, 100, 1e-4, 2, KMeansVariant::Lloyd);
-        let result = kmeans.fit(flattened_data).unwrap();
+        let result = kmeans
+            .fit(flattened_data)
+            .expect("KMeans run should succeed");
 
         assert_eq!(kmeans.num_cluters, 3);
         assert_eq!(kmeans.max_iter, 100);
@@ -256,7 +258,9 @@ mod tests {
             .cloned()
             .collect();
         let kmeans = KMeansBuilder::new(3, 100, 10000.0, 2, KMeansVariant::Lloyd);
-        let result = kmeans.fit(flattened_data).unwrap();
+        let result = kmeans
+            .fit(flattened_data)
+            .expect("KMeans run should succeed");
 
         assert_eq!(result.centroids.len(), 3 * 2);
         assert_eq!(result.assignments[0], result.assignments[3]);
@@ -288,7 +292,9 @@ mod tests {
             .cloned()
             .collect();
         let kmeans = KMeansBuilder::new(3, 100, 0.0, 2, KMeansVariant::Lloyd);
-        let result = kmeans.fit(flattened_data).unwrap();
+        let result = kmeans
+            .fit(flattened_data)
+            .expect("KMeans run should succeed");
 
         assert_eq!(result.centroids.len(), 3 * 2);
         assert_eq!(result.assignments[0], result.assignments[3]);

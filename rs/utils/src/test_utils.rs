@@ -22,12 +22,13 @@ mod tests {
         }
 
         // Write to /tmp/dataset.bin
-        let mut file = std::fs::File::create("/tmp/dataset.bin").unwrap();
+        let mut file = std::fs::File::create("/tmp/dataset.bin").expect("File should be created");
         for result in results {
             for i in 0..dimension {
-                file.write_all(&result[i].to_le_bytes()).unwrap();
+                file.write_all(&result[i].to_le_bytes())
+                    .expect("Write should succeed");
             }
         }
-        file.flush().unwrap();
+        file.flush().expect("Flush should succeed");
     }
 }

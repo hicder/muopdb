@@ -1,7 +1,7 @@
 use std::fs::{read_dir, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 /// Convenient wrapper for going from io::Result<usize> to Result<usize, String>
 pub fn wrap_write(writer: &mut BufWriter<&mut File>, buf: &[u8]) -> Result<usize> {
@@ -10,12 +10,12 @@ pub fn wrap_write(writer: &mut BufWriter<&mut File>, buf: &[u8]) -> Result<usize
 
 /// Read file and append to the writer
 pub fn append_file_to_writer(path: &str, writer: &mut BufWriter<&mut File>) -> Result<usize> {
-    let input_file = File::open(path).unwrap();
+    let input_file = File::open(path)?;
     let mut buffer_reader = BufReader::new(&input_file);
     let mut buffer: [u8; 4096] = [0; 4096];
     let mut written = 0;
     loop {
-        let read = buffer_reader.read(&mut buffer).unwrap();
+        let read = buffer_reader.read(&mut buffer)?;
         written += wrap_write(writer, &buffer[0..read])?;
         if read < 4096 {
             break;
@@ -24,22 +24,29 @@ pub fn append_file_to_writer(path: &str, writer: &mut BufWriter<&mut File>) -> R
     Ok(written)
 }
 
-pub fn get_latest_version(config_path: &str) -> u64 {
+pub fn get_latest_version(config_path: &str) -> Result<u64> {
     // List all files in the directory
     let mut latest_version = 0;
-    for entry in read_dir(config_path).unwrap() {
+    for entry in read_dir(config_path)? {
         let entry = entry.unwrap();
         let path = entry.path();
-        let filename = path.file_name().unwrap().to_str().unwrap();
+        let filename = path
+            .file_name()
+            .unwrap()
+            .to_str()
+            .ok_or_else(|| anyhow!("Cannot get filename"))?;
         if filename.starts_with("version_") {
-            let version = filename.split("_").last().unwrap();
-            let version = version.parse::<u64>().unwrap();
+            let version = filename
+                .split("_")
+                .last()
+                .ok_or_else(|| anyhow!("Cannot get version"))?;
+            let version = version.parse::<u64>()?;
             if version > latest_version {
                 latest_version = version;
             }
         }
     }
-    latest_version
+    Ok(latest_version)
 }
 
 // Test

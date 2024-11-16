@@ -35,7 +35,7 @@ impl ShardManager {
     }
 
     pub async fn check_for_update(&self) {
-        let latest_version = get_latest_version(&self.config_directory);
+        let latest_version = get_latest_version(&self.config_directory).unwrap();
         if latest_version > self.config.read().await.version {
             self.load_version(latest_version).await;
         } else {
