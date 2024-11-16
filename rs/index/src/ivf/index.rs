@@ -14,9 +14,9 @@ pub struct Ivf {
     // Number of clusters.
     pub num_clusters: usize,
     // Each cluster is represented by a centroid vector. This is all the centroids in our IVF.
-    pub centroids: Vec<Vec<f32>>,
+    pub centroid_storage: FixedFileVectorStorage<f32>,
     // Inverted index mapping each cluster to the vectors it contains.
-    //   key: centroid index in `centroids`
+    //   key: centroid index in `centroid_storage`
     //   value: vector index in `vector_storage`
     pub inverted_lists: HashMap<usize, Vec<usize>>,
     // Number of probed centroids.
@@ -26,7 +26,7 @@ pub struct Ivf {
 impl Ivf {
     pub fn new(
         vector_storage: FixedFileVectorStorage<f32>,
-        centroids: Vec<Vec<f32>>,
+        centroid_storage: FixedFileVectorStorage<f32>,
         inverted_lists: HashMap<usize, Vec<usize>>,
         num_clusters: usize,
         num_probes: usize,
@@ -34,7 +34,7 @@ impl Ivf {
         Self {
             vector_storage,
             num_clusters,
-            centroids,
+            centroid_storage,
             inverted_lists,
             num_probes,
         }
@@ -42,18 +42,17 @@ impl Ivf {
 
     pub fn find_nearest_centroids(
         vector: &Vec<f32>,
-        centroids: &Vec<Vec<f32>>,
+        centroids: &FixedFileVectorStorage<f32>,
         num_probes: usize,
     ) -> Vec<usize> {
         let mut calculator = L2DistanceCalculator::new();
-        let mut distances: Vec<(usize, f32)> = centroids
-            .iter()
-            .enumerate()
-            .map(|(idx, centroid)| {
-                let dist = calculator.calculate(&vector, &centroid);
-                (idx, dist)
-            })
-            .collect();
+        let mut distances: Vec<(usize, f32)> = Vec::new();
+        let mut context = SearchContext::new(false);
+        for i in 0..centroids.num_vectors {
+            let centroid = centroids.get(i, &mut context).unwrap();
+            let dist = calculator.calculate(&vector, &centroid);
+            distances.push((i, dist));
+        }
         distances.select_nth_unstable_by(num_probes - 1, |a, b| a.1.partial_cmp(&b.1).unwrap());
         distances.into_iter().map(|(idx, _)| idx).collect()
     }
@@ -71,7 +70,7 @@ impl Index for Ivf {
 
         // Find the nearest centroids to the query.
         let nearest_centroids =
-            Self::find_nearest_centroids(&query.to_vec(), &self.centroids, self.num_probes);
+            Self::find_nearest_centroids(&query.to_vec(), &self.centroid_storage, self.num_probes);
 
         // Search in the inverted lists of the nearest centroids.
         for &centroid in &nearest_centroids {
@@ -111,8 +110,7 @@ mod tests {
 
     use super::*;
 
-    fn create_test_file(base_dir: &String, dataset: &Vec<Vec<f32>>) -> String {
-        let file_path = format!("{}/vectors", base_dir);
+    fn create_fixed_file_vector_storage(file_path: &String, dataset: &Vec<Vec<f32>>) {
         let mut file = File::create(file_path.clone()).unwrap();
 
         // Write number of vectors (8 bytes)
@@ -126,35 +124,37 @@ mod tests {
             }
         }
         file.flush().unwrap();
-        file_path
     }
 
     #[test]
     fn test_ivf_new() {
         let tempdir = tempdir::TempDir::new("test").unwrap();
         let base_dir = tempdir.path().to_str().unwrap().to_string();
+        let mut file_path = format!("{}/vectors", base_dir);
         let dataset = vec![
             vec![1.0, 2.0, 3.0],
             vec![4.0, 5.0, 6.0],
             vec![7.0, 8.0, 9.0],
         ];
-        let file_path = create_test_file(&base_dir, &dataset);
+        create_fixed_file_vector_storage(&file_path, &dataset);
         let storage = FixedFileVectorStorage::<f32>::new(file_path, 3).unwrap();
+        file_path = format!("{}/centroids", base_dir);
         let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
-        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroids);
+        create_fixed_file_vector_storage(&file_path, &centroids);
+        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3).unwrap();
+        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage);
         let num_clusters = 2;
         let num_probes = 1;
 
         let ivf = Ivf::new(
             storage,
-            centroids.clone(),
+            centroid_storage,
             inverted_lists.clone(),
             num_clusters,
             num_probes,
         );
 
         assert_eq!(ivf.num_clusters, num_clusters);
-        assert_eq!(ivf.centroids, centroids);
         assert_eq!(ivf.inverted_lists, inverted_lists);
         assert_eq!(ivf.num_probes, num_probes);
         assert_eq!(ivf.inverted_lists.len(), 2);
@@ -165,14 +165,19 @@ mod tests {
     #[test]
     fn test_find_nearest_centroids() {
         let vector = vec![3.0, 4.0, 5.0];
+        let tempdir = tempdir::TempDir::new("test").unwrap();
+        let base_dir = tempdir.path().to_str().unwrap().to_string();
+        let file_path = format!("{}/centroids", base_dir);
         let centroids = vec![
             vec![1.0, 2.0, 3.0],
             vec![4.0, 5.0, 6.0],
             vec![7.0, 8.0, 9.0],
         ];
+        create_fixed_file_vector_storage(&file_path, &centroids);
+        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3).unwrap();
         let num_probes = 2;
 
-        let nearest = Ivf::find_nearest_centroids(&vector, &centroids, num_probes);
+        let nearest = Ivf::find_nearest_centroids(&vector, &centroid_storage, num_probes);
 
         assert_eq!(nearest[0], 1);
         assert_eq!(nearest[1], 0);
@@ -182,20 +187,30 @@ mod tests {
     fn test_ivf_search() {
         let tempdir = tempdir::TempDir::new("test").unwrap();
         let base_dir = tempdir.path().to_str().unwrap().to_string();
+        let mut file_path = format!("{}/vectors", base_dir);
         let dataset = vec![
             vec![1.0, 2.0, 3.0],
             vec![4.0, 5.0, 6.0],
             vec![7.0, 8.0, 9.0],
             vec![2.0, 3.0, 4.0],
         ];
-        let file_path = create_test_file(&base_dir, &dataset);
+        create_fixed_file_vector_storage(&file_path, &dataset);
         let storage = FixedFileVectorStorage::<f32>::new(file_path, 3).unwrap();
+        file_path = format!("{}/centroids", base_dir);
         let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
-        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroids);
+        create_fixed_file_vector_storage(&file_path, &centroids);
+        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3).unwrap();
+        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage);
         let num_clusters = 2;
         let num_probes = 2;
 
-        let ivf = Ivf::new(storage, centroids, inverted_lists, num_clusters, num_probes);
+        let ivf = Ivf::new(
+            storage,
+            centroid_storage,
+            inverted_lists,
+            num_clusters,
+            num_probes,
+        );
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
@@ -216,15 +231,25 @@ mod tests {
     fn test_ivf_search_with_empty_result() {
         let tempdir = tempdir::TempDir::new("test").unwrap();
         let base_dir = tempdir.path().to_str().unwrap().to_string();
+        let mut file_path = format!("{}/vectors", base_dir);
         let dataset = vec![vec![100.0, 200.0, 300.0]];
-        let file_path = create_test_file(&base_dir, &dataset);
+        create_fixed_file_vector_storage(&file_path, &dataset);
         let storage = FixedFileVectorStorage::<f32>::new(file_path, 3).unwrap();
+        file_path = format!("{}/centroids", base_dir);
         let centroids = vec![vec![100.0, 200.0, 300.0]];
-        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroids);
+        create_fixed_file_vector_storage(&file_path, &centroids);
+        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3).unwrap();
+        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage);
         let num_clusters = 1;
         let num_probes = 1;
 
-        let ivf = Ivf::new(storage, centroids, inverted_lists, num_clusters, num_probes);
+        let ivf = Ivf::new(
+            storage,
+            centroid_storage,
+            inverted_lists,
+            num_clusters,
+            num_probes,
+        );
 
         let query = vec![1.0, 2.0, 3.0];
         let k = 5; // More than available results
