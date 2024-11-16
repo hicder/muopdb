@@ -4,8 +4,8 @@ use std::path::Path;
 
 use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
-use utils::l2::L2DistanceCalculatorImpl::{Scalar, SIMD};
-use utils::l2::{L2DistanceCalculator, L2DistanceCalculatorImpl};
+use utils::distance::l2::L2DistanceCalculatorImpl::{Scalar, SIMD};
+use utils::distance::l2::{L2DistanceCalculator, L2DistanceCalculatorImpl};
 use utils::{DistanceCalculator, StreamingDistanceCalculator};
 
 use crate::quantization::Quantizer;

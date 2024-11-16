@@ -7,7 +7,7 @@ use log::debug;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 use rand::Rng;
-use utils::l2::L2DistanceCalculatorImpl::StreamingWithSIMD;
+use utils::distance::l2::L2DistanceCalculatorImpl::StreamingWithSIMD;
 
 use super::index::Hnsw;
 use super::utils::{BuilderContext, GraphTraversal, PointAndDistance};
@@ -131,7 +131,7 @@ impl HnswBuilder {
                         .get(from as usize, &mut context)
                         .unwrap(),
                     hnsw.vector_storage.get(to as usize, &mut context).unwrap(),
-                    utils::l2::L2DistanceCalculatorImpl::StreamingWithSIMD,
+                    utils::distance::l2::L2DistanceCalculatorImpl::StreamingWithSIMD,
                 );
                 layer
                     .edges

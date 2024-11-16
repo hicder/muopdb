@@ -303,7 +303,7 @@ impl GraphTraversal for Hnsw {
         self.quantizer.distance(
             query,
             self.get_vector(point_id, context),
-            utils::l2::L2DistanceCalculatorImpl::StreamingWithSIMD,
+            utils::distance::l2::L2DistanceCalculatorImpl::StreamingWithSIMD,
         )
     }
 

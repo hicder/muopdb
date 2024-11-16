@@ -1,6 +1,7 @@
 use utils::kmeans_builder::kmeans_builder::{KMeansBuilder, KMeansVariant};
 
 fn main() {
+    env_logger::init();
     let dimension = 128;
     let num_datapoints = 1000000;
 
