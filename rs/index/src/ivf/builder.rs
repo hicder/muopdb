@@ -9,7 +9,7 @@ use crate::ivf::index::Ivf;
 use crate::utils::SearchContext;
 use crate::vector::file::FileBackedAppendableVectorStorage;
 use crate::vector::fixed_file::FixedFileVectorStorage;
-use crate::vector::{VectorStorage, VectorStorageConfig};
+use crate::vector::VectorStorage;
 
 pub struct IvfBuilderConfig {
     pub max_iteration: usize,
@@ -110,7 +110,6 @@ impl IvfBuilder {
 
         self.vectors.write(&mut vectors_buffer_writer).unwrap();
 
-        let mut context = SearchContext::new(false);
         let storage =
             FixedFileVectorStorage::<f32>::new(vectors_path, self.config.num_features).unwrap();
         let inverted_lists = Self::build_inverted_lists(&storage, &centroids);
@@ -127,8 +126,6 @@ impl IvfBuilder {
 // Test
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use utils::test_utils::generate_random_vector;
 
     use super::*;
