@@ -46,7 +46,8 @@ impl Aggregator for AggregatorServerImpl {
             .read()
             .await
             .get_nodes_for_index(index_name)
-            .await;
+            .await
+            .ok_or_else(|| tonic::Status::internal(format!("No nodes found for index: {}", index_name)))?;
         let ef_construction = req.ef_construction;
 
         let node_infos = self
@@ -68,11 +69,11 @@ impl Aggregator for AggregatorServerImpl {
 
         // TODO: parallelize
         for shard_node in shard_nodes.iter() {
-            let node_info = node_id_to_node_info.get(&shard_node.node_id).unwrap();
-            let mut client =
-                IndexServerClient::connect(format!("{}:{}", node_info.ip, node_info.port))
-                    .await
-                    .unwrap();
+            let node_info = node_id_to_node_info.get(&shard_node.node_id)
+                .ok_or_else(|| tonic::Status::internal(format!("Node info not found for node_id: {}", shard_node.node_id)))?;
+            let mut client = IndexServerClient::connect(format!("{}:{}", node_info.ip, node_info.port))
+                .await
+                .map_err(|e| tonic::Status::internal(format!("Failed to connect to index server: {}", e)))?;
 
             let index_name_for_shard = format!("{}--{}", index_name, shard_node.shard_id);
             let ret = client
@@ -84,7 +85,7 @@ impl Aggregator for AggregatorServerImpl {
                     ef_construction,
                 }))
                 .await
-                .unwrap();
+                .map_err(|e| tonic::Status::internal(format!("Search request failed: {}", e)))?;
 
             let inner = ret.into_inner();
             inner
@@ -101,7 +102,7 @@ impl Aggregator for AggregatorServerImpl {
         }
 
         // Sort by score
-        vecs_and_scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        vecs_and_scores.sort_by(|a, b| b.score.total_cmp(&a.score));
 
         Ok(tonic::Response::new(GetResponse {
             ids: vecs_and_scores.iter().map(|x| x.id.clone()).collect(),
