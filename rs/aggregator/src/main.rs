@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use clap::Parser;
 use log::info;
+use log::error;
 use node_manager::NodeManager;
 use proto::muopdb::aggregator_server::AggregatorServer;
 use shard_manager::ShardManager;
@@ -33,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let arg = Args::parse();
 
-    let addr = format!("127.0.0.1:{}", arg.port).parse().unwrap();
+    let addr = format!("127.0.0.1:{}", arg.port).parse().map_err(|e| format!("Failed to parse address: {}", e))?;
     let shard_manager_config_directory = arg.shard_manager_config_directory;
     let node_manager_config_directory = arg.node_manager_config_directory;
 
@@ -47,11 +48,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let shard_manager_thread = tokio::task::spawn(async move {
         loop {
-            shard_manager_for_update_thread
-                .read()
-                .await
-                .check_for_update()
-                .await;
+            if let Err(e) = shard_manager_for_update_thread.read().await.check_for_update().await {
+                error!("Error checking for node manager update: {}", e);
+            }
             sleep(std::time::Duration::from_secs(10)).await;
         }
     });
@@ -61,11 +60,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let node_manager_for_handler = node_manager.clone();
     let node_manager_thread = tokio::task::spawn(async move {
         loop {
-            node_manager_for_update_thread
-                .read()
-                .await
-                .check_for_update()
-                .await;
+            if let Err(e) = node_manager_for_update_thread.read().await.check_for_update().await {
+                error!("Error checking for node manager update: {}", e);
+            }
             sleep(std::time::Duration::from_secs(10)).await;
         }
     });
@@ -78,8 +75,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .serve(addr)
         .await?;
 
-    shard_manager_thread.await.unwrap();
-    node_manager_thread.await.unwrap();
+    shard_manager_thread.await.map_err(|e| format!("Shard manager thread error: {}", e))?;
+    node_manager_thread.await.map_err(|e| format!("Node manager thread error: {}", e))?;
 
     Ok(())
 }

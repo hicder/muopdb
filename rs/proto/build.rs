@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proto_file = "./proto/muopdb.proto";
-    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let out_dir = PathBuf::from(env::var("OUT_DIR")?);
 
     tonic_build::configure()
         .protoc_arg("--experimental_allow_proto3_optional") // for older systems

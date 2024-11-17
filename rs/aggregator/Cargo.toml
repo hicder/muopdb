@@ -20,3 +20,4 @@ env_logger.workspace = true
 utils.workspace = true
 serde_json.workspace = true
 tempdir.workspace = true
+anyhow.workspace = true
