@@ -5,7 +5,9 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::slice::ParallelSlice;
 
 use crate::distance;
-use crate::distance::l2::{CalculateSquared, NonStreamingL2DistanceCalculator};
+use crate::distance::l2::{
+    CalculateSquared, LaneConformingL2DistanceCalculator, NonStreamingL2DistanceCalculator,
+};
 
 #[derive(PartialEq, Debug)]
 pub enum KMeansVariant {
@@ -94,16 +96,13 @@ impl KMeansBuilder {
         match self.variant {
             KMeansVariant::Lloyd => {
                 if self.dimension % 16 == 0 {
-                    let distance_calculator =
-                        distance::l2::LaneConformingL2DistanceCalculator::<16>::new();
+                    let distance_calculator = LaneConformingL2DistanceCalculator::<16>::new();
                     return self.run_lloyd(flattened_data, distance_calculator);
                 } else if self.dimension % 8 == 0 {
-                    let distance_calculator =
-                        distance::l2::LaneConformingL2DistanceCalculator::<8>::new();
+                    let distance_calculator = LaneConformingL2DistanceCalculator::<8>::new();
                     return self.run_lloyd(flattened_data, distance_calculator);
                 } else if self.dimension % 4 == 0 {
-                    let distance_calculator =
-                        distance::l2::LaneConformingL2DistanceCalculator::<4>::new();
+                    let distance_calculator = LaneConformingL2DistanceCalculator::<4>::new();
                     return self.run_lloyd(flattened_data, distance_calculator);
                 } else {
                     let distance_calculator = NonStreamingL2DistanceCalculator {};
