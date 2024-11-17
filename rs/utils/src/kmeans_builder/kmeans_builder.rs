@@ -4,7 +4,8 @@ use log::debug;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::slice::ParallelSlice;
 
-use crate::distance::l2::NonStreamingL2DistanceCalculator;
+use crate::distance;
+use crate::distance::l2::{CalculateSquared, NonStreamingL2DistanceCalculator};
 
 #[derive(PartialEq, Debug)]
 pub enum KMeansVariant {
@@ -91,11 +92,32 @@ impl KMeansBuilder {
         }
 
         match self.variant {
-            KMeansVariant::Lloyd => self.run_lloyd(flattened_data),
+            KMeansVariant::Lloyd => {
+                if self.dimension % 16 == 0 {
+                    let distance_calculator =
+                        distance::l2::LaneConformingL2DistanceCalculator::<16>::new();
+                    return self.run_lloyd(flattened_data, distance_calculator);
+                } else if self.dimension % 8 == 0 {
+                    let distance_calculator =
+                        distance::l2::LaneConformingL2DistanceCalculator::<8>::new();
+                    return self.run_lloyd(flattened_data, distance_calculator);
+                } else if self.dimension % 4 == 0 {
+                    let distance_calculator =
+                        distance::l2::LaneConformingL2DistanceCalculator::<4>::new();
+                    return self.run_lloyd(flattened_data, distance_calculator);
+                } else {
+                    let distance_calculator = NonStreamingL2DistanceCalculator {};
+                    return self.run_lloyd(flattened_data, distance_calculator);
+                }
+            }
         }
     }
 
-    fn run_lloyd(&self, flattened_data_points: Vec<f32>) -> Result<KMeansResult> {
+    fn run_lloyd<T: CalculateSquared + Send + Sync>(
+        &self,
+        flattened_data_points: Vec<f32>,
+        distance_calculator: T,
+    ) -> Result<KMeansResult> {
         let data_points = flattened_data_points
             .par_chunks_exact(self.dimension)
             .map(|x| x)
@@ -145,7 +167,6 @@ impl KMeansBuilder {
 
             // Reassign points using modified distance (Equation 8)
 
-            let distance_calculator = NonStreamingL2DistanceCalculator::new();
             cluster_labels = data_points
                 .par_iter()
                 .map(|data_point| {
