@@ -35,7 +35,7 @@ fn bench_pq_distance(c: &mut Criterion) {
                     .to_str()
                     .expect("Failed to convert temporary directory path to string");
                 let pq = pqb
-                    .build(path_str)
+                    .build(path_str.to_string())
                     .expect("Failed to build ProductQuantizer");
                 let point = pq.quantize(&generate_random_vector(*dimension));
                 let query = pq.quantize(&generate_random_vector(*dimension));
