@@ -12,6 +12,7 @@ use index_manager::IndexManager;
 use index_provider::IndexProvider;
 use index_server::IndexServerImpl;
 use log::info;
+use log::error;
 use proto::muopdb::index_server_server::IndexServerServer;
 use tokio::spawn;
 use tokio::sync::Mutex;
@@ -38,7 +39,7 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let arg = Args::parse();
-    let addr: SocketAddr = format!("127.0.0.1:{}", arg.port).parse().unwrap();
+    let addr: SocketAddr = format!("127.0.0.1:{}", arg.port).parse()?;
     let index_config_path = arg.index_config_path;
     let index_data_path = arg.index_data_path;
     let node_id = arg.node_id;
@@ -54,7 +55,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut index_manager =
             IndexManager::new(index_config_path, index_provider, index_catalog_for_manager);
         loop {
-            index_manager.check_for_update().await;
+            if let Err(e) = index_manager.check_for_update().await {
+                error!("Error checking for index manager update: {}", e);
+            }
             sleep(std::time::Duration::from_secs(60)).await;
         }
     });

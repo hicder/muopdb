@@ -1,6 +1,7 @@
 use std::cmp::min;
 
 use anyhow::Result;
+use log::error;
 use ndarray::{s, Array2};
 
 use super::{Input, Row};
@@ -35,9 +36,16 @@ impl Hdf5Reader {
         self.chunk.clear();
         let end_idx = min(self.row_idx + self.chunk_size, self.num_rows);
         let selection = s![self.row_idx..end_idx, ..];
-        let chunk: Array2<f32> = self.dataset.read_slice_2d(selection).unwrap();
-        for row in chunk.axis_iter(ndarray::Axis(0)) {
-            self.chunk.push(row.to_vec());
+        match self.dataset.read_slice_2d(selection) {
+            Ok(chunk) => {
+                self.chunk = chunk
+                    .axis_iter(ndarray::Axis(0))
+                    .map(|row| row.to_vec())
+                    .collect();
+            }
+            Err(e) => {
+                error!("Failed to read slice from dataset: {}", e);
+            }
         }
     }
 }
@@ -91,8 +99,9 @@ mod tests {
 
     #[test]
     fn test_hdf5_reader() {
+        env_logger::init();
         let path = format!("{}/resources/test.hdf5", env!("CARGO_MANIFEST_DIR"));
-        let mut reader = Hdf5Reader::new(101, "test", &path).unwrap();
+        let mut reader = Hdf5Reader::new(101, "test", &path).expect("Failed to create Hdf5Reader");
         let mut it = 0;
         while reader.has_next() {
             let _ = reader.next();

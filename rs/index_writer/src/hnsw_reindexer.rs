@@ -3,6 +3,7 @@ use index::hnsw::builder::HnswBuilder;
 use index::hnsw::reader::HnswReader;
 use index::hnsw::writer::HnswWriter;
 use index::vector::VectorStorageConfig;
+use log::error;
 
 #[derive(Parser)]
 struct Args {
@@ -29,7 +30,10 @@ pub fn main() {
     let mut builder =
         HnswBuilder::from_hnsw(index, args.output_path.clone(), vector_storage_config, 16);
     let writer = HnswWriter::new(args.output_path.clone());
-    writer.write(&mut builder, true).unwrap();
+    if let Err(e) = writer.write(&mut builder, true) {
+        error!("Failed to write: {}", e);
+        return;
+    }
 
     println!("Done");
 }
