@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs::{create_dir, File};
 use std::io::BufWriter;
 
+use anyhow::Result;
 use kmeans::*;
 use log::debug;
 
@@ -56,39 +57,40 @@ impl IvfBuilder {
     }
 
     /// Add a new vector to the dataset for training
-    pub fn add_vector(&mut self, data: Vec<f32>) {
-        self.vectors
-            .append(&data)
-            .unwrap_or_else(|_| panic!("append to Ivf failed"));
+    pub fn add_vector(&mut self, data: Vec<f32>) -> Result<()> {
+        self.vectors.append(&data)?;
+        Ok(())
     }
 
     /// Add a new centroid
-    pub fn add_centroid(&mut self, centroid: &[f32]) {
-        self.centroids
-            .append(centroid)
-            .unwrap_or_else(|_| panic!("append to Ivf failed"));
+    pub fn add_centroid(&mut self, centroid: &[f32]) -> Result<()> {
+        self.centroids.append(centroid)?;
+        Ok(())
     }
 
     pub fn build_inverted_lists(
         vector_storage: &FixedFileVectorStorage<f32>,
         centroid_storage: &FixedFileVectorStorage<f32>,
-    ) -> HashMap<usize, Vec<usize>> {
+    ) -> Result<HashMap<usize, Vec<usize>>> {
         let mut context = SearchContext::new(false);
         let mut inverted_lists = HashMap::new();
         // Assign vectors to nearest centroid
         for i in 0..vector_storage.num_vectors {
-            let vector = vector_storage.get(i, &mut context).unwrap().to_vec();
-            let nearest_centroid = Ivf::find_nearest_centroids(&vector, &centroid_storage, 1);
+            let vector = vector_storage
+                .get(i, &mut context)
+                .ok_or(anyhow::anyhow!("Failed to get vector at index {}", i))?
+                .to_vec();
+            let nearest_centroid = Ivf::find_nearest_centroids(&vector, &centroid_storage, 1)?;
             inverted_lists
                 .entry(nearest_centroid[0])
                 .or_insert_with(Vec::new)
                 .push(i);
         }
-        inverted_lists
+        Ok(inverted_lists)
     }
 
     /// Train kmeans on the dataset, and returns the Ivf index
-    pub fn build(&mut self) -> Ivf {
+    pub fn build(&mut self) -> Result<Ivf> {
         let config = KMeansConfig::build()
             .init_done(&|_| debug!("Initialization completed."))
             .iteration_done(&|s, nr, new_distsum| {
@@ -121,35 +123,34 @@ impl IvfBuilder {
         debug!("Error: {}", result.distsum);
 
         let vectors_path = format!("{}/immutable_vector_storage", self.config.base_directory);
-        let mut vectors_file = File::create(vectors_path.clone()).unwrap();
+        let mut vectors_file = File::create(vectors_path.clone())?;
         let mut vectors_buffer_writer = BufWriter::new(&mut vectors_file);
 
-        self.vectors.write(&mut vectors_buffer_writer).unwrap();
+        self.vectors.write(&mut vectors_buffer_writer)?;
 
-        let storage =
-            FixedFileVectorStorage::<f32>::new(vectors_path, self.config.num_features).unwrap();
+        let storage = FixedFileVectorStorage::<f32>::new(vectors_path, self.config.num_features)?;
 
         let centroids_iter = result.centroids.chunks(self.config.num_features);
         for centroid in centroids_iter {
-            self.add_centroid(centroid);
+            self.add_centroid(centroid)?;
         }
         let centroids_path = format!("{}/immutable_centroid_storage", self.config.base_directory);
-        let mut centroids_file = File::create(centroids_path.clone()).unwrap();
+        let mut centroids_file = File::create(centroids_path.clone())?;
         let mut centroids_buffer_writer = BufWriter::new(&mut centroids_file);
 
-        self.centroids.write(&mut centroids_buffer_writer).unwrap();
+        self.centroids.write(&mut centroids_buffer_writer)?;
 
         let centroid_storage =
-            FixedFileVectorStorage::<f32>::new(centroids_path, self.config.num_features).unwrap();
+            FixedFileVectorStorage::<f32>::new(centroids_path, self.config.num_features)?;
 
-        let inverted_lists = Self::build_inverted_lists(&storage, &centroid_storage);
-        Ivf::new(
+        let inverted_lists = Self::build_inverted_lists(&storage, &centroid_storage)?;
+        Ok(Ivf::new(
             storage,
             centroid_storage,
             inverted_lists,
             self.config.num_clusters,
             self.config.num_probes,
-        )
+        ))
     }
 }
 
@@ -167,8 +168,13 @@ mod tests {
         env_logger::init();
 
         const DIMENSION: usize = 128;
-        let temp_dir = tempdir::TempDir::new("ivf_builder_test").unwrap();
-        let base_directory = temp_dir.path().to_str().unwrap().to_string();
+        let temp_dir = tempdir::TempDir::new("ivf_builder_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
         let mut builder = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
@@ -181,23 +187,27 @@ mod tests {
         });
         // Generate 10000 vectors of f32, dimension 128
         for _ in 0..10000 {
-            builder.add_vector(generate_random_vector(DIMENSION));
+            builder
+                .add_vector(generate_random_vector(DIMENSION))
+                .expect("Vector should be added");
         }
 
-        //  let index = builder.build();
+        let index = builder
+            .build()
+            .expect("IvfBuilder should be able to build Ivf");
 
-        //  let query = generate_random_vector(DIMENSION);
-        //  let mut context = SearchContext::new(false);
-        //  let results = index.search(&query, 5, 0, &mut context);
-        //  match results {
-        //      Some(results) => {
-        //          assert_eq!(results.len(), 5);
-        //          // Make sure results are in ascending order
-        //          assert!(results.windows(2).all(|w| w[0] <= w[1]));
-        //      }
-        //      None => {
-        //          assert!(false);
-        //      }
-        //  }
+        let query = generate_random_vector(DIMENSION);
+        let mut context = SearchContext::new(false);
+        let results = index.search(&query, 5, 0, &mut context);
+        match results {
+            Some(results) => {
+                assert_eq!(results.len(), 5);
+                // Make sure results are in ascending order
+                assert!(results.windows(2).all(|w| w[0] <= w[1]));
+            }
+            None => {
+                assert!(false);
+            }
+        }
     }
 }

@@ -1,5 +1,6 @@
 use std::collections::{BinaryHeap, HashMap};
 
+use anyhow::{Context, Result};
 use utils::distance::l2::L2DistanceCalculator;
 use utils::DistanceCalculator;
 
@@ -44,17 +45,19 @@ impl Ivf {
         vector: &Vec<f32>,
         centroids: &FixedFileVectorStorage<f32>,
         num_probes: usize,
-    ) -> Vec<usize> {
+    ) -> Result<Vec<usize>> {
         let mut calculator = L2DistanceCalculator::new();
         let mut distances: Vec<(usize, f32)> = Vec::new();
         let mut context = SearchContext::new(false);
         for i in 0..centroids.num_vectors {
-            let centroid = centroids.get(i, &mut context).unwrap();
+            let centroid = centroids
+                .get(i, &mut context)
+                .with_context(|| format!("Failed to get centroid at index {}", i))?;
             let dist = calculator.calculate(&vector, &centroid);
             distances.push((i, dist));
         }
-        distances.select_nth_unstable_by(num_probes - 1, |a, b| a.1.partial_cmp(&b.1).unwrap());
-        distances.into_iter().map(|(idx, _)| idx).collect()
+        distances.select_nth_unstable_by(num_probes - 1, |a, b| a.1.total_cmp(&b.1));
+        Ok(distances.into_iter().map(|(idx, _)| idx).collect())
     }
 }
 
@@ -69,37 +72,39 @@ impl Index for Ivf {
         let mut heap = BinaryHeap::with_capacity(k);
 
         // Find the nearest centroids to the query.
-        let nearest_centroids =
-            Self::find_nearest_centroids(&query.to_vec(), &self.centroid_storage, self.num_probes);
-
-        // Search in the inverted lists of the nearest centroids.
-        for &centroid in &nearest_centroids {
-            if let Some(list) = self.inverted_lists.get(&centroid) {
-                for &idx in list {
-                    let distance = L2DistanceCalculator::new().calculate(
-                        query,
-                        &self.vector_storage.get(idx, context).unwrap().to_vec(),
-                    );
-                    let id_with_score = IdWithScore {
-                        score: distance,
-                        id: idx as u64,
-                    };
-                    if heap.len() < k {
-                        heap.push(id_with_score);
-                    } else if let Some(max) = heap.peek() {
-                        if id_with_score < *max {
-                            heap.pop();
+        if let Ok(nearest_centroids) =
+            Self::find_nearest_centroids(&query.to_vec(), &self.centroid_storage, self.num_probes)
+        {
+            // Search in the inverted lists of the nearest centroids.
+            for &centroid in &nearest_centroids {
+                if let Some(list) = self.inverted_lists.get(&centroid) {
+                    for &idx in list {
+                        let distance = L2DistanceCalculator::new()
+                            .calculate(query, &self.vector_storage.get(idx, context)?.to_vec());
+                        let id_with_score = IdWithScore {
+                            score: distance,
+                            id: idx as u64,
+                        };
+                        if heap.len() < k {
                             heap.push(id_with_score);
+                        } else if let Some(max) = heap.peek() {
+                            if id_with_score < *max {
+                                heap.pop();
+                                heap.push(id_with_score);
+                            }
                         }
                     }
                 }
             }
-        }
 
-        // Convert heap to a sorted vector in ascending order.
-        let mut results: Vec<IdWithScore> = heap.into_vec();
-        results.sort();
-        Some(results)
+            // Convert heap to a sorted vector in ascending order.
+            let mut results: Vec<IdWithScore> = heap.into_vec();
+            results.sort();
+            Some(results)
+        } else {
+            println!("Error finding nearest centroids");
+            return None;
+        }
     }
 }
 
@@ -110,26 +115,32 @@ mod tests {
 
     use super::*;
 
-    fn create_fixed_file_vector_storage(file_path: &String, dataset: &Vec<Vec<f32>>) {
-        let mut file = File::create(file_path.clone()).unwrap();
+    fn create_fixed_file_vector_storage(file_path: &String, dataset: &Vec<Vec<f32>>) -> Result<()> {
+        let mut file = File::create(file_path.clone())?;
 
         // Write number of vectors (8 bytes)
         let num_vectors = dataset.len() as u64;
-        file.write_all(&num_vectors.to_le_bytes()).unwrap();
+        file.write_all(&num_vectors.to_le_bytes())?;
 
         // Write test data
         for vector in dataset.iter() {
             for element in vector.iter() {
-                file.write_all(&element.to_le_bytes()).unwrap();
+                file.write_all(&element.to_le_bytes())?;
             }
         }
-        file.flush().unwrap();
+        file.flush()?;
+        Ok(())
     }
 
     #[test]
     fn test_ivf_new() {
-        let tempdir = tempdir::TempDir::new("test").unwrap();
-        let base_dir = tempdir.path().to_str().unwrap().to_string();
+        let temp_dir =
+            tempdir::TempDir::new("ivf_test").expect("Failed to create temporary directory");
+        let base_dir = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
         let mut file_path = format!("{}/vectors", base_dir);
         let dataset = vec![
             vec![1.0, 2.0, 3.0],
@@ -137,12 +148,15 @@ mod tests {
             vec![7.0, 8.0, 9.0],
         ];
         create_fixed_file_vector_storage(&file_path, &dataset);
-        let storage = FixedFileVectorStorage::<f32>::new(file_path, 3).unwrap();
+        let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
+            .expect("FixedFileVectorStorage should be created");
         file_path = format!("{}/centroids", base_dir);
         let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
         create_fixed_file_vector_storage(&file_path, &centroids);
-        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3).unwrap();
-        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage);
+        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
+            .expect("FixedFileVectorStorage should be created");
+        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage)
+            .expect("Inverted lists should be built");
         let num_clusters = 2;
         let num_probes = 1;
 
@@ -158,26 +172,35 @@ mod tests {
         assert_eq!(ivf.inverted_lists, inverted_lists);
         assert_eq!(ivf.num_probes, num_probes);
         assert_eq!(ivf.inverted_lists.len(), 2);
-        assert!(ivf.inverted_lists.get(&0).unwrap().contains(&0));
-        assert!(ivf.inverted_lists.get(&1).unwrap().contains(&2));
+        let cluster_0 = ivf.inverted_lists.get(&0);
+        let cluster_1 = ivf.inverted_lists.get(&1);
+        assert!(cluster_0.map_or(false, |list| list.contains(&0)));
+        assert!(cluster_1.map_or(false, |list| list.contains(&2)));
     }
 
     #[test]
     fn test_find_nearest_centroids() {
-        let vector = vec![3.0, 4.0, 5.0];
-        let tempdir = tempdir::TempDir::new("test").unwrap();
-        let base_dir = tempdir.path().to_str().unwrap().to_string();
+        let temp_dir = tempdir::TempDir::new("find_nearest_centroids_test")
+            .expect("Failed to create temporary directory");
+        let base_dir = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
         let file_path = format!("{}/centroids", base_dir);
+        let vector = vec![3.0, 4.0, 5.0];
         let centroids = vec![
             vec![1.0, 2.0, 3.0],
             vec![4.0, 5.0, 6.0],
             vec![7.0, 8.0, 9.0],
         ];
         create_fixed_file_vector_storage(&file_path, &centroids);
-        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3).unwrap();
+        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
+            .expect("FixedFileVectorStorage should be created");
         let num_probes = 2;
 
-        let nearest = Ivf::find_nearest_centroids(&vector, &centroid_storage, num_probes);
+        let nearest = Ivf::find_nearest_centroids(&vector, &centroid_storage, num_probes)
+            .expect("Nearest centroids should be found");
 
         assert_eq!(nearest[0], 1);
         assert_eq!(nearest[1], 0);
@@ -185,8 +208,13 @@ mod tests {
 
     #[test]
     fn test_ivf_search() {
-        let tempdir = tempdir::TempDir::new("test").unwrap();
-        let base_dir = tempdir.path().to_str().unwrap().to_string();
+        let temp_dir =
+            tempdir::TempDir::new("ivf_search_test").expect("Failed to create temporary directory");
+        let base_dir = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
         let mut file_path = format!("{}/vectors", base_dir);
         let dataset = vec![
             vec![1.0, 2.0, 3.0],
@@ -195,12 +223,15 @@ mod tests {
             vec![2.0, 3.0, 4.0],
         ];
         create_fixed_file_vector_storage(&file_path, &dataset);
-        let storage = FixedFileVectorStorage::<f32>::new(file_path, 3).unwrap();
+        let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
+            .expect("FixedFileVectorStorage should be created");
         file_path = format!("{}/centroids", base_dir);
         let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
         create_fixed_file_vector_storage(&file_path, &centroids);
-        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3).unwrap();
-        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage);
+        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
+            .expect("FixedFileVectorStorage should be created");
+        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage)
+            .expect("Inverted lists should be built");
         let num_clusters = 2;
         let num_probes = 2;
 
@@ -219,7 +250,7 @@ mod tests {
 
         let results = ivf
             .search(&query, k, ef_construction, &mut context)
-            .unwrap();
+            .expect("IVF search should return a result");
 
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].id, 3); // Closest to [2.0, 3.0, 4.0]
@@ -229,17 +260,25 @@ mod tests {
 
     #[test]
     fn test_ivf_search_with_empty_result() {
-        let tempdir = tempdir::TempDir::new("test").unwrap();
-        let base_dir = tempdir.path().to_str().unwrap().to_string();
+        let temp_dir = tempdir::TempDir::new("ivf_search_error_test")
+            .expect("Failed to create temporary directory");
+        let base_dir = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
         let mut file_path = format!("{}/vectors", base_dir);
         let dataset = vec![vec![100.0, 200.0, 300.0]];
         create_fixed_file_vector_storage(&file_path, &dataset);
-        let storage = FixedFileVectorStorage::<f32>::new(file_path, 3).unwrap();
+        let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
+            .expect("FixedFileVectorStorage should be created");
         file_path = format!("{}/centroids", base_dir);
         let centroids = vec![vec![100.0, 200.0, 300.0]];
         create_fixed_file_vector_storage(&file_path, &centroids);
-        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3).unwrap();
-        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage);
+        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
+            .expect("FixedFileVectorStorage should be created");
+        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage)
+            .expect("Inverted lists should be built");
         let num_clusters = 1;
         let num_probes = 1;
 
@@ -258,7 +297,7 @@ mod tests {
 
         let results = ivf
             .search(&query, k, ef_construction, &mut context)
-            .unwrap();
+            .expect("IVF search should return a result");
 
         assert_eq!(results.len(), 1); // Only one result available
         assert_eq!(results[0].id, 0);
