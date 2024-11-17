@@ -4,7 +4,6 @@ use log::debug;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::slice::ParallelSlice;
 
-use crate::distance;
 use crate::distance::l2::{
     CalculateSquared, LaneConformingL2DistanceCalculator, NonStreamingL2DistanceCalculator,
 };
