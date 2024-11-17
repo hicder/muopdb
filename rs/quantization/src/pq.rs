@@ -1,6 +1,9 @@
 use std::fs::File;
 use std::io::Write;
+use std::ops::Mul;
 use std::path::Path;
+use std::simd::num::SimdFloat;
+use std::simd::{f32x16, f32x4, f32x8};
 
 use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
@@ -234,7 +237,6 @@ impl Quantizer for ProductQuantizer {
 
     fn distance(&self, a: &[u8], b: &[u8], implem: L2DistanceCalculatorImpl) -> f32 {
         let num_centroids = 1 << self.num_bits;
-        let mut distance_calculator = L2DistanceCalculator::new();
         let get_subvectors =
             |subvector_idx: usize, (a_quantized_value, b_quantized_value): (&u8, &u8)| {
                 let offset = subvector_idx * self.subvector_dimension * num_centroids;
@@ -253,6 +255,7 @@ impl Quantizer for ProductQuantizer {
 
         match implem {
             Scalar | SIMD => {
+                let mut distance_calculator = L2DistanceCalculator::new();
                 fn get_distance_fn(
                     implem: L2DistanceCalculatorImpl,
                 ) -> impl Fn(&mut L2DistanceCalculator, &[f32], &[f32]) -> f32 {
@@ -278,7 +281,8 @@ impl Quantizer for ProductQuantizer {
                     .sum::<f32>()
                     .sqrt()
             }
-            _ => {
+            L2DistanceCalculatorImpl::StreamingWithSIMD => {
+                let mut distance_calculator = L2DistanceCalculator::new();
                 a.iter()
                     .zip(b.iter())
                     .enumerate()
@@ -287,6 +291,71 @@ impl Quantizer for ProductQuantizer {
                         distance_calculator.stream(a_vec, b_vec);
                     });
                 distance_calculator.finalize()
+            }
+            L2DistanceCalculatorImpl::StreamingWithSIMDOptimized => {
+                // Similar to l2.rs. However, we have to inline here for performance reasons.
+                let mut sum_16 = f32x16::splat(0.0);
+                let mut sum_8 = f32x8::splat(0.0);
+                let mut sum_4 = f32x4::splat(0.0);
+                let mut sum_1 = 0.0;
+                a.iter()
+                    .zip(b.iter())
+                    .enumerate()
+                    .for_each(|(idx, (a_val, b_val))| {
+                        let (mut a_vec, mut b_vec) = get_subvectors(idx, (a_val, b_val));
+                        let mut a_len = a_vec.len();
+                        if a_len / 16 > 0 {
+                            a_vec.chunks_exact(16).zip(b_vec.chunks_exact(16)).for_each(
+                                |(a, b)| {
+                                    let a_slice = f32x16::from_slice(a);
+                                    let b_slice = f32x16::from_slice(b);
+                                    let diff = a_slice - b_slice;
+                                    sum_16 += diff.mul(diff);
+                                },
+                            );
+                            a_vec = a_vec.chunks_exact(16).remainder();
+                            b_vec = b_vec.chunks_exact(16).remainder();
+                            a_len = a_len % 16;
+                        }
+
+                        if a_len / 8 > 0 {
+                            a_vec
+                                .chunks_exact(8)
+                                .zip(b_vec.chunks_exact(8))
+                                .for_each(|(a, b)| {
+                                    let a_slice = f32x8::from_slice(a);
+                                    let b_slice = f32x8::from_slice(b);
+                                    let diff = a_slice - b_slice;
+                                    sum_8 += diff.mul(diff);
+                                });
+                            a_vec = a_vec.chunks_exact(8).remainder();
+                            b_vec = b_vec.chunks_exact(8).remainder();
+
+                            a_len = a_len % 8;
+                        }
+
+                        if a_len / 4 > 0 {
+                            a_vec
+                                .chunks_exact(4)
+                                .zip(b_vec.chunks_exact(4))
+                                .for_each(|(a, b)| {
+                                    let a_slice = f32x4::from_slice(a);
+                                    let b_slice = f32x4::from_slice(b);
+                                    let diff = a_slice - b_slice;
+                                    sum_4 += diff.mul(diff);
+                                });
+                            a_vec = a_vec.chunks_exact(4).remainder();
+                            b_vec = b_vec.chunks_exact(4).remainder();
+                            a_len = a_len % 4;
+                        }
+
+                        if a_len > 0 {
+                            for i in 0..a_len {
+                                sum_1 += (a_vec[i] - b_vec[i]).powi(2);
+                            }
+                        }
+                    });
+                (sum_16.reduce_sum() + sum_8.reduce_sum() + sum_4.reduce_sum() + sum_1).sqrt()
             }
         }
     }
