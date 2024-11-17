@@ -11,9 +11,11 @@ pub enum L2DistanceCalculatorImpl {
     Scalar,
     SIMD,
     StreamingWithSIMD,
+    StreamingWithSIMDOptimized,
 }
 
 pub struct L2DistanceCalculator {
+    dist_simd_16: f32x16,
     dist_simd_8: f32x8,
     dist_simd_4: f32x4,
     dist_simd_1: f32,
@@ -22,6 +24,7 @@ pub struct L2DistanceCalculator {
 impl L2DistanceCalculator {
     pub fn new() -> Self {
         Self {
+            dist_simd_16: f32x16::splat(0.0),
             dist_simd_8: f32x8::splat(0.0),
             dist_simd_4: f32x4::splat(0.0),
             dist_simd_1: 0.0,
@@ -29,34 +32,74 @@ impl L2DistanceCalculator {
     }
 
     fn reset_distance_accumulators(&mut self) {
+        self.dist_simd_16 = f32x16::splat(0.0);
         self.dist_simd_8 = f32x8::splat(0.0);
         self.dist_simd_4 = f32x4::splat(0.0);
         self.dist_simd_1 = 0.0;
     }
 
     fn accumulate(&mut self, a: &[f32], b: &[f32]) {
-        let mut i = 0;
-        while i + 8 <= a.len() && i + 8 <= b.len() {
-            let a_slice = f32x8::from_slice(&a[i..i + 8]);
-            let b_slice = f32x8::from_slice(&b[i..i + 8]);
-            let diff = a_slice - b_slice;
-            self.dist_simd_8 += diff.mul(diff);
-            i += 8;
+        let mut a_vec = a;
+        let mut b_vec = b;
+        let mut a_len = a.len();
+        if a_len / 16 > 0 {
+            a_vec
+                .chunks_exact(16)
+                .zip(b_vec.chunks_exact(16))
+                .for_each(|(a, b)| {
+                    let a_slice = f32x16::from_slice(a);
+                    let b_slice = f32x16::from_slice(b);
+                    let diff = a_slice - b_slice;
+                    self.dist_simd_16 += diff.mul(diff);
+                });
+            a_vec = a_vec.chunks_exact(16).remainder();
+            b_vec = b_vec.chunks_exact(16).remainder();
+            a_len = a_len % 16;
         }
-        while i + 4 <= a.len() && i + 4 <= b.len() {
-            let a_slice = f32x4::from_slice(&a[i..i + 4]);
-            let b_slice = f32x4::from_slice(&b[i..i + 4]);
-            let diff = a_slice - b_slice;
-            self.dist_simd_4 += diff.mul(diff);
-            i += 4;
+
+        if a_len / 8 > 0 {
+            a_vec
+                .chunks_exact(8)
+                .zip(b_vec.chunks_exact(8))
+                .for_each(|(a, b)| {
+                    let a_slice = f32x8::from_slice(a);
+                    let b_slice = f32x8::from_slice(b);
+                    let diff = a_slice - b_slice;
+                    self.dist_simd_8 += diff.mul(diff);
+                });
+            a_vec = a_vec.chunks_exact(8).remainder();
+            b_vec = b_vec.chunks_exact(8).remainder();
+            a_len = a_len % 8;
         }
-        for j in i..a.len() {
-            self.dist_simd_1 += (a[j] - b[j]).powi(2);
+
+        if a_len / 4 > 0 {
+            a_vec
+                .chunks_exact(4)
+                .zip(b_vec.chunks_exact(4))
+                .for_each(|(a, b)| {
+                    let a_slice = f32x4::from_slice(a);
+                    let b_slice = f32x4::from_slice(b);
+                    let diff = a_slice - b_slice;
+                    self.dist_simd_4 += diff.mul(diff);
+                });
+            a_vec = a_vec.chunks_exact(4).remainder();
+            b_vec = b_vec.chunks_exact(4).remainder();
+            a_len = a_len % 4;
+        }
+
+        if a_len > 0 {
+            for i in 0..a_len {
+                self.dist_simd_1 += (a_vec[i] - b_vec[i]).powi(2);
+            }
         }
     }
 
     fn reduce(&self) -> f32 {
-        (self.dist_simd_8.reduce_sum() + self.dist_simd_4.reduce_sum() + self.dist_simd_1).sqrt()
+        (self.dist_simd_16.reduce_sum()
+            + self.dist_simd_8.reduce_sum()
+            + self.dist_simd_4.reduce_sum()
+            + self.dist_simd_1)
+            .sqrt()
     }
 
     pub fn calculate_simd(&mut self, a: &[f32], b: &[f32]) -> f32 {
@@ -123,14 +166,14 @@ where
 {
     fn calculate_squared(&self, a: &[f32], b: &[f32]) -> f32 {
         let mut simd = Simd::<f32, LANES>::splat(0.0);
-        let mut i = 0;
-        while i + LANES <= a.len() && i + LANES <= b.len() {
-            let a_slice = Simd::<f32, LANES>::from_slice(&a[i..i + LANES]);
-            let b_slice = Simd::<f32, LANES>::from_slice(&b[i..i + LANES]);
-            let diff = a_slice - b_slice;
-            simd += diff.mul(diff);
-            i += LANES;
-        }
+        a.chunks_exact(LANES)
+            .zip(b.chunks_exact(LANES))
+            .for_each(|(a, b)| {
+                let a_slice = Simd::<f32, LANES>::from_slice(a);
+                let b_slice = Simd::<f32, LANES>::from_slice(b);
+                let diff = a_slice - b_slice;
+                simd += diff.mul(diff);
+            });
         simd.reduce_sum()
     }
 }
@@ -139,40 +182,67 @@ pub struct NonStreamingL2DistanceCalculator {}
 
 impl CalculateSquared for NonStreamingL2DistanceCalculator {
     fn calculate_squared(&self, a: &[f32], b: &[f32]) -> f32 {
-        let mut simd_16 = f32x16::splat(0.0);
-        let mut simd_8 = f32x8::splat(0.0);
-        let mut simd_4 = f32x4::splat(0.0);
-        let mut simd_1 = 0.0;
-        let mut i = 0;
-        while i + 16 <= a.len() && i + 16 <= b.len() {
-            let a_slice = f32x16::from_slice(&a[i..i + 16]);
-            let b_slice = f32x16::from_slice(&b[i..i + 16]);
-            let diff = a_slice - b_slice;
-            simd_16 += diff.mul(diff);
-            i += 16;
+        let mut sum_16 = f32x16::splat(0.0);
+        let mut sum_8 = f32x8::splat(0.0);
+        let mut sum_4 = f32x4::splat(0.0);
+        let mut sum_1 = 0.0;
+        let mut a_vec = a;
+        let mut b_vec = b;
+
+        let mut a_len = a.len();
+        if a_len / 16 > 0 {
+            a_vec
+                .chunks_exact(16)
+                .zip(b_vec.chunks_exact(16))
+                .for_each(|(a, b)| {
+                    let a_slice = f32x16::from_slice(a);
+                    let b_slice = f32x16::from_slice(b);
+                    let diff = a_slice - b_slice;
+                    sum_16 += diff.mul(diff);
+                });
+            a_vec = a_vec.chunks_exact(16).remainder();
+            b_vec = b_vec.chunks_exact(16).remainder();
+            a_len = a_len % 16;
         }
 
-        while i + 8 <= a.len() && i + 8 <= b.len() {
-            let a_slice = f32x8::from_slice(&a[i..i + 8]);
-            let b_slice = f32x8::from_slice(&b[i..i + 8]);
-            let diff = a_slice - b_slice;
-            simd_8 += diff.mul(diff);
-            i += 8;
+        if a_len / 8 > 0 {
+            a_vec
+                .chunks_exact(8)
+                .zip(b_vec.chunks_exact(8))
+                .for_each(|(a, b)| {
+                    let a_slice = f32x8::from_slice(a);
+                    let b_slice = f32x8::from_slice(b);
+                    let diff = a_slice - b_slice;
+                    sum_8 += diff.mul(diff);
+                });
+            a_vec = a_vec.chunks_exact(8).remainder();
+            b_vec = b_vec.chunks_exact(8).remainder();
+
+            a_len = a_len % 8;
         }
 
-        while i + 4 <= a.len() && i + 4 <= b.len() {
-            let a_slice = f32x4::from_slice(&a[i..i + 4]);
-            let b_slice = f32x4::from_slice(&b[i..i + 4]);
-            let diff = a_slice - b_slice;
-            simd_4 += diff.mul(diff);
-            i += 4;
+        if a_len / 4 > 0 {
+            a_vec
+                .chunks_exact(4)
+                .zip(b_vec.chunks_exact(4))
+                .for_each(|(a, b)| {
+                    let a_slice = f32x4::from_slice(a);
+                    let b_slice = f32x4::from_slice(b);
+                    let diff = a_slice - b_slice;
+                    sum_4 += diff.mul(diff);
+                });
+            a_vec = a_vec.chunks_exact(4).remainder();
+            b_vec = b_vec.chunks_exact(4).remainder();
+            a_len = a_len % 4;
         }
 
-        for j in i..a.len() {
-            simd_1 += (a[j] - b[j]).powi(2);
+        if a_len > 0 {
+            for i in 0..a_len {
+                sum_1 += (a_vec[i] - b_vec[i]).powi(2);
+            }
         }
 
-        simd_16.reduce_sum() + simd_8.reduce_sum() + simd_4.reduce_sum() + simd_1.sqrt()
+        sum_16.reduce_sum() + sum_8.reduce_sum() + sum_4.reduce_sum() + sum_1
     }
 }
 
