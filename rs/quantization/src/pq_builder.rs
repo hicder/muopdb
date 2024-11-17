@@ -100,7 +100,8 @@ mod tests {
     #[test]
     fn test_product_quantizer_builder() {
         env_logger::init();
-        let base_directory = tempdir::TempDir::new("product_quantizer_test").unwrap();
+        let temp_dir = tempdir::TempDir::new("product_quantizer_builder_test")
+            .expect("Failed to create temporary directory");
 
         const DIMENSION: usize = 128;
         let mut pqb = ProductQuantizerBuilder::new(
@@ -119,7 +120,13 @@ mod tests {
             pqb.add(generate_random_vector(DIMENSION));
         }
 
-        match pqb.build(base_directory.path().to_str().unwrap().to_string()) {
+        match pqb.build(
+            temp_dir
+                .path()
+                .to_str()
+                .expect("Failed to convert temporary directory path to string")
+                .to_string(),
+        ) {
             Ok(_) => {
                 assert!(true);
             }
@@ -148,10 +155,17 @@ mod tests {
             pqb.add(generate_random_vector(DIMENSION));
         }
 
-        let base_directory = tempdir::TempDir::new("product_quantizer_test").unwrap();
+        let temp_dir = tempdir::TempDir::new("product_quantizer_distance_test")
+            .expect("Failed to create temporary directory");
         let pq = pqb
-            .build(base_directory.path().to_str().unwrap().to_string())
-            .unwrap();
+            .build(
+                temp_dir
+                    .path()
+                    .to_str()
+                    .expect("Failed to convert temporary directory path to string")
+                    .to_string(),
+            )
+            .expect("ProductQuantizer should be built");
         let point = pq.quantize(&generate_random_vector(DIMENSION));
         let query = pq.quantize(&generate_random_vector(DIMENSION));
         let dist_scalar = pq.distance(&query, &point, Scalar);
