@@ -73,9 +73,12 @@ fn main() {
     config.reindex = arg.reindex;
 
     // Open input
-    let mut input = Hdf5Reader::new(1000, &arg.dataset_name, &arg.input_path).unwrap();
+    let mut input = Hdf5Reader::new(1000, &arg.dataset_name, &arg.input_path)
+        .expect("Failed to create Hdf5Reader");
     let mut index_writer = IndexWriter::new(config);
 
     // Process
-    index_writer.process(&mut input).unwrap();
+    index_writer
+        .process(&mut input)
+        .expect("Index writer processing should succeed");
 }
