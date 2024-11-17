@@ -4,7 +4,6 @@ pub mod kmeans_builder;
 pub mod distance;
 pub mod mem;
 pub mod test_utils;
-pub mod dot_product_similarity;
 
 pub trait DistanceCalculator {
     /// Compute distance between two vectors.
