@@ -1,7 +1,6 @@
-use core::simd;
 use std::ops::Mul;
 use std::simd::num::SimdFloat;
-use std::simd::{f32x16, f32x4, f32x8, Simd};
+use std::simd::{f32x16, f32x4, f32x8, LaneCount, Simd, SupportedLaneCount};
 
 use strum::EnumIter;
 
@@ -99,30 +98,81 @@ impl StreamingDistanceCalculator for L2DistanceCalculator {
     }
 }
 
-pub struct NonStreamingL2DistanceCalculator {}
+/// Trait for calculating the squared distance between two vectors. An optimization for when the true
+/// L2 distance is not needed.
+pub trait CalculateSquared {
+    fn calculate_squared(&self, a: &[f32], b: &[f32]) -> f32;
+}
 
-impl NonStreamingL2DistanceCalculator {
+pub struct LaneConformingL2DistanceCalculator<const LANES: usize>
+where
+    LaneCount<LANES>: SupportedLaneCount, {}
+
+impl<const LANES: usize> LaneConformingL2DistanceCalculator<LANES>
+where
+    LaneCount<LANES>: SupportedLaneCount,
+{
     pub fn new() -> Self {
         Self {}
     }
+}
 
-    pub fn calculate_squared(&self, a: &[f32], b: &[f32]) -> f32 {
-        let mut simd = f32x16::splat(0.0);
+impl<const LANES: usize> CalculateSquared for LaneConformingL2DistanceCalculator<LANES>
+where
+    LaneCount<LANES>: SupportedLaneCount,
+{
+    fn calculate_squared(&self, a: &[f32], b: &[f32]) -> f32 {
+        let mut simd = Simd::<f32, LANES>::splat(0.0);
         let mut i = 0;
-        while i + 16 <= a.len() && i + 16 <= b.len() {
-            let a_slice = f32x16::from_slice(&a[i..i + 16]);
-            let b_slice = f32x16::from_slice(&b[i..i + 16]);
+        while i + LANES <= a.len() && i + LANES <= b.len() {
+            let a_slice = Simd::<f32, LANES>::from_slice(&a[i..i + LANES]);
+            let b_slice = Simd::<f32, LANES>::from_slice(&b[i..i + LANES]);
             let diff = a_slice - b_slice;
             simd += diff.mul(diff);
-            i += 16;
+            i += LANES;
         }
         simd.reduce_sum()
     }
 }
 
-impl DistanceCalculator for NonStreamingL2DistanceCalculator {
-    fn calculate(&mut self, a: &[f32], b: &[f32]) -> f32 {
-        self.calculate_squared(a, b).sqrt()
+pub struct NonStreamingL2DistanceCalculator {}
+
+impl CalculateSquared for NonStreamingL2DistanceCalculator {
+    fn calculate_squared(&self, a: &[f32], b: &[f32]) -> f32 {
+        let mut simd_16 = f32x16::splat(0.0);
+        let mut simd_8 = f32x8::splat(0.0);
+        let mut simd_4 = f32x4::splat(0.0);
+        let mut simd_1 = 0.0;
+        let mut i = 0;
+        while i + 16 <= a.len() && i + 16 <= b.len() {
+            let a_slice = f32x16::from_slice(&a[i..i + 16]);
+            let b_slice = f32x16::from_slice(&b[i..i + 16]);
+            let diff = a_slice - b_slice;
+            simd_16 += diff.mul(diff);
+            i += 16;
+        }
+
+        while i + 8 <= a.len() && i + 8 <= b.len() {
+            let a_slice = f32x8::from_slice(&a[i..i + 8]);
+            let b_slice = f32x8::from_slice(&b[i..i + 8]);
+            let diff = a_slice - b_slice;
+            simd_8 += diff.mul(diff);
+            i += 8;
+        }
+
+        while i + 4 <= a.len() && i + 4 <= b.len() {
+            let a_slice = f32x4::from_slice(&a[i..i + 4]);
+            let b_slice = f32x4::from_slice(&b[i..i + 4]);
+            let diff = a_slice - b_slice;
+            simd_4 += diff.mul(diff);
+            i += 4;
+        }
+
+        for j in i..a.len() {
+            simd_1 += (a[j] - b[j]).powi(2);
+        }
+
+        simd_16.reduce_sum() + simd_8.reduce_sum() + simd_4.reduce_sum() + simd_1.sqrt()
     }
 }
 
