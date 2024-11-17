@@ -12,7 +12,8 @@ fn bench_pq_distance(c: &mut Criterion) {
     for dimension in [128, 256].iter() {
         for subvector_dimension in [4, 8, 16, 32, 64, 128].iter() {
             for num_bits in [4, 8, 16].iter() {
-                let tmpdir = tempdir::TempDir::new("pq_bench").unwrap();
+                let tmpdir = tempdir::TempDir::new("pq_bench")
+                    .expect("Failed to create temporary directory");
                 let mut pqb = ProductQuantizerBuilder::new(
                     ProductQuantizerConfig {
                         dimension: *dimension,
@@ -29,9 +30,13 @@ fn bench_pq_distance(c: &mut Criterion) {
                     pqb.add(generate_random_vector(*dimension));
                 }
 
+                let path_str = tmpdir
+                    .path()
+                    .to_str()
+                    .expect("Failed to convert temporary directory path to string");
                 let pq = pqb
-                    .build(tmpdir.path().to_str().unwrap().to_string())
-                    .unwrap();
+                    .build(path_str)
+                    .expect("Failed to build ProductQuantizer");
                 let point = pq.quantize(&generate_random_vector(*dimension));
                 let query = pq.quantize(&generate_random_vector(*dimension));
                 for implementation in L2DistanceCalculatorImpl::iter() {

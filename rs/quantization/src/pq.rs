@@ -57,8 +57,8 @@ impl ProductQuantizerReader {
             return Err(Error::msg("Config file is not a file"));
         }
 
-        let config_buffer = std::fs::read(config_path).unwrap();
-        let config: ProductQuantizerConfig = serde_yaml::from_slice(&config_buffer).unwrap();
+        let config_buffer = std::fs::read(config_path)?;
+        let config: ProductQuantizerConfig = serde_yaml::from_slice(&config_buffer)?;
 
         match config.validate() {
             Ok(_) => {
@@ -84,31 +84,25 @@ impl ProductQuantizerWriter {
         let config_path = Path::new(&self.base_directory).join("product_quantizer_config.yaml");
         if config_path.exists() {
             // Delete the file if exists
-            std::fs::remove_file(config_path).unwrap();
+            std::fs::remove_file(config_path)?;
         }
 
         // Write the codebook to a file
         let codebook_path = Path::new(&self.base_directory).join(&CODEBOOK_NAME);
         if codebook_path.exists() {
             // Delete the file if exists
-            std::fs::remove_file(codebook_path).unwrap();
+            std::fs::remove_file(codebook_path)?;
         }
 
         // Write codebook
         let codebook_buffer = quantizer.codebook_to_buffer();
-        let mut codebook_file =
-            File::create(Path::new(&self.base_directory).join(&CODEBOOK_NAME)).unwrap();
+        let mut codebook_file = File::create(Path::new(&self.base_directory).join(&CODEBOOK_NAME))?;
         codebook_file.write(&codebook_buffer)?;
 
         // Write config
         let mut config_file =
-            File::create(Path::new(&self.base_directory).join("product_quantizer_config.yaml"))
-                .unwrap();
-        config_file.write(
-            serde_yaml::to_string(&quantizer.config())
-                .unwrap()
-                .as_bytes(),
-        )?;
+            File::create(Path::new(&self.base_directory).join("product_quantizer_config.yaml"))?;
+        config_file.write(serde_yaml::to_string(&quantizer.config())?.as_bytes())?;
         Ok(())
     }
 }
@@ -139,7 +133,7 @@ impl ProductQuantizer {
     pub fn load(config: ProductQuantizerConfig, base_directory: &str) -> Result<Self> {
         let codebook_path = Path::new(&base_directory).join("codebook");
 
-        let codebook_buffer = std::fs::read(codebook_path).unwrap();
+        let codebook_buffer = std::fs::read(codebook_path)?;
         let num_centroids = (1 << config.num_bits) as usize;
         let num_subvector = config.dimension / config.subvector_dimension;
 
@@ -148,7 +142,7 @@ impl ProductQuantizer {
         codebook.reserve_exact(num_subvector * num_centroids);
 
         for _ in 0..num_subvector * num_centroids * config.subvector_dimension {
-            let val = f32::from_le_bytes(codebook_buffer[offset..offset + 4].try_into().unwrap());
+            let val = f32::from_le_bytes(codebook_buffer[offset..offset + 4].try_into()?);
             codebook.push(val);
 
             offset += 4;
@@ -377,8 +371,13 @@ mod tests {
             }
         }
         // Create a temp directory
-        let temp_dir = tempdir::TempDir::new("product_quantizer_test").unwrap();
-        let base_directory = temp_dir.path().to_str().unwrap().to_string();
+        let temp_dir = tempdir::TempDir::new("product_quantizer_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
 
         let pq = ProductQuantizer::new(10, 2, 1, codebook, base_directory.clone())
             .expect("ProductQuantizer should be created.");
@@ -390,7 +389,7 @@ mod tests {
         let writer = ProductQuantizerWriter {
             base_directory: base_directory.clone(),
         };
-        writer.write(&pq).unwrap();
+        writer.write(&pq).expect("Failed to write the codebook");
 
         // Read the quantizer
         let reader = ProductQuantizerReader {
