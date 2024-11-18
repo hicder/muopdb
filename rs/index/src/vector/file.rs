@@ -8,12 +8,6 @@ use utils::io::wrap_write;
 
 use super::{VectorStorage, VectorStorageConfig};
 
-pub struct FileBackedAppendableVectorStorageConfig {
-    memory_threshold: usize,
-    backing_file_size: usize,
-    num_features: usize,
-}
-
 pub struct FileBackedAppendableVectorStorage<T> {
     pub memory_threshold: usize,
     pub backing_file_size: usize,
@@ -54,14 +48,11 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
         }
     }
 
-    pub fn new_with_config(
-        base_directory: String,
-        config: FileBackedAppendableVectorStorageConfig,
-    ) -> Self {
+    pub fn new_with_config(base_directory: String, config: VectorStorageConfig) -> Self {
         Self::new(
             base_directory,
             config.memory_threshold,
-            config.backing_file_size,
+            config.file_size,
             config.num_features,
         )
     }
