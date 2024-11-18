@@ -150,7 +150,7 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
     }
 }
 
-impl<T: ToBytes + Clone + std::fmt::Debug> VectorStorage<T>
+impl<T: ToBytes + Clone + std::fmt::Debug + Default> VectorStorage<T>
     for FileBackedAppendableVectorStorage<T>
 {
     fn get(&self, id: u32) -> Option<&[T]> {
@@ -178,8 +178,15 @@ impl<T: ToBytes + Clone + std::fmt::Debug> VectorStorage<T>
     }
 
     fn append(&mut self, vector: &[T]) -> Result<()> {
-        if vector.len() != self.num_features {
-            return Err(anyhow!("vector length mismatch"));
+        let vector_len = vector.len();
+        if vector_len > self.num_features {
+            return Err(anyhow!("vector length exceeds num_features"));
+        }
+
+        let mut padded_vector = vector.to_vec();
+        if vector_len < self.num_features {
+            padded_vector
+                .extend(std::iter::repeat(T::default()).take(self.num_features - vector_len));
         }
 
         let size_required = vector.len() * std::mem::size_of::<T>();
@@ -192,7 +199,7 @@ impl<T: ToBytes + Clone + std::fmt::Debug> VectorStorage<T>
         // Good case, where file is still resident
         if self.resident {
             self.size_bytes = new_size_required;
-            self.resident_vectors.push(vector.to_vec());
+            self.resident_vectors.push(padded_vector);
             return Ok(());
         }
 
@@ -202,7 +209,7 @@ impl<T: ToBytes + Clone + std::fmt::Debug> VectorStorage<T>
             self.flush_resident_to_disk();
         }
 
-        self.append_vector_to_disk(vector);
+        self.append_vector_to_disk(&padded_vector);
         self.size_bytes = new_size_required;
         Ok(())
     }
@@ -239,6 +246,42 @@ impl<T: ToBytes + Clone + std::fmt::Debug> VectorStorage<T>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_append() {
+        let tempdir = tempdir::TempDir::new("append_test").unwrap();
+        let base_directory = tempdir.path().to_str().unwrap().to_string();
+        let mut storage =
+            FileBackedAppendableVectorStorage::<f32>::new(base_directory, 1024, 1024, 5);
+
+        // Test case 1: Append vector with exact length
+        let vector1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        assert!(storage.append(&vector1).is_ok());
+        assert_eq!(storage.resident_vectors.len(), 1);
+        assert_eq!(storage.resident_vectors[0], vector1);
+
+        // Test case 2: Append vector with shorter length (should pad)
+        let vector2 = vec![6.0, 7.0, 8.0];
+        assert!(storage.append(&vector2).is_ok());
+        assert_eq!(storage.resident_vectors.len(), 2);
+        assert_eq!(storage.resident_vectors[1], vec![6.0, 7.0, 8.0, 0.0, 0.0]);
+
+        // Test case 3: Append vector with longer length (should fail)
+        let vector3 = vec![9.0, 10.0, 11.0, 12.0, 13.0, 14.0];
+        assert!(storage.append(&vector3).is_err());
+
+        // Test case 4: Append empty vector (should pad all)
+        let vector4 = vec![];
+        assert!(storage.append(&vector4).is_ok());
+        assert_eq!(storage.resident_vectors.len(), 3);
+        assert_eq!(storage.resident_vectors[2], vec![0.0, 0.0, 0.0, 0.0, 0.0]);
+
+        // Test case 5: Test transition to non-resident
+        storage.memory_threshold = 10; // Set a low threshold to force non-resident behavior
+        let vector5 = vec![15.0, 16.0, 17.0, 18.0, 19.0];
+        assert!(storage.append(&vector5).is_ok());
+        assert!(!storage.resident);
+    }
 
     #[test]
     fn test_file_backed_vector_storage() {
