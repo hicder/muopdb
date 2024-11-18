@@ -7,7 +7,7 @@ use log::debug;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 use rand::Rng;
-use utils::distance::l2::L2DistanceCalculatorImpl::StreamingWithSIMD;
+use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 
 use super::index::Hnsw;
 use super::utils::{BuilderContext, GraphTraversal, PointAndDistance};
@@ -131,7 +131,7 @@ impl HnswBuilder {
                         .get(from as usize, &mut context)
                         .unwrap(),
                     hnsw.vector_storage.get(to as usize, &mut context).unwrap(),
-                    utils::distance::l2::L2DistanceCalculatorImpl::StreamingWithSIMD,
+                    utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD,
                 );
                 layer
                     .edges
@@ -409,8 +409,7 @@ impl HnswBuilder {
     fn distance_two_points(&self, a: u32, b: u32) -> f32 {
         let a_vector = self.get_vector(a);
         let b_vector = self.get_vector(b);
-        self.quantizer
-            .distance(a_vector, b_vector, StreamingWithSIMD)
+        self.quantizer.distance(a_vector, b_vector, StreamingSIMD)
     }
 
     fn get_vector(&self, point_id: u32) -> &[u8] {
@@ -510,7 +509,7 @@ impl GraphTraversal for HnswBuilder {
 
     fn distance(&self, query: &[u8], point_id: u32, _context: &mut BuilderContext) -> f32 {
         self.quantizer
-            .distance(query, self.get_vector(point_id), StreamingWithSIMD)
+            .distance(query, self.get_vector(point_id), StreamingSIMD)
     }
 
     fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>> {

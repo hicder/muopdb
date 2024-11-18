@@ -1,9 +1,9 @@
+use anyhow::{Context, Result};
 use clap::Parser;
 use log::info;
 use proto::muopdb::aggregator_client::AggregatorClient;
 use proto::muopdb::index_server_client::IndexServerClient;
 use proto::muopdb::{GetRequest, SearchRequest};
-use anyhow::{Result, Context};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -44,12 +44,13 @@ async fn main() -> Result<()> {
                 ef_construction: 100,
             });
 
-            let response = client.get(request)
+            let response = client
+                .get(request)
                 .await
                 .context("Failed to get response from Aggregator")?;
 
             info!("Response: {:?}", response);
-        },
+        }
         1 => {
             let mut client = IndexServerClient::connect(addr)
                 .await
@@ -66,12 +67,13 @@ async fn main() -> Result<()> {
 
             info!("Request: {:?}", request);
 
-            let response = client.search(request)
+            let response = client
+                .search(request)
                 .await
                 .context("Failed to get search response from IndexServer")?;
 
             info!("Response: {:?}", response);
-        },
+        }
         _ => return Err(anyhow::anyhow!("Invalid node type: {}", node_type)),
     }
 

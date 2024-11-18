@@ -46,14 +46,13 @@ impl Ivf {
         centroids: &FixedFileVectorStorage<f32>,
         num_probes: usize,
     ) -> Result<Vec<usize>> {
-        let mut calculator = L2DistanceCalculator::new();
         let mut distances: Vec<(usize, f32)> = Vec::new();
         let mut context = SearchContext::new(false);
         for i in 0..centroids.num_vectors {
             let centroid = centroids
                 .get(i, &mut context)
                 .with_context(|| format!("Failed to get centroid at index {}", i))?;
-            let dist = calculator.calculate(&vector, &centroid);
+            let dist = L2DistanceCalculator::calculate(&vector, &centroid);
             distances.push((i, dist));
         }
         distances.select_nth_unstable_by(num_probes - 1, |a, b| a.1.total_cmp(&b.1));
@@ -79,8 +78,10 @@ impl Index for Ivf {
             for &centroid in &nearest_centroids {
                 if let Some(list) = self.inverted_lists.get(&centroid) {
                     for &idx in list {
-                        let distance = L2DistanceCalculator::new()
-                            .calculate(query, &self.vector_storage.get(idx, context)?.to_vec());
+                        let distance = L2DistanceCalculator::calculate(
+                            query,
+                            &self.vector_storage.get(idx, context)?.to_vec(),
+                        );
                         let id_with_score = IdWithScore {
                             score: distance,
                             id: idx as u64,
