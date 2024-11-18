@@ -16,7 +16,7 @@ pub enum L2DistanceCalculatorImpl {
 pub struct L2DistanceCalculator {}
 
 impl L2DistanceCalculator {
-    #[inline]
+    #[inline(always)]
     pub fn calculate_scalar(a: &[f32], b: &[f32]) -> f32 {
         a.iter()
             .zip(b.iter())
@@ -27,7 +27,7 @@ impl L2DistanceCalculator {
 }
 
 impl CalculateSquared for L2DistanceCalculator {
-    #[inline]
+    #[inline(always)]
     fn calculate_squared(a: &[f32], b: &[f32]) -> f32 {
         let mut a_vec = a;
         let mut b_vec = b;
@@ -67,11 +67,12 @@ impl CalculateSquared for L2DistanceCalculator {
 }
 
 impl DistanceCalculator for L2DistanceCalculator {
+    #[inline(always)]
     fn calculate(a: &[f32], b: &[f32]) -> f32 {
         Self::calculate_squared(a, b).sqrt()
     }
 
-    #[inline]
+    #[inline(always)]
     fn accumulate_lanes<const LANES: usize>(a: &[f32], b: &[f32], acc: &mut Simd<f32, LANES>)
     where
         LaneCount<LANES>: SupportedLaneCount,
@@ -97,6 +98,7 @@ impl<const LANES: usize> CalculateSquared for LaneConformingL2DistanceCalculator
 where
     LaneCount<LANES>: SupportedLaneCount,
 {
+    #[inline(always)]
     fn calculate_squared(a: &[f32], b: &[f32]) -> f32 {
         let mut simd = Simd::<f32, LANES>::splat(0.0);
         L2DistanceCalculator::accumulate_lanes(a, b, &mut simd);
