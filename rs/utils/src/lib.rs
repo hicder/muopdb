@@ -1,16 +1,25 @@
 #![feature(portable_simd)]
+
+use std::simd::{LaneCount, Simd, SupportedLaneCount};
+pub mod distance;
 pub mod io;
 pub mod kmeans_builder;
-pub mod distance;
 pub mod mem;
 pub mod test_utils;
 
 pub trait DistanceCalculator {
     /// Compute distance between two vectors.
-    fn calculate(&mut self, a: &[f32], b: &[f32]) -> f32;
+    fn calculate(a: &[f32], b: &[f32]) -> f32;
+
+    /// Compute distance between two vectors using SIMD.
+    fn accumulate_lanes<const LANES: usize>(
+        a: &[f32],
+        b: &[f32],
+        accumulator: &mut Simd<f32, LANES>,
+    ) where
+        LaneCount<LANES>: SupportedLaneCount;
 }
 
-pub trait StreamingDistanceCalculator {
-    fn stream(&mut self, a: &[f32], b: &[f32]);
-    fn finalize(&mut self) -> f32;
+pub trait CalculateSquared {
+    fn calculate_squared(a: &[f32], b: &[f32]) -> f32;
 }

@@ -47,7 +47,9 @@ impl Aggregator for AggregatorServerImpl {
             .await
             .get_nodes_for_index(index_name)
             .await
-            .ok_or_else(|| tonic::Status::internal(format!("No nodes found for index: {}", index_name)))?;
+            .ok_or_else(|| {
+                tonic::Status::internal(format!("No nodes found for index: {}", index_name))
+            })?;
         let ef_construction = req.ef_construction;
 
         let node_infos = self
@@ -69,11 +71,20 @@ impl Aggregator for AggregatorServerImpl {
 
         // TODO: parallelize
         for shard_node in shard_nodes.iter() {
-            let node_info = node_id_to_node_info.get(&shard_node.node_id)
-                .ok_or_else(|| tonic::Status::internal(format!("Node info not found for node_id: {}", shard_node.node_id)))?;
-            let mut client = IndexServerClient::connect(format!("{}:{}", node_info.ip, node_info.port))
-                .await
-                .map_err(|e| tonic::Status::internal(format!("Failed to connect to index server: {}", e)))?;
+            let node_info = node_id_to_node_info
+                .get(&shard_node.node_id)
+                .ok_or_else(|| {
+                    tonic::Status::internal(format!(
+                        "Node info not found for node_id: {}",
+                        shard_node.node_id
+                    ))
+                })?;
+            let mut client =
+                IndexServerClient::connect(format!("{}:{}", node_info.ip, node_info.port))
+                    .await
+                    .map_err(|e| {
+                        tonic::Status::internal(format!("Failed to connect to index server: {}", e))
+                    })?;
 
             let index_name_for_shard = format!("{}--{}", index_name, shard_node.shard_id);
             let ret = client

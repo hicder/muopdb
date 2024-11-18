@@ -91,7 +91,7 @@ impl ProductQuantizerBuilder {
 // Test
 #[cfg(test)]
 mod tests {
-    use utils::distance::l2::L2DistanceCalculatorImpl::{Scalar, StreamingWithSIMD, SIMD};
+    use utils::distance::l2::L2DistanceCalculatorImpl::{Scalar, StreamingSIMD, SIMD};
     use utils::test_utils::generate_random_vector;
 
     use super::*;
@@ -170,7 +170,7 @@ mod tests {
         let query = pq.quantize(&generate_random_vector(DIMENSION));
         let dist_scalar = pq.distance(&query, &point, Scalar);
         let dist_simd = pq.distance(&query, &point, SIMD);
-        let dist_stream = pq.distance(&query, &point, StreamingWithSIMD);
+        let dist_stream = pq.distance(&query, &point, StreamingSIMD);
 
         let epsilon = 1e-5;
         assert!((dist_simd - dist_scalar).abs() < epsilon);

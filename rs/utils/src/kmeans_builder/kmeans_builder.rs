@@ -4,9 +4,8 @@ use log::debug;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::slice::ParallelSlice;
 
-use crate::distance::l2::{
-    CalculateSquared, LaneConformingL2DistanceCalculator, NonStreamingL2DistanceCalculator,
-};
+use crate::distance::l2::{L2DistanceCalculator, LaneConformingL2DistanceCalculator};
+use crate::CalculateSquared;
 
 #[derive(PartialEq, Debug)]
 pub enum KMeansVariant {
@@ -95,17 +94,14 @@ impl KMeansBuilder {
         match self.variant {
             KMeansVariant::Lloyd => {
                 if self.dimension % 16 == 0 {
-                    let distance_calculator = LaneConformingL2DistanceCalculator::<16>::new();
-                    return self.run_lloyd(flattened_data, distance_calculator);
+                    return self
+                        .run_lloyd::<LaneConformingL2DistanceCalculator<16>>(flattened_data);
                 } else if self.dimension % 8 == 0 {
-                    let distance_calculator = LaneConformingL2DistanceCalculator::<8>::new();
-                    return self.run_lloyd(flattened_data, distance_calculator);
+                    return self.run_lloyd::<LaneConformingL2DistanceCalculator<8>>(flattened_data);
                 } else if self.dimension % 4 == 0 {
-                    let distance_calculator = LaneConformingL2DistanceCalculator::<4>::new();
-                    return self.run_lloyd(flattened_data, distance_calculator);
+                    return self.run_lloyd::<LaneConformingL2DistanceCalculator<4>>(flattened_data);
                 } else {
-                    let distance_calculator = NonStreamingL2DistanceCalculator {};
-                    return self.run_lloyd(flattened_data, distance_calculator);
+                    return self.run_lloyd::<L2DistanceCalculator>(flattened_data);
                 }
             }
         }
@@ -114,7 +110,6 @@ impl KMeansBuilder {
     fn run_lloyd<T: CalculateSquared + Send + Sync>(
         &self,
         flattened_data_points: Vec<f32>,
-        distance_calculator: T,
     ) -> Result<KMeansResult> {
         let data_points = flattened_data_points
             .par_chunks_exact(self.dimension)
@@ -175,8 +170,8 @@ impl KMeansBuilder {
                         let centroid = centroids
                             [centroid_id * self.dimension..(centroid_id + 1) * self.dimension]
                             .as_ref();
-                        let distance = distance_calculator.calculate_squared(data_point, centroid)
-                            + penalties[centroid_id];
+                        let distance =
+                            T::calculate_squared(data_point, centroid) + penalties[centroid_id];
 
                         if distance < min_cost {
                             min_cost = distance;

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::{Context, Result};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -7,8 +8,6 @@ use utils::io::get_latest_version;
 
 use crate::index_catalog::IndexCatalog;
 use crate::index_provider::IndexProvider;
-use anyhow::Context;
-use anyhow::Result;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct IndexConfig {
@@ -69,16 +68,16 @@ impl IndexManager {
     }
 
     pub async fn check_for_update(&mut self) -> Result<()> {
-        let latest_version = get_latest_version(&self.config_path)
-            .context("Failed to get latest version")?;
+        let latest_version =
+            get_latest_version(&self.config_path).context("Failed to get latest version")?;
         if latest_version > self.latest_version {
             info!("New version available: {}", latest_version);
             let latest_config_path = format!("{}/version_{}", self.config_path, latest_version);
 
             let config_str = std::fs::read_to_string(&latest_config_path)
                 .context("Failed to read config file")?;
-            let config: IndexManagerConfig = serde_json::from_str(&config_str)
-                .context("Failed to parse config file")?;
+            let config: IndexManagerConfig =
+                serde_json::from_str(&config_str).context("Failed to parse config file")?;
 
             let new_index_names = config
                 .indices

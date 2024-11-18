@@ -2,7 +2,7 @@ use std::cmp::min;
 
 use anyhow::Result;
 use log::error;
-use ndarray::{s, Array2};
+use ndarray::s;
 
 use super::{Input, Row};
 

@@ -1,11 +1,10 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use utils::io::get_latest_version;
-
-use anyhow::Result;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeInfo {
@@ -69,8 +68,8 @@ impl NodeManager {
 // Test
 #[cfg(test)]
 mod tests {
-    use tempdir::TempDir;
     use log::error;
+    use tempdir::TempDir;
 
     use super::*;
 
@@ -78,7 +77,9 @@ mod tests {
     async fn test_get_nodes() {
         env_logger::init();
         let temp_dir = TempDir::new("test_node_manager").expect("Failed to create temp directory");
-        let config_path = temp_dir.path().to_str()
+        let config_path = temp_dir
+            .path()
+            .to_str()
             .expect("Failed to convert temp dir path to string")
             .to_string();
 
@@ -93,7 +94,11 @@ mod tests {
 
         // Write config to file
         let config_path_v1 = format!("{}/version_1", config_path);
-        std::fs::write(config_path_v1, serde_json::to_string(&config_v1).expect("Failed to serialize config")).expect("Failed to write config to file");
+        std::fs::write(
+            config_path_v1,
+            serde_json::to_string(&config_v1).expect("Failed to serialize config"),
+        )
+        .expect("Failed to write config to file");
 
         let node_manager = NodeManager::new(config_path.clone());
         if let Err(e) = node_manager.check_for_update().await {
@@ -120,7 +125,11 @@ mod tests {
 
         // Write config to file
         let config_path_v2 = format!("{}/version_2", config_path);
-        std::fs::write(config_path_v2, serde_json::to_string(&config_v2).expect("Failed to serialize config")).expect("Failed to write config to file");
+        std::fs::write(
+            config_path_v2,
+            serde_json::to_string(&config_v2).expect("Failed to serialize config"),
+        )
+        .expect("Failed to write config to file");
 
         if let Err(e) = node_manager.check_for_update().await {
             error!("Error checking for node manager update: {}", e);
