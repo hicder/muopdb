@@ -14,6 +14,18 @@ pub struct Centroid<T> {
     pub posting_list_len: usize,
 }
 
+pub struct CentroidInfo<'a, T> {
+    pub vector_ref: &'a [T],
+    pub posting_list_len: usize,
+    // Optional offset, only has value if we spill to disk
+    pub posting_list_offset: Option<usize>,
+}
+
+pub struct PostingListMetadata {
+    pub len: usize,
+    pub offset: usize,
+}
+
 pub struct FileBackedAppendableInvertedListStorage<T> {
     pub memory_threshold: usize,
     pub backing_file_size: usize,
@@ -177,21 +189,22 @@ impl<T: ToBytes + Clone> FileBackedAppendableInvertedListStorage<T> {
         self.current_offset += size_required;
     }
 
-    pub fn get_centroid(&self, id: u32) -> Result<(&[T], usize, Option<usize>)> {
+    pub fn get_centroid(&self, id: u32) -> Result<CentroidInfo<T>> {
         if self.resident {
             if id as usize >= self.resident_centroids.len() {
                 return Err(anyhow!("centroid id out of bound access in-memory"));
             }
-            return Ok((
-                &self.resident_centroids[id as usize].vector,
-                self.resident_centroids[id as usize].posting_list_len,
-                None,
-            ));
+            return Ok(CentroidInfo {
+                vector_ref: &self.resident_centroids[id as usize].vector,
+                posting_list_len: self.resident_centroids[id as usize].posting_list_len,
+                posting_list_offset: None,
+            });
         }
 
         let vector_size = self.num_features * std::mem::size_of::<T>();
-        let metadata_size = std::mem::size_of::<usize>();
-        let overall_offset = id as usize * (vector_size + metadata_size * 2);
+        // Each member of PostingListMetadata is an usize
+        let usize_in_bytes = std::mem::size_of::<usize>();
+        let overall_offset = id as usize * (vector_size + usize_in_bytes * 2);
         let file_num = overall_offset / self.backing_file_size;
         if file_num >= self.mmaps.len() {
             return Err(anyhow!(
@@ -210,14 +223,19 @@ impl<T: ToBytes + Clone> FileBackedAppendableInvertedListStorage<T> {
             std::slice::from_raw_parts(vector_slice.as_ptr() as *const T, self.num_features)
         };
         // TODO(tyb): handle the case where num_features odd -> pad centroid vector
-        // (metadata size is either 4 or 8 bytes -> 2 metadata is always 8-byte aligned)
-        let len_slice = &mmap[file_offset + vector_size..file_offset + vector_size + metadata_size];
+        // (usize_in_bytes is either 4 or 8 -> 2 usize is always 8-byte aligned)
+        let len_slice =
+            &mmap[file_offset + vector_size..file_offset + vector_size + usize_in_bytes];
         let posting_list_len = unsafe { *(len_slice.as_ptr() as *const usize) };
-        let offset_slice = &mmap[file_offset + vector_size + metadata_size
-            ..file_offset + vector_size + metadata_size * 2];
+        let offset_slice = &mmap[file_offset + vector_size + usize_in_bytes
+            ..file_offset + vector_size + usize_in_bytes * 2];
         let posting_list_offset = unsafe { *(offset_slice.as_ptr() as *const usize) };
 
-        Ok((centroid, posting_list_len, Some(posting_list_offset)))
+        Ok(CentroidInfo {
+            vector_ref: centroid,
+            posting_list_len,
+            posting_list_offset: Some(posting_list_offset),
+        })
     }
 
     pub fn append_centroid(&mut self, vector: &[T], posting_list_len: usize) -> Result<()> {
@@ -296,7 +314,7 @@ impl<T: ToBytes + Clone> FileBackedAppendableInvertedListStorage<T> {
     pub fn get_posting_list(
         &self,
         id: Option<u32>,
-        metadata: Option<(usize, usize)>,
+        metadata: Option<PostingListMetadata>,
     ) -> Result<Cow<[usize]>> {
         if self.resident {
             if id.is_none() {
@@ -313,34 +331,34 @@ impl<T: ToBytes + Clone> FileBackedAppendableInvertedListStorage<T> {
             return Err(anyhow!("no metadata for posting list"));
         }
 
-        let (len, offset) = metadata.unwrap();
+        let pl_metadata = metadata.unwrap();
 
-        let file_num = offset / self.backing_file_size;
+        let file_num = pl_metadata.offset / self.backing_file_size;
         if file_num >= self.mmaps.len() {
             return Err(anyhow!(
                 "posting list id out of bound: required more files than current mmaps"
             ));
         }
 
-        let file_offset = offset % self.backing_file_size;
+        let file_offset = pl_metadata.offset % self.backing_file_size;
         if file_offset >= self.mmaps[file_num].len() {
             return Err(anyhow!("posting list id out of bound access in mmap"));
         }
 
         let usize_in_bytes = std::mem::size_of::<usize>();
         let mmap = &self.mmaps[file_num];
-        let required_size = len * usize_in_bytes;
+        let required_size = pl_metadata.len * usize_in_bytes;
         // Posting list fits within a single mmap
         if file_offset + required_size <= mmap.len() {
             let slice = &mmap[file_offset..file_offset + required_size];
             return Ok(Cow::Borrowed(unsafe {
-                std::slice::from_raw_parts(slice.as_ptr() as *const usize, len)
+                std::slice::from_raw_parts(slice.as_ptr() as *const usize, pl_metadata.len)
             }));
         }
 
         // Posting list spans across multiple mmaps.
-        let mut posting_list = Vec::with_capacity(len);
-        let mut remaining_elem = len;
+        let mut posting_list = Vec::with_capacity(pl_metadata.len);
+        let mut remaining_elem = pl_metadata.len;
         let mut current_file_num = file_num;
         let mut current_offset = file_offset;
         while remaining_elem > 0 {
@@ -502,10 +520,10 @@ mod tests {
         let vector = vec![1.0, 2.0, 3.0];
         storage.append_centroid(&vector, 5).unwrap();
 
-        let (retrieved_vector, posting_list_len, offset) = storage.get_centroid(0).unwrap();
-        assert_eq!(retrieved_vector, vector.as_slice());
-        assert_eq!(posting_list_len, 5);
-        assert_eq!(offset, None);
+        let centroid_info = storage.get_centroid(0).unwrap();
+        assert_eq!(centroid_info.vector_ref, vector.as_slice());
+        assert_eq!(centroid_info.posting_list_len, 5);
+        assert_eq!(centroid_info.posting_list_offset, None);
     }
 
     #[test]
@@ -527,10 +545,10 @@ mod tests {
         storage.append_centroid(&vector1, 5).unwrap();
         storage.append_centroid(&vector2, 7).unwrap();
 
-        let (retrieved_vector, posting_list_len, offset) = storage.get_centroid(1).unwrap();
-        assert_eq!(retrieved_vector, vector2.as_slice());
-        assert_eq!(posting_list_len, 7);
-        assert!(offset.is_some());
+        let centroid_info = storage.get_centroid(1).unwrap();
+        assert_eq!(centroid_info.vector_ref, vector2.as_slice());
+        assert_eq!(centroid_info.posting_list_len, 7);
+        assert!(centroid_info.posting_list_offset.is_some());
     }
 
     #[test]
@@ -557,12 +575,12 @@ mod tests {
         assert_eq!(storage.mmaps.len(), 1);
 
         // Verify we can still retrieve the centroids
-        let (retrieved_vector1, posting_list_len1, _) = storage.get_centroid(0).unwrap();
-        let (retrieved_vector2, posting_list_len2, _) = storage.get_centroid(1).unwrap();
-        assert_eq!(retrieved_vector1, vector1.as_slice());
-        assert_eq!(posting_list_len1, 5);
-        assert_eq!(retrieved_vector2, vector2.as_slice());
-        assert_eq!(posting_list_len2, 7);
+        let centroid_info1 = storage.get_centroid(0).unwrap();
+        let centroid_info2 = storage.get_centroid(1).unwrap();
+        assert_eq!(centroid_info1.vector_ref, vector1.as_slice());
+        assert_eq!(centroid_info1.posting_list_len, 5);
+        assert_eq!(centroid_info2.vector_ref, vector2.as_slice());
+        assert_eq!(centroid_info2.posting_list_len, 7);
     }
 
     #[test]
@@ -621,12 +639,12 @@ mod tests {
 
         // Verify we can retrieve centroids from different backing files
         for i in 0..50 {
-            let (retrieved_vector, posting_list_len, _) = storage.get_centroid(i).unwrap();
+            let centroid_info = storage.get_centroid(i).unwrap();
             assert_eq!(
-                retrieved_vector,
+                centroid_info.vector_ref,
                 &[i as f32, (i + 1) as f32, (i + 2) as f32, (i + 3) as f32]
             );
-            assert_eq!(posting_list_len, i as usize);
+            assert_eq!(centroid_info.posting_list_len, i as usize);
         }
     }
 
@@ -737,7 +755,10 @@ mod tests {
         storage.append_posting_list(&posting_list);
 
         // Retrieve the posting list from disk using its metadata (length and offset)
-        let metadata = Some((posting_list.len(), 0));
+        let metadata = Some(PostingListMetadata {
+            len: posting_list.len(),
+            offset: 0,
+        });
 
         let result = storage.get_posting_list(None, metadata);
 
@@ -806,7 +827,13 @@ mod tests {
         let total_size = large_posting_list.len() * usize_size;
 
         // Retrieve the posting list
-        let result = storage.get_posting_list(None, Some((large_posting_list.len(), 0)));
+        let result = storage.get_posting_list(
+            None,
+            Some(PostingListMetadata {
+                len: large_posting_list.len(),
+                offset: 0,
+            }),
+        );
 
         assert!(result.is_ok());
 
