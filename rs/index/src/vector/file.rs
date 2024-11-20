@@ -266,4 +266,60 @@ mod tests {
         assert_eq!(vec[2], 7);
         assert_eq!(vec[3], 8);
     }
+
+    #[test]
+    fn test_file_backed_appendable_vector_storage() {
+        // Create a temporary directory for our test
+        let tempdir = tempdir::TempDir::new("vector_storage_test").unwrap();
+        let base_directory = tempdir.path().to_str().unwrap().to_string();
+
+        // Create a new storage with a small memory threshold to force disk usage
+        let mut storage = FileBackedAppendableVectorStorage::<f32>::new(
+            base_directory,
+            100,  // Small memory threshold
+            1024, // Backing file size
+            3,    // Number of features
+        );
+
+        // Test appending vectors while in memory
+        let vector1 = vec![1.0, 2.0, 3.0];
+        let vector2 = vec![4.0, 5.0, 6.0];
+        storage.append(&vector1).unwrap();
+        storage.append(&vector2).unwrap();
+
+        // Check if vectors are correctly stored and retrieved
+        assert_eq!(storage.get(0).unwrap(), &vector1);
+        assert_eq!(storage.get(1).unwrap(), &vector2);
+        assert!(storage.is_resident());
+
+        // Append more vectors to force disk usage
+        for i in 0..10 {
+            let vector = vec![i as f32, (i + 1) as f32, (i + 2) as f32];
+            storage.append(&vector).unwrap();
+        }
+
+        // Check if storage is no longer resident in memory
+        assert!(!storage.is_resident());
+
+        // Verify all vectors are still accessible
+        assert_eq!(storage.get(0).unwrap(), &vector1);
+        assert_eq!(storage.get(1).unwrap(), &vector2);
+        for i in 0..10 {
+            let expected = vec![i as f32, (i + 1) as f32, (i + 2) as f32];
+            assert_eq!(storage.get((i + 2) as u32).unwrap(), &expected);
+        }
+
+        // Test length
+        assert_eq!(storage.len(), 12);
+
+        // Test flush
+        assert!(storage.flush().is_ok());
+
+        // Test appending a vector with incorrect length
+        let invalid_vector = vec![1.0, 2.0];
+        assert!(storage.append(&invalid_vector).is_err());
+
+        // Test getting an out-of-bounds vector
+        assert!(storage.get(100).is_err());
+    }
 }
