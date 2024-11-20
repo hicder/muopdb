@@ -91,7 +91,7 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
         self.current_offset += size_required;
     }
 
-    fn new_backing_file(&mut self) {
+    fn new_backing_file(&mut self) -> Result<()> {
         self.current_backing_id += 1;
         let backing_file = OpenOptions::new()
             .read(true)
@@ -100,34 +100,35 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
             .open(format!(
                 "{}/vector.bin.{}",
                 self.base_directory, self.current_backing_id
-            ))
-            .unwrap();
+            ))?;
 
-        backing_file.set_len(self.backing_file_size as u64).unwrap();
+        backing_file.set_len(self.backing_file_size as u64)?;
 
         self.mmaps
-            .push(unsafe { memmap2::MmapMut::map_mut(&backing_file).unwrap() });
+            .push(unsafe { memmap2::MmapMut::map_mut(&backing_file)? });
         self.current_offset = 0;
+        Ok(())
     }
 
-    fn flush_resident_to_disk(&mut self) {
+    fn flush_resident_to_disk(&mut self) -> Result<()> {
         let len = self.resident_vectors.len();
         for i in 0..len {
             if self.current_offset == self.backing_file_size {
-                self.new_backing_file();
+                self.new_backing_file()?;
             }
             self.append_resident_to_current_mmap(i);
         }
         self.resident_vectors.clear();
+        Ok(())
     }
 
-    fn append_vector_to_disk(&mut self, vector: &[T]) {
+    fn append_vector_to_disk(&mut self, vector: &[T]) -> Result<()> {
         if self.current_offset == self.backing_file_size {
-            self.new_backing_file();
+            self.new_backing_file()?;
         }
-        assert!(
-            self.current_offset + vector.len() * std::mem::size_of::<T>() <= self.backing_file_size
-        );
+        if self.current_offset + vector.len() * std::mem::size_of::<T>() > self.backing_file_size {
+            return Err(anyhow!("vector too big to be flushed to backing file"));
+        }
         let size_required = vector.len() * std::mem::size_of::<T>();
         let mut buffer: Vec<u8> = vec![];
         for i in 0..vector.len() {
@@ -138,6 +139,7 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
         // Copy buffer to current offset in mmap
         mmap[self.current_offset..self.current_offset + size_required].copy_from_slice(&buffer);
         self.current_offset += size_required;
+        Ok(())
     }
 }
 
@@ -190,10 +192,10 @@ impl<T: ToBytes + Clone + std::fmt::Debug> VectorStorage<T>
         // Spill to disk or create a new file
         if current_resident != self.resident {
             self.current_offset = self.backing_file_size;
-            self.flush_resident_to_disk();
+            self.flush_resident_to_disk()?;
         }
 
-        self.append_vector_to_disk(vector);
+        self.append_vector_to_disk(vector)?;
         self.size_bytes = new_size_required;
         Ok(())
     }
