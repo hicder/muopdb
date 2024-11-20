@@ -106,9 +106,8 @@ impl IvfBuilder {
         let mut flattened_dataset: Vec<f32> = Vec::new();
         let num_vectors = self.vectors.len();
         for i in 0..num_vectors {
-            if let Some(vector) = self.vectors.get(i as u32) {
-                flattened_dataset.extend_from_slice(vector);
-            }
+            let vector = self.vectors.get(i as u32)?;
+            flattened_dataset.extend_from_slice(vector);
         }
 
         let kmeans: KMeans<_, 8> =

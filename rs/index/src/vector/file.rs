@@ -146,28 +146,28 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
 impl<T: ToBytes + Clone + std::fmt::Debug> VectorStorage<T>
     for FileBackedAppendableVectorStorage<T>
 {
-    fn get(&self, id: u32) -> Option<&[T]> {
+    fn get(&self, id: u32) -> Result<&[T]> {
         if self.resident {
             if id as usize >= self.resident_vectors.len() {
-                return None;
+                return Err(anyhow!("vector id out of bound"));
             }
-            return Some(&self.resident_vectors[id as usize]);
+            return Ok(&self.resident_vectors[id as usize]);
         }
 
         let overall_offset = id as usize * self.num_features * std::mem::size_of::<T>();
         let file_num = overall_offset / self.backing_file_size;
         if file_num >= self.mmaps.len() {
-            return None;
+            return Err(anyhow!("file number out of bound"));
         }
 
         let file_offset = overall_offset % self.backing_file_size;
         if file_offset >= self.mmaps[file_num].len() {
-            return None;
+            return Err(anyhow!("mmap offset out of bound"));
         }
 
         let mmap = &self.mmaps[file_num];
         let slice = &mmap[file_offset..file_offset + self.num_features * std::mem::size_of::<T>()];
-        Some(unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const T, self.num_features) })
+        Ok(unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const T, self.num_features) })
     }
 
     fn append(&mut self, vector: &[T]) -> Result<()> {
