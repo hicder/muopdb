@@ -3,6 +3,7 @@ use std::io::Write;
 use std::vec;
 
 use anyhow::{anyhow, Result};
+use utils::mem::{transmute_u8_to_slice, transmute_u8_to_val};
 
 use super::{PostingListStorage, PostingListStorageConfig};
 
@@ -252,10 +253,10 @@ impl PostingListStorage for FileBackedAppendablePostingListStorage {
         let file_access_id = self.offset_to_file_num_and_file_offset(offset_to_pl_metadata)?;
         let mmap = &self.mmaps[file_access_id.file_num];
         let slice = &mmap[file_access_id.file_offset..file_access_id.file_offset + usize_in_bytes];
-        let pl_len = unsafe { *(slice.as_ptr() as *const usize) };
+        let pl_len = transmute_u8_to_val(slice);
         let slice = &mmap[file_access_id.file_offset + usize_in_bytes
             ..file_access_id.file_offset + 2 * usize_in_bytes];
-        let pl_offset = unsafe { *(slice.as_ptr() as *const usize) };
+        let pl_offset = transmute_u8_to_val(slice);
 
         let file_access_id = self.offset_to_file_num_and_file_offset(pl_offset)?;
         let required_size = pl_len * usize_in_bytes;
@@ -265,9 +266,7 @@ impl PostingListStorage for FileBackedAppendablePostingListStorage {
             let mmap = &self.mmaps[file_access_id.file_num];
             let slice =
                 &mmap[file_access_id.file_offset..file_access_id.file_offset + required_size];
-            return Ok(unsafe {
-                std::slice::from_raw_parts(slice.as_ptr() as *const usize, pl_len).to_vec()
-            });
+            return Ok(transmute_u8_to_slice(slice).to_vec());
         }
 
         // Posting list spans across multiple mmaps.
@@ -281,9 +280,7 @@ impl PostingListStorage for FileBackedAppendablePostingListStorage {
             let elems_in_mmap = std::cmp::min(remaining_elem, bytes_left_in_mmap / usize_in_bytes);
 
             let slice = &mmap[current_offset..current_offset + elems_in_mmap * usize_in_bytes];
-            posting_list.extend_from_slice(unsafe {
-                std::slice::from_raw_parts(slice.as_ptr() as *const usize, elems_in_mmap)
-            });
+            posting_list.extend_from_slice(transmute_u8_to_slice(slice));
 
             remaining_elem -= elems_in_mmap;
 
