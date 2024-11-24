@@ -39,14 +39,14 @@ impl<'a> PostingList<'a> {
 }
 
 impl<'a> Iterator for PostingList<'a> {
-    type Item = usize;
+    type Item = u64;
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.current_slice < self.slices.len() {
             let slice = self.slices[self.current_slice];
-            if self.current_index < slice.len() / size_of::<usize>() {
+            if self.current_index < slice.len() / size_of::<u64>() {
                 let value = unsafe {
-                    *(slice.as_ptr().add(self.current_index * size_of::<usize>()) as *const usize)
+                    *(slice.as_ptr().add(self.current_index * size_of::<u64>()) as *const u64)
                 };
                 self.current_index += 1;
                 return Some(value);
@@ -63,7 +63,7 @@ impl<'a> Iterator for PostingList<'a> {
 pub trait PostingListStorage<'a> {
     fn get(&'a self, id: u32) -> Result<PostingList<'a>>;
 
-    fn append(&mut self, vector: &[usize]) -> Result<()>;
+    fn append(&mut self, vector: &[u64]) -> Result<()>;
 
     // Number of posting lists in the storage
     fn len(&self) -> usize;
