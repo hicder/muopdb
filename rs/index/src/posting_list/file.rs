@@ -3,9 +3,9 @@ use std::io::Write;
 use std::vec;
 
 use anyhow::{anyhow, Result};
-use utils::mem::{transmute_u8_to_slice, transmute_u8_to_val};
+use utils::mem::{transmute_slice_to_u8, transmute_u8_to_val};
 
-use super::{PostingListStorage, PostingListStorageConfig};
+use super::{PostingList, PostingListStorage, PostingListStorageConfig};
 
 #[derive(Debug)]
 struct FileAccessId {
@@ -233,8 +233,8 @@ impl FileBackedAppendablePostingListStorage {
     }
 }
 
-impl PostingListStorage for FileBackedAppendablePostingListStorage {
-    fn get(&self, id: u32) -> Result<Vec<usize>> {
+impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
+    fn get(&'a self, id: u32) -> Result<PostingList<'a>> {
         let i = id as usize;
         let usize_in_bytes = std::mem::size_of::<usize>();
 
@@ -242,7 +242,9 @@ impl PostingListStorage for FileBackedAppendablePostingListStorage {
             if i >= self.resident_posting_lists.len() {
                 return Err(anyhow!("Posting list id out of bound"));
             }
-            return Ok(self.resident_posting_lists[i].clone());
+            return Ok(PostingList::new_with_slices(vec![transmute_slice_to_u8(
+                &self.resident_posting_lists[i],
+            )]));
         }
 
         if i >= self.current_num_of_posting_list {
@@ -266,11 +268,11 @@ impl PostingListStorage for FileBackedAppendablePostingListStorage {
             let mmap = &self.mmaps[file_access_id.file_num];
             let slice =
                 &mmap[file_access_id.file_offset..file_access_id.file_offset + required_size];
-            return Ok(transmute_u8_to_slice(slice).to_vec());
+            return Ok(PostingList::new_with_slices(vec![slice]));
         }
 
         // Posting list spans across multiple mmaps.
-        let mut posting_list = Vec::with_capacity(pl_len);
+        let mut posting_list = PostingList::new();
         let mut remaining_elem = pl_len;
         let mut current_file_num = file_access_id.file_num;
         let mut current_offset = file_access_id.file_offset;
@@ -280,7 +282,7 @@ impl PostingListStorage for FileBackedAppendablePostingListStorage {
             let elems_in_mmap = std::cmp::min(remaining_elem, bytes_left_in_mmap / usize_in_bytes);
 
             let slice = &mmap[current_offset..current_offset + elems_in_mmap * usize_in_bytes];
-            posting_list.extend_from_slice(transmute_u8_to_slice(slice));
+            posting_list.add_slice(slice);
 
             remaining_elem -= elems_in_mmap;
 
@@ -340,8 +342,7 @@ impl PostingListStorage for FileBackedAppendablePostingListStorage {
     }
 
     fn write(&mut self, writer: &mut std::io::BufWriter<&mut std::fs::File>) -> Result<usize> {
-        writer.write_all(&self.len().to_le_bytes())?;
-        let mut total_bytes_written = std::mem::size_of::<usize>();
+        let mut total_bytes_written = writer.write(&self.len().to_le_bytes())?;
 
         // If the data is still resident in memory, flush it to disk first
         if self.resident {
@@ -416,13 +417,15 @@ mod tests {
         assert_eq!(
             storage
                 .get(0)
-                .expect("Read back posting list should succeed"),
+                .expect("Read back posting list should succeed")
+                .collect::<Vec<_>>(),
             pl1
         );
         assert_eq!(
             storage
                 .get(1)
-                .expect("Read back posting list should succeed"),
+                .expect("Read back posting list should succeed")
+                .collect::<Vec<_>>(),
             pl2
         );
     }
@@ -451,19 +454,22 @@ mod tests {
         assert_eq!(
             storage
                 .get(0)
-                .expect("Read back posting list should succeed"),
+                .expect("Read back posting list should succeed")
+                .collect::<Vec<_>>(),
             pl1
         );
         assert_eq!(
             storage
                 .get(1)
-                .expect("Read back posting list should succeed"),
+                .expect("Read back posting list should succeed")
+                .collect::<Vec<_>>(),
             pl2
         );
         assert_eq!(
             storage
                 .get(2)
-                .expect("Read back posting list should succeed"),
+                .expect("Read back posting list should succeed")
+                .collect::<Vec<_>>(),
             pl3
         );
 
@@ -531,7 +537,10 @@ mod tests {
 
         // Verify the content of the posting list
         assert!(!storage.resident);
-        let retrieved_pl = storage.get(0).unwrap();
+        let retrieved_pl = storage
+            .get(0)
+            .expect("Read back posting list should succeed")
+            .collect::<Vec<_>>();
         assert_eq!(retrieved_pl, large_pl);
 
         // Verify that the posting list data spans multiple mmaps
@@ -581,8 +590,20 @@ mod tests {
         storage.flush_resident_posting_lists_to_disk().unwrap();
         assert!(!storage.resident);
 
-        assert_eq!(storage.get(0).unwrap(), &[1, 2, 3]);
-        assert_eq!(storage.get(1).unwrap(), &[4, 5, 6]);
+        assert_eq!(
+            storage
+                .get(0)
+                .expect("Read back posting list should succeed")
+                .collect::<Vec<_>>(),
+            &[1, 2, 3]
+        );
+        assert_eq!(
+            storage
+                .get(1)
+                .expect("Read back posting list should succeed")
+                .collect::<Vec<_>>(),
+            &[4, 5, 6]
+        );
     }
 
     #[test]
@@ -596,7 +617,13 @@ mod tests {
         storage.resident = false;
         storage.append_posting_list_to_disk(&[1, 2, 3]).unwrap();
 
-        assert_eq!(storage.get(0).unwrap(), &[1, 2, 3]);
+        assert_eq!(
+            storage
+                .get(0)
+                .expect("Read back posting list should succeed")
+                .collect::<Vec<_>>(),
+            &[1, 2, 3]
+        );
     }
 
     #[test]

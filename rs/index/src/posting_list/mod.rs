@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::BufWriter;
+use std::mem::size_of;
 
 use anyhow::Result;
 
@@ -13,10 +14,54 @@ pub struct PostingListStorageConfig {
     pub num_clusters: usize,
 }
 
+pub struct PostingList<'a> {
+    slices: Vec<&'a [u8]>,
+    current_slice: usize,
+    current_index: usize,
+}
+
+impl<'a> PostingList<'a> {
+    pub fn new_with_slices(slices: Vec<&'a [u8]>) -> Self {
+        PostingList {
+            slices,
+            current_slice: 0,
+            current_index: 0,
+        }
+    }
+
+    pub fn new() -> Self {
+        PostingList::new_with_slices(Vec::new())
+    }
+
+    pub fn add_slice(&mut self, slice: &'a [u8]) {
+        self.slices.push(slice);
+    }
+}
+
+impl<'a> Iterator for PostingList<'a> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.current_slice < self.slices.len() {
+            let slice = self.slices[self.current_slice];
+            if self.current_index < slice.len() / size_of::<usize>() {
+                let value = unsafe {
+                    *(slice.as_ptr().add(self.current_index * size_of::<usize>()) as *const usize)
+                };
+                self.current_index += 1;
+                return Some(value);
+            }
+            self.current_slice += 1;
+            self.current_index = 0;
+        }
+        None
+    }
+}
+
 /// Trait that defines the interface for posting list storage
 /// This storage owns the actual vectors, and will return a reference to it
-pub trait PostingListStorage {
-    fn get(&self, id: u32) -> Result<Vec<usize>>;
+pub trait PostingListStorage<'a> {
+    fn get(&'a self, id: u32) -> Result<PostingList<'a>>;
 
     fn append(&mut self, vector: &[usize]) -> Result<()>;
 
