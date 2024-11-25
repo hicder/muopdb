@@ -16,29 +16,37 @@ pub struct PostingListStorageConfig {
 
 pub struct PostingList<'a> {
     slices: Vec<&'a [u8]>,
+}
+
+struct PostingListIterator<'a> {
+    slices: &'a Vec<&'a [u8]>,
     current_slice: usize,
     current_index: usize,
 }
 
 impl<'a> PostingList<'a> {
     pub fn new_with_slices(slices: Vec<&'a [u8]>) -> Self {
-        PostingList {
-            slices,
-            current_slice: 0,
-            current_index: 0,
-        }
+        PostingList { slices }
     }
 
     pub fn new() -> Self {
         PostingList::new_with_slices(Vec::new())
     }
 
-    pub fn add_slice(&mut self, slice: &'a [u8]) {
+    fn add_slice(&mut self, slice: &'a [u8]) {
         self.slices.push(slice);
+    }
+
+    pub fn iter(&'a self) -> PostingListIterator<'a> {
+        PostingListIterator {
+            slices: &self.slices,
+            current_slice: 0,
+            current_index: 0,
+        }
     }
 }
 
-impl<'a> Iterator for PostingList<'a> {
+impl<'a> Iterator for PostingListIterator<'a> {
     type Item = u64;
 
     fn next(&mut self) -> Option<Self::Item> {

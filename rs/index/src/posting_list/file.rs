@@ -1,5 +1,5 @@
-use std::fs::OpenOptions;
-use std::io::Write;
+use std::fs::{File, OpenOptions};
+use std::io::{BufWriter, Write};
 use std::vec;
 
 use anyhow::{anyhow, Result};
@@ -7,8 +7,10 @@ use utils::mem::{transmute_slice_to_u8, transmute_u8_to_val};
 
 use super::{PostingList, PostingListStorage, PostingListStorageConfig};
 
+const PL_METADATA_LEN: usize = 2;
+
 #[derive(Debug)]
-struct FileAccessId {
+struct FileAccessInfo {
     file_num: usize,
     file_offset: usize,
 }
@@ -44,9 +46,9 @@ impl FileBackedAppendablePostingListStorage {
         backing_file_size: usize,
         num_clusters: usize,
     ) -> Self {
-        let pl_metadata_in_bytes = 2 * std::mem::size_of::<u64>();
+        let pl_metadata_in_bytes = PL_METADATA_LEN * std::mem::size_of::<u64>();
         let offset_to_current_posting_list = (num_clusters * pl_metadata_in_bytes) as u64;
-        // Rounding to 2 * `u64` size in bytes to at least simplify the reading of
+        // Rounding to PL_METADATA_LEN * `u64` size in bytes to at least simplify the reading of
         // posting list offsets and lengths.
         //
         // That's the best we can do since we do not know sizes of posting lists
@@ -121,8 +123,8 @@ impl FileBackedAppendablePostingListStorage {
         Ok(())
     }
 
-    fn offset_to_first_posting_list(&self) -> usize {
-        let pl_metadata_in_bytes = 2 * std::mem::size_of::<u64>();
+    fn get_posting_list_offset(&self) -> usize {
+        let pl_metadata_in_bytes = PL_METADATA_LEN * std::mem::size_of::<u64>();
         self.num_clusters * pl_metadata_in_bytes
     }
 
@@ -138,38 +140,28 @@ impl FileBackedAppendablePostingListStorage {
         // Extract all the data we need from self to avoid immutable borrow issue
         let posting_lists: Vec<Vec<u64>> = std::mem::take(&mut self.resident_posting_lists);
         // First write the metadata
-        let mut buffer: Vec<u8> = vec![];
         for posting_list in &posting_lists {
             if self.current_offset == self.backing_file_size {
                 self.new_backing_file()?;
             }
-            buffer.extend_from_slice(posting_list.len().to_le_bytes().as_ref());
-            buffer.extend_from_slice(self.offset_to_current_posting_list.to_le_bytes().as_ref());
-            self.write_to_current_mmap(&buffer)?;
+            // Write the length of the posting list
+            self.write_to_current_mmap(&posting_list.len().to_le_bytes())?;
+
+            // Write the offset to the current posting list
+            self.write_to_current_mmap(&self.offset_to_current_posting_list.to_le_bytes())?;
             self.offset_to_current_posting_list += (posting_list.len() * size_in_bytes) as u64;
-            buffer.clear();
         }
         // Now write the posting lists
-        self.current_offset = self.offset_to_first_posting_list();
+        self.current_offset = self.get_posting_list_offset();
         for posting_list in &posting_lists {
             for idx in posting_list {
                 if self.current_offset == self.backing_file_size {
                     self.new_backing_file()?;
                 }
-                buffer.extend_from_slice(idx.to_le_bytes().as_ref());
-                // Write as much as possible to the current backing file
-                let available_space = self.backing_file_size - self.current_offset;
-                if buffer.len() == available_space {
-                    self.write_to_current_mmap(&buffer)?;
-                    buffer.clear();
-                }
+                self.write_to_current_mmap(&idx.to_le_bytes())?;
             }
         }
-        // Write any remaining data in the buffer after processing all posting lists
-        if !buffer.is_empty() {
-            self.write_to_current_mmap(&buffer)?;
-            buffer.clear();
-        }
+
         self.resident = false;
         self.resident_posting_lists.clear();
         Ok(())
@@ -180,42 +172,32 @@ impl FileBackedAppendablePostingListStorage {
         if self.resident {
             return Err(anyhow!("Posting lists should already be flushed to disk"));
         }
-        let size_in_bytes = std::mem::size_of::<u64>();
         // First write the metadata
         if self.current_offset == self.backing_file_size {
             self.new_backing_file()?;
         }
-        let mut buffer: Vec<u8> = vec![];
-        buffer.extend_from_slice(posting_list.len().to_le_bytes().as_ref());
-        buffer.extend_from_slice(self.offset_to_current_posting_list.to_le_bytes().as_ref());
-        self.write_to_current_mmap(&buffer)?;
-        buffer.clear();
+        // Write the length of the posting list
+        self.write_to_current_mmap(&posting_list.len().to_le_bytes())?;
+
+        // Write the offset to the current posting list
+        self.write_to_current_mmap(&self.offset_to_current_posting_list.to_le_bytes())?;
 
         // Now write the posting list
         self.current_offset = self.offset_to_current_posting_list as usize;
+        let size_in_bytes = std::mem::size_of::<u64>();
         self.offset_to_current_posting_list += (posting_list.len() * size_in_bytes) as u64;
+
         for idx in posting_list.iter() {
             if self.current_offset == self.backing_file_size {
                 self.new_backing_file()?;
             }
-            buffer.extend_from_slice(idx.to_le_bytes().as_ref());
-            // Write as much as possible to the current backing file
-            let available_space = self.backing_file_size - self.current_offset;
-            if buffer.len() == available_space {
-                self.write_to_current_mmap(&buffer)?;
-                buffer.clear();
-            }
-        }
-        // Write any remaining data in the buffer after processing all posting lists
-        if !buffer.is_empty() {
-            self.write_to_current_mmap(&buffer)?;
-            buffer.clear();
+            self.write_to_current_mmap(&idx.to_le_bytes())?;
         }
         self.current_num_of_posting_list += 1;
         Ok(())
     }
 
-    fn offset_to_file_num_and_file_offset(&self, offset: usize) -> Result<FileAccessId> {
+    fn offset_to_file_access_info(&self, offset: usize) -> Result<FileAccessInfo> {
         let file_num = offset / self.backing_file_size;
         if file_num >= self.mmaps.len() {
             return Err(anyhow!("File number out of bound"));
@@ -226,7 +208,7 @@ impl FileBackedAppendablePostingListStorage {
             return Err(anyhow!("File offset out of bound"));
         }
 
-        Ok(FileAccessId {
+        Ok(FileAccessInfo {
             file_num,
             file_offset,
         })
@@ -236,7 +218,6 @@ impl FileBackedAppendablePostingListStorage {
 impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
     fn get(&'a self, id: u32) -> Result<PostingList<'a>> {
         let i = id as usize;
-        let size_in_bytes = std::mem::size_of::<u64>();
 
         if self.resident {
             if i >= self.resident_posting_lists.len() {
@@ -250,23 +231,25 @@ impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
         if i >= self.current_num_of_posting_list {
             return Err(anyhow!("Posting list id out of bound"));
         }
-        let offset_to_pl_metadata = i * 2 * size_in_bytes;
+        let size_in_bytes = std::mem::size_of::<u64>();
+        let offset_to_pl_metadata = i * PL_METADATA_LEN * size_in_bytes;
 
-        let file_access_id = self.offset_to_file_num_and_file_offset(offset_to_pl_metadata)?;
-        let file_offset = file_access_id.file_offset as usize;
-        let file_num = file_access_id.file_num as usize;
+        let file_access_info = self.offset_to_file_access_info(offset_to_pl_metadata)?;
+        let file_offset = file_access_info.file_offset as usize;
+        let file_num = file_access_info.file_num as usize;
         let mmap = &self.mmaps[file_num];
         let slice = &mmap[file_offset..file_offset + size_in_bytes];
-        let pl_len = transmute_u8_to_val(slice);
-        let slice = &mmap[file_offset + size_in_bytes..file_offset + 2 * size_in_bytes];
-        let pl_offset = transmute_u8_to_val::<usize>(slice);
+        let pl_len = u64::from_le_bytes(slice.try_into()?) as usize;
+        let slice =
+            &mmap[file_offset + size_in_bytes..file_offset + PL_METADATA_LEN * size_in_bytes];
+        let pl_offset = u64::from_le_bytes(slice.try_into()?) as usize;
 
-        let file_access_id = self.offset_to_file_num_and_file_offset(pl_offset)?;
+        let file_access_info = self.offset_to_file_access_info(pl_offset)?;
         let required_size = pl_len * size_in_bytes;
 
         // Posting list fits within a single mmap
-        let file_offset = file_access_id.file_offset as usize;
-        let file_num = file_access_id.file_num as usize;
+        let file_offset = file_access_info.file_offset as usize;
+        let file_num = file_access_info.file_num as usize;
         if file_offset + required_size <= mmap.len() {
             let mmap = &self.mmaps[file_num as usize];
             let slice = &mmap[file_offset..file_offset + required_size];
@@ -319,7 +302,7 @@ impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
         }
 
         // Spill to disk, creating new files if necessary
-        let pl_metadata_in_bytes = 2 * std::mem::size_of::<u64>();
+        let pl_metadata_in_bytes = PL_METADATA_LEN * std::mem::size_of::<u64>();
         if flush {
             self.flush_resident_posting_lists_to_disk()?;
             // At this point we are not in memory anymore, we'll need to
@@ -343,7 +326,7 @@ impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
         Ok(())
     }
 
-    fn write(&mut self, writer: &mut std::io::BufWriter<&mut std::fs::File>) -> Result<usize> {
+    fn write(&mut self, writer: &mut BufWriter<&mut File>) -> Result<usize> {
         let mut total_bytes_written = writer.write(&self.len().to_le_bytes())?;
 
         // If the data is still resident in memory, flush it to disk first
@@ -420,6 +403,7 @@ mod tests {
             storage
                 .get(0)
                 .expect("Read back posting list should succeed")
+                .iter()
                 .collect::<Vec<_>>(),
             pl1
         );
@@ -427,6 +411,7 @@ mod tests {
             storage
                 .get(1)
                 .expect("Read back posting list should succeed")
+                .iter()
                 .collect::<Vec<_>>(),
             pl2
         );
@@ -457,6 +442,7 @@ mod tests {
             storage
                 .get(0)
                 .expect("Read back posting list should succeed")
+                .iter()
                 .collect::<Vec<_>>(),
             pl1
         );
@@ -464,6 +450,7 @@ mod tests {
             storage
                 .get(1)
                 .expect("Read back posting list should succeed")
+                .iter()
                 .collect::<Vec<_>>(),
             pl2
         );
@@ -471,6 +458,7 @@ mod tests {
             storage
                 .get(2)
                 .expect("Read back posting list should succeed")
+                .iter()
                 .collect::<Vec<_>>(),
             pl3
         );
@@ -478,7 +466,7 @@ mod tests {
         // Verify posting list metadata
         assert!(storage.mmaps.len() == 1);
         let size_in_bytes = std::mem::size_of::<u64>();
-        let metadata_size = 2 * size_in_bytes; // length and offset
+        let metadata_size = PL_METADATA_LEN * size_in_bytes; // length and offset
         let mmap = &storage.mmaps[0];
 
         // Read length
@@ -490,7 +478,7 @@ mod tests {
         let offset_bytes: [u8; 8] = mmap[size_in_bytes..metadata_size].try_into().unwrap();
         let offset = u64::from_le_bytes(offset_bytes);
         // Verify that the offset points to the correct location
-        let expected_offset = storage.offset_to_first_posting_list();
+        let expected_offset = storage.get_posting_list_offset();
         assert_eq!(offset, expected_offset as u64);
     }
 
@@ -542,14 +530,14 @@ mod tests {
         let retrieved_pl = storage
             .get(0)
             .expect("Read back posting list should succeed")
+            .iter()
             .collect::<Vec<_>>();
         assert_eq!(retrieved_pl, large_pl);
 
         // Verify that the posting list data spans multiple mmaps
         let size_in_bytes = std::mem::size_of::<u64>();
         let data_size = large_pl.len() * size_in_bytes;
-        let first_mmap_data_size =
-            storage.backing_file_size - storage.offset_to_first_posting_list();
+        let first_mmap_data_size = storage.backing_file_size - storage.get_posting_list_offset();
         assert!(data_size > first_mmap_data_size);
 
         // Calculate how many mmaps should be used
@@ -560,8 +548,8 @@ mod tests {
     }
 
     #[test]
-    fn test_offset_to_file_num_and_file_offset() {
-        let tempdir = tempdir::TempDir::new("offset_to_file_num_and_file_offset_test").unwrap();
+    fn test_offset_to_file_access_info() {
+        let tempdir = tempdir::TempDir::new("offset_to_file_access_info_test").unwrap();
         let base_directory = tempdir.path().to_str().unwrap().to_string();
         let mut storage =
             FileBackedAppendablePostingListStorage::new(base_directory, 1024, 4096, 2);
@@ -572,11 +560,11 @@ mod tests {
             .mmaps
             .push(memmap2::MmapMut::map_anon(4096).unwrap());
 
-        let result = storage.offset_to_file_num_and_file_offset(4500).unwrap();
+        let result = storage.offset_to_file_access_info(4500).unwrap();
         assert_eq!(result.file_num, 1);
         assert_eq!(result.file_offset, 404);
 
-        assert!(storage.offset_to_file_num_and_file_offset(10000).is_err());
+        assert!(storage.offset_to_file_access_info(10000).is_err());
     }
 
     #[test]
@@ -596,6 +584,7 @@ mod tests {
             storage
                 .get(0)
                 .expect("Read back posting list should succeed")
+                .iter()
                 .collect::<Vec<_>>(),
             &[1, 2, 3]
         );
@@ -603,6 +592,7 @@ mod tests {
             storage
                 .get(1)
                 .expect("Read back posting list should succeed")
+                .iter()
                 .collect::<Vec<_>>(),
             &[4, 5, 6]
         );
@@ -623,6 +613,7 @@ mod tests {
             storage
                 .get(0)
                 .expect("Read back posting list should succeed")
+                .iter()
                 .collect::<Vec<_>>(),
             &[1, 2, 3]
         );
@@ -669,7 +660,7 @@ mod tests {
         assert_eq!(num_clusters, storage.num_clusters as u64);
 
         // Read metadata for each posting list
-        for i in 0..2 {
+        for i in 0..PL_METADATA_LEN {
             let mut length_bytes = [0u8; std::mem::size_of::<u64>()];
             let mut offset_bytes = [0u8; std::mem::size_of::<u64>()];
             reader.read_exact(&mut length_bytes).unwrap();
