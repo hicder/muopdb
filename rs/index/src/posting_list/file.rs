@@ -153,7 +153,16 @@ impl FileBackedAppendablePostingListStorage {
             self.offset_to_current_posting_list += (posting_list.len() * size_in_bytes) as u64;
         }
         // Now write the posting lists
-        self.current_offset = self.get_posting_list_offset();
+        let metadata_tot_size = self.get_posting_list_offset();
+        let file_num_for_first_posting_list = metadata_tot_size / self.backing_file_size;
+        // file_num_for_first_posting_list is an index, while self.mmaps.len() is the length
+        while self.mmaps.len() - 1 < file_num_for_first_posting_list {
+            self.new_backing_file()?;
+        }
+        let file_access_info = self.offset_to_file_access_info(self.get_posting_list_offset())?;
+        self.current_offset = file_access_info.file_offset;
+        self.current_backing_id = file_access_info.file_num as i32;
+
         for posting_list in &posting_lists {
             for idx in posting_list {
                 if self.current_offset == self.backing_file_size {
@@ -184,8 +193,18 @@ impl FileBackedAppendablePostingListStorage {
         self.write_to_current_mmap(&self.offset_to_current_posting_list.to_le_bytes())?;
 
         // Now write the posting list
-        self.current_offset = self.offset_to_current_posting_list as usize;
         let size_in_bytes = std::mem::size_of::<u64>();
+        let metadata_tot_size = self.get_posting_list_offset();
+        let file_num_for_first_posting_list = metadata_tot_size / self.backing_file_size;
+        // file_num_for_first_posting_list is an index, while self.mmaps.len() is the length
+        while self.mmaps.len() - 1 < file_num_for_first_posting_list {
+            self.new_backing_file()?;
+        }
+        let file_access_info =
+            self.offset_to_file_access_info(self.offset_to_current_posting_list as usize)?;
+        self.current_offset = file_access_info.file_offset;
+        self.current_backing_id = file_access_info.file_num as i32;
+
         self.offset_to_current_posting_list += (posting_list.len() * size_in_bytes) as u64;
 
         for idx in posting_list.iter() {
@@ -321,7 +340,10 @@ impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
             self.resident = false;
         } else {
             // Adjust the offset to write metadata first
-            self.current_offset = self.current_num_of_posting_list * pl_metadata_in_bytes;
+            let metadata_offset = self.current_num_of_posting_list * pl_metadata_in_bytes;
+            let file_access_info = self.offset_to_file_access_info(metadata_offset)?;
+            self.current_offset = file_access_info.file_offset;
+            self.current_backing_id = file_access_info.file_num as i32;
         }
         self.append_posting_list_to_disk(posting_list)?;
         Ok(())
@@ -618,6 +640,70 @@ mod tests {
                 .collect::<Vec<_>>(),
             &[1, 2, 3]
         );
+    }
+
+    #[test]
+    fn test_append_and_get_large_posting_lists() {
+        let tempdir = tempdir::TempDir::new("append_and_get_large_posting_lists_test").unwrap();
+        let base_directory = tempdir.path().to_str().unwrap().to_string();
+
+        let memory_threshold = 1024 * 1024; // 1 MB
+        let backing_file_size = 512 * 1024; // 512 KB
+        let num_clusters = 5;
+
+        let mut storage = FileBackedAppendablePostingListStorage::new(
+            base_directory,
+            memory_threshold,
+            backing_file_size,
+            num_clusters,
+        );
+
+        // Create large posting lists that will span across multiple mmaps
+        let large_posting_list_1: Vec<u64> = (0..100_000).collect();
+        let large_posting_list_2: Vec<u64> = (100_000..200_000).collect();
+        let large_posting_list_3: Vec<u64> = (200_000..300_000).collect();
+
+        // Append large posting lists
+        storage.append(&large_posting_list_1).unwrap();
+        storage.append(&large_posting_list_2).unwrap();
+        storage.append(&large_posting_list_3).unwrap();
+
+        // Verify that the posting lists were appended correctly
+        assert_eq!(storage.current_num_of_posting_list, 3);
+        assert!(!storage.resident);
+
+        // Retrieve and verify the posting lists
+        let retrieved_list_1 = storage
+            .get(0)
+            .expect("Read back posting list should succeed")
+            .iter()
+            .collect::<Vec<_>>();
+        let retrieved_list_2 = storage
+            .get(1)
+            .expect("Read back posting list should succeed")
+            .iter()
+            .collect::<Vec<_>>();
+        let retrieved_list_3 = storage
+            .get(2)
+            .expect("Read back posting list should succeed")
+            .iter()
+            .collect::<Vec<_>>();
+
+        assert_eq!(retrieved_list_1.len(), large_posting_list_1.len());
+        assert_eq!(retrieved_list_2.len(), large_posting_list_2.len());
+        assert_eq!(retrieved_list_3.len(), large_posting_list_3.len());
+
+        for i in 0..large_posting_list_1.len() {
+            assert_eq!(retrieved_list_1[i], large_posting_list_1[i]);
+        }
+
+        for i in 0..large_posting_list_2.len() {
+            assert_eq!(retrieved_list_2[i], large_posting_list_2[i]);
+        }
+
+        for i in 0..large_posting_list_3.len() {
+            assert_eq!(retrieved_list_3[i], large_posting_list_3[i]);
+        }
     }
 
     #[test]
