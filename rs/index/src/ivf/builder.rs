@@ -34,7 +34,7 @@ impl IvfBuilder {
     /// Create a new IvfBuilder
     pub fn new(config: IvfBuilderConfig) -> Self {
         let vectors_path = format!("{}/dataset", config.base_directory);
-        create_dir(vectors_path.clone());
+        let _ = create_dir(vectors_path.clone());
         let vectors = Box::new(FileBackedAppendableVectorStorage::<f32>::new(
             vectors_path,
             config.vector_storage_memory_size,
@@ -42,7 +42,7 @@ impl IvfBuilder {
             config.num_features,
         ));
         let centroids_path = format!("{}/centroids", config.base_directory);
-        create_dir(centroids_path.clone());
+        let _ = create_dir(centroids_path.clone());
         let centroids = Box::new(FileBackedAppendableVectorStorage::<f32>::new(
             centroids_path,
             config.vector_storage_memory_size,
