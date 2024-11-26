@@ -18,7 +18,7 @@ pub struct PostingList<'a> {
     slices: Vec<&'a [u8]>,
 }
 
-struct PostingListIterator<'a> {
+pub struct PostingListIterator<'a> {
     slices: &'a Vec<&'a [u8]>,
     current_slice: usize,
     current_index: usize,

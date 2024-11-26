@@ -3,6 +3,7 @@ use std::io::{BufWriter, Write};
 use std::vec;
 
 use anyhow::{anyhow, Result};
+use utils::io::wrap_write;
 use utils::mem::{transmute_slice_to_u8, transmute_u8_to_val};
 
 use super::{PostingList, PostingListStorage, PostingListStorageConfig};
@@ -327,7 +328,7 @@ impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
     }
 
     fn write(&mut self, writer: &mut BufWriter<&mut File>) -> Result<usize> {
-        let mut total_bytes_written = writer.write(&self.len().to_le_bytes())?;
+        let mut total_bytes_written = wrap_write(writer, &self.len().to_le_bytes())?;
 
         // If the data is still resident in memory, flush it to disk first
         if self.resident {
@@ -341,7 +342,7 @@ impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
                 mmap.len()
             };
 
-            let bytes_written = writer.write(&mmap[..bytes_to_write])?;
+            let bytes_written = wrap_write(writer, &mmap[..bytes_to_write])?;
             total_bytes_written += bytes_written;
 
             if bytes_written != bytes_to_write {
