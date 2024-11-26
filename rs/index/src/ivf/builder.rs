@@ -1,15 +1,16 @@
-use std::collections::HashMap;
-use std::fs::{create_dir, File};
-use std::io::BufWriter;
+use std::collections::HashSet;
+use std::fs::create_dir;
 
 use anyhow::Result;
 use kmeans::*;
 use log::debug;
+use rand::Rng;
+use utils::distance::l2::L2DistanceCalculator;
+use utils::DistanceCalculator;
 
-use crate::ivf::index::Ivf;
-use crate::utils::SearchContext;
+use crate::posting_list::file::FileBackedAppendablePostingListStorage;
+use crate::posting_list::PostingListStorage;
 use crate::vector::file::FileBackedAppendableVectorStorage;
-use crate::vector::fixed_file::FixedFileVectorStorage;
 use crate::vector::VectorStorage;
 
 pub struct IvfBuilderConfig {
@@ -17,10 +18,13 @@ pub struct IvfBuilderConfig {
     pub batch_size: usize,
     pub num_clusters: usize,
     pub num_probes: usize,
-    // Parameters for vector and centroid storages.
+    num_data_points: usize,
+    max_clusters_per_vector: usize,
+
+    // Parameters for storages.
     pub base_directory: String,
-    pub vector_storage_memory_size: usize,
-    pub vector_storage_file_size: usize,
+    pub memory_size: usize,
+    pub file_size: usize,
     pub num_features: usize,
 }
 
@@ -28,32 +32,49 @@ pub struct IvfBuilder {
     config: IvfBuilderConfig,
     vectors: Box<dyn VectorStorage<f32>>,
     centroids: Box<dyn VectorStorage<f32>>,
+    posting_lists: Box<dyn for<'a> PostingListStorage<'a>>,
 }
 
 impl IvfBuilder {
     /// Create a new IvfBuilder
-    pub fn new(config: IvfBuilderConfig) -> Self {
+    pub fn new(config: IvfBuilderConfig) -> Result<Self> {
+        // Create the base directory and all parent directories if they don't exist
         let vectors_path = format!("{}/dataset", config.base_directory);
-        let _ = create_dir(vectors_path.clone());
+        create_dir(&vectors_path)?;
+
         let vectors = Box::new(FileBackedAppendableVectorStorage::<f32>::new(
             vectors_path,
-            config.vector_storage_memory_size,
-            config.vector_storage_file_size,
+            config.memory_size,
+            config.file_size,
             config.num_features,
         ));
+
         let centroids_path = format!("{}/centroids", config.base_directory);
-        let _ = create_dir(centroids_path.clone());
+        create_dir(&centroids_path)?;
+
         let centroids = Box::new(FileBackedAppendableVectorStorage::<f32>::new(
             centroids_path,
-            config.vector_storage_memory_size,
-            config.vector_storage_file_size,
+            config.memory_size,
+            config.file_size,
             config.num_features,
         ));
-        Self {
+
+        let posting_lists_path = format!("{}/posting_lists", config.base_directory);
+        create_dir(&posting_lists_path)?;
+
+        let posting_lists = Box::new(FileBackedAppendablePostingListStorage::new(
+            posting_lists_path,
+            config.memory_size,
+            config.file_size,
+            config.num_clusters,
+        ));
+
+        Ok(Self {
             config,
             vectors,
             centroids,
-        }
+            posting_lists,
+        })
     }
 
     /// Add a new vector to the dataset for training
@@ -68,29 +89,50 @@ impl IvfBuilder {
         Ok(())
     }
 
-    pub fn build_inverted_lists(
-        vector_storage: &FixedFileVectorStorage<f32>,
-        centroid_storage: &FixedFileVectorStorage<f32>,
-    ) -> Result<HashMap<usize, Vec<usize>>> {
-        let mut context = SearchContext::new(false);
-        let mut inverted_lists = HashMap::new();
-        // Assign vectors to nearest centroid
-        for i in 0..vector_storage.num_vectors {
-            let vector = vector_storage
-                .get(i, &mut context)
-                .ok_or(anyhow::anyhow!("Failed to get vector at index {}", i))?
-                .to_vec();
-            let nearest_centroid = Ivf::find_nearest_centroids(&vector, &centroid_storage, 1)?;
-            inverted_lists
-                .entry(nearest_centroid[0])
-                .or_insert_with(Vec::new)
-                .push(i);
-        }
-        Ok(inverted_lists)
+    /// Add a posting list
+    pub fn add_posting_list(&mut self, posting_list: &[u64]) -> Result<()> {
+        self.posting_lists.append(posting_list)?;
+        Ok(())
     }
 
-    /// Train kmeans on the dataset, and returns the Ivf index
-    pub fn build(&mut self) -> Result<Ivf> {
+    fn find_nearest_centroids(
+        vector: &[f32],
+        centroids: &dyn VectorStorage<f32>,
+        num_probes: usize,
+    ) -> Result<Vec<usize>> {
+        let mut distances: Vec<(usize, f32)> = Vec::new();
+        for i in 0..centroids.len() {
+            let centroid = centroids.get(i as u32)?;
+            let dist = L2DistanceCalculator::calculate(&vector, &centroid);
+            distances.push((i, dist));
+        }
+        distances.select_nth_unstable_by(num_probes - 1, |a, b| a.1.total_cmp(&b.1));
+        Ok(distances.into_iter().map(|(idx, _)| idx).collect())
+    }
+
+    pub fn build_posting_lists(&mut self) -> Result<()> {
+        let mut posting_lists: Vec<Vec<u64>> =
+            vec![Vec::with_capacity(0); self.config.num_clusters as usize];
+        // Assign vectors to nearest centroid
+        for i in 0..self.vectors.len() {
+            let vector = self.vectors.get(i as u32)?;
+            let nearest_centroid = Self::find_nearest_centroids(
+                &vector,
+                self.centroids.as_ref(),
+                self.config.max_clusters_per_vector,
+            )?;
+            posting_lists[nearest_centroid[0]].push(i as u64);
+        }
+
+        // Move ownership of each posting list to the posting list storage
+        for posting_list in posting_lists.into_iter() {
+            self.add_posting_list(posting_list.as_ref())?;
+        }
+        Ok(())
+    }
+
+    /// Train kmeans on the dataset, and generate the posting lists
+    pub fn build(&mut self) -> Result<()> {
         let config = KMeansConfig::build()
             .init_done(&|_| debug!("Initialization completed."))
             .iteration_done(&|s, nr, new_distsum| {
@@ -103,11 +145,17 @@ impl IvfBuilder {
                 )
             })
             .build();
-        let mut flattened_dataset: Vec<f32> = Vec::new();
-        let num_vectors = self.vectors.len();
-        for i in 0..num_vectors {
-            let vector = self.vectors.get(i as u32)?;
-            flattened_dataset.extend_from_slice(vector);
+        let mut rng = rand::thread_rng();
+        let num_vectors = self.config.num_data_points;
+        let mut unique_indices = HashSet::with_capacity(num_vectors);
+        let mut flattened_dataset = Vec::new();
+
+        while unique_indices.len() < num_vectors {
+            let random_index = rng.gen_range(0..num_vectors);
+            if unique_indices.insert(random_index) {
+                let vector = self.vectors.get(random_index as u32)?;
+                flattened_dataset.extend_from_slice(vector);
+            }
         }
 
         let kmeans: KMeans<_, 8> =
@@ -121,52 +169,46 @@ impl IvfBuilder {
         );
         debug!("Error: {}", result.distsum);
 
-        let vectors_path = format!("{}/immutable_vector_storage", self.config.base_directory);
-        let mut vectors_file = File::create(vectors_path.clone())?;
-        let mut vectors_buffer_writer = BufWriter::new(&mut vectors_file);
-
-        self.vectors.write(&mut vectors_buffer_writer)?;
-
-        let storage = FixedFileVectorStorage::<f32>::new(vectors_path, self.config.num_features)?;
-
         let centroids_iter = result.centroids.chunks(self.config.num_features);
         for centroid in centroids_iter {
             self.add_centroid(centroid)?;
         }
-        let centroids_path = format!("{}/immutable_centroid_storage", self.config.base_directory);
-        let mut centroids_file = File::create(centroids_path.clone())?;
-        let mut centroids_buffer_writer = BufWriter::new(&mut centroids_file);
 
-        self.centroids.write(&mut centroids_buffer_writer)?;
+        self.build_posting_lists()?;
 
-        let centroid_storage =
-            FixedFileVectorStorage::<f32>::new(centroids_path, self.config.num_features)?;
-
-        let inverted_lists = Self::build_inverted_lists(&storage, &centroid_storage)?;
-        Ok(Ivf::new(
-            storage,
-            centroid_storage,
-            inverted_lists,
-            self.config.num_clusters,
-            self.config.num_probes,
-        ))
+        Ok(())
     }
 }
 
 // Test
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use utils::test_utils::generate_random_vector;
 
     use super::*;
-    use crate::index::Index;
-    use crate::utils::SearchContext;
+
+    fn count_files_with_prefix(directory: &PathBuf, file_name_prefix: &str) -> usize {
+        let mut count = 0;
+
+        for entry in directory.read_dir().expect("Cannot read directory") {
+            let entry = entry.expect("Cannot read entry");
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+
+            if file_name_str.starts_with(file_name_prefix) {
+                count += 1;
+            }
+        }
+
+        count
+    }
 
     #[test]
     fn test_ivf_builder() {
         env_logger::init();
 
-        const DIMENSION: usize = 128;
         let temp_dir = tempdir::TempDir::new("ivf_builder_test")
             .expect("Failed to create temporary directory");
         let base_directory = temp_dir
@@ -174,39 +216,57 @@ mod tests {
             .to_str()
             .expect("Failed to convert temporary directory path to string")
             .to_string();
+        let num_clusters = 10;
+        let num_vectors = 1000;
+        let num_features = 4;
+        let file_size = 4096;
         let mut builder = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
-            num_clusters: 10,
-            num_probes: 3,
+            num_clusters,
+            num_probes: 2,
+            num_data_points: num_vectors,
+            max_clusters_per_vector: 1,
             base_directory,
-            vector_storage_memory_size: 1024,
-            vector_storage_file_size: 4096,
-            num_features: DIMENSION,
-        });
-        // Generate 10000 vectors of f32, dimension 128
-        for _ in 0..10000 {
+            memory_size: 1024,
+            file_size,
+            num_features,
+        })
+        .expect("Failed to create builder");
+        // Generate 1000 vectors of f32, dimension 4
+        for _ in 0..num_vectors {
             builder
-                .add_vector(generate_random_vector(DIMENSION))
+                .add_vector(generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 
-        let index = builder
-            .build()
-            .expect("IvfBuilder should be able to build Ivf");
+        let result = builder.build();
+        assert!(result.is_ok());
 
-        let query = generate_random_vector(DIMENSION);
-        let mut context = SearchContext::new(false);
-        let results = index.search(&query, 5, 0, &mut context);
-        match results {
-            Some(results) => {
-                assert_eq!(results.len(), 5);
-                // Make sure results are in ascending order
-                assert!(results.windows(2).all(|w| w[0] <= w[1]));
-            }
-            None => {
-                assert!(false);
-            }
-        }
+        assert_eq!(builder.vectors.len(), num_vectors);
+        assert_eq!(builder.centroids.len(), num_clusters);
+        assert_eq!(builder.posting_lists.len(), num_clusters);
+
+        // Total size of vectors is bigger than file size, check that they are flushed to disk
+        let vectors_path = PathBuf::from(&builder.config.base_directory).join("dataset");
+        assert!(vectors_path.exists());
+        let count = count_files_with_prefix(&vectors_path, "vector.bin.");
+        assert_eq!(
+            count,
+            (num_vectors * num_features * std::mem::size_of::<f32>())
+                .div_ceil(builder.config.file_size)
+        );
+
+        // Total size of posting lists is bigger than file size, check that they are flushed to disk
+        let posting_lists_path =
+            PathBuf::from(&builder.config.base_directory).join("posting_lists");
+        assert!(posting_lists_path.exists());
+        let count = count_files_with_prefix(&posting_lists_path, "posting_list.bin.");
+        assert_eq!(
+            count,
+            (num_vectors * std::mem::size_of::<u64>() // posting list
+                + num_clusters * 2 * std::mem::size_of::<u64>()) // posting list metadata
+            .div_ceil(builder.config.file_size)
+        );
     }
 }
