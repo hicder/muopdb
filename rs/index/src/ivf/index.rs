@@ -5,7 +5,6 @@ use utils::distance::l2::L2DistanceCalculator;
 use utils::DistanceCalculator;
 
 use crate::index::Index;
-use crate::ivf::builder::IvfBuilder;
 use crate::utils::{IdWithScore, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
 
@@ -114,6 +113,8 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
 
+    use crate::ivf::builder::IvfBuilder;
+
     use super::*;
 
     fn create_fixed_file_vector_storage(file_path: &String, dataset: &Vec<Vec<f32>>) -> Result<()> {
@@ -148,12 +149,12 @@ mod tests {
             vec![4.0, 5.0, 6.0],
             vec![7.0, 8.0, 9.0],
         ];
-        create_fixed_file_vector_storage(&file_path, &dataset);
+        let _ = create_fixed_file_vector_storage(&file_path, &dataset);
         let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
         file_path = format!("{}/centroids", base_dir);
         let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
-        create_fixed_file_vector_storage(&file_path, &centroids);
+        let _ = create_fixed_file_vector_storage(&file_path, &centroids);
         let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
         let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage)
@@ -195,7 +196,7 @@ mod tests {
             vec![4.0, 5.0, 6.0],
             vec![7.0, 8.0, 9.0],
         ];
-        create_fixed_file_vector_storage(&file_path, &centroids);
+        let _ = create_fixed_file_vector_storage(&file_path, &centroids);
         let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
         let num_probes = 2;
@@ -223,12 +224,12 @@ mod tests {
             vec![7.0, 8.0, 9.0],
             vec![2.0, 3.0, 4.0],
         ];
-        create_fixed_file_vector_storage(&file_path, &dataset);
+        let _ = create_fixed_file_vector_storage(&file_path, &dataset);
         let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
         file_path = format!("{}/centroids", base_dir);
         let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
-        create_fixed_file_vector_storage(&file_path, &centroids);
+        let _ = create_fixed_file_vector_storage(&file_path, &centroids);
         let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
         let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage)
@@ -270,12 +271,12 @@ mod tests {
             .to_string();
         let mut file_path = format!("{}/vectors", base_dir);
         let dataset = vec![vec![100.0, 200.0, 300.0]];
-        create_fixed_file_vector_storage(&file_path, &dataset);
+        let _ = create_fixed_file_vector_storage(&file_path, &dataset);
         let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
         file_path = format!("{}/centroids", base_dir);
         let centroids = vec![vec![100.0, 200.0, 300.0]];
-        create_fixed_file_vector_storage(&file_path, &centroids);
+        let _ = create_fixed_file_vector_storage(&file_path, &centroids);
         let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
         let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage)

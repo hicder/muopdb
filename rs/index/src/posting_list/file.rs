@@ -4,7 +4,7 @@ use std::vec;
 
 use anyhow::{anyhow, Result};
 use utils::io::wrap_write;
-use utils::mem::{transmute_slice_to_u8, transmute_u8_to_val};
+use utils::mem::transmute_slice_to_u8;
 
 use super::{PostingList, PostingListStorage, PostingListStorageConfig};
 
