@@ -5,7 +5,7 @@ use std::mem::size_of;
 use anyhow::Result;
 
 pub mod file;
-//pub mod fixed_file;
+pub mod fixed_file;
 
 /// Config for posting list storage.
 pub struct PostingListStorageConfig {
