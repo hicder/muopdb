@@ -37,7 +37,7 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
     }
 
     pub fn get(&self, index: usize, context: &mut SearchContext) -> Option<&[T]> {
-        if index > self.num_vectors {
+        if index >= self.num_vectors {
             return None;
         }
         let start = 8 + index * Self::vector_size_in_bytes(self.num_features);
@@ -158,6 +158,9 @@ mod tests {
             storage.get(2, &mut context).unwrap(),
             &[9.0, 10.0, 11.0, 12.0]
         );
+
+        // Test out of bounds access
+        assert!(storage.get(3, &mut context).is_none());
     }
 
     #[test]
