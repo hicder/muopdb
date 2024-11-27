@@ -320,11 +320,14 @@ mod tests {
             batch_size: 4,
             num_clusters,
             num_probes: 2,
+            num_data_points: num_vectors,
+            max_clusters_per_vector: 1,
             base_directory: base_directory.clone(),
             memory_size: 1024,
             file_size,
             num_features,
-        });
+        })
+        .expect("Failed to create builder");
         // Generate 1000 vectors of f32, dimension 4
         let mut original_vectors = Vec::new();
         for _ in 0..num_vectors {
@@ -345,7 +348,7 @@ mod tests {
         assert!(fs::metadata(format!("{}/posting_lists", base_directory)).is_err());
 
         // Verify vectors file content
-        let mut vectors_file =
+        let vectors_file =
             File::open(format!("{}/vectors", base_directory)).expect("Failed to open vectors file");
         let mut vectors_reader = std::io::BufReader::new(vectors_file);
 
