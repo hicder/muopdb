@@ -177,7 +177,8 @@ impl FileBackedAppendablePostingListStorage {
         Ok(())
     }
 
-    // The caller is responsible for setting self.current_offset to the right value
+    // The caller is responsible for setting self.current_offset to the right position
+    // for writing metadata.
     fn append_posting_list_to_disk(&mut self, posting_list: &[u64]) -> Result<()> {
         if self.resident {
             return Err(anyhow!("Posting lists should already be flushed to disk"));
