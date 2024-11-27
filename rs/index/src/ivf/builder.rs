@@ -18,8 +18,8 @@ pub struct IvfBuilderConfig {
     pub batch_size: usize,
     pub num_clusters: usize,
     pub num_probes: usize,
-    num_data_points: usize,
-    max_clusters_per_vector: usize,
+    pub num_data_points: usize,
+    pub max_clusters_per_vector: usize,
 
     // Parameters for storages.
     pub base_directory: String,
