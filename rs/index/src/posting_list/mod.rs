@@ -53,11 +53,9 @@ impl<'a> Iterator for PostingListIterator<'a> {
         while self.current_slice < self.slices.len() {
             let slice = self.slices[self.current_slice];
             if self.current_index < slice.len() / size_of::<u64>() {
-                let value = u64::from_le_bytes(
-                    slice[self.current_index * size_of::<u64>()..]
-                        .try_into()
-                        .unwrap(),
-                );
+                let idx = self.current_index * size_of::<u64>();
+                let value =
+                    u64::from_le_bytes(slice[idx..idx + size_of::<u64>()].try_into().unwrap());
                 self.current_index += 1;
                 return Some(value);
             }
