@@ -1,11 +1,10 @@
-use std::collections::HashMap;
-use std::fs::File;
+use std::fs::{remove_file, File};
 use std::io::{BufWriter, Write};
 
 use anyhow::{anyhow, Context, Result};
-use utils::io::wrap_write;
+use utils::io::{append_file_to_writer, wrap_write};
 
-use crate::ivf::index::Ivf;
+use crate::ivf::builder::IvfBuilder;
 
 pub struct IvfWriter {
     base_directory: String,
@@ -16,186 +15,152 @@ pub enum Version {
     V0,
 }
 
+#[derive(Debug)]
+pub struct Header {
+    pub version: Version,
+    pub num_features: u32,
+    pub num_clusters: u32,
+    pub num_vectors: u64,
+    pub centroids_len: u64,
+    pub posting_lists_len: u64,
+}
+
 impl IvfWriter {
     pub fn new(base_directory: String) -> Self {
         Self { base_directory }
     }
 
-    pub fn write(&self, ivf: &Ivf) -> Result<()> {
-        // Write data
-        self.write_data(&ivf.dataset, Version::V0)
-            .context("failed to write data")?;
+    pub fn write(&self, ivf_builder: &mut IvfBuilder) -> Result<()> {
+        let num_features = ivf_builder.config().num_features;
+        let num_clusters = ivf_builder.config().num_clusters;
+        let num_vectors = ivf_builder.vectors().len();
 
-        // Write centroids
-        self.write_centroids(
-            &ivf.dataset,
-            &ivf.centroids,
-            &ivf.inverted_lists,
-            Version::V0,
-        )
-        .context("failed to write centroids")?;
-
-        // Write inverted lists
-        self.write_inverted_lists(&ivf.inverted_lists, ivf.num_probes as u32, Version::V0)
-            .context("failed to write inverted lists")?;
-
-        Ok(())
-    }
-
-    fn write_data(&self, dataset: &Vec<Vec<f32>>, version: Version) -> Result<()> {
-        let path = format!("{}/data", self.base_directory);
-        let mut file = File::create(path)?;
-        let mut writer = BufWriter::new(&mut file);
-
-        let version_value: u8 = match version {
-            Version::V0 => 0,
-        };
-        let dataset_size = dataset.len() as u64;
-        let vector_dimension = dataset[0].len() as u32;
-
-        // Write header.
-        let mut written = 0;
-        written += wrap_write(&mut writer, &version_value.to_le_bytes())?;
-        written += wrap_write(&mut writer, &dataset_size.to_le_bytes())?;
-        written += wrap_write(&mut writer, &vector_dimension.to_le_bytes())?;
-        if written != 1 + 8 + 4 {
+        // Write vectors
+        let vectors_len = self
+            .write_vectors(ivf_builder)
+            .context("Failed to write vectors")?;
+        let expected_bytes_written =
+            std::mem::size_of::<u64>() + std::mem::size_of::<f32>() * num_features * num_vectors;
+        if vectors_len != expected_bytes_written {
             return Err(anyhow!(
-                "Expected to write 13 bytes as data header, but wrote {}",
-                written,
+                "Expected to write {} bytes in vector storage, but wrote {}",
+                expected_bytes_written,
+                vectors_len,
             ));
         }
 
-        // Pad to 8-byte alignment.
-        Self::write_pad(written, &mut writer, 8)?;
-
-        // Write the actual dataset.
-        for vector in dataset.iter() {
-            for elem in vector.iter() {
-                let bytes_written = wrap_write(&mut writer, &elem.to_le_bytes())?;
-                if bytes_written != 4 {
-                    return Err(anyhow!(
-                        "Expected to write 4 bytes, but wrote {}",
-                        bytes_written,
-                    ));
-                }
-            }
+        // Write centroids
+        let centroids_len = self
+            .write_centroids(ivf_builder)
+            .context("Failed to write centroids")?;
+        let expected_bytes_written =
+            std::mem::size_of::<u64>() + std::mem::size_of::<f32>() * num_features * num_clusters;
+        if centroids_len != expected_bytes_written {
+            return Err(anyhow!(
+                "Expected to write {} bytes in centroid storage, but wrote {}",
+                expected_bytes_written,
+                centroids_len,
+            ));
         }
-        writer.flush()?;
 
+        // Write posting_lists
+        let posting_lists_len = self
+            .write_posting_lists(ivf_builder)
+            .context("Failed to write posting_lists")?;
+        let expected_bytes_written = std::mem::size_of::<u64>() * 2 * num_clusters
+            + std::mem::size_of::<u64>() * num_vectors
+            + std::mem::size_of::<u64>();
+        if posting_lists_len != expected_bytes_written {
+            return Err(anyhow!(
+                "Expected to write {} bytes in posting list storage, but wrote {}",
+                expected_bytes_written,
+                posting_lists_len,
+            ));
+        }
+
+        let header: Header = Header {
+            version: Version::V0,
+            num_features: num_features as u32,
+            num_clusters: num_clusters as u32,
+            num_vectors: num_vectors as u64,
+            centroids_len: centroids_len as u64,
+            posting_lists_len: posting_lists_len as u64,
+        };
+
+        self.combine_files(&header)?;
         Ok(())
     }
 
-    fn write_centroids(
-        &self,
-        dataset: &Vec<Vec<f32>>,
-        centroids: &Vec<Vec<f32>>,
-        inverted_lists: &HashMap<usize, Vec<usize>>,
-        version: Version,
-    ) -> Result<()> {
+    fn write_vectors(&self, ivf_builder: &IvfBuilder) -> Result<usize> {
+        let path = format!("{}/vectors", self.base_directory);
+        let mut file = File::create(path)?;
+        let mut writer = BufWriter::new(&mut file);
+
+        let bytes_written = ivf_builder.vectors().write(&mut writer)?;
+        Ok(bytes_written)
+    }
+
+    fn write_centroids(&self, ivf_builder: &IvfBuilder) -> Result<usize> {
         let path = format!("{}/centroids", self.base_directory);
         let mut file = File::create(path)?;
         let mut writer = BufWriter::new(&mut file);
 
-        let version_value: u8 = match version {
-            Version::V0 => 0,
-        };
-        let num_clusters = centroids.len() as u32;
-        let vector_dimension = dataset[0].len() as u32;
-
-        // Write header.
-        let mut written = 0;
-        written += wrap_write(&mut writer, &version_value.to_le_bytes())?;
-        written += wrap_write(&mut writer, &num_clusters.to_le_bytes())?;
-        written += wrap_write(&mut writer, &vector_dimension.to_le_bytes())?;
-        if written != 1 + 4 + 4 {
-            return Err(anyhow!(
-                "Expected to write 9 bytes as centroid header, but wrote {}",
-                written,
-            ));
-        }
-
-        // Pad to 8-byte alignment.
-        Self::write_pad(written, &mut writer, 8)?;
-
-        // Write the centroids with all the vectors in the same cluster.
-        for (idx, centroid) in centroids.iter().enumerate() {
-            // Write the centroid vector.
-            for elem in centroid.iter() {
-                let bytes_written = wrap_write(&mut writer, &elem.to_le_bytes())?;
-                if bytes_written != 4 {
-                    return Err(anyhow!(
-                        "Expected to write 4 bytes, but wrote {}",
-                        bytes_written,
-                    ));
-                }
-            }
-            // Write the vectors from the same cluster.
-            let vector_indices = &inverted_lists[&idx];
-            let cluster_size = vector_indices.len() as u64;
-            wrap_write(&mut writer, &cluster_size.to_le_bytes())?;
-            for vector_idx in vector_indices.iter() {
-                for elem in dataset[*vector_idx].iter() {
-                    let bytes_written = wrap_write(&mut writer, &elem.to_le_bytes())?;
-                    if bytes_written != 4 {
-                        return Err(anyhow!(
-                            "Expected to write 4 bytes, but wrote {}",
-                            bytes_written,
-                        ));
-                    }
-                }
-            }
-        }
-        writer.flush()?;
-
-        Ok(())
+        let bytes_written = ivf_builder.centroids().write(&mut writer)?;
+        Ok(bytes_written)
     }
 
-    fn write_inverted_lists(
-        &self,
-        inverted_lists: &HashMap<usize, Vec<usize>>,
-        num_probes: u32,
-        version: Version,
-    ) -> Result<()> {
-        // TODO(tyb0807): sort by doc_id when it's used.
-        let path = format!("{}/inverted_lists", self.base_directory);
+    fn write_posting_lists(&self, ivf_builder: &mut IvfBuilder) -> Result<usize> {
+        let path = format!("{}/posting_lists", self.base_directory);
         let mut file = File::create(path)?;
         let mut writer = BufWriter::new(&mut file);
 
-        let version_value: u8 = match version {
+        let bytes_written = ivf_builder.posting_lists_mut().write(&mut writer)?;
+        Ok(bytes_written)
+    }
+
+    fn write_header(&self, header: &Header, writer: &mut BufWriter<&mut File>) -> Result<usize> {
+        let version_value: u8 = match header.version {
             Version::V0 => 0,
         };
-        let num_inverted_list_indices = inverted_lists.len() as u32;
-
-        // Write header.
         let mut written = 0;
-        written += wrap_write(&mut writer, &version_value.to_le_bytes())?;
-        written += wrap_write(&mut writer, &num_probes.to_le_bytes())?;
-        written += wrap_write(&mut writer, &num_inverted_list_indices.to_le_bytes())?;
-        if written != 1 + 4 + 4 {
-            return Err(anyhow!(
-                "Expected to write 13 bytes as data header, but wrote {}",
-                written,
-            ));
-        }
+        written += wrap_write(writer, &version_value.to_le_bytes())?;
+        written += wrap_write(writer, &header.num_features.to_le_bytes())?;
+        written += wrap_write(writer, &header.num_clusters.to_le_bytes())?;
+        written += wrap_write(writer, &header.num_vectors.to_le_bytes())?;
+        written += wrap_write(writer, &header.centroids_len.to_le_bytes())?;
+        written += wrap_write(writer, &header.posting_lists_len.to_le_bytes())?;
+        Ok(written)
+    }
 
-        // Pad to 8-byte alignment.
-        Self::write_pad(written, &mut writer, 8)?;
+    /// Combine all individual files into one final index file. Keep vectors file separate.
+    fn combine_files(&self, header: &Header) -> Result<usize> {
+        let centroids_path = format!("{}/centroids", self.base_directory);
+        let posting_lists_path = format!("{}/posting_lists", self.base_directory);
 
-        // Write interted lists
-        for (centroid_idx, vector_indices) in inverted_lists {
-            let ci = *centroid_idx as u32;
-            wrap_write(&mut writer, &ci.to_le_bytes())?;
-            // Write the number of vectors in this centroid.
-            let vectors_in_centroid = vector_indices.len() as u64;
-            wrap_write(&mut writer, &vectors_in_centroid.to_le_bytes())?;
-            for vector_idx in vector_indices.iter() {
-                let vi = *vector_idx as u64;
-                wrap_write(&mut writer, &vi.to_le_bytes())?;
-            }
-        }
-        writer.flush()?;
+        let combined_path = format!("{}/index", self.base_directory);
+        let mut combined_file = File::create(combined_path)?;
+        let mut combined_buffer_writer = BufWriter::new(&mut combined_file);
 
-        Ok(())
+        let mut written = self
+            .write_header(header, &mut combined_buffer_writer)
+            .context("Failed to write header")?;
+
+        // Compute padding for alignment to 8 bytes
+        written += Self::write_pad(written, &mut combined_buffer_writer, 8)?;
+        written += append_file_to_writer(&centroids_path, &mut combined_buffer_writer)?;
+
+        // Pad again in case num_features and num_clusters are both odd
+        written += Self::write_pad(written, &mut combined_buffer_writer, 8)?;
+        written += append_file_to_writer(&posting_lists_path, &mut combined_buffer_writer)?;
+
+        combined_buffer_writer
+            .flush()
+            .context("Failed to flush combined buffer")?;
+
+        remove_file(format!("{}/centroids", self.base_directory))?;
+        remove_file(format!("{}/posting_lists", self.base_directory))?;
+
+        Ok(written)
     }
 
     // Write padding for alignment to `alignment` bytes.
@@ -218,122 +183,99 @@ impl IvfWriter {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::io::Read;
 
+    use byteorder::{LittleEndian, ReadBytesExt};
     use tempdir::TempDir;
+    use utils::test_utils::generate_random_vector;
 
     use super::*;
+    use crate::ivf::builder::IvfBuilderConfig;
 
-    fn create_test_ivf() -> Ivf {
-        let dataset = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-            vec![7.0, 8.0, 9.0],
+    fn create_test_file(base_directory: &str, name: &str, content: &[u8]) -> Result<()> {
+        let path = format!("{}/{}", base_directory, name);
+        let mut file = File::create(path)?;
+        file.write_all(content)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_combine_files() -> Result<()> {
+        // Create a temporary directory for testing
+        let temp_dir = tempdir::TempDir::new("ivf_builder_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        // Create an IvfWriter instance
+        let ivf_writer = IvfWriter::new(base_directory.clone());
+
+        // Create test files
+        create_test_file(&base_directory, "centroids", &[5, 6, 7, 8])?;
+        create_test_file(&base_directory, "posting_lists", &[9, 10, 11, 12])?;
+
+        // Create a test header
+        let header = Header {
+            version: Version::V0,
+            num_features: 10,
+            num_clusters: 5,
+            num_vectors: 4,
+            centroids_len: 4,
+            posting_lists_len: 4,
+        };
+
+        // Call combine_files
+        let bytes_written = ivf_writer.combine_files(&header)?;
+
+        // Verify the combined file
+        let combined_path = format!("{}/index", base_directory);
+        let mut combined_file = File::open(combined_path)?;
+        let mut combined_content = Vec::new();
+        combined_file.read_to_end(&mut combined_content)?;
+
+        // Check the total bytes written
+        assert_eq!(bytes_written, combined_content.len());
+
+        // Verify the header
+        let mut expected_header = vec![
+            0u8, // Version::V0
+            10, 0, 0, 0, // num_features (little-endian)
+            5, 0, 0, 0, // num_clusters (little-endian)
+            4, 0, 0, 0, 0, 0, 0, 0, // num_vectors (little-endian)
+            4, 0, 0, 0, 0, 0, 0, 0, // centroids_len (little-endian)
+            4, 0, 0, 0, 0, 0, 0, 0, // posting_lists_len (little-endian)
         ];
-        let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
-        let mut inverted_lists = HashMap::new();
-        inverted_lists.insert(0, vec![0]);
-        inverted_lists.insert(1, vec![1, 2]);
 
-        Ivf {
-            dataset,
-            num_clusters: 1,
-            centroids,
-            inverted_lists,
-            num_probes: 2,
+        // Add padding to align to 8 bytes
+        while expected_header.len() % 8 != 0 {
+            expected_header.push(0);
         }
-    }
 
-    #[test]
-    fn test_ivf_writer_write() {
-        let temp_dir = TempDir::new("test_ivf_writer_write").unwrap();
-        let base_directory = temp_dir.path().to_str().unwrap().to_string();
-        let writer = IvfWriter::new(base_directory.clone());
-        let ivf = create_test_ivf();
-
-        assert!(writer.write(&ivf).is_ok());
-
-        // Check if files were created
-        assert!(fs::metadata(format!("{}/data", base_directory)).is_ok());
-        assert!(fs::metadata(format!("{}/centroids", base_directory)).is_ok());
-        assert!(fs::metadata(format!("{}/inverted_lists", base_directory)).is_ok());
-    }
-
-    #[test]
-    fn test_write_data() {
-        let temp_dir = TempDir::new("test_write_data").unwrap();
-        let base_directory = temp_dir.path().to_str().unwrap().to_string();
-        let writer = IvfWriter::new(base_directory.clone());
-        let dataset = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
-
-        assert!(writer.write_data(&dataset, Version::V0).is_ok());
-        // Calculate expected file size
-        let expected_size = 1 + 8 + 4 + // Header: version (1 byte) + dataset_size (8 bytes) + vector_dimension (4 bytes)
-                            (8 - (13 % 8)) + // Padding to 8-byte alignment
-                            (4 * 3 * 2); // Data: 4 bytes per float, 3 floats per vector, 2 vectors
-
-        // Check if data file was created and has correct size
-        let metadata = fs::metadata(format!("{}/data", base_directory)).unwrap();
         assert_eq!(
-            metadata.len(),
-            expected_size as u64,
-            "File size doesn't match expected size"
+            &combined_content[..expected_header.len()],
+            expected_header.as_slice()
         );
-    }
 
-    #[test]
-    fn test_write_centroids() {
-        let temp_dir = TempDir::new("test_write_centroids").unwrap();
-        let base_directory = temp_dir.path().to_str().unwrap().to_string();
-        let writer = IvfWriter::new(base_directory.clone());
-        let dataset = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
-        let centroids = vec![vec![1.5, 2.5, 3.5]];
-        let mut inverted_lists = HashMap::new();
-        inverted_lists.insert(0, vec![0, 1]);
+        // Verify the content of the files
+        let offset = expected_header.len();
+        assert_eq!(&combined_content[offset..offset + 4], [5, 6, 7, 8]);
 
-        assert!(writer
-            .write_centroids(&dataset, &centroids, &inverted_lists, Version::V0)
-            .is_ok());
-        // Calculate expected file size
-        let expected_size = 1 + 4 + 4 + // Header: version (1 byte) + num_clusters (4 bytes) + vector_dimension (4 bytes)
-                            (8 - (9 % 8)) + // Padding to 8-byte alignment
-                            (4 * 3) + // Centroid vector: 4 bytes per float, 3 floats
-                            8 + // Cluster size (u64)
-                            (4 * 3 * 2); // Cluster vectors: 4 bytes per float, 3 floats per vector, 2 vectors
+        // Check for padding after centroids
+        let mut next_offset = offset + 4;
+        while next_offset % 8 != 0 {
+            assert_eq!(combined_content[next_offset], 0);
+            next_offset += 1;
+        }
 
-        // Check if centroids file was created and has correct size
-        let metadata = fs::metadata(format!("{}/centroids", base_directory)).unwrap();
         assert_eq!(
-            metadata.len(),
-            expected_size as u64,
-            "File size doesn't match expected size"
+            &combined_content[next_offset..next_offset + 4],
+            [9, 10, 11, 12]
         );
-    }
 
-    #[test]
-    fn test_write_inverted_lists() {
-        let temp_dir = TempDir::new("test_write_inverted_lists").unwrap();
-        let base_directory = temp_dir.path().to_str().unwrap().to_string();
-        let writer = IvfWriter::new(base_directory.clone());
-        let mut inverted_lists = HashMap::new();
-        inverted_lists.insert(0, vec![0, 1]);
-        inverted_lists.insert(1, vec![2, 3]);
-
-        assert!(writer
-            .write_inverted_lists(&inverted_lists, 2, Version::V0)
-            .is_ok());
-
-        // Calculate expected file size
-        let expected_size = 1 + 4 + 4 + // Header: version (1 byte) + num_probes (4 bytes) + num_inverted_list_indices (4 bytes)
-                            (8 - (9 % 8)) + // Padding to 8-byte alignment
-                            (4 + 8 + 8 * 2) * 2; // For each centroid: centroid_idx (4 bytes) + vectors_in_centroid (8 bytes) + vector_indices (8 bytes each)
-
-        // Check if inverted_lists file was created and has correct size
-        let metadata = fs::metadata(format!("{}/inverted_lists", base_directory)).unwrap();
-        assert_eq!(
-            metadata.len(),
-            expected_size as u64,
-            "File size doesn't match expected size"
-        );
+        Ok(())
     }
 
     #[test]
@@ -356,5 +298,107 @@ mod tests {
         // Check file size
         let metadata = fs::metadata(&path).unwrap();
         assert_eq!(metadata.len(), 8); // 3 bytes of data + 5 bytes of padding
+    }
+
+    #[test]
+    fn test_ivf_writer_write() {
+        let temp_dir =
+            TempDir::new("test_ivf_writer_write").expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 10;
+        let num_vectors = 1000;
+        let num_features = 4;
+        let file_size = 4096;
+        let writer = IvfWriter::new(base_directory.clone());
+
+        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_probes: 2,
+            base_directory: base_directory.clone(),
+            memory_size: 1024,
+            file_size,
+            num_features,
+        });
+        // Generate 1000 vectors of f32, dimension 4
+        let mut original_vectors = Vec::new();
+        for _ in 0..num_vectors {
+            let vector = generate_random_vector(num_features);
+            original_vectors.push(vector.clone());
+            builder.add_vector(vector).expect("Vector should be added");
+        }
+
+        let result = builder.build();
+        assert!(result.is_ok());
+
+        assert!(writer.write(&mut builder).is_ok());
+
+        // Check if files were created and removed correctly
+        assert!(fs::metadata(format!("{}/vectors", base_directory)).is_ok());
+        assert!(fs::metadata(format!("{}/index", base_directory)).is_ok());
+        assert!(fs::metadata(format!("{}/centroids", base_directory)).is_err());
+        assert!(fs::metadata(format!("{}/posting_lists", base_directory)).is_err());
+
+        // Verify vectors file content
+        let mut vectors_file =
+            File::open(format!("{}/vectors", base_directory)).expect("Failed to open vectors file");
+        let mut vectors_reader = std::io::BufReader::new(vectors_file);
+
+        let stored_num_vectors = vectors_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read number of vectors");
+        assert_eq!(stored_num_vectors, num_vectors as u64);
+
+        for original_vector in original_vectors {
+            for &original_value in &original_vector {
+                let stored_value = vectors_reader
+                    .read_f32::<LittleEndian>()
+                    .expect("Failed to read vector value");
+                assert!((original_value - stored_value).abs() < f32::EPSILON);
+            }
+        }
+
+        // Verify index file content
+        let mut index_file =
+            File::open(format!("{}/index", base_directory)).expect("Failed to open index file");
+        let mut index_reader = std::io::BufReader::new(&mut index_file);
+
+        // Read and verify header
+        let version = index_reader.read_u8().expect("Failed to read version");
+        assert_eq!(version, 0); // Version::V0
+
+        let stored_num_features = index_reader
+            .read_u32::<LittleEndian>()
+            .expect("Failed to read num_features");
+        assert_eq!(stored_num_features, num_features as u32);
+
+        let stored_num_clusters = index_reader
+            .read_u32::<LittleEndian>()
+            .expect("Failed to read num_clusters");
+        assert_eq!(stored_num_clusters, num_clusters as u32);
+
+        let stored_num_vectors = index_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read num_vectors");
+        assert_eq!(stored_num_vectors, num_vectors as u64);
+
+        let centroids_len = index_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read centroids_len");
+        let posting_lists_len = index_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read posting_lists_len");
+
+        // Verify file size
+        let file_size = index_file
+            .metadata()
+            .expect("Failed to get file metadata")
+            .len();
+        assert_eq!(file_size, 33 + 7 + centroids_len + posting_lists_len); // 33 bytes for header + 7 padding
     }
 }

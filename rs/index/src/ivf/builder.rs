@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::fs::create_dir;
+use std::fs::{create_dir, create_dir_all};
 
 use anyhow::Result;
 use kmeans::*;
@@ -39,7 +39,9 @@ impl IvfBuilder {
     /// Create a new IvfBuilder
     pub fn new(config: IvfBuilderConfig) -> Result<Self> {
         // Create the base directory and all parent directories if they don't exist
-        let vectors_path = format!("{}/dataset", config.base_directory);
+        create_dir_all(&config.base_directory)?;
+
+        let vectors_path = format!("{}/builder_vector_storage", config.base_directory);
         create_dir(&vectors_path)?;
 
         let vectors = Box::new(FileBackedAppendableVectorStorage::<f32>::new(
@@ -49,7 +51,7 @@ impl IvfBuilder {
             config.num_features,
         ));
 
-        let centroids_path = format!("{}/centroids", config.base_directory);
+        let centroids_path = format!("{}/builder_centroid_storage", config.base_directory);
         create_dir(&centroids_path)?;
 
         let centroids = Box::new(FileBackedAppendableVectorStorage::<f32>::new(
@@ -59,7 +61,7 @@ impl IvfBuilder {
             config.num_features,
         ));
 
-        let posting_lists_path = format!("{}/posting_lists", config.base_directory);
+        let posting_lists_path = format!("{}/builder_posting_list_storage", config.base_directory);
         create_dir(&posting_lists_path)?;
 
         let posting_lists = Box::new(FileBackedAppendablePostingListStorage::new(
@@ -75,6 +77,22 @@ impl IvfBuilder {
             centroids,
             posting_lists,
         })
+    }
+
+    pub fn config(&self) -> &IvfBuilderConfig {
+        &self.config
+    }
+
+    pub fn vectors(&self) -> &dyn VectorStorage<f32> {
+        &*self.vectors
+    }
+
+    pub fn centroids(&self) -> &dyn VectorStorage<f32> {
+        &*self.centroids
+    }
+
+    pub fn posting_lists_mut(&mut self) -> &mut dyn for<'a> PostingListStorage<'a> {
+        &mut *self.posting_lists
     }
 
     /// Add a new vector to the dataset for training
@@ -248,7 +266,8 @@ mod tests {
         assert_eq!(builder.posting_lists.len(), num_clusters);
 
         // Total size of vectors is bigger than file size, check that they are flushed to disk
-        let vectors_path = PathBuf::from(&builder.config.base_directory).join("dataset");
+        let vectors_path =
+            PathBuf::from(&builder.config.base_directory).join("builder_vector_storage");
         assert!(vectors_path.exists());
         let count = count_files_with_prefix(&vectors_path, "vector.bin.");
         assert_eq!(
@@ -259,7 +278,7 @@ mod tests {
 
         // Total size of posting lists is bigger than file size, check that they are flushed to disk
         let posting_lists_path =
-            PathBuf::from(&builder.config.base_directory).join("posting_lists");
+            PathBuf::from(&builder.config.base_directory).join("builder_posting_list_storage");
         assert!(posting_lists_path.exists());
         let count = count_files_with_prefix(&posting_lists_path, "posting_list.bin.");
         assert_eq!(
