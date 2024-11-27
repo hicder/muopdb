@@ -1,3 +1,3 @@
 pub mod builder;
 //pub mod index;
-//pub mod writer;
+pub mod writer;
