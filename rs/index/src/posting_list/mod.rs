@@ -4,6 +4,7 @@ use std::mem::size_of;
 
 use anyhow::Result;
 
+pub mod combined_file;
 pub mod file;
 pub mod fixed_file;
 
