@@ -5,24 +5,10 @@ use anyhow::{anyhow, Context, Result};
 use utils::io::{append_file_to_writer, wrap_write};
 
 use crate::ivf::builder::IvfBuilder;
+use crate::posting_list::combined_file::{Header, Version};
 
 pub struct IvfWriter {
     base_directory: String,
-}
-
-#[derive(PartialEq, Debug)]
-pub enum Version {
-    V0,
-}
-
-#[derive(Debug)]
-pub struct Header {
-    pub version: Version,
-    pub num_features: u32,
-    pub num_clusters: u32,
-    pub num_vectors: u64,
-    pub centroids_len: u64,
-    pub posting_lists_len: u64,
 }
 
 impl IvfWriter {
