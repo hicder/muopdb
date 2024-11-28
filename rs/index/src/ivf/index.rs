@@ -1,24 +1,25 @@
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::BinaryHeap;
 
 use anyhow::{Context, Result};
 use utils::distance::l2::L2DistanceCalculator;
 use utils::DistanceCalculator;
 
 use crate::index::Index;
+use crate::posting_list::fixed_file::FixedFilePostingListStorage;
 use crate::utils::{IdWithScore, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
 
 pub struct Ivf {
     // The dataset.
     pub vector_storage: FixedFileVectorStorage<f32>,
-    // Number of clusters.
-    pub num_clusters: usize,
     // Each cluster is represented by a centroid vector. This is all the centroids in our IVF.
     pub centroid_storage: FixedFileVectorStorage<f32>,
     // Inverted index mapping each cluster to the vectors it contains.
-    //   key: centroid index in `centroid_storage`
-    //   value: vector index in `vector_storage`
-    pub inverted_lists: HashMap<usize, Vec<usize>>,
+    //   index: centroid index in `centroid_storage`
+    //   value: list of vector indices in `vector_storage`
+    pub posting_list_storage: FixedFilePostingListStorage,
+    // Number of clusters.
+    pub num_clusters: usize,
     // Number of probed centroids.
     pub num_probes: usize,
 }
@@ -27,15 +28,15 @@ impl Ivf {
     pub fn new(
         vector_storage: FixedFileVectorStorage<f32>,
         centroid_storage: FixedFileVectorStorage<f32>,
-        inverted_lists: HashMap<usize, Vec<usize>>,
+        posting_list_storage: FixedFilePostingListStorage,
         num_clusters: usize,
         num_probes: usize,
     ) -> Self {
         Self {
             vector_storage,
-            num_clusters,
             centroid_storage,
-            inverted_lists,
+            posting_list_storage,
+            num_clusters,
             num_probes,
         }
     }
@@ -75,11 +76,11 @@ impl Index for Ivf {
         {
             // Search in the inverted lists of the nearest centroids.
             for &centroid in &nearest_centroids {
-                if let Some(list) = self.inverted_lists.get(&centroid) {
+                if let Ok(list) = self.posting_list_storage.get(centroid) {
                     for &idx in list {
                         let distance = L2DistanceCalculator::calculate(
                             query,
-                            &self.vector_storage.get(idx, context)?.to_vec(),
+                            &self.vector_storage.get(idx as usize, context)?.to_vec(),
                         );
                         let id_with_score = IdWithScore {
                             score: distance,
@@ -113,8 +114,6 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
 
-    use crate::ivf::builder::IvfBuilder;
-
     use super::*;
 
     fn create_fixed_file_vector_storage(file_path: &String, dataset: &Vec<Vec<f32>>) -> Result<()> {
@@ -134,6 +133,35 @@ mod tests {
         Ok(())
     }
 
+    fn create_fixed_file_posting_list_storage(
+        file_path: &String,
+        posting_lists: &Vec<Vec<u64>>,
+    ) -> Result<()> {
+        let mut file = File::create(file_path.clone())?;
+
+        // Write number of posting_lists (8 bytes)
+        let num_posting_lists = posting_lists.len();
+        file.write_all(&(num_posting_lists as u64).to_le_bytes())?;
+
+        let mut pl_offset = num_posting_lists * 2 * std::mem::size_of::<u64>();
+        // Write metadata
+        for posting_list in posting_lists.iter() {
+            let pl_len = posting_list.len();
+            file.write_all(&(pl_len as u64).to_le_bytes())?;
+            file.write_all(&(pl_offset as u64).to_le_bytes())?;
+            pl_offset += pl_len * std::mem::size_of::<u64>();
+        }
+
+        // Write posting lists
+        for posting_list in posting_lists.iter() {
+            for element in posting_list.iter() {
+                file.write_all(&element.to_le_bytes())?;
+            }
+        }
+        file.flush()?;
+        Ok(())
+    }
+
     #[test]
     fn test_ivf_new() {
         let temp_dir =
@@ -143,39 +171,43 @@ mod tests {
             .to_str()
             .expect("Failed to convert temporary directory path to string")
             .to_string();
-        let mut file_path = format!("{}/vectors", base_dir);
+        let file_path = format!("{}/vectors", base_dir);
         let dataset = vec![
             vec![1.0, 2.0, 3.0],
             vec![4.0, 5.0, 6.0],
             vec![7.0, 8.0, 9.0],
         ];
-        let _ = create_fixed_file_vector_storage(&file_path, &dataset);
+        assert!(create_fixed_file_vector_storage(&file_path, &dataset).is_ok());
         let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
-        file_path = format!("{}/centroids", base_dir);
+
+        let file_path = format!("{}/centroids", base_dir);
         let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
-        let _ = create_fixed_file_vector_storage(&file_path, &centroids);
+        assert!(create_fixed_file_vector_storage(&file_path, &centroids).is_ok());
         let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
-        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage)
-            .expect("Inverted lists should be built");
+
+        let file_path = format!("{}/posting_lists", base_dir);
+        let posting_lists = vec![vec![0], vec![1, 2]];
+        assert!(create_fixed_file_posting_list_storage(&file_path, &posting_lists).is_ok());
+        let posting_list_storage = FixedFilePostingListStorage::new(file_path)
+            .expect("FixedFilePostingListStorage should be created");
+
         let num_clusters = 2;
         let num_probes = 1;
 
         let ivf = Ivf::new(
             storage,
             centroid_storage,
-            inverted_lists.clone(),
+            posting_list_storage,
             num_clusters,
             num_probes,
         );
 
         assert_eq!(ivf.num_clusters, num_clusters);
-        assert_eq!(ivf.inverted_lists, inverted_lists);
         assert_eq!(ivf.num_probes, num_probes);
-        assert_eq!(ivf.inverted_lists.len(), 2);
-        let cluster_0 = ivf.inverted_lists.get(&0);
-        let cluster_1 = ivf.inverted_lists.get(&1);
+        let cluster_0 = ivf.posting_list_storage.get(0);
+        let cluster_1 = ivf.posting_list_storage.get(1);
         assert!(cluster_0.map_or(false, |list| list.contains(&0)));
         assert!(cluster_1.map_or(false, |list| list.contains(&2)));
     }
@@ -196,7 +228,7 @@ mod tests {
             vec![4.0, 5.0, 6.0],
             vec![7.0, 8.0, 9.0],
         ];
-        let _ = create_fixed_file_vector_storage(&file_path, &centroids);
+        assert!(create_fixed_file_vector_storage(&file_path, &centroids).is_ok());
         let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
         let num_probes = 2;
@@ -217,30 +249,37 @@ mod tests {
             .to_str()
             .expect("Failed to convert temporary directory path to string")
             .to_string();
-        let mut file_path = format!("{}/vectors", base_dir);
+
+        let file_path = format!("{}/vectors", base_dir);
         let dataset = vec![
             vec![1.0, 2.0, 3.0],
             vec![4.0, 5.0, 6.0],
             vec![7.0, 8.0, 9.0],
             vec![2.0, 3.0, 4.0],
         ];
-        let _ = create_fixed_file_vector_storage(&file_path, &dataset);
+        assert!(create_fixed_file_vector_storage(&file_path, &dataset).is_ok());
         let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
-        file_path = format!("{}/centroids", base_dir);
+
+        let file_path = format!("{}/centroids", base_dir);
         let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
-        let _ = create_fixed_file_vector_storage(&file_path, &centroids);
+        assert!(create_fixed_file_vector_storage(&file_path, &centroids).is_ok());
         let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
-        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage)
-            .expect("Inverted lists should be built");
+
+        let file_path = format!("{}/posting_lists", base_dir);
+        let posting_lists = vec![vec![0, 3], vec![1, 2]];
+        assert!(create_fixed_file_posting_list_storage(&file_path, &posting_lists).is_ok());
+        let posting_list_storage = FixedFilePostingListStorage::new(file_path)
+            .expect("FixedFilePostingListStorage should be created");
+
         let num_clusters = 2;
         let num_probes = 2;
 
         let ivf = Ivf::new(
             storage,
             centroid_storage,
-            inverted_lists,
+            posting_list_storage,
             num_clusters,
             num_probes,
         );
@@ -269,25 +308,32 @@ mod tests {
             .to_str()
             .expect("Failed to convert temporary directory path to string")
             .to_string();
-        let mut file_path = format!("{}/vectors", base_dir);
+
+        let file_path = format!("{}/vectors", base_dir);
         let dataset = vec![vec![100.0, 200.0, 300.0]];
-        let _ = create_fixed_file_vector_storage(&file_path, &dataset);
+        assert!(create_fixed_file_vector_storage(&file_path, &dataset).is_ok());
         let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
-        file_path = format!("{}/centroids", base_dir);
+
+        let file_path = format!("{}/centroids", base_dir);
         let centroids = vec![vec![100.0, 200.0, 300.0]];
-        let _ = create_fixed_file_vector_storage(&file_path, &centroids);
+        assert!(create_fixed_file_vector_storage(&file_path, &centroids).is_ok());
         let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
-        let inverted_lists = IvfBuilder::build_inverted_lists(&storage, &centroid_storage)
-            .expect("Inverted lists should be built");
+
+        let file_path = format!("{}/posting_lists", base_dir);
+        let posting_lists = vec![vec![0]];
+        assert!(create_fixed_file_posting_list_storage(&file_path, &posting_lists).is_ok());
+        let posting_list_storage = FixedFilePostingListStorage::new(file_path)
+            .expect("FixedFilePostingListStorage should be created");
+
         let num_clusters = 1;
         let num_probes = 1;
 
         let ivf = Ivf::new(
             storage,
             centroid_storage,
-            inverted_lists,
+            posting_list_storage,
             num_clusters,
             num_probes,
         );
