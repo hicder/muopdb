@@ -151,10 +151,10 @@ impl IndexWriter {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
     use std::path::Path;
 
     use rand::Rng;
+    use tempdir::TempDir;
 
     use super::*;
     use crate::config::{BaseConfig, HnswConfig, IvfConfig};
@@ -213,7 +213,7 @@ mod tests {
         }
     }
 
-    // #[test]
+    #[test]
     fn test_index_writer_process_hnsw() {
         // Setup test data
         let mut rng = rand::thread_rng();
@@ -226,15 +226,17 @@ mod tests {
         let mut mock_input = MockInput::new(data);
 
         // Create a temporary directory for output
-        let temp_dir = Path::new("test_output");
-        if temp_dir.exists() {
-            fs::remove_dir_all(temp_dir).unwrap();
-        }
-        fs::create_dir_all(temp_dir).unwrap();
+        let temp_dir = TempDir::new("test_index_writer_process_ivf")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
 
         // Configure IndexWriter
         let base_config = BaseConfig {
-            output_path: temp_dir.to_str().unwrap().to_string(),
+            output_path: base_directory.clone(),
             dimension,
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
@@ -262,9 +264,9 @@ mod tests {
         index_writer.process(&mut mock_input).unwrap();
 
         // Check if output directories and files exist
-        let pq_directory_path = format!("{}/quantizer", temp_dir.to_str().unwrap());
+        let pq_directory_path = format!("{}/quantizer", base_directory);
         let pq_directory = Path::new(&pq_directory_path);
-        let hnsw_directory_path = format!("{}/hnsw", temp_dir.to_str().unwrap());
+        let hnsw_directory_path = format!("{}/hnsw", base_directory);
         let hnsw_directory = Path::new(&hnsw_directory_path);
         let hnsw_vector_storage_path =
             format!("{}/vector_storage", hnsw_directory.to_str().unwrap());
@@ -275,12 +277,9 @@ mod tests {
         assert!(hnsw_directory.exists());
         assert!(hnsw_vector_storage.exists());
         assert!(hnsw_index.exists());
-
-        // Cleanup
-        fs::remove_dir_all(temp_dir).unwrap();
     }
 
-    // #[test]
+    #[test]
     fn test_index_writer_process_ivf() {
         // Setup test data
         let mut rng = rand::thread_rng();
@@ -293,15 +292,17 @@ mod tests {
         let mut mock_input = MockInput::new(data);
 
         // Create a temporary directory for output
-        let temp_dir = Path::new("test_output");
-        if temp_dir.exists() {
-            fs::remove_dir_all(temp_dir).unwrap();
-        }
-        fs::create_dir_all(temp_dir).unwrap();
+        let temp_dir = TempDir::new("test_index_writer_process_ivf")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
 
         // Configure IndexWriter
         let base_config = BaseConfig {
-            output_path: temp_dir.to_str().unwrap().to_string(),
+            output_path: base_directory.clone(),
             dimension,
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
@@ -323,7 +324,7 @@ mod tests {
         index_writer.process(&mut mock_input).unwrap();
 
         // Check if output directories and files exist
-        let ivf_directory_path = format!("{}/ivf", temp_dir.to_str().unwrap());
+        let ivf_directory_path = format!("{}/ivf", base_directory);
         let ivf_directory = Path::new(&ivf_directory_path);
         let ivf_vector_storage_path = format!("{}/vectors", ivf_directory.to_str().unwrap());
         let ivf_vector_storage = Path::new(&ivf_vector_storage_path);
@@ -332,8 +333,5 @@ mod tests {
         assert!(ivf_directory.exists());
         assert!(ivf_vector_storage.exists());
         assert!(ivf_index.exists());
-
-        // Cleanup
-        fs::remove_dir_all(temp_dir).unwrap();
     }
 }
