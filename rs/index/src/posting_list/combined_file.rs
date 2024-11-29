@@ -30,7 +30,6 @@ pub struct FixedIndexFile {
     header: Header,
     centroid_offset: usize,
     posting_list_metadata_offset: usize,
-    posting_list_offset: usize,
 }
 
 impl FixedIndexFile {
@@ -44,15 +43,12 @@ impl FixedIndexFile {
         let posting_list_metadata_offset =
             Self::align_to_next_boundary(centroid_offset + header.centroids_len as usize, 8)
                 + size_of::<u64>(); // FileBackedAppendablePostingListStorage's first u64 encodes num_clusters
-        let posting_list_offset = posting_list_metadata_offset
-            + header.num_clusters as usize * PL_METADATA_LEN * size_of::<u64>();
         Ok(Self {
             _marker: PhantomData,
             mmap,
             header,
             centroid_offset,
             posting_list_metadata_offset,
-            posting_list_offset,
         })
     }
 

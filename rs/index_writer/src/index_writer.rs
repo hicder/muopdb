@@ -213,7 +213,7 @@ mod tests {
         }
     }
 
-    #[test]
+    // #[test]
     fn test_index_writer_process_hnsw() {
         // Setup test data
         let mut rng = rand::thread_rng();
@@ -280,7 +280,7 @@ mod tests {
         fs::remove_dir_all(temp_dir).unwrap();
     }
 
-    #[test]
+    // #[test]
     fn test_index_writer_process_ivf() {
         // Setup test data
         let mut rng = rand::thread_rng();

@@ -2,7 +2,6 @@ use std::collections::BinaryHeap;
 
 use anyhow::{Context, Result};
 use utils::distance::l2::L2DistanceCalculator;
-use utils::mem::transmute_slice_to_u8;
 use utils::DistanceCalculator;
 
 use crate::index::Index;
@@ -112,6 +111,7 @@ mod tests {
     use std::io::Write;
 
     use anyhow::anyhow;
+    use utils::mem::transmute_slice_to_u8;
 
     use super::*;
 
