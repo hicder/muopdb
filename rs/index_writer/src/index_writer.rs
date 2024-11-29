@@ -1,6 +1,8 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use index::hnsw::builder::HnswBuilder;
 use index::hnsw::writer::HnswWriter;
+use index::ivf::builder::{IvfBuilder, IvfBuilderConfig};
+use index::ivf::writer::IvfWriter;
 use log::{debug, info};
 use quantization::pq::{ProductQuantizerConfig, ProductQuantizerWriter};
 use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
@@ -104,7 +106,46 @@ impl IndexWriter {
                 std::fs::remove_dir_all(&vector_directory).unwrap_or_default();
                 Ok(())
             }
-            IndexWriterConfig::Ivf(ivf_config) => Err(anyhow!("Unimplemented")),
+            IndexWriterConfig::Ivf(ivf_config) => {
+                info!("Start indexing (IVF)");
+                let path = &ivf_config.base_config.output_path;
+
+                let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
+                    max_iteration: ivf_config.max_iteration,
+                    batch_size: ivf_config.batch_size,
+                    num_clusters: ivf_config.num_clusters,
+                    num_probes: 2,
+                    num_data_points: ivf_config.num_data_points,
+                    max_clusters_per_vector: ivf_config.max_clusters_per_vector,
+                    base_directory: path.to_string(),
+                    memory_size: ivf_config.base_config.max_memory_size,
+                    file_size: ivf_config.base_config.file_size,
+                    num_features: ivf_config.base_config.dimension,
+                })?;
+
+                input.reset();
+                while input.has_next() {
+                    let row = input.next();
+                    ivf_builder.add_vector(row.data.to_vec())?;
+                    if row.id % 10000 == 0 {
+                        debug!("Inserted {} rows", row.id);
+                    }
+                }
+
+                info!("Start building index");
+                ivf_builder.build()?;
+
+                let ivf_directory = format!("{}/ivf", path);
+                std::fs::create_dir_all(&ivf_directory)?;
+
+                info!("Start writing index");
+                let ivf_writer = IvfWriter::new(ivf_directory);
+                ivf_writer.write(&mut ivf_builder)?;
+
+                // Cleanup tmp directory. It's ok to fail
+                ivf_builder.cleanup()?;
+                Ok(())
+            }
         }
     }
 }
@@ -117,7 +158,7 @@ mod tests {
     use rand::Rng;
 
     use super::*;
-    use crate::config::{BaseConfig, HnswConfig};
+    use crate::config::{BaseConfig, HnswConfig, IvfConfig};
     use crate::input::Row;
 
     // Mock Input implementation for testing
@@ -174,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn test_index_writer_process() {
+    fn test_index_writer_process_hnsw() {
         // Setup test data
         let mut rng = rand::thread_rng();
         let dimension = 10;
@@ -226,8 +267,72 @@ mod tests {
         let pq_directory = Path::new(&pq_directory_path);
         let hnsw_directory_path = format!("{}/hnsw", temp_dir.to_str().unwrap());
         let hnsw_directory = Path::new(&hnsw_directory_path);
+        let hnsw_vector_storage_path =
+            format!("{}/vector_storage", hnsw_directory.to_str().unwrap());
+        let hnsw_vector_storage = Path::new(&hnsw_vector_storage_path);
+        let hnsw_index_path = format!("{}/index", hnsw_directory.to_str().unwrap());
+        let hnsw_index = Path::new(&hnsw_index_path);
         assert!(pq_directory.exists());
         assert!(hnsw_directory.exists());
+        assert!(hnsw_vector_storage.exists());
+        assert!(hnsw_index.exists());
+
+        // Cleanup
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn test_index_writer_process_ivf() {
+        // Setup test data
+        let mut rng = rand::thread_rng();
+        let dimension = 10;
+        let num_rows = 100;
+        let data: Vec<Vec<f32>> = (0..num_rows)
+            .map(|_| (0..dimension).map(|_| rng.gen::<f32>()).collect())
+            .collect();
+
+        let mut mock_input = MockInput::new(data);
+
+        // Create a temporary directory for output
+        let temp_dir = Path::new("test_output");
+        if temp_dir.exists() {
+            fs::remove_dir_all(temp_dir).unwrap();
+        }
+        fs::create_dir_all(temp_dir).unwrap();
+
+        // Configure IndexWriter
+        let base_config = BaseConfig {
+            output_path: temp_dir.to_str().unwrap().to_string(),
+            dimension,
+            max_memory_size: 1024 * 1024 * 1024, // 1 GB
+            file_size: 1024 * 1024 * 1024,       // 1 GB
+        };
+        let config = IndexWriterConfig::Ivf(IvfConfig {
+            base_config,
+
+            num_clusters: 2,
+            num_data_points: 100,
+            max_clusters_per_vector: 2,
+
+            max_iteration: 10,
+            batch_size: 10,
+        });
+
+        let mut index_writer = IndexWriter::new(config);
+
+        // Process the input
+        index_writer.process(&mut mock_input).unwrap();
+
+        // Check if output directories and files exist
+        let ivf_directory_path = format!("{}/ivf", temp_dir.to_str().unwrap());
+        let ivf_directory = Path::new(&ivf_directory_path);
+        let ivf_vector_storage_path = format!("{}/vectors", ivf_directory.to_str().unwrap());
+        let ivf_vector_storage = Path::new(&ivf_vector_storage_path);
+        let ivf_index_path = format!("{}/index", ivf_directory.to_str().unwrap());
+        let ivf_index = Path::new(&ivf_index_path);
+        assert!(ivf_directory.exists());
+        assert!(ivf_vector_storage.exists());
+        assert!(ivf_index.exists());
 
         // Cleanup
         fs::remove_dir_all(temp_dir).unwrap();
