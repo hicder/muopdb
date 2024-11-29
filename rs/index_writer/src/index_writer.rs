@@ -102,3 +102,121 @@ impl IndexWriter {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::Path;
+
+    use rand::Rng;
+
+    use super::*;
+    use crate::input::Row;
+
+    // Mock Input implementation for testing
+    struct MockInput {
+        data: Vec<Vec<f32>>,
+        current_index: usize,
+    }
+
+    impl MockInput {
+        fn new(data: Vec<Vec<f32>>) -> Self {
+            Self {
+                data,
+                current_index: 0,
+            }
+        }
+    }
+
+    impl Input for MockInput {
+        fn num_rows(&self) -> usize {
+            self.data.len()
+        }
+
+        fn skip_to(&mut self, index: usize) {
+            self.current_index = index;
+        }
+
+        fn next(&mut self) -> Row {
+            let row = Row {
+                id: self.current_index as u64,
+                data: &self.data[self.current_index],
+            };
+            self.current_index += 1;
+            row
+        }
+
+        fn has_next(&self) -> bool {
+            self.current_index < self.data.len()
+        }
+
+        fn reset(&mut self) {
+            self.current_index = 0;
+        }
+    }
+
+    #[test]
+    fn test_get_sorted_random_rows() {
+        let num_rows = 100;
+        let num_random_rows = 50;
+        let result = IndexWriter::get_sorted_random_rows(num_rows, num_random_rows);
+        assert_eq!(result.len(), num_random_rows);
+        for i in 1..result.len() {
+            assert!(result[i - 1] <= result[i]);
+        }
+    }
+
+    #[test]
+    fn test_index_writer_process() {
+        // Setup test data
+        let mut rng = rand::thread_rng();
+        let dimension = 10;
+        let num_rows = 100;
+        let data: Vec<Vec<f32>> = (0..num_rows)
+            .map(|_| (0..dimension).map(|_| rng.gen::<f32>()).collect())
+            .collect();
+
+        let mut mock_input = MockInput::new(data);
+
+        // Create a temporary directory for output
+        let temp_dir = Path::new("test_output");
+        if temp_dir.exists() {
+            fs::remove_dir_all(temp_dir).unwrap();
+        }
+        fs::create_dir_all(temp_dir).unwrap();
+
+        // Configure IndexWriter
+        let config = IndexWriterConfig {
+            output_path: temp_dir.to_str().unwrap().to_string(),
+            dimension,
+            subvector_dimension: 2,
+            num_bits: 2,
+            max_iteration: 10,
+            batch_size: 10,
+            num_training_rows: 50,
+            max_num_neighbors: 10,
+            num_layers: 2,
+            ef_construction: 100,
+            max_memory_size: 1024 * 1024 * 1024, // 1 GB
+            file_size: 1024 * 1024 * 1024,       // 1 GB
+            quantizer_type: QuantizerType::ProductQuantizer,
+            reindex: false,
+        };
+
+        let mut index_writer = IndexWriter::new(config);
+
+        // Process the input
+        index_writer.process(&mut mock_input).unwrap();
+
+        // Check if output directories and files exist
+        let pq_directory_path = format!("{}/quantizer", temp_dir.to_str().unwrap());
+        let pq_directory = Path::new(&pq_directory_path);
+        let hnsw_directory_path = format!("{}/hnsw", temp_dir.to_str().unwrap());
+        let hnsw_directory = Path::new(&hnsw_directory_path);
+        assert!(pq_directory.exists());
+        assert!(hnsw_directory.exists());
+
+        // Cleanup
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+}
