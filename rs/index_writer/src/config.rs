@@ -6,8 +6,18 @@ pub enum QuantizerType {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct IndexWriterConfig {
+pub struct BaseConfig {
     pub output_path: String,
+    pub dimension: usize,
+
+    // Vector storage parameters
+    pub max_memory_size: usize,
+    pub file_size: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct HnswConfig {
+    pub base_config: BaseConfig,
 
     // HNSW parameters
     pub num_layers: u8,
@@ -17,8 +27,6 @@ pub struct IndexWriterConfig {
 
     // Quantizer parameters
     pub quantizer_type: QuantizerType,
-
-    pub dimension: usize,
     pub subvector_dimension: usize,
     pub num_bits: u8,
     pub num_training_rows: usize,
@@ -26,8 +34,30 @@ pub struct IndexWriterConfig {
     // Quantizer builder parameters
     pub max_iteration: usize,
     pub batch_size: usize,
+}
 
-    // Vector storage parameters
-    pub max_memory_size: usize,
-    pub file_size: usize,
+#[derive(Debug, Clone, Default)]
+pub struct IvfConfig {
+    pub base_config: BaseConfig,
+
+    // IVF parameters
+    pub num_clusters: usize,
+    pub num_data_points: usize,
+    pub max_clusters_per_vector: usize,
+
+    // KMeans training parameters
+    pub max_iteration: usize,
+    pub batch_size: usize,
+}
+
+#[derive(Debug, Clone)]
+pub enum IndexWriterConfig {
+    Hnsw(HnswConfig),
+    Ivf(IvfConfig),
+}
+
+impl Default for IndexWriterConfig {
+    fn default() -> Self {
+        IndexWriterConfig::Hnsw(HnswConfig::default())
+    }
 }
