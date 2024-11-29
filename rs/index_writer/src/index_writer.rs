@@ -114,7 +114,6 @@ impl IndexWriter {
                     max_iteration: ivf_config.max_iteration,
                     batch_size: ivf_config.batch_size,
                     num_clusters: ivf_config.num_clusters,
-                    num_probes: 2,
                     num_data_points: ivf_config.num_data_points,
                     max_clusters_per_vector: ivf_config.max_clusters_per_vector,
                     base_directory: path.to_string(),
