@@ -22,8 +22,6 @@ pub struct Ivf {
     pub index_storage: FixedIndexFile,
     // Number of clusters.
     pub num_clusters: usize,
-    // Number of probed centroids.
-    pub num_probes: usize,
 }
 
 impl Ivf {
@@ -31,13 +29,11 @@ impl Ivf {
         vector_storage: FixedFileVectorStorage<f32>,
         index_storage: FixedIndexFile,
         num_clusters: usize,
-        num_probes: usize,
     ) -> Self {
         Self {
             vector_storage,
             index_storage,
             num_clusters,
-            num_probes,
         }
     }
 
@@ -64,15 +60,17 @@ impl Index for Ivf {
         &self,
         query: &[f32],
         k: usize,
-        _ef_construction: u32,
+        ef_construction: u32, // Number of probed centroids
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>> {
         let mut heap = BinaryHeap::with_capacity(k);
 
         // Find the nearest centroids to the query.
-        if let Ok(nearest_centroids) =
-            Self::find_nearest_centroids(&query.to_vec(), &self.index_storage, self.num_probes)
-        {
+        if let Ok(nearest_centroids) = Self::find_nearest_centroids(
+            &query.to_vec(),
+            &self.index_storage,
+            ef_construction as usize,
+        ) {
             // Search in the posting lists of the nearest centroids.
             for &centroid in &nearest_centroids {
                 if let Ok(list) = self.index_storage.get_posting_list(centroid) {
@@ -239,12 +237,10 @@ mod tests {
             FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
 
         let num_clusters = 2;
-        let num_probes = 1;
 
-        let ivf = Ivf::new(storage, index_storage, num_clusters, num_probes);
+        let ivf = Ivf::new(storage, index_storage, num_clusters);
 
         assert_eq!(ivf.num_clusters, num_clusters);
-        assert_eq!(ivf.num_probes, num_probes);
         let cluster_0 = ivf.index_storage.get_posting_list(0);
         let cluster_1 = ivf.index_storage.get_posting_list(1);
         assert!(cluster_0.map_or(false, |list| list.contains(&0)));
@@ -311,15 +307,14 @@ mod tests {
         let num_clusters = 2;
         let num_probes = 2;
 
-        let ivf = Ivf::new(storage, index_storage, num_clusters, num_probes);
+        let ivf = Ivf::new(storage, index_storage, num_clusters);
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
-        let ef_construction = 10;
         let mut context = SearchContext::new(false);
 
         let results = ivf
-            .search(&query, k, ef_construction, &mut context)
+            .search(&query, k, num_probes, &mut context)
             .expect("IVF search should return a result");
 
         assert_eq!(results.len(), 2);
@@ -354,15 +349,14 @@ mod tests {
         let num_clusters = 1;
         let num_probes = 1;
 
-        let ivf = Ivf::new(storage, index_storage, num_clusters, num_probes);
+        let ivf = Ivf::new(storage, index_storage, num_clusters);
 
         let query = vec![1.0, 2.0, 3.0];
         let k = 5; // More than available results
-        let ef_construction = 10;
         let mut context = SearchContext::new(false);
 
         let results = ivf
-            .search(&query, k, ef_construction, &mut context)
+            .search(&query, k, num_probes, &mut context)
             .expect("IVF search should return a result");
 
         assert_eq!(results.len(), 1); // Only one result available

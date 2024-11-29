@@ -305,7 +305,6 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_probes: 2,
             num_data_points: num_vectors,
             max_clusters_per_vector: 1,
             base_directory: base_directory.clone(),
