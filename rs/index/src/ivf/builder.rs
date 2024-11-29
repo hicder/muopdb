@@ -195,6 +195,19 @@ impl IvfBuilder {
 
         Ok(())
     }
+
+    pub fn cleanup(&mut self) -> Result<()> {
+        let vectors_path = format!("{}/builder_vector_storage", self.config.base_directory);
+        let centroids_path = format!("{}/builder_centroid_storage", self.config.base_directory);
+        let posting_lists_path = format!(
+            "{}/builder_posting_list_storage",
+            self.config.base_directory
+        );
+        std::fs::remove_dir_all(&vectors_path)?;
+        std::fs::remove_dir_all(&centroids_path)?;
+        std::fs::remove_dir_all(&posting_lists_path)?;
+        Ok(())
+    }
 }
 
 // Test
