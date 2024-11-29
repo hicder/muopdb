@@ -126,6 +126,10 @@ impl FixedIndexFile {
         let slice = &self.mmap[pl_offset..pl_offset + pl_len * size_of::<u64>()];
         Ok(transmute_u8_to_slice::<u64>(slice))
     }
+
+    pub fn header(&self) -> &Header {
+        &self.header
+    }
 }
 
 #[cfg(test)]

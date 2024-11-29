@@ -2,22 +2,24 @@ use std::collections::BinaryHeap;
 
 use anyhow::{Context, Result};
 use utils::distance::l2::L2DistanceCalculator;
+use utils::mem::transmute_slice_to_u8;
 use utils::DistanceCalculator;
 
 use crate::index::Index;
-use crate::posting_list::fixed_file::FixedFilePostingListStorage;
+use crate::posting_list::combined_file::FixedIndexFile;
 use crate::utils::{IdWithScore, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
 
 pub struct Ivf {
     // The dataset.
     pub vector_storage: FixedFileVectorStorage<f32>,
-    // Each cluster is represented by a centroid vector. This is all the centroids in our IVF.
-    pub centroid_storage: FixedFileVectorStorage<f32>,
-    // Inverted index mapping each cluster to the vectors it contains.
-    //   index: centroid index in `centroid_storage`
+    // Each cluster is represented by a centroid vector.
+    // This stores the list of centroids, along with a posting list
+    // which maps each centroid to the vectors inside the same cluster
+    // that it represents. The mapping is a list such that:
+    //   index: centroid index to the list of centroids
     //   value: list of vector indices in `vector_storage`
-    pub posting_list_storage: FixedFilePostingListStorage,
+    pub index_storage: FixedIndexFile,
     // Number of clusters.
     pub num_clusters: usize,
     // Number of probed centroids.
@@ -27,15 +29,13 @@ pub struct Ivf {
 impl Ivf {
     pub fn new(
         vector_storage: FixedFileVectorStorage<f32>,
-        centroid_storage: FixedFileVectorStorage<f32>,
-        posting_list_storage: FixedFilePostingListStorage,
+        index_storage: FixedIndexFile,
         num_clusters: usize,
         num_probes: usize,
     ) -> Self {
         Self {
             vector_storage,
-            centroid_storage,
-            posting_list_storage,
+            index_storage,
             num_clusters,
             num_probes,
         }
@@ -43,17 +43,16 @@ impl Ivf {
 
     pub fn find_nearest_centroids(
         vector: &Vec<f32>,
-        centroids: &FixedFileVectorStorage<f32>,
+        index_storage: &FixedIndexFile,
         num_probes: usize,
     ) -> Result<Vec<usize>> {
         let mut distances: Vec<(usize, f32)> = Vec::new();
-        let mut context = SearchContext::new(false);
-        for i in 0..centroids.num_vectors {
-            let centroid = centroids
-                .get(i, &mut context)
+        for i in 0..index_storage.header().num_clusters {
+            let centroid = index_storage
+                .get_centroid(i as usize)
                 .with_context(|| format!("Failed to get centroid at index {}", i))?;
             let dist = L2DistanceCalculator::calculate(&vector, &centroid);
-            distances.push((i, dist));
+            distances.push((i as usize, dist));
         }
         distances.select_nth_unstable_by(num_probes - 1, |a, b| a.1.total_cmp(&b.1));
         Ok(distances.into_iter().map(|(idx, _)| idx).collect())
@@ -72,11 +71,11 @@ impl Index for Ivf {
 
         // Find the nearest centroids to the query.
         if let Ok(nearest_centroids) =
-            Self::find_nearest_centroids(&query.to_vec(), &self.centroid_storage, self.num_probes)
+            Self::find_nearest_centroids(&query.to_vec(), &self.index_storage, self.num_probes)
         {
-            // Search in the inverted lists of the nearest centroids.
+            // Search in the posting lists of the nearest centroids.
             for &centroid in &nearest_centroids {
-                if let Ok(list) = self.posting_list_storage.get(centroid) {
+                if let Ok(list) = self.index_storage.get_posting_list(centroid) {
                     for &idx in list {
                         let distance = L2DistanceCalculator::calculate(
                             query,
@@ -114,6 +113,8 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
 
+    use anyhow::anyhow;
+
     use super::*;
 
     fn create_fixed_file_vector_storage(file_path: &String, dataset: &Vec<Vec<f32>>) -> Result<()> {
@@ -133,33 +134,82 @@ mod tests {
         Ok(())
     }
 
-    fn create_fixed_file_posting_list_storage(
+    fn create_fixed_file_index_storage(
         file_path: &String,
+        centroids: &Vec<Vec<f32>>,
         posting_lists: &Vec<Vec<u64>>,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         let mut file = File::create(file_path.clone())?;
 
-        // Write number of posting_lists (8 bytes)
-        let num_posting_lists = posting_lists.len();
-        file.write_all(&(num_posting_lists as u64).to_le_bytes())?;
-
-        let mut pl_offset = num_posting_lists * 2 * std::mem::size_of::<u64>();
-        // Write metadata
-        for posting_list in posting_lists.iter() {
-            let pl_len = posting_list.len();
-            file.write_all(&(pl_len as u64).to_le_bytes())?;
-            file.write_all(&(pl_offset as u64).to_le_bytes())?;
-            pl_offset += pl_len * std::mem::size_of::<u64>();
+        let num_clusters = centroids.len();
+        if num_clusters != posting_lists.len() {
+            return Err(anyhow!(
+                "Number of clusters mismatch: {} (centroids) vs. {} (posting lists)",
+                num_clusters,
+                posting_lists.len(),
+            ));
         }
+
+        // Create a test header
+        let num_features = centroids[0].len();
+        let centroids_len = size_of::<u64>() + num_features * num_clusters * size_of::<f32>();
+
+        assert!(file.write_all(&0u8.to_le_bytes()).is_ok());
+        let mut offset = 1;
+        assert!(file.write_all(&(num_features as u32).to_le_bytes()).is_ok());
+        offset += size_of::<u32>();
+        assert!(file.write_all(&(num_clusters as u32).to_le_bytes()).is_ok());
+        offset += size_of::<u32>();
+        assert!(file.write_all(&7u64.to_le_bytes()).is_ok());
+        offset += size_of::<u64>();
+        assert!(file
+            .write_all(&(centroids_len as u64).to_le_bytes())
+            .is_ok());
+        offset += size_of::<u64>();
+        assert!(file.write_all(&9u64.to_le_bytes()).is_ok());
+        offset += size_of::<u64>();
+
+        // Add padding to align to 8 bytes
+        let mut pad: Vec<u8> = Vec::new();
+        while (offset + pad.len()) % 8 != 0 {
+            pad.push(0);
+        }
+        assert!(file.write_all(&pad).is_ok());
+        offset += pad.len();
+
+        // Write centroids
+        assert!(file.write_all(&(num_clusters as u64).to_le_bytes()).is_ok());
+        offset += size_of::<u64>();
+        for centroid in centroids.iter() {
+            assert!(file.write_all(transmute_slice_to_u8(centroid)).is_ok());
+            offset += size_of::<f32>();
+        }
+
+        pad.clear();
+        while (offset + pad.len()) % 8 != 0 {
+            pad.push(0);
+        }
+        assert!(file.write_all(&pad).is_ok());
+        offset += pad.len();
 
         // Write posting lists
+        assert!(file.write_all(&(num_clusters as u64).to_le_bytes()).is_ok());
+        offset += size_of::<u64>();
+        let mut pl_offset = num_clusters * 2 * size_of::<u64>();
         for posting_list in posting_lists.iter() {
-            for element in posting_list.iter() {
-                file.write_all(&element.to_le_bytes())?;
-            }
+            let pl_len = posting_list.len();
+            assert!(file.write_all(&(pl_len as u64).to_le_bytes()).is_ok());
+            assert!(file.write_all(&(pl_offset as u64).to_le_bytes()).is_ok());
+            pl_offset += pl_len * size_of::<u64>();
+            offset += 2 * size_of::<u64>();
         }
+        for posting_list in posting_lists.iter() {
+            assert!(file.write_all(transmute_slice_to_u8(&posting_list)).is_ok());
+            offset += posting_list.len() * size_of::<u64>();
+        }
+
         file.flush()?;
-        Ok(())
+        Ok(offset)
     }
 
     #[test]
@@ -181,33 +231,22 @@ mod tests {
         let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
 
-        let file_path = format!("{}/centroids", base_dir);
+        let file_path = format!("{}/index", base_dir);
         let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
-        assert!(create_fixed_file_vector_storage(&file_path, &centroids).is_ok());
-        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
-            .expect("FixedFileVectorStorage should be created");
-
-        let file_path = format!("{}/posting_lists", base_dir);
         let posting_lists = vec![vec![0], vec![1, 2]];
-        assert!(create_fixed_file_posting_list_storage(&file_path, &posting_lists).is_ok());
-        let posting_list_storage = FixedFilePostingListStorage::new(file_path)
-            .expect("FixedFilePostingListStorage should be created");
+        assert!(create_fixed_file_index_storage(&file_path, &centroids, &posting_lists).is_ok());
+        let index_storage =
+            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
 
         let num_clusters = 2;
         let num_probes = 1;
 
-        let ivf = Ivf::new(
-            storage,
-            centroid_storage,
-            posting_list_storage,
-            num_clusters,
-            num_probes,
-        );
+        let ivf = Ivf::new(storage, index_storage, num_clusters, num_probes);
 
         assert_eq!(ivf.num_clusters, num_clusters);
         assert_eq!(ivf.num_probes, num_probes);
-        let cluster_0 = ivf.posting_list_storage.get(0);
-        let cluster_1 = ivf.posting_list_storage.get(1);
+        let cluster_0 = ivf.index_storage.get_posting_list(0);
+        let cluster_1 = ivf.index_storage.get_posting_list(1);
         assert!(cluster_0.map_or(false, |list| list.contains(&0)));
         assert!(cluster_1.map_or(false, |list| list.contains(&2)));
     }
@@ -228,12 +267,13 @@ mod tests {
             vec![4.0, 5.0, 6.0],
             vec![7.0, 8.0, 9.0],
         ];
-        assert!(create_fixed_file_vector_storage(&file_path, &centroids).is_ok());
-        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
-            .expect("FixedFileVectorStorage should be created");
+        let posting_lists = vec![vec![0], vec![1], vec![2]];
+        assert!(create_fixed_file_index_storage(&file_path, &centroids, &posting_lists).is_ok());
+        let index_storage =
+            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
         let num_probes = 2;
 
-        let nearest = Ivf::find_nearest_centroids(&vector, &centroid_storage, num_probes)
+        let nearest = Ivf::find_nearest_centroids(&vector, &index_storage, num_probes)
             .expect("Nearest centroids should be found");
 
         assert_eq!(nearest[0], 1);
@@ -261,28 +301,17 @@ mod tests {
         let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
 
-        let file_path = format!("{}/centroids", base_dir);
+        let file_path = format!("{}/index", base_dir);
         let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
-        assert!(create_fixed_file_vector_storage(&file_path, &centroids).is_ok());
-        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
-            .expect("FixedFileVectorStorage should be created");
-
-        let file_path = format!("{}/posting_lists", base_dir);
         let posting_lists = vec![vec![0, 3], vec![1, 2]];
-        assert!(create_fixed_file_posting_list_storage(&file_path, &posting_lists).is_ok());
-        let posting_list_storage = FixedFilePostingListStorage::new(file_path)
-            .expect("FixedFilePostingListStorage should be created");
+        assert!(create_fixed_file_index_storage(&file_path, &centroids, &posting_lists).is_ok());
+        let index_storage =
+            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
 
         let num_clusters = 2;
         let num_probes = 2;
 
-        let ivf = Ivf::new(
-            storage,
-            centroid_storage,
-            posting_list_storage,
-            num_clusters,
-            num_probes,
-        );
+        let ivf = Ivf::new(storage, index_storage, num_clusters, num_probes);
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
@@ -315,28 +344,17 @@ mod tests {
         let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
 
-        let file_path = format!("{}/centroids", base_dir);
+        let file_path = format!("{}/index", base_dir);
         let centroids = vec![vec![100.0, 200.0, 300.0]];
-        assert!(create_fixed_file_vector_storage(&file_path, &centroids).is_ok());
-        let centroid_storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
-            .expect("FixedFileVectorStorage should be created");
-
-        let file_path = format!("{}/posting_lists", base_dir);
         let posting_lists = vec![vec![0]];
-        assert!(create_fixed_file_posting_list_storage(&file_path, &posting_lists).is_ok());
-        let posting_list_storage = FixedFilePostingListStorage::new(file_path)
-            .expect("FixedFilePostingListStorage should be created");
+        assert!(create_fixed_file_index_storage(&file_path, &centroids, &posting_lists).is_ok());
+        let index_storage =
+            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
 
         let num_clusters = 1;
         let num_probes = 1;
 
-        let ivf = Ivf::new(
-            storage,
-            centroid_storage,
-            posting_list_storage,
-            num_clusters,
-            num_probes,
-        );
+        let ivf = Ivf::new(storage, index_storage, num_clusters, num_probes);
 
         let query = vec![1.0, 2.0, 3.0];
         let k = 5; // More than available results
