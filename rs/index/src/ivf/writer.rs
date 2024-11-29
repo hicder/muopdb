@@ -322,8 +322,7 @@ mod tests {
             builder.add_vector(vector).expect("Vector should be added");
         }
 
-        let result = builder.build();
-        assert!(result.is_ok());
+        assert!(builder.build().is_ok());
 
         assert!(writer.write(&mut builder).is_ok());
 
