@@ -17,7 +17,6 @@ pub struct IvfBuilderConfig {
     pub max_iteration: usize,
     pub batch_size: usize,
     pub num_clusters: usize,
-    pub num_probes: usize,
     pub num_data_points: usize,
     pub max_clusters_per_vector: usize,
 
@@ -242,7 +241,6 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_probes: 2,
             num_data_points: num_vectors,
             max_clusters_per_vector: 1,
             base_directory,
