@@ -11,8 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Install hdf5 library
-      run: sudo apt-get install -y libhdf5-dev protobuf-compiler
+    - name: Install dependencies
+      run: sudo apt-get install -y libhdf5-dev protobuf-compiler libopenblas-dev
     - name: Build
       run: cargo build --release --verbose
     - name: Run tests
@@ -22,8 +22,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install hdf5 library and protobuf
-        run: brew install hdf5 protobuf
+      - name: Install dependencies
+        run: brew install hdf5 protobuf openblas
       - name: Build
         run: cargo build --release --verbose
       - name: Run tests
