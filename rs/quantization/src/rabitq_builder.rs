@@ -148,7 +148,7 @@ mod tests {
         builder.add(vec![1.0, 2.0]);
 
         let rabitq = builder.build().unwrap();
-        let _pi: &Array2<f32> = &rabitq.p_inv;
+        let _pi: &Array2<f32> = &rabitq.orthogonal_matrix_inv;
 
         assert_eq!(_pi.shape(), &[2, 2]);
 
