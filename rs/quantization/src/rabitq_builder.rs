@@ -50,7 +50,7 @@ impl RabitQBuilder {
 
         // 4. Pre-compute the values of <\bar{o}, o>
         let quantized_vector_dot_products = self.get_quantized_vector_dot_products(
-            &dataset,
+            &normalized_dataset,
             &quantization_codes,
             &p);
 
@@ -91,27 +91,28 @@ impl RabitQBuilder {
             .collect()
     }
 
-    fn get_quantized_vector_dot_products(&self, dataset: &Array2<f32>, quantization_codes: &Vec<BitVec>, p: &Array2<f32>) -> Array1<f32> {
+    fn get_quantized_vector_dot_products(&self,
+            normalized_dataset: &Array2<f32>,
+            quantization_codes: &Vec<BitVec>,
+            p: &Array2<f32>) -> Array1<f32> {
+
         debug_assert!(
-            quantization_codes.len() == dataset.len_of(Axis(0)),
+            quantization_codes.len() == normalized_dataset.len_of(Axis(0)),
             "The number of quantization codes {} must be equal to the number of data points {}",
             quantization_codes.len(),
-            dataset.len_of(Axis(0)));
+            normalized_dataset.len_of(Axis(0)));
 
-        // TODO: vectorize this calculation
-        let positive_value = 1.0 / (self.dimension as f32).sqrt();
-        let negative_value = -1.0 / (self.dimension as f32).sqrt();
-
-        let mut dot_products: Vec<f32> = Vec::new();
-        for (data, code) in dataset.axis_iter(Axis(0)).zip(quantization_codes.iter()) {
-            let x_bar: Vec<f32> = code.iter()
-                    .map(|x| if x { positive_value } else { negative_value })
-                    .collect();
-            let quantized: Array1<f32> = p.dot(&Array1::from_vec(x_bar));
-            dot_products.push(quantized.dot(&data));
-        }
-
-        return Array1::from_vec(dot_products);
+        let sphere_coordinate: f32 = 1.0 / (self.dimension as f32).sqrt(); // coordinate of the unit sphere in D-dimensional space
+        quantization_codes.iter()
+                .zip(normalized_dataset.axis_iter(Axis(0)))
+                .map(|(code, norm_datapoint)| {
+                    let x_bar: Array1<f32> = code.iter()
+                            .map(|x| if x { sphere_coordinate } else { -sphere_coordinate })
+                            .collect();
+                    let o_bar: Array1<f32> = p.dot(&x_bar);
+                    o_bar.dot(&norm_datapoint)
+                })
+                .collect()
     }
 }
 
