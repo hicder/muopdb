@@ -50,10 +50,17 @@ pub struct IvfConfig {
     pub batch_size: usize,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct HnswIvfConfig {
+    pub hnsw_config: HnswConfig,
+    pub ivf_config: IvfConfig,
+}
+
 #[derive(Debug, Clone)]
 pub enum IndexWriterConfig {
     Hnsw(HnswConfig),
     Ivf(IvfConfig),
+    HnswIvf(HnswIvfConfig),
 }
 
 impl Default for IndexWriterConfig {
