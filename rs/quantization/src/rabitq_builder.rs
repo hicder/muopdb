@@ -38,6 +38,7 @@ impl RabitQBuilder {
         let dataset = self.get_dataset()?;
 
         // 1. Normalize the set of vectors
+        // Note the paper suggests using multiple centroids, but we'll start with one for simplicity
         let centroid: Array1<f32> = self.get_centroid(&dataset);
         let (normalized_dataset, _l2_norms) = normalize(&dataset - &centroid, NormalizeAxis::Row);
 
@@ -46,7 +47,7 @@ impl RabitQBuilder {
         let p_inv = p.inv()?;
 
         // 3. Compute the quantization code x_b
-        let quantization_codes = self.get_quantization_codes(&dataset, &p_inv);
+        let quantization_codes = self.get_quantization_codes(&normalized_dataset, &p_inv);
 
         // 4. Pre-compute the values of ||o_r - c|| and <\bar{o}, o>
         let dist_from_centroid: Array1<f32> = self.get_dist_from_centroid(&dataset, &centroid);
@@ -79,20 +80,17 @@ impl RabitQBuilder {
         return Ok(q);
     }
 
-    fn get_quantization_codes(&self, dataset: &Array2<f32>, p_inv: &Array2<f32>) -> Vec<BitVec>{
-        let mut quantization_codes: Vec<BitVec> = Vec::new();
-
+    fn get_quantization_codes(&self, normalized_dataset: &Array2<f32>, p_inv: &Array2<f32>) -> Vec<BitVec>{
         // Each data point is quantized as
-        // sign(P^{−1}o) , where `sign` is 1 if the element is positive and 0 otherwise.
-        for row in dataset.axis_iter(Axis(0)) {
-            let mut code = BitVec::with_capacity(self.dimension);
-            for x in p_inv.dot(&row).iter() {
-                code.push(if *x > 0.0 { true } else { false });
-            }
-            quantization_codes.push(code);
-        }
-
-        return quantization_codes;
+        // x_b = sign(P^{−1}o)
+        normalized_dataset.axis_iter(Axis(0))
+            .map(|norm_data| {
+                p_inv.dot(&norm_data)
+                        .map(|x| *x > 0.0)
+                        .into_iter()
+                        .collect::<BitVec>()
+            })
+            .collect()
     }
 
     fn get_dist_from_centroid(&self, dataset: &Array2<f32>, centroid: &Array1<f32>) -> Array1<f32> {
