@@ -5,13 +5,15 @@ use ndarray_rand::RandomExt;
 use ndarray_rand::rand_distr::StandardNormal;
 use ndarray_linalg::qr::QR;
 use ndarray_linalg::norm::Norm;
+use ndarray_linalg::norm::NormalizeAxis;
+use ndarray_linalg::norm::normalize;
 use ndarray_linalg::solve::Inverse;
 
 use crate::rabitq::RabitQ;
 
 pub struct RabitQBuilder {
     dimension: usize,
-    dataset: Vec<f32>,
+    dataset: Vec<f32>, // size = sample_count * dimension
 }
 
 impl RabitQBuilder {
@@ -37,9 +39,9 @@ impl RabitQBuilder {
 
         // 1. Normalize the set of vectors
         let centroid: Array1<f32> = self.get_centroid(&dataset);
-        // TODO: normalize the set of vectors
+        let (normalized_dataset, _l2_norms) = normalize(&dataset - &centroid, NormalizeAxis::Row);
 
-        // 2. Sample a random orthogonal matrix P to construct the codebook Crand
+        // 2. Sample a random orthogonal matrix P to construct the codebook C_rand
         let p = self.generate_orthogonal_matrix(self.dimension)?;
         let p_inv = p.inv()?;
 
