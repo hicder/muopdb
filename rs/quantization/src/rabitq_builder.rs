@@ -1,12 +1,11 @@
 use anyhow::Result;
 use bit_vec::BitVec;
 use ndarray::{Array1, Array2, Axis};
-use ndarray_rand::RandomExt;
-use ndarray_rand::rand_distr::StandardNormal;
+use ndarray_linalg::norm::{normalize, NormalizeAxis};
 use ndarray_linalg::qr::QR;
-use ndarray_linalg::norm::NormalizeAxis;
-use ndarray_linalg::norm::normalize;
 use ndarray_linalg::solve::Inverse;
+use ndarray_rand::rand_distr::StandardNormal;
+use ndarray_rand::RandomExt;
 
 use crate::rabitq::RabitQ;
 
@@ -16,17 +15,18 @@ pub struct RabitQBuilder {
 }
 
 impl RabitQBuilder {
-    pub fn new(
-        dimension: usize
-    ) -> Self {
+    pub fn new(dimension: usize) -> Self {
         Self {
             dimension,
-            dataset: Vec::new()
+            dataset: Vec::new(),
         }
     }
 
     pub fn add(&mut self, data: Vec<f32>) {
-        debug_assert!(data.len() == self.dimension, "Vector must have the same dimension as the dataset");
+        debug_assert!(
+            data.len() == self.dimension,
+            "Vector must have the same dimension as the dataset"
+        );
 
         self.dataset.append(&mut data.clone());
     }
@@ -39,7 +39,8 @@ impl RabitQBuilder {
         // 1. Normalize the set of vectors and store ||o_r - c||
         // Note the paper suggests using multiple centroids, but we'll start with one for simplicity
         let centroid: Array1<f32> = self.get_centroid(&dataset);
-        let (normalized_dataset, dist_from_centroid) = normalize(&dataset - &centroid, NormalizeAxis::Row);
+        let (normalized_dataset, dist_from_centroid) =
+            normalize(&dataset - &centroid, NormalizeAxis::Row);
 
         // 2. Sample a random orthogonal matrix P to construct the codebook C_rand
         let p = self.generate_orthogonal_matrix(self.dimension)?;
@@ -49,10 +50,8 @@ impl RabitQBuilder {
         let quantization_codes = self.get_quantization_codes(&normalized_dataset, &p_inv);
 
         // 4. Pre-compute the values of <\bar{o}, o>
-        let quantized_vector_dot_products = self.get_quantized_vector_dot_products(
-            &normalized_dataset,
-            &quantization_codes,
-            &p);
+        let quantized_vector_dot_products =
+            self.get_quantized_vector_dot_products(&normalized_dataset, &quantization_codes, &p);
 
         Ok(RabitQ {
             centroid,
@@ -65,61 +64,81 @@ impl RabitQBuilder {
 
     fn get_dataset(&self) -> Result<Array2<f32>> {
         let sample_count: usize = self.dataset.len() / self.dimension;
-        Ok(Array2::from_shape_vec((sample_count, self.dimension), self.dataset.clone())?)
+        Ok(Array2::from_shape_vec(
+            (sample_count, self.dimension),
+            self.dataset.clone(),
+        )?)
     }
 
     fn get_centroid(&self, dataset: &Array2<f32>) -> Array1<f32> {
         return dataset.mean_axis(Axis(0)).unwrap();
     }
 
-    fn generate_orthogonal_matrix(&self, d: usize)  -> Result<Array2<f32>>{
+    fn generate_orthogonal_matrix(&self, d: usize) -> Result<Array2<f32>> {
         let matrix: Array2<f32> = Array2::random((d, d), StandardNormal);
         let (q, _) = matrix.qr()?;
         return Ok(q);
     }
 
-    fn get_quantization_codes(&self, normalized_dataset: &Array2<f32>, p_inv: &Array2<f32>) -> Vec<BitVec>{
+    fn get_quantization_codes(
+        &self,
+        normalized_dataset: &Array2<f32>,
+        p_inv: &Array2<f32>,
+    ) -> Vec<BitVec> {
         // Each data point is quantized as
         // x_b = sign(P^{−1}o)
-        normalized_dataset.axis_iter(Axis(0))
+        normalized_dataset
+            .axis_iter(Axis(0))
             .map(|norm_data| {
-                p_inv.dot(&norm_data)
-                        .map(|x| *x > 0.0)
-                        .into_iter()
-                        .collect::<BitVec>()
+                p_inv
+                    .dot(&norm_data)
+                    .map(|x| *x > 0.0)
+                    .into_iter()
+                    .collect::<BitVec>()
             })
             .collect()
     }
 
-    fn get_quantized_vector_dot_products(&self,
-            normalized_dataset: &Array2<f32>,
-            quantization_codes: &Vec<BitVec>,
-            p: &Array2<f32>) -> Array1<f32> {
-
+    fn get_quantized_vector_dot_products(
+        &self,
+        normalized_dataset: &Array2<f32>,
+        quantization_codes: &Vec<BitVec>,
+        p: &Array2<f32>,
+    ) -> Array1<f32> {
         debug_assert!(
             quantization_codes.len() == normalized_dataset.len_of(Axis(0)),
             "The number of quantization codes {} must be equal to the number of data points {}",
             quantization_codes.len(),
-            normalized_dataset.len_of(Axis(0)));
+            normalized_dataset.len_of(Axis(0))
+        );
 
         let sphere_coordinate: f32 = 1.0 / (self.dimension as f32).sqrt(); // coordinate of the unit sphere in D-dimensional space
-        quantization_codes.iter()
-                .zip(normalized_dataset.axis_iter(Axis(0)))
-                .map(|(code, norm_datapoint)| {
-                    let x_bar: Array1<f32> = code.iter()
-                            .map(|x| if x { sphere_coordinate } else { -sphere_coordinate })
-                            .collect();
-                    let o_bar: Array1<f32> = p.dot(&x_bar);
-                    o_bar.dot(&norm_datapoint)
-                })
-                .collect()
+        quantization_codes
+            .iter()
+            .zip(normalized_dataset.axis_iter(Axis(0)))
+            .map(|(code, norm_datapoint)| {
+                let x_bar: Array1<f32> = code
+                    .iter()
+                    .map(|x| {
+                        if x {
+                            sphere_coordinate
+                        } else {
+                            -sphere_coordinate
+                        }
+                    })
+                    .collect();
+                let o_bar: Array1<f32> = p.dot(&x_bar);
+                o_bar.dot(&norm_datapoint)
+            })
+            .collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use approx::assert_abs_diff_eq;
+
+    use super::*;
 
     const EPSILON: f32 = 0.0001;
 
