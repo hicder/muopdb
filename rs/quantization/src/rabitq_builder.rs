@@ -89,9 +89,9 @@ impl RabitQBuilder {
         // x_b = sign(P^{−1}o)
         normalized_dataset
             .axis_iter(Axis(0))
-            .map(|norm_data| {
+            .map(|datapoint| {
                 p_inv
-                    .dot(&norm_data)
+                    .dot(&datapoint)
                     .map(|x| *x > 0.0)
                     .into_iter()
                     .collect::<BitVec>()
@@ -116,7 +116,7 @@ impl RabitQBuilder {
         quantization_codes
             .iter()
             .zip(normalized_dataset.axis_iter(Axis(0)))
-            .map(|(code, norm_datapoint)| {
+            .map(|(code, datapoint)| {
                 let x_bar: Array1<f32> = code
                     .iter()
                     .map(|x| {
@@ -127,8 +127,8 @@ impl RabitQBuilder {
                         }
                     })
                     .collect();
-                let o_bar: Array1<f32> = p.dot(&x_bar);
-                o_bar.dot(&norm_datapoint)
+                let quantized_vector: Array1<f32> = p.dot(&x_bar);
+                quantized_vector.dot(&datapoint)
             })
             .collect()
     }
