@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+approx.workspace = true
 anyhow.workspace = true
 serde_yaml.workspace = true
 serde.workspace = true
@@ -15,6 +16,10 @@ criterion.workspace = true
 log.workspace = true
 env_logger.workspace = true
 strum.workspace = true
+ndarray.workspace = true
+ndarray-rand.workspace = true
+ndarray-linalg.workspace = true
+bit-vec.workspace = true
 
 [[bench]]
 name = "pq_dist"
