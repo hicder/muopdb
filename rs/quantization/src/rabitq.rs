@@ -20,7 +20,7 @@ pub struct RabitQ {
     // The distance of each data point from the centroid
     // Notation: $||o_r - c||$
     // Dimension: $N$
-    pub dist_from_centroid: Array1<f32>,
+    pub dist_from_centroid: Vec<f32>,
 
     // The dot products of each quantized vector with its data point
     // Notation: $<\bar{o}, o>$

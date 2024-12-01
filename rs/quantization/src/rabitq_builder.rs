@@ -4,7 +4,6 @@ use ndarray::{Array1, Array2, Axis};
 use ndarray_rand::RandomExt;
 use ndarray_rand::rand_distr::StandardNormal;
 use ndarray_linalg::qr::QR;
-use ndarray_linalg::norm::Norm;
 use ndarray_linalg::norm::NormalizeAxis;
 use ndarray_linalg::norm::normalize;
 use ndarray_linalg::solve::Inverse;
@@ -37,10 +36,10 @@ impl RabitQBuilder {
 
         let dataset = self.get_dataset()?;
 
-        // 1. Normalize the set of vectors
+        // 1. Normalize the set of vectors and store ||o_r - c||
         // Note the paper suggests using multiple centroids, but we'll start with one for simplicity
         let centroid: Array1<f32> = self.get_centroid(&dataset);
-        let (normalized_dataset, _l2_norms) = normalize(&dataset - &centroid, NormalizeAxis::Row);
+        let (normalized_dataset, dist_from_centroid) = normalize(&dataset - &centroid, NormalizeAxis::Row);
 
         // 2. Sample a random orthogonal matrix P to construct the codebook C_rand
         let p = self.generate_orthogonal_matrix(self.dimension)?;
@@ -49,8 +48,7 @@ impl RabitQBuilder {
         // 3. Compute the quantization code x_b
         let quantization_codes = self.get_quantization_codes(&normalized_dataset, &p_inv);
 
-        // 4. Pre-compute the values of ||o_r - c|| and <\bar{o}, o>
-        let dist_from_centroid: Array1<f32> = self.get_dist_from_centroid(&dataset, &centroid);
+        // 4. Pre-compute the values of <\bar{o}, o>
         let quantized_vector_dot_products = self.get_quantized_vector_dot_products(
             &dataset,
             &quantization_codes,
@@ -91,16 +89,6 @@ impl RabitQBuilder {
                         .collect::<BitVec>()
             })
             .collect()
-    }
-
-    fn get_dist_from_centroid(&self, dataset: &Array2<f32>, centroid: &Array1<f32>) -> Array1<f32> {
-        let differences = dataset - centroid;
-        let mut norm = Vec::new();
-        for row in differences.axis_iter(Axis(0)) {
-            norm.push(row.norm_l2());
-        }
-
-        return Array1::from_vec(norm);
     }
 
     fn get_quantized_vector_dot_products(&self, dataset: &Array2<f32>, quantization_codes: &Vec<BitVec>, p: &Array2<f32>) -> Array1<f32> {
