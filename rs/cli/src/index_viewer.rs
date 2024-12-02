@@ -32,7 +32,7 @@ pub fn main() {
     let points_per_layer_0 = arg.points_per_layer_0;
 
     let reader = HnswReader::new(arg.index_path);
-    let hnsw = reader.read::<u8, ProductQuantizer>();
+    let hnsw = reader.read::<ProductQuantizer>();
 
     let header = hnsw.get_header();
     println!("Header: {:?}", header);

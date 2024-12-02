@@ -14,7 +14,7 @@ impl IndexProvider {
     pub fn read_index(&self, name: &str) -> Option<BoxedIndex> {
         let index_path = format!("{}/{}", self.data_directory, name);
         let reader = HnswReader::new(index_path);
-        let index = reader.read::<u8, ProductQuantizer>();
+        let index = reader.read::<ProductQuantizer>();
         Some(Box::new(index))
     }
 }

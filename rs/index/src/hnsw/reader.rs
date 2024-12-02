@@ -3,7 +3,6 @@ use std::fs::File;
 use byteorder::{ByteOrder, LittleEndian};
 use memmap2::Mmap;
 use quantization::quantization::Quantizer;
-use quantization::typing::VectorT;
 
 use crate::hnsw::index::Hnsw;
 use crate::hnsw::writer::{Header, Version};
@@ -18,14 +17,14 @@ impl HnswReader {
         Self { base_directory }
     }
 
-    pub fn read<T: VectorT<Q>, Q: Quantizer>(&self) -> Hnsw<T, Q> {
+    pub fn read<Q: Quantizer>(&self) -> Hnsw<Q> {
         let backing_file = File::open(format!("{}/hnsw/index", self.base_directory)).unwrap();
         let mmap = unsafe { Mmap::map(&backing_file).unwrap() };
 
         let (header, offset) = self.read_header(&mmap);
 
         let vector_storage_path = format!("{}/hnsw/vector_storage", self.base_directory);
-        let vector_storage = FixedFileVectorStorage::<T>::new(
+        let vector_storage = FixedFileVectorStorage::<Q::QuantizedT>::new(
             vector_storage_path,
             header.quantized_dimension as usize,
         )
@@ -143,7 +142,7 @@ mod tests {
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
         let mut hnsw_builder =
-            HnswBuilder::<u8, ProductQuantizer>::new(10, 128, 20, 1024, 4096, 16, pq, vector_dir);
+            HnswBuilder::<ProductQuantizer>::new(10, 128, 20, 1024, 4096, 16, pq, vector_dir);
         for i in 0..datapoints.len() {
             hnsw_builder.insert(i as u64, &datapoints[i]).unwrap();
         }
@@ -162,7 +161,7 @@ mod tests {
 
         // Read from file
         let reader = HnswReader::new(base_directory.clone());
-        let hnsw = reader.read::<u8, ProductQuantizer>();
+        let hnsw = reader.read::<ProductQuantizer>();
         assert_eq!(49, hnsw.get_data_offset());
         assert_eq!(16, hnsw.get_header().quantized_dimension);
     }
@@ -182,9 +181,8 @@ mod tests {
         let quantizer_writer = NoQuantizerWriter::new(quantizer_dir);
         quantizer_writer.write(&quantizer).unwrap();
 
-        let mut hnsw_builder = HnswBuilder::<f32, NoQuantizer>::new(
-            10, 128, 20, 1024, 4096, 128, quantizer, vector_dir,
-        );
+        let mut hnsw_builder =
+            HnswBuilder::<NoQuantizer>::new(10, 128, 20, 1024, 4096, 128, quantizer, vector_dir);
         for i in 0..datapoints.len() {
             hnsw_builder.insert(i as u64, &datapoints[i]).unwrap();
         }
@@ -203,7 +201,7 @@ mod tests {
 
         // Read from file
         let reader = HnswReader::new(base_directory.clone());
-        let hnsw = reader.read::<f32, NoQuantizer>();
+        let hnsw = reader.read::<NoQuantizer>();
         assert_eq!(49, hnsw.get_data_offset());
         assert_eq!(128, hnsw.get_header().quantized_dimension);
     }

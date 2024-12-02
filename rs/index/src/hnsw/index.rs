@@ -4,8 +4,9 @@ use log::debug;
 use memmap2::Mmap;
 use num_traits::ToPrimitive;
 use quantization::quantization::Quantizer;
-use quantization::typing::VectorT;
+use quantization::typing::VectorOps;
 use rand::Rng;
+use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 
 use super::utils::{GraphTraversal, TraversalContext};
 use crate::hnsw::writer::Header;
@@ -36,13 +37,13 @@ impl TraversalContext for SearchContext {
     }
 }
 
-pub struct Hnsw<T: VectorT<Q>, Q: Quantizer> {
+pub struct Hnsw<Q: Quantizer> {
     // Need this for mmap
     #[allow(dead_code)]
     backing_file: File,
     mmap: Mmap,
 
-    pub vector_storage: FixedFileVectorStorage<T>,
+    pub vector_storage: FixedFileVectorStorage<Q::QuantizedT>,
 
     header: Header,
     data_offset: usize,
@@ -55,10 +56,10 @@ pub struct Hnsw<T: VectorT<Q>, Q: Quantizer> {
     pub quantizer: Q,
 }
 
-impl<T: VectorT<Q>, Q: Quantizer> Hnsw<T, Q> {
+impl<Q: Quantizer> Hnsw<Q> {
     pub fn new(
         backing_file: File,
-        vector_storage: FixedFileVectorStorage<T>,
+        vector_storage: FixedFileVectorStorage<Q::QuantizedT>,
         header: Header,
         data_offset: usize,
         edges_offset: usize,
@@ -106,7 +107,7 @@ impl<T: VectorT<Q>, Q: Quantizer> Hnsw<T, Q> {
         ef: u32,
         context: &mut SearchContext,
     ) -> Vec<IdWithScore> {
-        let quantized_query = T::process_vector(query, &self.quantizer);
+        let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
         let mut current_layer: i32 = self.header.num_layers as i32 - 1;
         let mut ep = self.get_entry_point_top_layer();
         let mut working_set;
@@ -149,7 +150,7 @@ impl<T: VectorT<Q>, Q: Quantizer> Hnsw<T, Q> {
         self.data_offset
     }
 
-    fn get_vector(&self, point_id: u32, context: &mut SearchContext) -> &[T] {
+    fn get_vector(&self, point_id: u32, context: &mut SearchContext) -> &[Q::QuantizedT] {
         self.vector_storage.get(point_id as usize, context).unwrap()
     }
 
@@ -297,12 +298,12 @@ impl<T: VectorT<Q>, Q: Quantizer> Hnsw<T, Q> {
     }
 }
 
-impl<T: VectorT<Q>, Q: Quantizer> GraphTraversal<T, Q> for Hnsw<T, Q> {
+impl<Q: Quantizer> GraphTraversal<Q> for Hnsw<Q> {
     type ContextT = SearchContext;
 
-    fn distance(&self, query: &[T], point_id: u32, context: &mut SearchContext) -> f32 {
+    fn distance(&self, query: &[Q::QuantizedT], point_id: u32, context: &mut SearchContext) -> f32 {
         let point = self.get_vector(point_id, context);
-        T::distance(query, point, &self.quantizer)
+        self.quantizer.distance(query, point, StreamingSIMD)
     }
 
     fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>> {
@@ -410,7 +411,7 @@ impl<T: VectorT<Q>, Q: Quantizer> GraphTraversal<T, Q> for Hnsw<T, Q> {
     }
 }
 
-impl<T: VectorT<Q>, Q: Quantizer> Index for Hnsw<T, Q> {
+impl<Q: Quantizer> Index for Hnsw<Q> {
     fn search(
         &self,
         query: &[f32],

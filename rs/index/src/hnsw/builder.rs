@@ -7,7 +7,7 @@ use bit_vec::BitVec;
 use log::debug;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
-use quantization::typing::VectorT;
+use quantization::typing::VectorOps;
 use rand::Rng;
 
 use super::index::Hnsw;
@@ -46,8 +46,8 @@ impl Layer {
 }
 
 /// The actual builder
-pub struct HnswBuilder<T: VectorT<Q>, Q: Quantizer> {
-    vectors: Box<dyn VectorStorage<T>>,
+pub struct HnswBuilder<Q: Quantizer> {
+    vectors: Box<dyn VectorStorage<Q::QuantizedT>>,
 
     max_neighbors: usize,
     pub layers: Vec<Layer>,
@@ -60,7 +60,7 @@ pub struct HnswBuilder<T: VectorT<Q>, Q: Quantizer> {
 }
 
 // TODO(hicder): support bare vector in addition to quantized one.
-impl<T: VectorT<Q>, Q: Quantizer> HnswBuilder<T, Q> {
+impl<Q: Quantizer> HnswBuilder<Q> {
     pub fn new(
         max_neighbors: usize,
         max_layers: u8,
@@ -71,7 +71,7 @@ impl<T: VectorT<Q>, Q: Quantizer> HnswBuilder<T, Q> {
         quantizer: Q,
         base_directory: String,
     ) -> Self {
-        let vectors = Box::new(FileBackedAppendableVectorStorage::<T>::new(
+        let vectors = Box::new(FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
             base_directory.clone(),
             vector_storage_memory_size,
             vector_storage_file_size,
@@ -92,7 +92,7 @@ impl<T: VectorT<Q>, Q: Quantizer> HnswBuilder<T, Q> {
     }
 
     pub fn from_hnsw(
-        hnsw: Hnsw<T, Q>,
+        hnsw: Hnsw<Q>,
         output_directory: String,
         vector_storage_config: VectorStorageConfig,
         max_neighbors: usize,
@@ -109,7 +109,7 @@ impl<T: VectorT<Q>, Q: Quantizer> HnswBuilder<T, Q> {
         }
 
         let tmp_vector_storage_dir = format!("{}/vector_storage_tmp", output_directory);
-        let mut vector_storage = Box::new(FileBackedAppendableVectorStorage::<T>::new(
+        let mut vector_storage = Box::new(FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
             tmp_vector_storage_dir,
             vector_storage_config.memory_threshold,
             vector_storage_config.file_size,
@@ -132,7 +132,7 @@ impl<T: VectorT<Q>, Q: Quantizer> HnswBuilder<T, Q> {
                     .get(from as usize, &mut context)
                     .unwrap();
                 let to_v = hnsw.vector_storage.get(to as usize, &mut context).unwrap();
-                let distance = T::distance(from_v, to_v, &hnsw.quantizer);
+                let distance = Q::QuantizedT::distance(from_v, to_v, &hnsw.quantizer);
                 layer
                     .edges
                     .entry(from)
@@ -280,12 +280,13 @@ impl<T: VectorT<Q>, Q: Quantizer> HnswBuilder<T, Q> {
         }
 
         let vector_storage_config = self.vectors.config();
-        let mut new_vector_storage = Box::new(FileBackedAppendableVectorStorage::<T>::new(
-            temp_dir.clone(),
-            vector_storage_config.memory_threshold,
-            vector_storage_config.file_size,
-            vector_storage_config.num_features,
-        ));
+        let mut new_vector_storage =
+            Box::new(FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
+                temp_dir.clone(),
+                vector_storage_config.memory_threshold,
+                vector_storage_config.file_size,
+                vector_storage_config.num_features,
+            ));
 
         for i in 0..reverse_assigned_ids.len() {
             let mapped_id = reverse_assigned_ids[i];
@@ -301,7 +302,7 @@ impl<T: VectorT<Q>, Q: Quantizer> HnswBuilder<T, Q> {
 
     /// Insert a vector into the index
     pub fn insert(&mut self, doc_id: u64, vector: &[f32]) -> Result<()> {
-        let quantized_query = T::process_vector(vector, &self.quantizer);
+        let quantized_query = Q::QuantizedT::process_vector(vector, &self.quantizer);
         let point_id = self.generate_id(doc_id);
         let mut context = BuilderContext::new(point_id + 1);
 
@@ -405,10 +406,10 @@ impl<T: VectorT<Q>, Q: Quantizer> HnswBuilder<T, Q> {
     fn distance_two_points(&self, a: u32, b: u32) -> f32 {
         let a_vector = self.get_vector(a);
         let b_vector = self.get_vector(b);
-        T::distance(a_vector, b_vector, &self.quantizer)
+        Q::QuantizedT::distance(a_vector, b_vector, &self.quantizer)
     }
 
-    fn get_vector(&self, point_id: u32) -> &[T] {
+    fn get_vector(&self, point_id: u32) -> &[Q::QuantizedT] {
         self.vectors.get(point_id).unwrap()
     }
 
@@ -471,7 +472,7 @@ impl<T: VectorT<Q>, Q: Quantizer> HnswBuilder<T, Q> {
         }
     }
 
-    pub fn vectors(&mut self) -> &mut Box<dyn VectorStorage<T>> {
+    pub fn vectors(&mut self) -> &mut Box<dyn VectorStorage<Q::QuantizedT>> {
         &mut self.vectors
     }
 
@@ -500,12 +501,17 @@ impl<T: VectorT<Q>, Q: Quantizer> HnswBuilder<T, Q> {
     }
 }
 
-impl<T: VectorT<Q>, Q: Quantizer> GraphTraversal<T, Q> for HnswBuilder<T, Q> {
+impl<Q: Quantizer> GraphTraversal<Q> for HnswBuilder<Q> {
     type ContextT = BuilderContext;
 
-    fn distance(&self, query: &[T], point_id: u32, _context: &mut BuilderContext) -> f32 {
+    fn distance(
+        &self,
+        query: &[Q::QuantizedT],
+        point_id: u32,
+        _context: &mut BuilderContext,
+    ) -> f32 {
         let point = self.vectors.get(point_id).unwrap();
-        T::distance(query, point, &self.quantizer)
+        Q::QuantizedT::distance(query, point, &self.quantizer)
     }
 
     fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>> {
@@ -721,7 +727,7 @@ mod tests {
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
         let mut builder =
-            HnswBuilder::<u8, ProductQuantizer>::new(5, 10, 20, 1024, 4096, 5, pq, vector_dir);
+            HnswBuilder::<ProductQuantizer>::new(5, 10, 20, 1024, 4096, 5, pq, vector_dir);
 
         for i in 0..100 {
             builder

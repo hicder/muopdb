@@ -1,5 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use utils::distance::l2::L2DistanceCalculator;
+use utils::DistanceCalculator;
 
 use crate::quantization::Quantizer;
 
@@ -14,28 +16,27 @@ impl NoQuantizer {
 }
 
 impl Quantizer for NoQuantizer {
-    fn quantize(&self, _value: &[f32]) -> Vec<u8> {
-        // Throw an error if called
-        todo!()
+    type QuantizedT = f32;
+
+    fn quantize(&self, value: &[f32]) -> Vec<f32> {
+        value.to_vec()
     }
 
     fn quantized_dimension(&self) -> usize {
         self.dimension
     }
 
-    fn original_vector(&self, _quantized_vector: &[u8]) -> Vec<f32> {
-        // Throw an error if called
-        todo!()
+    fn original_vector(&self, quantized_vector: &[f32]) -> Vec<f32> {
+        quantized_vector.to_vec()
     }
 
     fn distance(
         &self,
-        _query: &[u8],
-        _point: &[u8],
+        _query: &[f32],
+        _point: &[f32],
         _implem: utils::distance::l2::L2DistanceCalculatorImpl,
     ) -> f32 {
-        // Throw an error if called
-        todo!()
+        L2DistanceCalculator::calculate(_query, _point)
     }
 
     fn read(dir: String) -> Result<Self>

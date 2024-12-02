@@ -178,6 +178,8 @@ impl ProductQuantizer {
 /// TODO(hicder): Make this faster
 /// TODO(hicder): Support multiple distance type
 impl Quantizer for ProductQuantizer {
+    type QuantizedT = u8;
+
     fn quantize(&self, value: &[f32]) -> Vec<u8> {
         let mut result = Vec::<u8>::with_capacity(self.dimension / self.subvector_dimension);
         let num_centroids = (1 << self.num_bits) as usize;
@@ -307,8 +309,11 @@ impl Quantizer for ProductQuantizer {
                 .sqrt(),
         }
     }
-    
-    fn read(dir: String) -> Result<Self> where Self: Sized {
+
+    fn read(dir: String) -> Result<Self>
+    where
+        Self: Sized,
+    {
         ProductQuantizerReader::new(dir).read()
     }
 }
