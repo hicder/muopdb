@@ -19,6 +19,7 @@ pub struct Header {
     pub num_features: u32,
     pub num_clusters: u32,
     pub num_vectors: u64,
+    pub doc_id_mapping_len: u64,
     pub centroids_len: u64,
     pub posting_lists_len: u64,
 }
@@ -28,6 +29,7 @@ pub struct FixedIndexFile {
 
     mmap: Mmap,
     header: Header,
+    doc_id_mapping_offset: usize,
     centroid_offset: usize,
     posting_list_metadata_offset: usize,
 }
@@ -38,7 +40,12 @@ impl FixedIndexFile {
             .read(true)
             .open(file_path.clone())?;
         let mmap = unsafe { Mmap::map(&file) }?;
-        let (header, centroid_offset) = Self::read_header(&mmap)?;
+        let (header, doc_id_mapping_offset) = Self::read_header(&mmap)?;
+
+        let centroid_offset = Self::align_to_next_boundary(
+            doc_id_mapping_offset + header.doc_id_mapping_len as usize,
+            8,
+        );
 
         let posting_list_metadata_offset =
             Self::align_to_next_boundary(centroid_offset + header.centroids_len as usize, 8)
@@ -47,6 +54,7 @@ impl FixedIndexFile {
             _marker: PhantomData,
             mmap,
             header,
+            doc_id_mapping_offset,
             centroid_offset,
             posting_list_metadata_offset,
         })
@@ -66,6 +74,8 @@ impl FixedIndexFile {
         offset += 4;
         let num_vectors = LittleEndian::read_u64(&buffer[offset..]);
         offset += 8;
+        let doc_id_mapping_len = LittleEndian::read_u64(&buffer[offset..]);
+        offset += 8;
         let centroids_len = LittleEndian::read_u64(&buffer[offset..]);
         offset += 8;
         let posting_lists_len = LittleEndian::read_u64(&buffer[offset..]);
@@ -76,6 +86,7 @@ impl FixedIndexFile {
             num_features,
             num_clusters,
             num_vectors,
+            doc_id_mapping_len,
             centroids_len,
             posting_lists_len,
         };
@@ -89,6 +100,19 @@ impl FixedIndexFile {
     fn align_to_next_boundary(current_position: usize, alignment: usize) -> usize {
         let mask = alignment - 1;
         (current_position + mask) & !mask
+    }
+
+    pub fn get_doc_id(&self, index: usize) -> Result<u64> {
+        if index >= self.header.num_vectors as usize {
+            return Err(anyhow!("Index out of bound"));
+        }
+
+        let start = self.doc_id_mapping_offset
+            + size_of::<u64>() // Read another u64 which encodes num_vectors (when combining with
+                               // doc_id_mapping storage)
+            + index * size_of::<u64>();
+        let slice = &self.mmap[start..start + size_of::<u64>()];
+        Ok(u64::from_le_bytes(slice.try_into()?))
     }
 
     pub fn get_centroid(&self, index: usize) -> Result<&[f32]> {
@@ -157,6 +181,7 @@ mod tests {
             4, 0, 0, 0, // num_features (little-endian)
             2, 0, 0, 0, // num_clusters (little-endian)
             4, 0, 0, 0, 0, 0, 0, 0, // num_vectors (little-endian)
+            40, 0, 0, 0, 0, 0, 0, 0, // doc_id_mapping_len (little-endian)
             40, 0, 0, 0, 0, 0, 0, 0, // centroids_len (little-endian)
             9, 0, 0, 0, 0, 0, 0, 0, // posting_lists_len - garbage (little-endian)
         ];
@@ -166,6 +191,14 @@ mod tests {
             header.push(0);
         }
         assert!(file.write_all(&header).is_ok());
+
+        let doc_id_mapping: Vec<u64> = vec![100, 200, 300, 400];
+        let num_vectors = vec![4, 0, 0, 0, 0, 0, 0, 0];
+        assert!(file.write_all(&num_vectors).is_ok());
+        assert!(file
+            .write_all(transmute_slice_to_u8(&doc_id_mapping))
+            .is_ok());
+        // No need for padding here
 
         let centroids: Vec<Vec<f32>> = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
         let num_clusters = vec![2, 0, 0, 0, 0, 0, 0, 0];
@@ -192,8 +225,35 @@ mod tests {
         assert_eq!(combined_file.header.num_features, 4);
         assert_eq!(combined_file.header.num_clusters, 2);
         assert_eq!(combined_file.header.num_vectors, 4);
+        assert_eq!(combined_file.header.doc_id_mapping_len, 40);
         assert_eq!(combined_file.header.centroids_len, 40);
         assert_eq!(combined_file.header.posting_lists_len, 9);
+
+        assert_eq!(
+            combined_file
+                .get_doc_id(0)
+                .expect("Failed to read doc_id_mapping"),
+            doc_id_mapping[0]
+        );
+        assert_eq!(
+            combined_file
+                .get_doc_id(1)
+                .expect("Failed to read doc_id_mapping"),
+            doc_id_mapping[1]
+        );
+        assert_eq!(
+            combined_file
+                .get_doc_id(2)
+                .expect("Failed to read doc_id_mapping"),
+            doc_id_mapping[2]
+        );
+        assert_eq!(
+            combined_file
+                .get_doc_id(3)
+                .expect("Failed to read doc_id_mapping"),
+            doc_id_mapping[3]
+        );
+        assert!(combined_file.get_doc_id(4).is_err());
 
         assert_eq!(
             combined_file

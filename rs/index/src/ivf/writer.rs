@@ -35,6 +35,19 @@ impl IvfWriter {
             ));
         }
 
+        // Write doc_id_mapping
+        let doc_id_mapping_len = self
+            .write_doc_id_mapping(ivf_builder)
+            .context("Failed to write doc_id_mapping")?;
+        let expected_bytes_written = std::mem::size_of::<u64>() * (num_vectors + 1);
+        if doc_id_mapping_len != expected_bytes_written {
+            return Err(anyhow!(
+                "Expected to write {} bytes in centroid storage, but wrote {}",
+                expected_bytes_written,
+                doc_id_mapping_len,
+            ));
+        }
+
         // Write centroids
         let centroids_len = self
             .write_centroids(ivf_builder)
@@ -69,6 +82,7 @@ impl IvfWriter {
             num_features: num_features as u32,
             num_clusters: num_clusters as u32,
             num_vectors: num_vectors as u64,
+            doc_id_mapping_len: doc_id_mapping_len as u64,
             centroids_len: centroids_len as u64,
             posting_lists_len: posting_lists_len as u64,
         };
@@ -83,6 +97,21 @@ impl IvfWriter {
         let mut writer = BufWriter::new(&mut file);
 
         let bytes_written = ivf_builder.vectors().write(&mut writer)?;
+        Ok(bytes_written)
+    }
+
+    fn write_doc_id_mapping(&self, ivf_builder: &IvfBuilder) -> Result<usize> {
+        let path = format!("{}/doc_id_mapping", self.base_directory);
+        let mut file = File::create(path)?;
+        let mut writer = BufWriter::new(&mut file);
+
+        let mut bytes_written = wrap_write(
+            &mut writer,
+            &(ivf_builder.doc_id_mapping().len() as u64).to_le_bytes(),
+        )?;
+        for doc_id in ivf_builder.doc_id_mapping() {
+            bytes_written += wrap_write(&mut writer, &doc_id.to_le_bytes())?;
+        }
         Ok(bytes_written)
     }
 
@@ -113,6 +142,7 @@ impl IvfWriter {
         written += wrap_write(writer, &header.num_features.to_le_bytes())?;
         written += wrap_write(writer, &header.num_clusters.to_le_bytes())?;
         written += wrap_write(writer, &header.num_vectors.to_le_bytes())?;
+        written += wrap_write(writer, &header.doc_id_mapping_len.to_le_bytes())?;
         written += wrap_write(writer, &header.centroids_len.to_le_bytes())?;
         written += wrap_write(writer, &header.posting_lists_len.to_le_bytes())?;
         Ok(written)
@@ -120,6 +150,7 @@ impl IvfWriter {
 
     /// Combine all individual files into one final index file. Keep vectors file separate.
     fn combine_files(&self, header: &Header) -> Result<usize> {
+        let doc_id_mapping_path = format!("{}/doc_id_mapping", self.base_directory);
         let centroids_path = format!("{}/centroids", self.base_directory);
         let posting_lists_path = format!("{}/posting_lists", self.base_directory);
 
@@ -133,6 +164,9 @@ impl IvfWriter {
 
         // Compute padding for alignment to 8 bytes
         written += Self::write_pad(written, &mut combined_buffer_writer, 8)?;
+        written += append_file_to_writer(&doc_id_mapping_path, &mut combined_buffer_writer)?;
+
+        // No need for padding, doc_id_mapping is always 8-byte aligned
         written += append_file_to_writer(&centroids_path, &mut combined_buffer_writer)?;
 
         // Pad again in case num_features and num_clusters are both odd
@@ -143,6 +177,7 @@ impl IvfWriter {
             .flush()
             .context("Failed to flush combined buffer")?;
 
+        remove_file(format!("{}/doc_id_mapping", self.base_directory))?;
         remove_file(format!("{}/centroids", self.base_directory))?;
         remove_file(format!("{}/posting_lists", self.base_directory))?;
 
@@ -202,6 +237,7 @@ mod tests {
         // Create test files
         create_test_file(&base_directory, "centroids", &[5, 6, 7, 8])?;
         create_test_file(&base_directory, "posting_lists", &[9, 10, 11, 12])?;
+        create_test_file(&base_directory, "doc_id_mapping", &[100, 101, 102, 103])?;
 
         // Create a test header
         let header = Header {
@@ -209,6 +245,7 @@ mod tests {
             num_features: 10,
             num_clusters: 5,
             num_vectors: 4,
+            doc_id_mapping_len: 4,
             centroids_len: 4,
             posting_lists_len: 4,
         };
@@ -231,6 +268,7 @@ mod tests {
             10, 0, 0, 0, // num_features (little-endian)
             5, 0, 0, 0, // num_clusters (little-endian)
             4, 0, 0, 0, 0, 0, 0, 0, // num_vectors (little-endian)
+            4, 0, 0, 0, 0, 0, 0, 0, // doc_id_mapping_len (little-endian)
             4, 0, 0, 0, 0, 0, 0, 0, // centroids_len (little-endian)
             4, 0, 0, 0, 0, 0, 0, 0, // posting_lists_len (little-endian)
         ];
@@ -246,11 +284,19 @@ mod tests {
         );
 
         // Verify the content of the files
+        // doc_id_mapping
         let offset = expected_header.len();
-        assert_eq!(&combined_content[offset..offset + 4], [5, 6, 7, 8]);
+        assert_eq!(&combined_content[offset..offset + 4], [100, 101, 102, 103]);
+
+        // centroids
+        let mut next_offset = offset + 4;
+        assert_eq!(
+            &combined_content[next_offset..next_offset + 4],
+            [5, 6, 7, 8]
+        );
 
         // Check for padding after centroids
-        let mut next_offset = offset + 4;
+        next_offset += 4;
         while next_offset % 8 != 0 {
             assert_eq!(combined_content[next_offset], 0);
             next_offset += 1;
@@ -315,11 +361,15 @@ mod tests {
         .expect("Failed to create builder");
         // Generate 1000 vectors of f32, dimension 4
         let mut original_vectors = Vec::new();
-        for _ in 0..num_vectors {
+        for i in 0..num_vectors {
             let vector = generate_random_vector(num_features);
             original_vectors.push(vector.clone());
             builder.add_vector(vector).expect("Vector should be added");
+            builder
+                .generate_id((i + 100) as u64)
+                .expect("Id should be generated");
         }
+        assert_eq!(builder.doc_id_mapping().len(), 1000);
 
         assert!(builder.build().is_ok());
 
@@ -328,6 +378,7 @@ mod tests {
         // Check if files were created and removed correctly
         assert!(fs::metadata(format!("{}/vectors", base_directory)).is_ok());
         assert!(fs::metadata(format!("{}/index", base_directory)).is_ok());
+        assert!(fs::metadata(format!("{}/doc_id_mapping", base_directory)).is_err());
         assert!(fs::metadata(format!("{}/centroids", base_directory)).is_err());
         assert!(fs::metadata(format!("{}/posting_lists", base_directory)).is_err());
 
@@ -374,6 +425,14 @@ mod tests {
             .expect("Failed to read num_vectors");
         assert_eq!(stored_num_vectors, num_vectors as u64);
 
+        let doc_id_mapping_len = index_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read doc_id_mapping_len");
+        assert_eq!(
+            doc_id_mapping_len,
+            (std::mem::size_of::<u64>() * (num_vectors + 1)) as u64
+        );
+
         let centroids_len = index_reader
             .read_u64::<LittleEndian>()
             .expect("Failed to read centroids_len");
@@ -386,6 +445,9 @@ mod tests {
             .metadata()
             .expect("Failed to get file metadata")
             .len();
-        assert_eq!(file_size, 33 + 7 + centroids_len + posting_lists_len); // 33 bytes for header + 7 padding
+        assert_eq!(
+            file_size,
+            41 + 7 + doc_id_mapping_len + centroids_len + posting_lists_len
+        ); // 41 bytes for header + 7 padding
     }
 }
