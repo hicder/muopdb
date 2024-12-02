@@ -4,22 +4,23 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-approx.workspace = true
 anyhow.workspace = true
-serde_yaml.workspace = true
-serde.workspace = true
-tempdir.workspace = true
-kmeans.workspace = true
-rand.workspace = true
-utils.workspace = true
-criterion.workspace = true
-log.workspace = true
-env_logger.workspace = true
-strum.workspace = true
-ndarray.workspace = true
-ndarray-rand.workspace = true
-ndarray-linalg.workspace = true
+approx.workspace = true
 bit-vec.workspace = true
+criterion.workspace = true
+env_logger.workspace = true
+kmeans.workspace = true
+log.workspace = true
+ndarray-linalg.workspace = true
+ndarray-rand.workspace = true
+ndarray.workspace = true
+num-traits.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+strum.workspace = true
+tempdir.workspace = true
+utils.workspace = true
 
 [[bench]]
 name = "pq_dist"

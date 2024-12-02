@@ -4,6 +4,7 @@ use index::hnsw::reader::HnswReader;
 use index::hnsw::writer::HnswWriter;
 use index::vector::VectorStorageConfig;
 use log::error;
+use quantization::pq::ProductQuantizer;
 
 #[derive(Parser)]
 struct Args {
@@ -19,7 +20,7 @@ pub fn main() {
 
     let args = Args::parse();
     let reader = HnswReader::new(args.input_path);
-    let index = reader.read();
+    let index = reader.read::<u8, ProductQuantizer>();
 
     let vector_storage_config = VectorStorageConfig {
         memory_threshold: 1024 * 1024 * 1024,

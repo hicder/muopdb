@@ -21,3 +21,4 @@ tokio-stream = { version = "0.1", features = ["net"] }
 tonic-reflection = "0.6.0"
 tonic.workspace = true
 utils.workspace = true
+quantization.workspace = true

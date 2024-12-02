@@ -1,6 +1,7 @@
 use clap::Parser;
 use index::hnsw::reader::HnswReader;
 use index::hnsw::utils::GraphTraversal;
+use quantization::pq::ProductQuantizer;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -31,7 +32,7 @@ pub fn main() {
     let points_per_layer_0 = arg.points_per_layer_0;
 
     let reader = HnswReader::new(arg.index_path);
-    let hnsw = reader.read();
+    let hnsw = reader.read::<u8, ProductQuantizer>();
 
     let header = hnsw.get_header();
     println!("Header: {:?}", header);
