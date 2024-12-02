@@ -74,7 +74,6 @@ impl<T: VectorT<Q>, Q: Quantizer> Hnsw<T, Q> {
         // let pq = pq_reader.read().unwrap();
 
         let quantizer = Q::read(quantizer_directory).unwrap();
-
         let index_mmap = unsafe { Mmap::map(&backing_file).unwrap() };
 
         Self {

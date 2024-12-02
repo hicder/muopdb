@@ -590,7 +590,7 @@ mod tests {
         vectors.append(&vec![2, 2, 2, 2, 2]).unwrap();
 
         let mut builder = HnswBuilder {
-            vectors: vectors,
+            vectors,
             max_neighbors: 1,
             layers: vec![layer],
             current_top_layer: 0,
