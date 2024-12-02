@@ -75,7 +75,7 @@ impl IndexWriter {
         let vector_directory = format!("{}/vectors", path);
         std::fs::create_dir_all(&vector_directory)?;
 
-        let mut hnsw_builder = HnswBuilder::<u8, ProductQuantizer>::new(
+        let mut hnsw_builder = HnswBuilder::<ProductQuantizer>::new(
             hnsw_config.max_num_neighbors,
             hnsw_config.num_layers,
             hnsw_config.ef_construction,

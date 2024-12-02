@@ -20,7 +20,7 @@ pub fn main() {
 
     let args = Args::parse();
     let reader = HnswReader::new(args.input_path);
-    let index = reader.read::<u8, ProductQuantizer>();
+    let index = reader.read::<ProductQuantizer>();
 
     let vector_storage_config = VectorStorageConfig {
         memory_threshold: 1024 * 1024 * 1024,
