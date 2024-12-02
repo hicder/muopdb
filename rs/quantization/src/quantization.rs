@@ -1,4 +1,5 @@
 use utils::distance::l2::L2DistanceCalculatorImpl;
+use anyhow::Result;
 
 pub trait Quantizer {
     /// Quantize a vector
@@ -12,4 +13,7 @@ pub trait Quantizer {
 
     /// Compute the distance between two quantized points
     fn distance(&self, query: &[u8], point: &[u8], implem: L2DistanceCalculatorImpl) -> f32;
+
+    /// Read a quantizer
+    fn read(dir: String) -> Result<Self> where Self: Sized;
 }

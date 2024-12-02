@@ -4,7 +4,7 @@ use index::hnsw::writer::HnswWriter;
 use index::ivf::builder::{IvfBuilder, IvfBuilderConfig};
 use index::ivf::writer::IvfWriter;
 use log::{debug, info};
-use quantization::pq::{ProductQuantizerConfig, ProductQuantizerWriter};
+use quantization::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuantizerWriter};
 use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
 use rand::seq::SliceRandom;
 
@@ -75,14 +75,14 @@ impl IndexWriter {
         let vector_directory = format!("{}/vectors", path);
         std::fs::create_dir_all(&vector_directory)?;
 
-        let mut hnsw_builder = HnswBuilder::new(
+        let mut hnsw_builder = HnswBuilder::<u8, ProductQuantizer>::new(
             hnsw_config.max_num_neighbors,
             hnsw_config.num_layers,
             hnsw_config.ef_construction,
             hnsw_config.base_config.max_memory_size,
             hnsw_config.base_config.file_size,
             hnsw_config.base_config.dimension / hnsw_config.subvector_dimension,
-            Box::new(pq),
+            pq,
             vector_directory.clone(),
         );
 

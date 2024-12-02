@@ -3,8 +3,8 @@ use std::fs::File;
 use log::debug;
 use memmap2::Mmap;
 use num_traits::ToPrimitive;
-use quantization::pq::ProductQuantizerReader;
 use quantization::quantization::Quantizer;
+use quantization::typing::VectorT;
 use rand::Rng;
 
 use super::utils::{GraphTraversal, TraversalContext};
@@ -36,13 +36,13 @@ impl TraversalContext for SearchContext {
     }
 }
 
-pub struct Hnsw {
+pub struct Hnsw<T: VectorT<Q>, Q: Quantizer> {
     // Need this for mmap
     #[allow(dead_code)]
     backing_file: File,
     mmap: Mmap,
 
-    pub vector_storage: FixedFileVectorStorage<u8>,
+    pub vector_storage: FixedFileVectorStorage<T>,
 
     header: Header,
     data_offset: usize,
@@ -52,13 +52,13 @@ pub struct Hnsw {
     level_offsets_offset: usize,
     doc_id_mapping_offset: usize,
 
-    pub quantizer: Box<dyn Quantizer + Send + Sync>,
+    pub quantizer: Q,
 }
 
-impl Hnsw {
+impl<T: VectorT<Q>, Q: Quantizer> Hnsw<T, Q> {
     pub fn new(
         backing_file: File,
-        vector_storage: FixedFileVectorStorage<u8>,
+        vector_storage: FixedFileVectorStorage<T>,
         header: Header,
         data_offset: usize,
         edges_offset: usize,
@@ -69,9 +69,11 @@ impl Hnsw {
         base_directory: String,
     ) -> Self {
         // Read quantizer
-        let pq_directory = format!("{}/quantizer", base_directory);
-        let pq_reader = ProductQuantizerReader::new(pq_directory);
-        let pq = pq_reader.read().unwrap();
+        let quantizer_directory = format!("{}/quantizer", base_directory);
+        // let pq_reader = ProductQuantizerReader::new(pq_directory);
+        // let pq = pq_reader.read().unwrap();
+
+        let quantizer = Q::read(quantizer_directory).unwrap();
 
         let index_mmap = unsafe { Mmap::map(&backing_file).unwrap() };
 
@@ -86,7 +88,7 @@ impl Hnsw {
             edge_offsets_offset,
             level_offsets_offset,
             doc_id_mapping_offset,
-            quantizer: Box::new(pq),
+            quantizer,
         }
     }
 
@@ -105,7 +107,7 @@ impl Hnsw {
         ef: u32,
         context: &mut SearchContext,
     ) -> Vec<IdWithScore> {
-        let quantized_query = self.quantizer.quantize(query);
+        let quantized_query = T::process_vector(query, &self.quantizer);
         let mut current_layer: i32 = self.header.num_layers as i32 - 1;
         let mut ep = self.get_entry_point_top_layer();
         let mut working_set;
@@ -148,7 +150,7 @@ impl Hnsw {
         self.data_offset
     }
 
-    fn get_vector(&self, point_id: u32, context: &mut SearchContext) -> &[u8] {
+    fn get_vector(&self, point_id: u32, context: &mut SearchContext) -> &[T] {
         self.vector_storage.get(point_id as usize, context).unwrap()
     }
 
@@ -296,15 +298,12 @@ impl Hnsw {
     }
 }
 
-impl GraphTraversal for Hnsw {
+impl<T: VectorT<Q>, Q: Quantizer> GraphTraversal<T, Q> for Hnsw<T, Q> {
     type ContextT = SearchContext;
 
-    fn distance(&self, query: &[u8], point_id: u32, context: &mut SearchContext) -> f32 {
-        self.quantizer.distance(
-            query,
-            self.get_vector(point_id, context),
-            utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD,
-        )
+    fn distance(&self, query: &[T], point_id: u32, context: &mut SearchContext) -> f32 {
+        let point = self.get_vector(point_id, context);
+        T::distance(query, point, &self.quantizer)
     }
 
     fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>> {
@@ -412,7 +411,7 @@ impl GraphTraversal for Hnsw {
     }
 }
 
-impl Index for Hnsw {
+impl<T: VectorT<Q>, Q: Quantizer> Index for Hnsw<T, Q> {
     fn search(
         &self,
         query: &[f32],

@@ -307,6 +307,10 @@ impl Quantizer for ProductQuantizer {
                 .sqrt(),
         }
     }
+    
+    fn read(dir: String) -> Result<Self> where Self: Sized {
+        ProductQuantizerReader::new(dir).read()
+    }
 }
 
 #[cfg(test)]

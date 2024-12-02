@@ -3,12 +3,18 @@ use std::io::{BufWriter, Write};
 
 use anyhow::{Context, Result};
 use log::debug;
+use quantization::quantization::Quantizer;
+use quantization::typing::VectorT;
 use utils::io::{append_file_to_writer, wrap_write};
 
 use crate::hnsw::builder::HnswBuilder;
 
-pub struct HnswWriter {
+pub struct HnswWriter<T: VectorT<Q>, Q: Quantizer> {
     base_directory: String,
+
+    // phantom type
+    _phantom: std::marker::PhantomData<T>,
+    _phantom_q: std::marker::PhantomData<Q>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -28,12 +34,16 @@ pub struct Header {
     pub doc_id_mapping_len: u64,
 }
 
-impl HnswWriter {
+impl<T: VectorT<Q>, Q: Quantizer> HnswWriter<T, Q> {
     pub fn new(base_directory: String) -> Self {
-        Self { base_directory }
+        Self {
+            base_directory,
+            _phantom: std::marker::PhantomData,
+            _phantom_q: std::marker::PhantomData,
+        }
     }
 
-    pub fn write(&self, index_builder: &mut HnswBuilder, reindex: bool) -> Result<()> {
+    pub fn write(&self, index_builder: &mut HnswBuilder<T, Q>, reindex: bool) -> Result<()> {
         if reindex {
             let temp_dir = format!("{}/temp", self.base_directory);
             fs::create_dir_all(&temp_dir).context("failed to create temp directory")?;
@@ -259,7 +269,7 @@ mod tests {
     use std::vec;
 
     use ordered_float::NotNan;
-    use quantization::pq::{ProductQuantizerConfig, ProductQuantizerWriter};
+    use quantization::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuantizerWriter};
     use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
     use utils::test_utils::generate_random_vector;
 
@@ -268,7 +278,7 @@ mod tests {
     use crate::hnsw::reader::HnswReader;
     use crate::hnsw::utils::{GraphTraversal, PointAndDistance};
 
-    fn construct_layers(hnsw_builder: &mut HnswBuilder) {
+    fn construct_layers(hnsw_builder: &mut HnswBuilder<u8, ProductQuantizer>) {
         // Prepare all layers
         for _ in 0..3 {
             hnsw_builder.layers.push(Layer {
@@ -412,7 +422,7 @@ mod tests {
     fn test_write_header() {
         let temp_dir = tempdir::TempDir::new("write_header_test").unwrap();
         let base_dir = temp_dir.path().to_str().unwrap().to_string();
-        let writer = HnswWriter::new(base_dir.clone());
+        let writer = HnswWriter::<u8, ProductQuantizer>::new(base_dir.clone());
 
         let header = Header {
             version: Version::V0,
@@ -443,7 +453,7 @@ mod tests {
     fn test_combine_files() -> Result<()> {
         let temp_dir = tempdir::TempDir::new("combine_files_test")?;
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
-        let writer = HnswWriter::new(base_directory.clone());
+        let writer = HnswWriter::<u8, ProductQuantizer>::new(base_directory.clone());
 
         // Create mock files
         fs::write(format!("{}/edges", base_directory), b"edges content")?;
@@ -518,8 +528,7 @@ mod tests {
         // Create a HNSW Builder
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
-        let mut hnsw_builder =
-            HnswBuilder::new(10, 128, 20, 1024, 4096, 16, Box::new(pq), vector_dir);
+        let mut hnsw_builder = HnswBuilder::new(10, 128, 20, 1024, 4096, 16, pq, vector_dir);
 
         hnsw_builder
             .vectors()
@@ -561,7 +570,7 @@ mod tests {
         writer.write(&mut hnsw_builder, false).unwrap();
 
         let reader = HnswReader::new(base_directory.clone());
-        let hnsw = reader.read();
+        let hnsw = reader.read::<u8, ProductQuantizer>();
         {
             let egdes = hnsw.get_edges_for_point(1, 2);
             assert!(egdes.is_none());

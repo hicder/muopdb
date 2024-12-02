@@ -1,13 +1,14 @@
 use std::cmp::min;
 use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
+use std::vec;
 
 use anyhow::{anyhow, Context, Result};
 use bit_vec::BitVec;
 use log::debug;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
+use quantization::typing::VectorT;
 use rand::Rng;
-use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 
 use super::index::Hnsw;
 use super::utils::{BuilderContext, GraphTraversal, PointAndDistance};
@@ -45,13 +46,13 @@ impl Layer {
 }
 
 /// The actual builder
-pub struct HnswBuilder {
-    vectors: Box<dyn VectorStorage<u8>>,
+pub struct HnswBuilder<T: VectorT<Q>, Q: Quantizer> {
+    vectors: Box<dyn VectorStorage<T>>,
 
     max_neighbors: usize,
     pub layers: Vec<Layer>,
     pub current_top_layer: u8,
-    pub quantizer: Box<dyn Quantizer>,
+    pub quantizer: Q,
     ef_contruction: u32,
     pub entry_point: Vec<u32>,
     max_layer: u8,
@@ -59,7 +60,7 @@ pub struct HnswBuilder {
 }
 
 // TODO(hicder): support bare vector in addition to quantized one.
-impl HnswBuilder {
+impl<T: VectorT<Q>, Q: Quantizer> HnswBuilder<T, Q> {
     pub fn new(
         max_neighbors: usize,
         max_layers: u8,
@@ -67,10 +68,10 @@ impl HnswBuilder {
         vector_storage_memory_size: usize,
         vector_storage_file_size: usize,
         num_features: usize,
-        quantizer: Box<dyn Quantizer>,
+        quantizer: Q,
         base_directory: String,
     ) -> Self {
-        let vectors = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
+        let vectors = Box::new(FileBackedAppendableVectorStorage::<T>::new(
             base_directory.clone(),
             vector_storage_memory_size,
             vector_storage_file_size,
@@ -78,12 +79,12 @@ impl HnswBuilder {
         ));
 
         Self {
-            vectors: vectors,
+            vectors,
             max_neighbors,
             max_layer: max_layers,
             layers: vec![],
             current_top_layer: 0,
-            quantizer: quantizer,
+            quantizer,
             ef_contruction: ef_construction,
             entry_point: vec![],
             doc_id_mapping: Vec::new(),
@@ -91,7 +92,7 @@ impl HnswBuilder {
     }
 
     pub fn from_hnsw(
-        hnsw: Hnsw,
+        hnsw: Hnsw<T, Q>,
         output_directory: String,
         vector_storage_config: VectorStorageConfig,
         max_neighbors: usize,
@@ -108,7 +109,7 @@ impl HnswBuilder {
         }
 
         let tmp_vector_storage_dir = format!("{}/vector_storage_tmp", output_directory);
-        let mut vector_storage = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
+        let mut vector_storage = Box::new(FileBackedAppendableVectorStorage::<T>::new(
             tmp_vector_storage_dir,
             vector_storage_config.memory_threshold,
             vector_storage_config.file_size,
@@ -126,13 +127,12 @@ impl HnswBuilder {
         loop {
             let layer = &mut layers[current_top_layer as usize];
             hnsw.visit(current_top_layer, |from: u32, to: u32| {
-                let distance = hnsw.quantizer.distance(
-                    hnsw.vector_storage
-                        .get(from as usize, &mut context)
-                        .unwrap(),
-                    hnsw.vector_storage.get(to as usize, &mut context).unwrap(),
-                    utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD,
-                );
+                let from_v = hnsw
+                    .vector_storage
+                    .get(from as usize, &mut context)
+                    .unwrap();
+                let to_v = hnsw.vector_storage.get(to as usize, &mut context).unwrap();
+                let distance = T::distance(from_v, to_v, &hnsw.quantizer);
                 layer
                     .edges
                     .entry(from)
@@ -169,10 +169,6 @@ impl HnswBuilder {
             entry_point: all_entry_points,
             doc_id_mapping: doc_id_mapping,
         }
-    }
-
-    pub fn append_vector_to_storage(&mut self, vector: &[u8]) -> Result<()> {
-        self.vectors.append(vector)
     }
 
     fn generate_id(&mut self, doc_id: u64) -> u32 {
@@ -284,7 +280,7 @@ impl HnswBuilder {
         }
 
         let vector_storage_config = self.vectors.config();
-        let mut new_vector_storage = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
+        let mut new_vector_storage = Box::new(FileBackedAppendableVectorStorage::<T>::new(
             temp_dir.clone(),
             vector_storage_config.memory_threshold,
             vector_storage_config.file_size,
@@ -305,12 +301,12 @@ impl HnswBuilder {
 
     /// Insert a vector into the index
     pub fn insert(&mut self, doc_id: u64, vector: &[f32]) -> Result<()> {
-        let quantized_query = self.quantizer.quantize(vector);
+        let quantized_query = T::process_vector(vector, &self.quantizer);
         let point_id = self.generate_id(doc_id);
         let mut context = BuilderContext::new(point_id + 1);
 
         let empty_graph = point_id == 0;
-        self.append_vector_to_storage(&quantized_query)?;
+        self.vectors.append(&quantized_query)?;
         let layer = self.get_random_layer();
 
         if empty_graph {
@@ -409,10 +405,10 @@ impl HnswBuilder {
     fn distance_two_points(&self, a: u32, b: u32) -> f32 {
         let a_vector = self.get_vector(a);
         let b_vector = self.get_vector(b);
-        self.quantizer.distance(a_vector, b_vector, StreamingSIMD)
+        T::distance(a_vector, b_vector, &self.quantizer)
     }
 
-    fn get_vector(&self, point_id: u32) -> &[u8] {
+    fn get_vector(&self, point_id: u32) -> &[T] {
         self.vectors.get(point_id).unwrap()
     }
 
@@ -475,7 +471,7 @@ impl HnswBuilder {
         }
     }
 
-    pub fn vectors(&mut self) -> &mut Box<dyn VectorStorage<u8>> {
+    pub fn vectors(&mut self) -> &mut Box<dyn VectorStorage<T>> {
         &mut self.vectors
     }
 
@@ -504,12 +500,12 @@ impl HnswBuilder {
     }
 }
 
-impl GraphTraversal for HnswBuilder {
+impl<T: VectorT<Q>, Q: Quantizer> GraphTraversal<T, Q> for HnswBuilder<T, Q> {
     type ContextT = BuilderContext;
 
-    fn distance(&self, query: &[u8], point_id: u32, _context: &mut BuilderContext) -> f32 {
-        self.quantizer
-            .distance(query, self.get_vector(point_id), StreamingSIMD)
+    fn distance(&self, query: &[T], point_id: u32, _context: &mut BuilderContext) -> f32 {
+        let point = self.vectors.get(point_id).unwrap();
+        T::distance(query, point, &self.quantizer)
     }
 
     fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>> {
@@ -598,10 +594,8 @@ mod tests {
             max_neighbors: 1,
             layers: vec![layer],
             current_top_layer: 0,
-            quantizer: Box::new(
-                ProductQuantizer::new(10, 2, 1, codebook, base_directory.clone())
-                    .expect("ProductQuantizer should be created."),
-            ),
+            quantizer: ProductQuantizer::new(10, 2, 1, codebook, base_directory.clone())
+                .expect("Can't create product quantizer"),
             ef_contruction: 0,
             entry_point: vec![0, 1],
             max_layer: 0,
@@ -726,7 +720,8 @@ mod tests {
 
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
-        let mut builder = HnswBuilder::new(5, 10, 20, 1024, 4096, 5, Box::new(pq), vector_dir);
+        let mut builder =
+            HnswBuilder::<u8, ProductQuantizer>::new(5, 10, 20, 1024, 4096, 5, pq, vector_dir);
 
         for i in 0..100 {
             builder

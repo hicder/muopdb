@@ -12,12 +12,13 @@ name = "index_viewer"
 path = "src/index_viewer.rs"
 
 [dependencies]
+anyhow.workspace = true
 clap.workspace = true
 env_logger.workspace = true
+index.workspace = true
 log.workspace = true
 proto.workspace = true
+quantization.workspace = true
+rand.workspace = true
 tokio.workspace = true
 tonic.workspace = true
-rand.workspace = true
-index.workspace = true
-anyhow.workspace = true
