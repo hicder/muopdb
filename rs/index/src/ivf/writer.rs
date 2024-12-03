@@ -353,6 +353,7 @@ mod tests {
             num_clusters,
             num_data_points: num_vectors,
             max_clusters_per_vector: 1,
+            distance_threshold: 0.1,
             base_directory: base_directory.clone(),
             memory_size: 1024,
             file_size,

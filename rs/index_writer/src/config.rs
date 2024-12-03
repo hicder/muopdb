@@ -54,6 +54,7 @@ pub struct IvfConfig {
     pub num_clusters: usize,
     pub num_data_points: usize,
     pub max_clusters_per_vector: usize,
+    pub distance_threshold: f32,
 
     // KMeans training parameters
     pub max_iteration: usize,
