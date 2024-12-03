@@ -1,12 +1,11 @@
-use std::collections::HashSet;
+use std::collections::BinaryHeap;
 use std::fs::{create_dir, create_dir_all};
 
 use anyhow::Result;
-use kmeans::*;
-use log::debug;
-use rand::Rng;
+use rand::seq::SliceRandom;
 use utils::distance::l2::L2DistanceCalculator;
-use utils::DistanceCalculator;
+use utils::kmeans_builder::kmeans_builder::{KMeansBuilder, KMeansVariant};
+use utils::{CalculateSquared, DistanceCalculator};
 
 use crate::posting_list::file::FileBackedAppendablePostingListStorage;
 use crate::posting_list::PostingListStorage;
@@ -25,6 +24,10 @@ pub struct IvfBuilderConfig {
     pub memory_size: usize,
     pub file_size: usize,
     pub num_features: usize,
+
+    // Parameters for clustering.
+    pub tolerance: f32,
+    pub max_posting_list_size: usize,
 }
 
 pub struct IvfBuilder {
@@ -34,6 +37,32 @@ pub struct IvfBuilder {
     posting_lists: Box<dyn for<'a> PostingListStorage<'a>>,
     doc_id_mapping: Vec<u64>,
 }
+
+#[derive(Debug)]
+struct PostingListInfo {
+    centroid: Vec<f32>,
+    posting_list: Vec<usize>,
+}
+
+impl Ord for PostingListInfo {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.posting_list.len().cmp(&other.posting_list.len())
+    }
+}
+
+impl PartialOrd for PostingListInfo {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for PostingListInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.posting_list.len() == other.posting_list.len()
+    }
+}
+
+impl Eq for PostingListInfo {}
 
 impl IvfBuilder {
     /// Create a new IvfBuilder
@@ -124,25 +153,47 @@ impl IvfBuilder {
         Ok(generated_id)
     }
 
+    fn find_nearest_centroid_inmemory(
+        vector: &[f32],
+        flattened_centroids: &[f32],
+        dimension: usize,
+    ) -> usize {
+        let mut max_distance = std::f32::MIN;
+        let mut centroid_index = 0;
+        for i in 0..flattened_centroids.len() / dimension {
+            let centroid = &flattened_centroids[i * dimension..(i + 1) * dimension];
+            let dist = L2DistanceCalculator::calculate(&vector, &centroid);
+            if dist > max_distance {
+                max_distance = dist;
+                centroid_index = i;
+            }
+        }
+        centroid_index
+    }
+
     fn find_nearest_centroids(
         vector: &[f32],
         centroids: &dyn VectorStorage<f32>,
         num_probes: usize,
     ) -> Result<Vec<usize>> {
         let mut distances: Vec<(usize, f32)> = Vec::new();
-        for i in 0..centroids.len() {
+        let num_centroids = centroids.len();
+        for i in 0..num_centroids {
             let centroid = centroids.get(i as u32)?;
-            let dist = L2DistanceCalculator::calculate(&vector, &centroid);
+            let dist = L2DistanceCalculator::calculate_squared(&vector, &centroid);
+            if dist.is_nan() {
+                println!("NAN found");
+            }
             distances.push((i, dist));
         }
         distances.select_nth_unstable_by(num_probes - 1, |a, b| a.1.total_cmp(&b.1));
+        distances.truncate(num_probes);
         Ok(distances.into_iter().map(|(idx, _)| idx).collect())
     }
 
     pub fn build_posting_lists(&mut self) -> Result<()> {
-        let mut posting_lists: Vec<Vec<u64>> =
-            vec![Vec::with_capacity(0); self.config.num_clusters as usize];
-        // Assign vectors to nearest centroid
+        let mut posting_lists: Vec<Vec<u64>> = vec![Vec::with_capacity(0); self.centroids.len()];
+        // Assign vectors to nearest centroids
         for i in 0..self.vectors.len() {
             let vector = self.vectors.get(i as u32)?;
             let nearest_centroid = Self::find_nearest_centroids(
@@ -150,59 +201,157 @@ impl IvfBuilder {
                 self.centroids.as_ref(),
                 self.config.max_clusters_per_vector,
             )?;
-            posting_lists[nearest_centroid[0]].push(i as u64);
+
+            for centroid_id in nearest_centroid {
+                posting_lists[centroid_id].push(i as u64);
+            }
         }
+
+        self.posting_lists = Box::new(FileBackedAppendablePostingListStorage::new(
+            self.config.base_directory.clone(),
+            self.config.memory_size,
+            self.config.file_size,
+            self.centroids.len(),
+        ));
 
         // Move ownership of each posting list to the posting list storage
         for posting_list in posting_lists.into_iter() {
-            self.add_posting_list(posting_list.as_ref())?;
+            match self.add_posting_list(posting_list.as_ref()) {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("Error adding posting list: {e}");
+                    return Err(e);
+                }
+            }
         }
+        Ok(())
+    }
+
+    fn assign_docs_to_cluster(
+        &self,
+        doc_ids: Vec<usize>,
+        flattened_centroids: &[f32],
+    ) -> Result<Vec<PostingListInfo>> {
+        let mut posting_list_infos: Vec<PostingListInfo> = Vec::new();
+        posting_list_infos.reserve(doc_ids.len());
+        for i in 0..flattened_centroids.len() / self.config.num_features {
+            let centroid = flattened_centroids
+                [i * self.config.num_features..(i + 1) * self.config.num_features]
+                .to_vec();
+            posting_list_infos.push(PostingListInfo {
+                centroid,
+                posting_list: Vec::new(),
+            });
+        }
+
+        for doc_id in doc_ids {
+            let vector = self.vectors.get(doc_id as u32)?;
+            let nearest_centroid = Self::find_nearest_centroid_inmemory(
+                &vector,
+                flattened_centroids,
+                self.config.num_features,
+            );
+            posting_list_infos[nearest_centroid]
+                .posting_list
+                .push(doc_id);
+        }
+        Ok(posting_list_infos)
+    }
+
+    fn get_flattened_dataset(&self, doc_ids: &[usize]) -> Result<Vec<f32>> {
+        let mut flattened_dataset: Vec<f32> = vec![];
+        for i in 0..doc_ids.len() {
+            let vector = self.vectors.get(doc_ids[i] as u32)?;
+            flattened_dataset.extend_from_slice(vector);
+        }
+        Ok(flattened_dataset)
+    }
+
+    fn cluster_docs(&self, doc_ids: Vec<usize>) -> Result<Vec<PostingListInfo>> {
+        let kmeans = KMeansBuilder::new(
+            self.config.num_clusters,
+            self.config.max_iteration,
+            self.config.tolerance,
+            self.config.num_features,
+            KMeansVariant::Lloyd,
+        );
+
+        let flattened_dataset = self.get_flattened_dataset(doc_ids.as_ref())?;
+        let result = kmeans.fit(flattened_dataset)?;
+        self.assign_docs_to_cluster(doc_ids, result.centroids.as_ref())
+    }
+
+    pub fn build_centroids(&mut self) -> Result<()> {
+        // First pass to get the initial centroids
+        let kmeans = KMeansBuilder::new(
+            self.config.num_clusters,
+            self.config.max_iteration,
+            self.config.tolerance,
+            self.config.num_features,
+            KMeansVariant::Lloyd,
+        );
+
+        // Sample the dataset to build the first set of centroids
+        let mut rng = rand::thread_rng();
+        let num_input_vectors = self.vectors.len();
+
+        // Create a vector from 0 to num_input_vectors and then shuffle it
+        let mut flattened_dataset: Vec<f32> = vec![];
+        let indices: Vec<usize> = (0..num_input_vectors as usize).collect();
+
+        let selected = indices
+            .choose_multiple(&mut rng, self.config.num_data_points)
+            .cloned()
+            .collect::<Vec<usize>>();
+        selected.iter().for_each(|index| {
+            flattened_dataset.extend_from_slice(self.vectors.get(*index as u32).unwrap());
+        });
+
+        let result = kmeans.fit(flattened_dataset)?;
+        let posting_list_infos = self.assign_docs_to_cluster(indices, result.centroids.as_ref())?;
+
+        // Repeatedly run kmeans on the longest posting list until no posting list is longer
+        // than max_posting_list_size
+        let mut heap = BinaryHeap::<PostingListInfo>::new();
+        for posting_list_info in posting_list_infos {
+            heap.push(posting_list_info);
+        }
+        while heap.len() > 0 {
+            match heap.peek() {
+                None => break,
+                Some(longest_posting_list) => {
+                    if longest_posting_list.posting_list.len() < self.config.max_posting_list_size {
+                        break;
+                    }
+                }
+            }
+
+            let longest_posting_list = heap.pop().unwrap();
+            let new_posting_list_infos =
+                self.cluster_docs(longest_posting_list.posting_list.clone())?;
+
+            // Add the new posting list infos to the heap
+            for posting_list_info in new_posting_list_infos {
+                heap.push(posting_list_info);
+            }
+        }
+
+        // Add the centroids to the centroid storage
+        // We don't need to add the posting lists to the posting list storage, since later on
+        // we will add them
+        for posting_list_info in heap {
+            if posting_list_info.posting_list.len() == 0 {
+                continue;
+            }
+            self.add_centroid(&posting_list_info.centroid)?;
+        }
+
         Ok(())
     }
 
     /// Train kmeans on the dataset, and generate the posting lists
     pub fn build(&mut self) -> Result<()> {
-        let config = KMeansConfig::build()
-            .init_done(&|_| debug!("Initialization completed."))
-            .iteration_done(&|s, nr, new_distsum| {
-                debug!(
-                    "Iteration {} - Error: {:.2} -> {:.2} | Improvement: {:.2}",
-                    nr,
-                    s.distsum,
-                    new_distsum,
-                    s.distsum - new_distsum
-                )
-            })
-            .build();
-        let mut rng = rand::thread_rng();
-        let num_vectors = self.config.num_data_points;
-        let mut unique_indices = HashSet::with_capacity(num_vectors);
-        let mut flattened_dataset = Vec::new();
-
-        while unique_indices.len() < num_vectors {
-            let random_index = rng.gen_range(0..num_vectors);
-            if unique_indices.insert(random_index) {
-                let vector = self.vectors.get(random_index as u32)?;
-                flattened_dataset.extend_from_slice(vector);
-            }
-        }
-
-        let kmeans: KMeans<_, 8> =
-            KMeans::new(flattened_dataset, num_vectors, self.config.num_features);
-        let result = kmeans.kmeans_minibatch(
-            self.config.batch_size,
-            self.config.num_clusters,
-            self.config.max_iteration,
-            KMeans::init_random_sample,
-            &config,
-        );
-        debug!("Error: {}", result.distsum);
-
-        let centroids_iter = result.centroids.chunks(self.config.num_features);
-        for centroid in centroids_iter {
-            self.add_centroid(centroid)?;
-        }
-
+        self.build_centroids()?;
         self.build_posting_lists()?;
 
         Ok(())
@@ -262,6 +411,8 @@ mod tests {
         let num_vectors = 1000;
         let num_features = 4;
         let file_size = 4096;
+        let balance_factor = 0.0;
+        let max_posting_list_size = usize::MAX;
         let mut builder = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
@@ -272,6 +423,8 @@ mod tests {
             memory_size: 1024,
             file_size,
             num_features,
+            tolerance: balance_factor,
+            max_posting_list_size,
         })
         .expect("Failed to create builder");
         // Generate 1000 vectors of f32, dimension 4
@@ -300,9 +453,9 @@ mod tests {
         );
 
         // Total size of posting lists is bigger than file size, check that they are flushed to disk
-        let posting_lists_path =
-            PathBuf::from(&builder.config.base_directory).join("builder_posting_list_storage");
+        let posting_lists_path = PathBuf::from(&builder.config.base_directory);
         assert!(posting_lists_path.exists());
+
         let count = count_files_with_prefix(&posting_lists_path, "posting_list.bin.");
         assert_eq!(
             count,

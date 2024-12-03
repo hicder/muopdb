@@ -135,6 +135,8 @@ impl IndexWriter {
             memory_size: index_builder_config.base_config.max_memory_size,
             file_size: index_builder_config.base_config.file_size,
             num_features: index_builder_config.base_config.dimension,
+            tolerance: index_builder_config.ivf_config.tolerance,
+            max_posting_list_size: index_builder_config.ivf_config.max_posting_list_size,
         })?;
 
         input.reset();
@@ -194,6 +196,8 @@ impl IndexWriter {
             memory_size: index_writer_config.base_config.max_memory_size,
             file_size: index_writer_config.base_config.file_size,
             num_features: index_writer_config.base_config.dimension,
+            tolerance: ivf_config.tolerance,
+            max_posting_list_size: ivf_config.max_posting_list_size,
         })?;
 
         input.reset();
@@ -434,10 +438,12 @@ mod tests {
         let ivf_config = IvfConfig {
             num_clusters: 2,
             num_data_points: 100,
-            max_clusters_per_vector: 2,
+            max_clusters_per_vector: 1,
 
             max_iteration: 10,
             batch_size: 10,
+            tolerance: 0.0,
+            max_posting_list_size: usize::MAX,
         };
         let config = IndexWriterConfig::Ivf(IvfConfigWithBase {
             base_config,

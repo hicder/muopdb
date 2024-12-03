@@ -144,10 +144,13 @@ impl KMeansBuilder {
                     centroids[label * self.dimension + j] += data_point[j];
                 }
             }
-            centroids
-                .iter_mut()
-                .enumerate()
-                .for_each(|x| *x.1 /= cluster_sizes[x.0 / self.dimension] as f32);
+
+            centroids.iter_mut().enumerate().for_each(|x| {
+                let idx = x.0 / self.dimension;
+                if cluster_sizes[idx] > 0 {
+                    *x.1 /= cluster_sizes[idx] as f32;
+                }
+            });
 
             final_centroids = centroids.clone();
 
@@ -163,6 +166,7 @@ impl KMeansBuilder {
             cluster_labels = data_points
                 .par_iter()
                 .map(|data_point| {
+                    let dp = *data_point;
                     // Calculate distance to each centroid
                     let mut min_cost = f32::MAX;
                     let mut label = 0;
@@ -171,7 +175,7 @@ impl KMeansBuilder {
                             [centroid_id * self.dimension..(centroid_id + 1) * self.dimension]
                             .as_ref();
                         let distance =
-                            T::calculate_squared(data_point, centroid) + penalties[centroid_id];
+                            T::calculate_squared(dp, centroid) + penalties[centroid_id];
 
                         if distance < min_cost {
                             min_cost = distance;

@@ -214,6 +214,11 @@ impl FileBackedAppendablePostingListStorage {
             }
             self.write_to_current_mmap(&idx.to_le_bytes())?;
         }
+
+        if self.current_offset == self.backing_file_size {
+            self.new_backing_file()?;
+        }
+
         self.current_num_of_posting_list += 1;
         Ok(())
     }
@@ -565,7 +570,7 @@ mod tests {
         assert!(data_size > first_mmap_data_size);
 
         // Calculate how many mmaps should be used
-        let expected_mmap_count = 1
+        let expected_mmap_count = 2
             + (data_size - first_mmap_data_size + storage.backing_file_size - 1)
                 / storage.backing_file_size;
         assert_eq!(storage.mmaps.len(), expected_mmap_count);
