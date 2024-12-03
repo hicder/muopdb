@@ -3,6 +3,7 @@ use std::fs::File;
 use byteorder::{ByteOrder, LittleEndian};
 use memmap2::Mmap;
 use quantization::quantization::Quantizer;
+use anyhow::Result;
 
 use crate::hnsw::index::Hnsw;
 use crate::hnsw::writer::{Header, Version};
@@ -17,9 +18,9 @@ impl HnswReader {
         Self { base_directory }
     }
 
-    pub fn read<Q: Quantizer>(&self) -> Hnsw<Q> {
-        let backing_file = File::open(format!("{}/hnsw/index", self.base_directory)).unwrap();
-        let mmap = unsafe { Mmap::map(&backing_file).unwrap() };
+    pub fn read<Q: Quantizer>(&self) -> Result<Hnsw<Q>> {
+        let backing_file = File::open(format!("{}/hnsw/index", self.base_directory))?;
+        let mmap = unsafe { Mmap::map(&backing_file) }?;
 
         let (header, offset) = self.read_header(&mmap);
 
@@ -39,7 +40,7 @@ impl HnswReader {
         let level_offsets_offset = edge_offsets_offset + header.edge_offsets_len as usize;
         let doc_id_mapping_offset = level_offsets_offset + header.level_offsets_len as usize;
 
-        Hnsw::new(
+        Ok(Hnsw::new(
             backing_file,
             vector_storage,
             header,
@@ -50,7 +51,7 @@ impl HnswReader {
             level_offsets_offset,
             doc_id_mapping_offset,
             self.base_directory.clone(),
-        )
+        ))
     }
 
     /// Read the header from the mmap and return the header and the offset of data page
@@ -161,7 +162,7 @@ mod tests {
 
         // Read from file
         let reader = HnswReader::new(base_directory.clone());
-        let hnsw = reader.read::<ProductQuantizer>();
+        let hnsw = reader.read::<ProductQuantizer>().unwrap();
         assert_eq!(49, hnsw.get_data_offset());
         assert_eq!(16, hnsw.get_header().quantized_dimension);
     }
@@ -201,7 +202,7 @@ mod tests {
 
         // Read from file
         let reader = HnswReader::new(base_directory.clone());
-        let hnsw = reader.read::<NoQuantizer>();
+        let hnsw = reader.read::<NoQuantizer>().unwrap();
         assert_eq!(49, hnsw.get_data_offset());
         assert_eq!(128, hnsw.get_header().quantized_dimension);
     }

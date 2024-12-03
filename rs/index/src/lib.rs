@@ -5,3 +5,4 @@ pub mod posting_list;
 pub mod traverse_state;
 pub mod utils;
 pub mod vector;
+pub mod spann;

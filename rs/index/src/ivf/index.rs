@@ -52,6 +52,60 @@ impl Ivf {
         distances.select_nth_unstable_by(num_probes - 1, |a, b| a.1.total_cmp(&b.1));
         Ok(distances.into_iter().map(|(idx, _)| idx).collect())
     }
+
+    pub fn scan_posting_list(
+        &self,
+        centroid: usize,
+        query: &[f32],
+        context: &mut SearchContext,
+    ) -> Vec<IdWithScore> {
+        if let Ok(list) = self.index_storage.get_posting_list(centroid) {
+            let mut results: Vec<IdWithScore> = Vec::new();
+            for &idx in list {
+                match self.vector_storage.get(idx as usize, context) {
+                    Some(vector) => {
+                        let distance = L2DistanceCalculator::calculate(vector, query);
+                        results.push(IdWithScore {
+                            score: distance,
+                            id: idx,
+                        });
+                    }
+                    None => {}
+                }
+            }
+            results
+        } else {
+            vec![]
+        }
+    }
+
+    pub fn search_with_centroids(
+        &self,
+        query: &[f32],
+        nearest_centroid_ids: Vec<usize>,
+        k: usize,
+        context: &mut SearchContext,
+    ) -> Vec<IdWithScore> {
+        let mut heap = BinaryHeap::with_capacity(k);
+        for &centroid in &nearest_centroid_ids {
+            let results = self.scan_posting_list(centroid, query, context);
+            for id_with_score in results {
+                if heap.len() < k {
+                    heap.push(id_with_score);
+                } else if let Some(max) = heap.peek() {
+                    if id_with_score < *max {
+                        heap.pop();
+                        heap.push(id_with_score);
+                    }
+                }
+            }
+        }
+
+        // Convert heap to a sorted vector in ascending order.
+        let mut results: Vec<IdWithScore> = heap.into_vec();
+        results.sort();
+        results
+    }
 }
 
 impl Index for Ivf {
@@ -62,8 +116,6 @@ impl Index for Ivf {
         ef_construction: u32, // Number of probed centroids
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>> {
-        let mut heap = BinaryHeap::with_capacity(k);
-
         // Find the nearest centroids to the query.
         if let Ok(nearest_centroids) = Self::find_nearest_centroids(
             &query.to_vec(),
@@ -71,32 +123,7 @@ impl Index for Ivf {
             ef_construction as usize,
         ) {
             // Search in the posting lists of the nearest centroids.
-            for &centroid in &nearest_centroids {
-                if let Ok(list) = self.index_storage.get_posting_list(centroid) {
-                    for &idx in list {
-                        let distance = L2DistanceCalculator::calculate(
-                            query,
-                            &self.vector_storage.get(idx as usize, context)?.to_vec(),
-                        );
-                        let id_with_score = IdWithScore {
-                            score: distance,
-                            id: idx as u64,
-                        };
-                        if heap.len() < k {
-                            heap.push(id_with_score);
-                        } else if let Some(max) = heap.peek() {
-                            if id_with_score < *max {
-                                heap.pop();
-                                heap.push(id_with_score);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Convert heap to a sorted vector in ascending order.
-            let mut results: Vec<IdWithScore> = heap.into_vec();
-            results.sort();
+            let results = self.search_with_centroids(query, nearest_centroids, k, context);
             Some(results)
         } else {
             println!("Error finding nearest centroids");
