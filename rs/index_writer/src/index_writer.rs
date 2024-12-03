@@ -142,8 +142,7 @@ impl IndexWriter {
         input.reset();
         while input.has_next() {
             let row = input.next();
-            ivf_builder.add_vector(row.data.to_vec())?;
-            ivf_builder.generate_id(row.id)?;
+            ivf_builder.add_vector(row.id, row.data.to_vec())?;
             if row.id % 10000 == 0 {
                 debug!("Inserted {} rows", row.id);
             }
@@ -203,7 +202,7 @@ impl IndexWriter {
         input.reset();
         while input.has_next() {
             let row = input.next();
-            ivf_builder.add_vector(row.data.to_vec())?;
+            ivf_builder.add_vector(row.id, row.data.to_vec())?;
             if row.id % 10000 == 0 {
                 debug!("Inserted {} rows", row.id);
             }

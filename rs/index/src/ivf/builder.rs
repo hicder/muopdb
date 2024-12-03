@@ -130,8 +130,9 @@ impl IvfBuilder {
     }
 
     /// Add a new vector to the dataset for training
-    pub fn add_vector(&mut self, data: Vec<f32>) -> Result<()> {
+    pub fn add_vector(&mut self, doc_id: u64, data: Vec<f32>) -> Result<()> {
         self.vectors.append(&data)?;
+        self.generate_id(doc_id)?;
         Ok(())
     }
 
@@ -147,7 +148,7 @@ impl IvfBuilder {
         Ok(())
     }
 
-    pub fn generate_id(&mut self, doc_id: u64) -> Result<u32> {
+    fn generate_id(&mut self, doc_id: u64) -> Result<u32> {
         let generated_id = self.doc_id_mapping.len() as u32;
         self.doc_id_mapping.push(doc_id);
         Ok(generated_id)
@@ -428,9 +429,9 @@ mod tests {
         })
         .expect("Failed to create builder");
         // Generate 1000 vectors of f32, dimension 4
-        for _ in 0..num_vectors {
+        for i in 0..num_vectors {
             builder
-                .add_vector(generate_random_vector(num_features))
+                .add_vector(i as u64, generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 
