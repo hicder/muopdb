@@ -15,9 +15,11 @@ MuopDB is a vector database for machine learning. This project is done under [Te
   - [x] In-memory & disk-based storage with mmap
 ### V1
 - [ ] Query path
-  - [ ] Inverted File (IVF)
+  - [x] Inverted File (IVF)
   - [x] Improve locality for HNSW
-  - [ ] RabitQ quantization
+  - [x] SPANN
+### V2
+- [ ] Multiple index segments
 - [ ] Indexing path
   - [ ] Support realtime indexing
 ## Why MuopDB?
