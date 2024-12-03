@@ -567,7 +567,7 @@ mod tests {
         writer.write(&mut hnsw_builder, false).unwrap();
 
         let reader = HnswReader::new(base_directory.clone());
-        let hnsw = reader.read::<ProductQuantizer>();
+        let hnsw = reader.read::<ProductQuantizer>().unwrap();
         {
             let egdes = hnsw.get_edges_for_point(1, 2);
             assert!(egdes.is_none());
