@@ -7,6 +7,10 @@ edition = "2021"
 name = "hnsw_reindexer"
 path = "src/hnsw_reindexer.rs"
 
+[[bin]]
+name = "write_index_writer_config"
+path = "src/scripts/write_index_writer_config.rs"
+
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
@@ -18,3 +22,5 @@ ndarray.workspace = true
 quantization.workspace = true
 tempdir.workspace = true
 rand.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true

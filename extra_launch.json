@@ -38,9 +38,11 @@
                 }
             },
             "args": [
-                "--input-path=/home/hieu/Downloads/sift-128-euclidean.hdf5",
-                "--output-path=/tmp/test_hieu",
-                "--dataset-name=/train"
+                "--input-path=/Users/hieu/muopdb/input/sift-128-euclidean.hdf5",
+                "--output-path=/Users/hieu/muopdb/data/hieu-reindex-1",
+                "--index-type=hnsw-ivf",
+                "--dataset-name=/train",
+                "--config-path=/tmp/index_writer_config.yaml"
             ],
             "cwd": "${workspaceFolder}"
         }
