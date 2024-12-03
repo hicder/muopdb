@@ -65,6 +65,8 @@ mod tests {
             memory_size: 1024,
             file_size,
             num_features,
+            tolerance: 0.0,
+            max_posting_list_size: usize::MAX,
         })
         .expect("Failed to create builder");
         // Generate 1000 vectors of f32, dimension 4
@@ -158,6 +160,61 @@ mod tests {
             for (val_ref, val_read) in ref_vector.iter().zip(read_vector.iter()) {
                 assert_eq!(val_ref, *val_read);
             }
+        }
+    }
+
+    // Test when the max posting list size is exceeded
+    #[test]
+    fn test_ivf_reader_read_max_posting_list_size() {
+        let temp_dir = TempDir::new("test_ivf_reader_read_max_posting_list_size")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 10;
+        let num_vectors = 1000;
+        let num_features = 4;
+        let file_size = 4096;
+        let writer = IvfWriter::new(base_directory.clone());
+
+        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points: num_vectors,
+            max_clusters_per_vector: 1,
+            base_directory: base_directory.clone(),
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: 0.0,
+            max_posting_list_size: 10,
+        })
+        .expect("Failed to create builder");
+        // Generate 1000 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            builder
+                .add_vector(generate_random_vector(num_features))
+                .expect("Vector should be added");
+            builder.generate_id(i as u64).expect("Id should be generated");
+        }
+
+        assert!(builder.build().is_ok());
+        assert!(writer.write(&mut builder).is_ok());
+
+        let reader = IvfReader::new(base_directory.clone());
+        let index = reader.read().expect("Failed to read index file");
+
+        let num_centroids = index.num_clusters;
+
+        for i in 0..num_centroids {
+            // Assert that posting lists size is less than or equal to max_posting_list_size
+            let posting_list = index.index_storage.get_posting_list(i);
+            assert!(posting_list.is_ok());
+            let posting_list = posting_list.unwrap();
+            assert!(posting_list.len() <= 100);
         }
     }
 }

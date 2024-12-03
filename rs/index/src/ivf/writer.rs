@@ -18,7 +18,7 @@ impl IvfWriter {
 
     pub fn write(&self, ivf_builder: &mut IvfBuilder) -> Result<()> {
         let num_features = ivf_builder.config().num_features;
-        let num_clusters = ivf_builder.config().num_clusters;
+        let num_clusters = ivf_builder.centroids().len();
         let num_vectors = ivf_builder.vectors().len();
 
         // Write vectors
@@ -357,6 +357,8 @@ mod tests {
             memory_size: 1024,
             file_size,
             num_features,
+            tolerance: 0.0,
+            max_posting_list_size: usize::MAX,
         })
         .expect("Failed to create builder");
         // Generate 1000 vectors of f32, dimension 4
@@ -372,7 +374,6 @@ mod tests {
         assert_eq!(builder.doc_id_mapping().len(), 1000);
 
         assert!(builder.build().is_ok());
-
         assert!(writer.write(&mut builder).is_ok());
 
         // Check if files were created and removed correctly

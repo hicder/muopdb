@@ -47,8 +47,9 @@ pub struct IvfConfig {
     // KMeans training parameters
     pub max_iteration: usize,
     pub batch_size: usize,
+    pub tolerance: f32,
+    pub max_posting_list_size: usize,
 }
-
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct IvfConfigWithBase {
