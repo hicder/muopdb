@@ -50,7 +50,10 @@ impl Ivf {
             distances.push((i as usize, dist));
         }
         distances.select_nth_unstable_by(num_probes - 1, |a, b| a.1.total_cmp(&b.1));
-        Ok(distances.into_iter().map(|(idx, _)| idx).collect())
+        let mut nearest_centroids: Vec<(usize, f32)> =
+            distances.into_iter().take(num_probes).collect();
+        nearest_centroids.sort_by(|a, b| a.1.total_cmp(&b.1));
+        Ok(nearest_centroids.into_iter().map(|(idx, _)| idx).collect())
     }
 
     pub fn scan_posting_list(
@@ -161,11 +164,13 @@ mod tests {
 
     fn create_fixed_file_index_storage(
         file_path: &String,
+        doc_id_mapping: &Vec<u64>,
         centroids: &Vec<Vec<f32>>,
         posting_lists: &Vec<Vec<u64>>,
     ) -> Result<usize> {
         let mut file = File::create(file_path.clone())?;
 
+        let num_vectors = doc_id_mapping.len();
         let num_clusters = centroids.len();
         if num_clusters != posting_lists.len() {
             return Err(anyhow!(
@@ -176,6 +181,7 @@ mod tests {
         }
 
         // Create a test header
+        let doc_id_mapping_len = size_of::<u64>() * (num_vectors + 1);
         let num_features = centroids[0].len();
         let centroids_len = size_of::<u64>() + num_features * num_clusters * size_of::<f32>();
 
@@ -185,7 +191,11 @@ mod tests {
         offset += size_of::<u32>();
         assert!(file.write_all(&(num_clusters as u32).to_le_bytes()).is_ok());
         offset += size_of::<u32>();
-        assert!(file.write_all(&7u64.to_le_bytes()).is_ok());
+        assert!(file.write_all(&(num_vectors as u64).to_le_bytes()).is_ok());
+        offset += size_of::<u64>();
+        assert!(file
+            .write_all(&(doc_id_mapping_len as u64).to_le_bytes())
+            .is_ok());
         offset += size_of::<u64>();
         assert!(file
             .write_all(&(centroids_len as u64).to_le_bytes())
@@ -201,6 +211,14 @@ mod tests {
         }
         assert!(file.write_all(&pad).is_ok());
         offset += pad.len();
+
+        // Write doc_id_mapping
+        assert!(file.write_all(&(num_vectors as u64).to_le_bytes()).is_ok());
+        offset += size_of::<u64>();
+        for doc_id in doc_id_mapping.iter() {
+            assert!(file.write_all(&(*doc_id as u64).to_le_bytes()).is_ok());
+            offset += size_of::<u64>();
+        }
 
         // Write centroids
         assert!(file.write_all(&(num_clusters as u64).to_le_bytes()).is_ok());
@@ -257,9 +275,16 @@ mod tests {
             .expect("FixedFileVectorStorage should be created");
 
         let file_path = format!("{}/index", base_dir);
+        let doc_id_mapping = vec![100, 101, 102];
         let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
         let posting_lists = vec![vec![0], vec![1, 2]];
-        assert!(create_fixed_file_index_storage(&file_path, &centroids, &posting_lists).is_ok());
+        assert!(create_fixed_file_index_storage(
+            &file_path,
+            &doc_id_mapping,
+            &centroids,
+            &posting_lists
+        )
+        .is_ok());
         let index_storage =
             FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
 
@@ -283,15 +308,22 @@ mod tests {
             .to_str()
             .expect("Failed to convert temporary directory path to string")
             .to_string();
-        let file_path = format!("{}/centroids", base_dir);
+        let file_path = format!("{}/index", base_dir);
         let vector = vec![3.0, 4.0, 5.0];
+        let doc_id_mapping = vec![100, 101, 102];
         let centroids = vec![
             vec![1.0, 2.0, 3.0],
             vec![4.0, 5.0, 6.0],
             vec![7.0, 8.0, 9.0],
         ];
         let posting_lists = vec![vec![0], vec![1], vec![2]];
-        assert!(create_fixed_file_index_storage(&file_path, &centroids, &posting_lists).is_ok());
+        assert!(create_fixed_file_index_storage(
+            &file_path,
+            &doc_id_mapping,
+            &centroids,
+            &posting_lists
+        )
+        .is_ok());
         let index_storage =
             FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
         let num_probes = 2;
@@ -325,9 +357,16 @@ mod tests {
             .expect("FixedFileVectorStorage should be created");
 
         let file_path = format!("{}/index", base_dir);
+        let doc_id_mapping = vec![100, 101, 102, 103];
         let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
         let posting_lists = vec![vec![0, 3], vec![1, 2]];
-        assert!(create_fixed_file_index_storage(&file_path, &centroids, &posting_lists).is_ok());
+        assert!(create_fixed_file_index_storage(
+            &file_path,
+            &doc_id_mapping,
+            &centroids,
+            &posting_lists
+        )
+        .is_ok());
         let index_storage =
             FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
 
@@ -367,9 +406,16 @@ mod tests {
             .expect("FixedFileVectorStorage should be created");
 
         let file_path = format!("{}/index", base_dir);
+        let doc_id_mapping = vec![100];
         let centroids = vec![vec![100.0, 200.0, 300.0]];
         let posting_lists = vec![vec![0]];
-        assert!(create_fixed_file_index_storage(&file_path, &centroids, &posting_lists).is_ok());
+        assert!(create_fixed_file_index_storage(
+            &file_path,
+            &doc_id_mapping,
+            &centroids,
+            &posting_lists
+        )
+        .is_ok());
         let index_storage =
             FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
 

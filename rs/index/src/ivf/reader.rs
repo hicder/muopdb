@@ -68,10 +68,13 @@ mod tests {
         })
         .expect("Failed to create builder");
         // Generate 1000 vectors of f32, dimension 4
-        for _ in 0..num_vectors {
+        for i in 0..num_vectors {
             builder
                 .add_vector(generate_random_vector(num_features))
                 .expect("Vector should be added");
+            builder
+                .generate_id((i + 100) as u64)
+                .expect("Id should be generated");
         }
 
         assert!(builder.build().is_ok());
@@ -118,6 +121,15 @@ mod tests {
             index.index_storage.header().centroids_len,
             (num_clusters * num_features * size_of::<f32>() + size_of::<u64>()) as u64
         );
+        // Verify doc_id_mapping content
+        for i in 0..num_vectors {
+            let ref_id = builder.doc_id_mapping()[i];
+            let read_id = index
+                .index_storage
+                .get_doc_id(i)
+                .expect("Failed to read doc_id from FixedFileVectorStorage");
+            assert_eq!(ref_id, read_id);
+        }
         // Verify centroid content
         for i in 0..num_clusters {
             let ref_vector = builder

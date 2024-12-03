@@ -32,6 +32,7 @@ pub struct IvfBuilder {
     vectors: Box<dyn VectorStorage<f32>>,
     centroids: Box<dyn VectorStorage<f32>>,
     posting_lists: Box<dyn for<'a> PostingListStorage<'a>>,
+    doc_id_mapping: Vec<u64>,
 }
 
 impl IvfBuilder {
@@ -75,6 +76,7 @@ impl IvfBuilder {
             vectors,
             centroids,
             posting_lists,
+            doc_id_mapping: Vec::new(),
         })
     }
 
@@ -84,6 +86,10 @@ impl IvfBuilder {
 
     pub fn vectors(&self) -> &dyn VectorStorage<f32> {
         &*self.vectors
+    }
+
+    pub fn doc_id_mapping(&self) -> &[u64] {
+        &*self.doc_id_mapping
     }
 
     pub fn centroids(&self) -> &dyn VectorStorage<f32> {
@@ -110,6 +116,12 @@ impl IvfBuilder {
     pub fn add_posting_list(&mut self, posting_list: &[u64]) -> Result<()> {
         self.posting_lists.append(posting_list)?;
         Ok(())
+    }
+
+    pub fn generate_id(&mut self, doc_id: u64) -> Result<u32> {
+        let generated_id = self.doc_id_mapping.len() as u32;
+        self.doc_id_mapping.push(doc_id);
+        Ok(generated_id)
     }
 
     fn find_nearest_centroids(
