@@ -27,16 +27,23 @@ impl Index for Spann {
         context: &mut crate::utils::SearchContext,
     ) -> Option<Vec<crate::utils::IdWithScore>> {
         // TODO(hicder): Fully implement SPANN, which includes adjusting number of centroids
-        let nearest_centroids = self.centroids.search(query, k, ef_construction, context);
-        let nearest_centroids = nearest_centroids.unwrap_or(vec![]);
-        let nearest_centroid_ids = nearest_centroids.iter().map(|x| x.id as usize).collect();
-        if nearest_centroids.is_empty() {
-            return None;
+        match self.centroids.search(query, k, ef_construction, context) {
+            Some(nearest_centroids) => {
+                let nearest_centroid_ids =
+                    nearest_centroids.iter().map(|x| x.id as usize).collect();
+                if nearest_centroids.is_empty() {
+                    return None;
+                }
+                let results = self.posting_lists.search_with_centroids(
+                    query,
+                    nearest_centroid_ids,
+                    k,
+                    context,
+                );
+                Some(results)
+            }
+            None => None,
         }
-        let results =
-            self.posting_lists
-                .search_with_centroids(query, nearest_centroid_ids, k, context);
-        Some(results)
     }
 }
 
