@@ -4,11 +4,14 @@ use index::hnsw::writer::HnswWriter;
 use index::ivf::builder::{IvfBuilder, IvfBuilderConfig};
 use index::ivf::writer::IvfWriter;
 use log::{debug, info};
+use quantization::no_op::{NoQuantizer, NoQuantizerWriter};
 use quantization::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuantizerWriter};
 use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
 use rand::seq::SliceRandom;
 
-use crate::config::{HnswConfig, HnswIvfConfig, IndexWriterConfig, IvfConfig, QuantizerType};
+use crate::config::{
+    HnswConfigWithBase, HnswIvfConfig, IndexWriterConfig, IvfConfigWithBase, QuantizerType,
+};
 use crate::input::Input;
 
 pub struct IndexWriter {
@@ -31,32 +34,37 @@ impl IndexWriter {
     fn do_build_hnsw_index(
         &mut self,
         input: &mut impl Input,
-        hnsw_config: &HnswConfig,
+        index_builder_config: &HnswConfigWithBase,
     ) -> Result<()> {
         info!("Start indexing (HNSW)");
-        let path = &hnsw_config.base_config.output_path;
+        let path = &index_builder_config.base_config.output_path;
         let pg_temp_dir = format!("{}/pq_tmp", path);
         std::fs::create_dir_all(&pg_temp_dir)?;
 
         // First, train the product quantizer
-        let mut pq_builder = match hnsw_config.quantizer_type {
+        let mut pq_builder = match index_builder_config.hnsw_config.quantizer_type {
             QuantizerType::ProductQuantizer => {
                 let pq_config = ProductQuantizerConfig {
-                    dimension: hnsw_config.base_config.dimension,
-                    subvector_dimension: hnsw_config.subvector_dimension,
-                    num_bits: hnsw_config.num_bits,
+                    dimension: index_builder_config.base_config.dimension,
+                    subvector_dimension: index_builder_config.hnsw_config.subvector_dimension,
+                    num_bits: index_builder_config.hnsw_config.num_bits,
                 };
                 let pq_builder_config = ProductQuantizerBuilderConfig {
-                    max_iteration: hnsw_config.max_iteration,
-                    batch_size: hnsw_config.batch_size,
+                    max_iteration: index_builder_config.hnsw_config.max_iteration,
+                    batch_size: index_builder_config.hnsw_config.batch_size,
                 };
                 ProductQuantizerBuilder::new(pq_config, pq_builder_config)
+            }
+            QuantizerType::NoQuantizer => {
+                todo!("Implement no quantizer")
             }
         };
 
         info!("Start training product quantizer");
-        let sorted_random_rows =
-            Self::get_sorted_random_rows(input.num_rows(), hnsw_config.num_training_rows);
+        let sorted_random_rows = Self::get_sorted_random_rows(
+            input.num_rows(),
+            index_builder_config.hnsw_config.num_training_rows,
+        );
         for row_idx in sorted_random_rows {
             input.skip_to(row_idx as usize);
             pq_builder.add(input.next().data.to_vec());
@@ -76,12 +84,13 @@ impl IndexWriter {
         std::fs::create_dir_all(&vector_directory)?;
 
         let mut hnsw_builder = HnswBuilder::<ProductQuantizer>::new(
-            hnsw_config.max_num_neighbors,
-            hnsw_config.num_layers,
-            hnsw_config.ef_construction,
-            hnsw_config.base_config.max_memory_size,
-            hnsw_config.base_config.file_size,
-            hnsw_config.base_config.dimension / hnsw_config.subvector_dimension,
+            index_builder_config.hnsw_config.max_num_neighbors,
+            index_builder_config.hnsw_config.num_layers,
+            index_builder_config.hnsw_config.ef_construction,
+            index_builder_config.base_config.max_memory_size,
+            index_builder_config.base_config.file_size,
+            index_builder_config.base_config.dimension
+                / index_builder_config.hnsw_config.subvector_dimension,
             pq,
             vector_directory.clone(),
         );
@@ -100,7 +109,7 @@ impl IndexWriter {
 
         info!("Start writing index");
         let hnsw_writer = HnswWriter::new(hnsw_directory);
-        hnsw_writer.write(&mut hnsw_builder, hnsw_config.reindex)?;
+        hnsw_writer.write(&mut hnsw_builder, index_builder_config.hnsw_config.reindex)?;
 
         // Cleanup tmp directory. It's ok to fail
         std::fs::remove_dir_all(&pg_temp_dir).unwrap_or_default();
@@ -108,20 +117,24 @@ impl IndexWriter {
         Ok(())
     }
 
-    fn do_build_ivf_index(&mut self, input: &mut impl Input, ivf_config: &IvfConfig) -> Result<()> {
+    fn do_build_ivf_index(
+        &mut self,
+        input: &mut impl Input,
+        index_builder_config: &IvfConfigWithBase,
+    ) -> Result<()> {
         info!("Start indexing (IVF)");
-        let path = &ivf_config.base_config.output_path;
+        let path = &index_builder_config.base_config.output_path;
 
         let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
-            max_iteration: ivf_config.max_iteration,
-            batch_size: ivf_config.batch_size,
-            num_clusters: ivf_config.num_clusters,
-            num_data_points: ivf_config.num_data_points,
-            max_clusters_per_vector: ivf_config.max_clusters_per_vector,
+            max_iteration: index_builder_config.ivf_config.max_iteration,
+            batch_size: index_builder_config.ivf_config.batch_size,
+            num_clusters: index_builder_config.ivf_config.num_clusters,
+            num_data_points: index_builder_config.ivf_config.num_data_points,
+            max_clusters_per_vector: index_builder_config.ivf_config.max_clusters_per_vector,
             base_directory: path.to_string(),
-            memory_size: ivf_config.base_config.max_memory_size,
-            file_size: ivf_config.base_config.file_size,
-            num_features: ivf_config.base_config.dimension,
+            memory_size: index_builder_config.base_config.max_memory_size,
+            file_size: index_builder_config.base_config.file_size,
+            num_features: index_builder_config.base_config.dimension,
         })?;
 
         input.reset();
@@ -152,9 +165,95 @@ impl IndexWriter {
     fn do_build_ivf_hnsw_index(
         &mut self,
         input: &mut impl Input,
-        hnsw_ivf_config: &HnswIvfConfig,
+        index_writer_config: &HnswIvfConfig,
     ) -> Result<()> {
-        todo!()
+        // Directory structure:
+        // hnsw_ivf_config.base_config.output_path
+        // ├── centroids
+        // │   ├── vector_storage
+        // │   └── index
+        // ├── ivf
+        // │   ├── ivf
+        // │   └── centroids
+        // └── centroid_quantizer
+        //     └── no_quantizer_config.yaml
+
+        // TODO(hicder): Support quantization for IVF
+        let ivf_config = &index_writer_config.ivf_config;
+        let ivf_directory = format!("{}/ivf", index_writer_config.base_config.output_path);
+        std::fs::create_dir_all(&ivf_directory)?;
+
+        let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: ivf_config.max_iteration,
+            batch_size: ivf_config.batch_size,
+            num_clusters: ivf_config.num_clusters,
+            num_data_points: ivf_config.num_data_points,
+            max_clusters_per_vector: ivf_config.max_clusters_per_vector,
+            base_directory: index_writer_config.base_config.output_path.clone(),
+            memory_size: index_writer_config.base_config.max_memory_size,
+            file_size: index_writer_config.base_config.file_size,
+            num_features: index_writer_config.base_config.dimension,
+        })?;
+
+        input.reset();
+        while input.has_next() {
+            let row = input.next();
+            ivf_builder.add_vector(row.data.to_vec())?;
+            if row.id % 10000 == 0 {
+                debug!("Inserted {} rows", row.id);
+            }
+        }
+
+        info!("Start building IVF index");
+        ivf_builder.build()?;
+
+        // Builder HNSW index around cetroids. We don't quantize them for now.
+        // TODO(hicder): Have an option to quantize the centroids
+        let centroid_storage = ivf_builder.centroids();
+        let num_centroids = centroid_storage.len();
+
+        let hnsw_config = &index_writer_config.hnsw_config;
+        let path = &index_writer_config.base_config.output_path;
+        let quantizer = NoQuantizer::new(index_writer_config.base_config.dimension);
+
+        // Write the quantizer to disk, even though it's no quantizer
+        let centroid_quantizer_directory = format!("{}/centroid_quantizer", path);
+        std::fs::create_dir_all(&centroid_quantizer_directory)?;
+        let centroid_quantizer_writer = NoQuantizerWriter::new(centroid_quantizer_directory);
+        centroid_quantizer_writer.write(&quantizer)?;
+
+        let mut hnsw_builder = HnswBuilder::new(
+            hnsw_config.max_num_neighbors,
+            hnsw_config.num_layers,
+            hnsw_config.ef_construction,
+            index_writer_config.base_config.max_memory_size,
+            index_writer_config.base_config.file_size,
+            index_writer_config.base_config.dimension,
+            quantizer,
+            index_writer_config.base_config.output_path.clone(),
+        );
+
+        info!("Start building HNSW index for centroids");
+        for i in 0..num_centroids {
+            hnsw_builder.insert(i as u64, &centroid_storage.get(i as u32).unwrap())?;
+            if i % 100 == 0 {
+                debug!("Inserted {} centroids", i);
+            }
+        }
+
+        let centroid_directory = format!("{}/centroids", path);
+        std::fs::create_dir_all(&centroid_directory)?;
+
+        info!("Start writing HNSW index for centroids");
+        let hnsw_writer = HnswWriter::new(centroid_directory);
+        hnsw_writer.write(&mut hnsw_builder, hnsw_config.reindex)?;
+
+        info!("Start writing IVF index");
+        let ivf_writer = IvfWriter::new(ivf_directory);
+        ivf_writer.write(&mut ivf_builder)?;
+        ivf_builder.cleanup()?;
+
+        Ok(())
     }
 
     // TODO(hicder): Support multiple inputs
@@ -264,14 +363,11 @@ mod tests {
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
         };
-        let config = IndexWriterConfig::Hnsw(HnswConfig {
-            base_config,
-
+        let hnsw_config = HnswConfig {
             num_layers: 2,
             max_num_neighbors: 10,
             ef_construction: 100,
             reindex: false,
-
             quantizer_type: QuantizerType::ProductQuantizer,
             subvector_dimension: 2,
             num_bits: 2,
@@ -279,6 +375,10 @@ mod tests {
 
             max_iteration: 10,
             batch_size: 10,
+        };
+        let config = IndexWriterConfig::Hnsw(HnswConfigWithBase {
+            base_config,
+            hnsw_config,
         });
 
         let mut index_writer = IndexWriter::new(config);
@@ -330,15 +430,17 @@ mod tests {
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
         };
-        let config = IndexWriterConfig::Ivf(IvfConfig {
-            base_config,
-
+        let ivf_config = IvfConfig {
             num_clusters: 2,
             num_data_points: 100,
             max_clusters_per_vector: 2,
 
             max_iteration: 10,
             batch_size: 10,
+        };
+        let config = IndexWriterConfig::Ivf(IvfConfigWithBase {
+            base_config,
+            ivf_config,
         });
 
         let mut index_writer = IndexWriter::new(config);

@@ -1207,6 +1207,8 @@ dependencies = [
  "ndarray",
  "quantization",
  "rand 0.8.5",
+ "serde",
+ "serde_yaml",
  "tempdir",
 ]
 

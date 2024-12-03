@@ -1,11 +1,14 @@
+use serde::{Deserialize, Serialize};
+
 // TODO(hicder): support more quantizers
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub enum QuantizerType {
     #[default]
     ProductQuantizer,
+    NoQuantizer,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BaseConfig {
     pub output_path: String,
     pub dimension: usize,
@@ -15,10 +18,8 @@ pub struct BaseConfig {
     pub file_size: usize,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HnswConfig {
-    pub base_config: BaseConfig,
-
     // HNSW parameters
     pub num_layers: u8,
     pub max_num_neighbors: usize,
@@ -36,10 +37,8 @@ pub struct HnswConfig {
     pub batch_size: usize,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct IvfConfig {
-    pub base_config: BaseConfig,
-
     // IVF parameters
     pub num_clusters: usize,
     pub num_data_points: usize,
@@ -50,21 +49,35 @@ pub struct IvfConfig {
     pub batch_size: usize,
 }
 
-#[derive(Debug, Clone, Default)]
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct IvfConfigWithBase {
+    pub base_config: BaseConfig,
+    pub ivf_config: IvfConfig,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct HnswConfigWithBase {
+    pub base_config: BaseConfig,
+    pub hnsw_config: HnswConfig,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HnswIvfConfig {
+    pub base_config: BaseConfig,
     pub hnsw_config: HnswConfig,
     pub ivf_config: IvfConfig,
 }
 
 #[derive(Debug, Clone)]
 pub enum IndexWriterConfig {
-    Hnsw(HnswConfig),
-    Ivf(IvfConfig),
+    Hnsw(HnswConfigWithBase),
+    Ivf(IvfConfigWithBase),
     HnswIvf(HnswIvfConfig),
 }
 
 impl Default for IndexWriterConfig {
     fn default() -> Self {
-        IndexWriterConfig::Hnsw(HnswConfig::default())
+        IndexWriterConfig::Hnsw(HnswConfigWithBase::default())
     }
 }
