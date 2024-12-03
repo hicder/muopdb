@@ -72,11 +72,8 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add_vector(generate_random_vector(num_features))
+                .add_vector((i + 100) as u64, generate_random_vector(num_features))
                 .expect("Vector should be added");
-            builder
-                .generate_id((i + 100) as u64)
-                .expect("Id should be generated");
         }
 
         assert!(builder.build().is_ok());
@@ -196,9 +193,8 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add_vector(generate_random_vector(num_features))
+                .add_vector(i as u64, generate_random_vector(num_features))
                 .expect("Vector should be added");
-            builder.generate_id(i as u64).expect("Id should be generated");
         }
 
         assert!(builder.build().is_ok());

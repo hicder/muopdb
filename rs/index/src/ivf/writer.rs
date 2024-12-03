@@ -366,10 +366,9 @@ mod tests {
         for i in 0..num_vectors {
             let vector = generate_random_vector(num_features);
             original_vectors.push(vector.clone());
-            builder.add_vector(vector).expect("Vector should be added");
             builder
-                .generate_id((i + 100) as u64)
-                .expect("Id should be generated");
+                .add_vector((i + 100) as u64, vector)
+                .expect("Vector should be added");
         }
         assert_eq!(builder.doc_id_mapping().len(), 1000);
 
