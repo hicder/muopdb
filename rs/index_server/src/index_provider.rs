@@ -33,7 +33,7 @@ impl IndexProvider {
                 }
             }
             index_writer::config::IndexType::Ivf => todo!(),
-            index_writer::config::IndexType::HnswIvf => {
+            index_writer::config::IndexType::Spann => {
                 let reader = SpannReader::new(index_path);
                 match reader.read() {
                     Ok(index) => Some(Box::new(index)),

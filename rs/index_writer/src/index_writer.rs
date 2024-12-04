@@ -10,7 +10,7 @@ use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderC
 use rand::seq::SliceRandom;
 
 use crate::config::{
-    HnswConfigWithBase, HnswIvfConfig, IndexWriterConfig, IvfConfigWithBase, QuantizerType,
+    HnswConfigWithBase, SpannConfigWithBase, IndexWriterConfig, IvfConfigWithBase, QuantizerType,
 };
 use crate::input::Input;
 
@@ -167,7 +167,7 @@ impl IndexWriter {
     fn do_build_ivf_hnsw_index(
         &mut self,
         input: &mut impl Input,
-        index_writer_config: &HnswIvfConfig,
+        index_writer_config: &SpannConfigWithBase,
     ) -> Result<()> {
         // Directory structure:
         // hnsw_ivf_config.base_config.output_path
@@ -281,7 +281,7 @@ impl IndexWriter {
                 Ok(self.do_build_hnsw_index(input, &hnsw_config)?)
             }
             IndexWriterConfig::Ivf(ivf_config) => Ok(self.do_build_ivf_index(input, &ivf_config)?),
-            IndexWriterConfig::HnswIvf(hnsw_ivf_config) => {
+            IndexWriterConfig::Spann(hnsw_ivf_config) => {
                 Ok(self.do_build_ivf_hnsw_index(input, &hnsw_ivf_config)?)
             }
         }
@@ -508,7 +508,7 @@ mod tests {
             dimension,
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
-            index_type: IndexType::HnswIvf,
+            index_type: IndexType::Spann,
         };
         let hnsw_config = HnswConfig {
             num_layers: 2,
@@ -533,7 +533,7 @@ mod tests {
             tolerance: 0.0,
             max_posting_list_size: usize::MAX,
         };
-        let config = IndexWriterConfig::HnswIvf(HnswIvfConfig {
+        let config = IndexWriterConfig::Spann(SpannConfigWithBase {
             base_config,
             hnsw_config,
             ivf_config,

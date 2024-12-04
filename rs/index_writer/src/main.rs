@@ -3,7 +3,7 @@ use std::path::Path;
 
 use clap::Parser;
 use index_writer::config::{
-    HnswConfigWithBase, HnswIvfConfig, IndexWriterConfig, IvfConfigWithBase,
+    HnswConfigWithBase, IndexWriterConfig, IvfConfigWithBase, SpannConfigWithBase,
 };
 use index_writer::index_writer::IndexWriter;
 use index_writer::input::hdf5::Hdf5Reader;
@@ -12,7 +12,7 @@ use index_writer::input::hdf5::Hdf5Reader;
 enum IndexTypeArgs {
     Hnsw,
     Ivf,
-    HnswIvf,
+    Spann,
 }
 
 #[derive(Parser, Debug)]
@@ -59,11 +59,11 @@ fn main() {
             config.base_config.output_path = arg.output_path;
             IndexWriterConfig::Ivf(config)
         }
-        IndexTypeArgs::HnswIvf => {
-            let mut config: HnswIvfConfig =
+        IndexTypeArgs::Spann => {
+            let mut config: SpannConfigWithBase =
                 serde_yaml::from_str(&buf).expect("Failed to parse config");
             config.base_config.output_path = arg.output_path;
-            IndexWriterConfig::HnswIvf(config)
+            IndexWriterConfig::Spann(config)
         }
     };
 

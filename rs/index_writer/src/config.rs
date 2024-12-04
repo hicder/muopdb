@@ -14,7 +14,7 @@ pub enum IndexType {
     Ivf,
 
     #[default]
-    HnswIvf,
+    Spann,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -75,7 +75,7 @@ pub struct HnswConfigWithBase {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct HnswIvfConfig {
+pub struct SpannConfigWithBase {
     pub base_config: BaseConfig,
     pub hnsw_config: HnswConfig,
     pub ivf_config: IvfConfig,
@@ -85,7 +85,7 @@ pub struct HnswIvfConfig {
 pub enum IndexWriterConfig {
     Hnsw(HnswConfigWithBase),
     Ivf(IvfConfigWithBase),
-    HnswIvf(HnswIvfConfig),
+    Spann(SpannConfigWithBase),
 }
 
 impl Default for IndexWriterConfig {

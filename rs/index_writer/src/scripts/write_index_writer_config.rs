@@ -3,7 +3,7 @@
 use std::fs::File;
 use std::io::Write;
 
-use index_writer::config::{BaseConfig, HnswConfig, HnswIvfConfig, IvfConfig, QuantizerType};
+use index_writer::config::{BaseConfig, HnswConfig, SpannConfigWithBase, IvfConfig, QuantizerType};
 
 fn main() -> std::io::Result<()> {
     let mut base_config = BaseConfig::default();
@@ -11,7 +11,7 @@ fn main() -> std::io::Result<()> {
     base_config.output_path = "NONE".to_string();
     base_config.max_memory_size = 1024 * 1024 * 1024; // 1 GB
     base_config.file_size = 1024 * 1024 * 1024; // 1 GB
-    base_config.index_type = index_writer::config::IndexType::HnswIvf;
+    base_config.index_type = index_writer::config::IndexType::Spann;
 
     let mut ivf_config = IvfConfig::default();
     ivf_config.num_clusters = 5;
@@ -28,7 +28,7 @@ fn main() -> std::io::Result<()> {
     hnsw_config.ef_construction = 200;
     hnsw_config.reindex = false;
 
-    let mut config = HnswIvfConfig::default();
+    let mut config = SpannConfigWithBase::default();
     config.base_config = base_config;
     config.ivf_config = ivf_config;
     config.hnsw_config = hnsw_config;
