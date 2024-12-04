@@ -465,4 +465,82 @@ mod tests {
         assert!(ivf_vector_storage.exists());
         assert!(ivf_index.exists());
     }
+
+    #[test]
+    fn test_index_writer_process_ivf_hnsw() {
+        // Setup test data
+        let mut rng = rand::thread_rng();
+        let dimension = 10;
+        let num_rows = 100;
+        let data: Vec<Vec<f32>> = (0..num_rows)
+            .map(|_| (0..dimension).map(|_| rng.gen::<f32>()).collect())
+            .collect();
+
+        let mut mock_input = MockInput::new(data);
+
+        // Create a temporary directory for output
+        let temp_dir = TempDir::new("test_index_writer_process_ivf_hnsw")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        // Configure IndexWriter
+        let base_config = BaseConfig {
+            output_path: base_directory.clone(),
+            dimension,
+            max_memory_size: 1024 * 1024 * 1024, // 1 GB
+            file_size: 1024 * 1024 * 1024,       // 1 GB
+        };
+        let hnsw_config = HnswConfig {
+            num_layers: 2,
+            max_num_neighbors: 10,
+            ef_construction: 100,
+            reindex: false,
+            quantizer_type: QuantizerType::ProductQuantizer,
+            subvector_dimension: 2,
+            num_bits: 2,
+            num_training_rows: 50,
+
+            max_iteration: 10,
+            batch_size: 10,
+        };
+        let ivf_config = IvfConfig {
+            num_clusters: 2,
+            num_data_points: 100,
+            max_clusters_per_vector: 1,
+
+            max_iteration: 10,
+            batch_size: 10,
+            tolerance: 0.0,
+            max_posting_list_size: usize::MAX,
+        };
+        let config = IndexWriterConfig::HnswIvf(HnswIvfConfig {
+            base_config,
+            hnsw_config,
+            ivf_config,
+        });
+
+        let mut index_writer = IndexWriter::new(config);
+
+        // Process the input
+        assert!(index_writer.process(&mut mock_input).is_ok());
+
+        // Check if output directories and files exist
+        let quantizer_directory_path = format!("{}/centroid_quantizer", base_directory);
+        let pq_directory = Path::new(&quantizer_directory_path);
+        let centroids_directory_path = format!("{}/centroids", base_directory);
+        let centroids_directory = Path::new(&centroids_directory_path);
+        let hnsw_vector_storage_path =
+            format!("{}/vector_storage", centroids_directory.to_str().unwrap());
+        let hnsw_vector_storage = Path::new(&hnsw_vector_storage_path);
+        let hnsw_index_path = format!("{}/index", centroids_directory.to_str().unwrap());
+        let hnsw_index = Path::new(&hnsw_index_path);
+        assert!(pq_directory.exists());
+        assert!(centroids_directory.exists());
+        assert!(hnsw_vector_storage.exists());
+        assert!(hnsw_index.exists());
+    }
 }

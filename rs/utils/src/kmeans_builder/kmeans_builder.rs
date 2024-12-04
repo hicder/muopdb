@@ -24,6 +24,8 @@ pub struct KMeansBuilder {
 
     // Variant for this algorithm. Currently only Lloyd is supported.
     pub variant: KMeansVariant,
+
+    pub cluster_init_values: Option<Vec<usize>>,
 }
 
 pub struct KMeansResult {
@@ -49,6 +51,25 @@ impl KMeansBuilder {
             tolerance,
             dimension,
             variant,
+            cluster_init_values: None,
+        }
+    }
+
+    pub fn new_with_cluster_init_values(
+        num_cluters: usize,
+        max_iter: usize,
+        tolerance: f32,
+        dimension: usize,
+        variant: KMeansVariant,
+        cluster_init_values: Vec<usize>,
+    ) -> Self {
+        Self {
+            num_cluters,
+            max_iter,
+            tolerance,
+            dimension,
+            variant,
+            cluster_init_values: Some(cluster_init_values),
         }
     }
 
@@ -120,8 +141,17 @@ impl KMeansBuilder {
         let mut cluster_labels = vec![0; num_data_points];
 
         // Random initialization of cluster labels
-        for i in 0..num_data_points {
-            cluster_labels[i] = rand::random::<usize>() % self.num_cluters;
+        match &self.cluster_init_values {
+            Some(values) => {
+                for i in 0..num_data_points {
+                    cluster_labels[i] = values[i % values.len()];
+                }
+            }
+            None => {
+                for i in 0..num_data_points {
+                    cluster_labels[i] = rand::random::<usize>() % self.num_cluters;
+                }
+            }
         }
 
         let mut final_centroids = vec![0.0; self.num_cluters * self.dimension];
@@ -174,8 +204,7 @@ impl KMeansBuilder {
                         let centroid = centroids
                             [centroid_id * self.dimension..(centroid_id + 1) * self.dimension]
                             .as_ref();
-                        let distance =
-                            T::calculate_squared(dp, centroid) + penalties[centroid_id];
+                        let distance = T::calculate_squared(dp, centroid) + penalties[centroid_id];
 
                         if distance < min_cost {
                             min_cost = distance;
@@ -224,7 +253,14 @@ mod tests {
             .cloned()
             .collect();
 
-        let kmeans = KMeansBuilder::new(3, 100, 1e-4, 2, KMeansVariant::Lloyd);
+        let kmeans = KMeansBuilder::new_with_cluster_init_values(
+            3,
+            100,
+            1e-4,
+            2,
+            KMeansVariant::Lloyd,
+            vec![0, 0, 0, 1, 1, 1, 2, 2, 2],
+        );
         let result = kmeans
             .fit(flattened_data)
             .expect("KMeans run should succeed");
@@ -267,7 +303,14 @@ mod tests {
             .flatten()
             .cloned()
             .collect();
-        let kmeans = KMeansBuilder::new(3, 100, 10000.0, 2, KMeansVariant::Lloyd);
+        let kmeans = KMeansBuilder::new_with_cluster_init_values(
+            3,
+            100,
+            10000.0,
+            2,
+            KMeansVariant::Lloyd,
+            vec![0, 0, 0, 1, 1, 1, 2, 2, 2],
+        );
         let result = kmeans
             .fit(flattened_data)
             .expect("KMeans run should succeed");
@@ -301,7 +344,15 @@ mod tests {
             .flatten()
             .cloned()
             .collect();
-        let kmeans = KMeansBuilder::new(3, 100, 0.0, 2, KMeansVariant::Lloyd);
+        let kmeans = KMeansBuilder::new_with_cluster_init_values(
+            3,
+            100,
+            0.0,
+            2,
+            KMeansVariant::Lloyd,
+            vec![0, 0, 0, 1, 1, 1, 2, 2, 2],
+        );
+
         let result = kmeans
             .fit(flattened_data)
             .expect("KMeans run should succeed");

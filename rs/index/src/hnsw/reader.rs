@@ -1,9 +1,9 @@
 use std::fs::File;
 
+use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian};
 use memmap2::Mmap;
 use quantization::quantization::Quantizer;
-use anyhow::Result;
 
 use crate::hnsw::index::Hnsw;
 use crate::hnsw::writer::{Header, Version};
