@@ -1179,6 +1179,7 @@ dependencies = [
  "env_logger",
  "futures",
  "index",
+ "index_writer",
  "log",
  "prost",
  "proto",

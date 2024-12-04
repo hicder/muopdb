@@ -9,6 +9,15 @@ pub enum QuantizerType {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub enum IndexType {
+    Hnsw,
+    Ivf,
+
+    #[default]
+    HnswIvf,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BaseConfig {
     pub output_path: String,
     pub dimension: usize,
@@ -16,6 +25,8 @@ pub struct BaseConfig {
     // Vector storage parameters
     pub max_memory_size: usize,
     pub file_size: usize,
+
+    pub index_type: IndexType,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

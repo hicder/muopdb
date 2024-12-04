@@ -220,9 +220,16 @@ impl IndexWriter {
         let path = &index_writer_config.base_config.output_path;
         let quantizer = NoQuantizer::new(index_writer_config.base_config.dimension);
 
+        let centroid_directory = format!("{}/centroids", path);
+        std::fs::create_dir_all(&centroid_directory)?;
+
         // Write the quantizer to disk, even though it's no quantizer
-        let centroid_quantizer_directory = format!("{}/centroid_quantizer", path);
+        let centroid_quantizer_directory = format!("{}/quantizer", centroid_directory);
         std::fs::create_dir_all(&centroid_quantizer_directory)?;
+
+        let hnsw_directory = format!("{}/hnsw", centroid_directory);
+        std::fs::create_dir_all(&hnsw_directory)?;
+
         let centroid_quantizer_writer = NoQuantizerWriter::new(centroid_quantizer_directory);
         centroid_quantizer_writer.write(&quantizer)?;
 
@@ -234,7 +241,7 @@ impl IndexWriter {
             index_writer_config.base_config.file_size,
             index_writer_config.base_config.dimension,
             quantizer,
-            index_writer_config.base_config.output_path.clone(),
+            hnsw_directory.clone(),
         );
 
         info!("Start building HNSW index for centroids");
@@ -245,11 +252,8 @@ impl IndexWriter {
             }
         }
 
-        let centroid_directory = format!("{}/centroids", path);
-        std::fs::create_dir_all(&centroid_directory)?;
-
         info!("Start writing HNSW index for centroids");
-        let hnsw_writer = HnswWriter::new(centroid_directory);
+        let hnsw_writer = HnswWriter::new(hnsw_directory);
         hnsw_writer.write(&mut hnsw_builder, hnsw_config.reindex)?;
 
         info!("Start writing IVF index");
@@ -257,6 +261,15 @@ impl IndexWriter {
         ivf_writer.write(&mut ivf_builder)?;
         ivf_builder.cleanup()?;
 
+        // Finally, write the index writer config
+        let index_writer_config_path = format!(
+            "{}/base_config.yaml",
+            index_writer_config.base_config.output_path
+        );
+        std::fs::write(
+            index_writer_config_path,
+            serde_yaml::to_string(&index_writer_config.base_config)?,
+        )?;
         Ok(())
     }
 
@@ -283,7 +296,7 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
-    use crate::config::{BaseConfig, HnswConfig, IvfConfig};
+    use crate::config::{BaseConfig, HnswConfig, IndexType, IvfConfig};
     use crate::input::Row;
 
     // Mock Input implementation for testing
@@ -366,6 +379,7 @@ mod tests {
             dimension,
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
+            index_type: IndexType::Hnsw,
         };
         let hnsw_config = HnswConfig {
             num_layers: 2,
@@ -433,6 +447,7 @@ mod tests {
             dimension,
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
+            index_type: IndexType::Ivf,
         };
         let ivf_config = IvfConfig {
             num_clusters: 2,
@@ -493,6 +508,7 @@ mod tests {
             dimension,
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
+            index_type: IndexType::HnswIvf,
         };
         let hnsw_config = HnswConfig {
             num_layers: 2,
@@ -529,9 +545,9 @@ mod tests {
         assert!(index_writer.process(&mut mock_input).is_ok());
 
         // Check if output directories and files exist
-        let quantizer_directory_path = format!("{}/centroid_quantizer", base_directory);
+        let quantizer_directory_path = format!("{}/centroids/quantizer", base_directory);
         let pq_directory = Path::new(&quantizer_directory_path);
-        let centroids_directory_path = format!("{}/centroids", base_directory);
+        let centroids_directory_path = format!("{}/centroids/hnsw", base_directory);
         let centroids_directory = Path::new(&centroids_directory_path);
         let hnsw_vector_storage_path =
             format!("{}/vector_storage", centroids_directory.to_str().unwrap());
