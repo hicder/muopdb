@@ -21,6 +21,10 @@ name = "l2"
 harness = false
 
 [[bench]]
+name = "dot_product_similarity"
+harness = false
+
+[[bench]]
 name = "kmeans"
 harness = false
 
