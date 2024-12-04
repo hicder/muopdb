@@ -2,7 +2,7 @@
 
 ## Introduction
 
-MuopDB is a vector database for machine learning. This project is done under [TechCare Coaching](https://techcarecoaching.com/). It plans to support the following features:
+MuopDB is a vector database for machine learning. This project is done with [TechCare Coaching](https://techcarecoaching.com/). It plans to support the following features:
 ### V0 (Done)
 - [x] Query path
   - [x] Vector similarity search
