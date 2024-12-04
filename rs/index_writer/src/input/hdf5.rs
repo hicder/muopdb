@@ -95,6 +95,10 @@ impl Input for Hdf5Reader {
 // test
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
+    use utils::{distance::l2::L2DistanceCalculator, kmeans_builder::kmeans_builder::{KMeansBuilder, KMeansVariant}, DistanceCalculator};
+
     use super::*;
 
     #[test]
@@ -109,5 +113,45 @@ mod tests {
         }
 
         assert_eq!(it, 1000);
+    }
+
+    #[test]
+    fn test_hdf5_reader_kmeans() {
+        let path = format!(
+            "{}/resources/10k_rows_10_clusters.hdf5",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let mut reader = Hdf5Reader::new(101, "/train", &path).expect("Failed to create Hdf5Reader");
+        let mut flattened_dataset = vec![];
+        while reader.has_next() {
+            let row = reader.next();
+            flattened_dataset.extend_from_slice(row.data);
+        }
+
+        let kmeans = KMeansBuilder::new(10, 10000, 0.0, 128, KMeansVariant::Lloyd);
+        let result = kmeans
+            .fit(flattened_dataset.clone())
+            .expect("Failed to run KMeans model");
+
+        assert_eq!(result.centroids.len(), 1280);
+
+        // Check the the cluster sizes are equal
+        let mut cluster_sizes = vec![0; 10];
+        for assignment in &result.assignments {
+            cluster_sizes[*assignment] += 1;
+        }
+
+        assert_eq!(cluster_sizes, vec![1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000]);
+
+        // Check that the distance between the point to its centroid is less than 0.1
+        for i in 0..flattened_dataset.len() / 128 {
+            let point = &flattened_dataset[i * 128..(i + 1) * 128];
+            let centroid_id = result.assignments[i];
+            let centroid = &result.centroids[centroid_id * 128..(centroid_id + 1) * 128];
+            let dist = L2DistanceCalculator::calculate(&point, &centroid);
+
+            // We might need to adjust this threshold
+            assert!(dist < 70.0);
+        }
     }
 }
