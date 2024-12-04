@@ -210,7 +210,10 @@ mod tests {
             let posting_list = index.index_storage.get_posting_list(i);
             assert!(posting_list.is_ok());
             let posting_list = posting_list.unwrap();
-            assert!(posting_list.len() <= 100);
+
+            // It's possible that the posting list size is more than max_posting_list_size, 
+            // but it should be less than 2x.
+            assert!(posting_list.len() <= 20);
         }
     }
 }
