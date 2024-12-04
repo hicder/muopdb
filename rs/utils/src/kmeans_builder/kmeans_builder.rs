@@ -224,32 +224,38 @@ impl KMeansBuilder {
                 }
             }
 
+            let mut contains_empty_cluster = false;
+
             centroids.iter_mut().enumerate().for_each(|x| {
                 let idx = x.0 / self.dimension;
                 if cluster_sizes[idx] > 0 {
                     *x.1 /= cluster_sizes[idx] as f32;
+                } else {
+                    contains_empty_cluster = true;
                 }
             });
 
-            // Compute largest cluster
-            let largest_cluster = cluster_sizes.iter().max().unwrap();
-            let largest_cluster_id = cluster_sizes
-                .iter()
-                .position(|x| x == largest_cluster)
-                .unwrap();
-            let chosen_point = cluster_labels
-                .iter()
-                .position(|x| *x == largest_cluster_id)
-                .unwrap();
+            if contains_empty_cluster {
+                // Compute largest cluster
+                let largest_cluster = cluster_sizes.iter().max().unwrap();
+                let largest_cluster_id = cluster_sizes
+                    .iter()
+                    .position(|x| x == largest_cluster)
+                    .unwrap();
+                let chosen_point = cluster_labels
+                    .iter()
+                    .position(|x| *x == largest_cluster_id)
+                    .unwrap();
 
-            // Handle empty clusters
-            for i in 0..self.num_cluters {
-                if cluster_sizes[i] == 0 {
-                    // Set the centroid of this cluster to the point
-                    for j in 0..self.dimension {
-                        centroids[i * self.dimension + j] = data_points[chosen_point][j];
+                // Handle empty clusters
+                for i in 0..self.num_cluters {
+                    if cluster_sizes[i] == 0 {
+                        // Set the centroid of this cluster to the point
+                        for j in 0..self.dimension {
+                            centroids[i * self.dimension + j] = data_points[chosen_point][j];
+                        }
+                        cluster_sizes[i] = 1;
                     }
-                    cluster_sizes[i] = 1;
                 }
             }
 
