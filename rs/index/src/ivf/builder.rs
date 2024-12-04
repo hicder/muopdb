@@ -208,8 +208,14 @@ impl IvfBuilder {
             }
         }
 
+        let posting_list_storage_location = format!(
+            "{}/builder_posting_list_storage",
+            self.config.base_directory
+        );
+        create_dir(&posting_list_storage_location).unwrap_or_else(|_| {});
+
         self.posting_lists = Box::new(FileBackedAppendablePostingListStorage::new(
-            self.config.base_directory.clone(),
+            posting_list_storage_location,
             self.config.memory_size,
             self.config.file_size,
             self.centroids.len(),
@@ -454,7 +460,10 @@ mod tests {
         );
 
         // Total size of posting lists is bigger than file size, check that they are flushed to disk
-        let posting_lists_path = PathBuf::from(&builder.config.base_directory);
+        let posting_lists_path = PathBuf::from(format!(
+            "{}/builder_posting_list_storage",
+            builder.config.base_directory
+        ));
         assert!(posting_lists_path.exists());
 
         let count = count_files_with_prefix(&posting_lists_path, "posting_list.bin.");
