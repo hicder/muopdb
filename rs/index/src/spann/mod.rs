@@ -1,2 +1,2 @@
-pub mod reader;
 pub mod index;
+pub mod reader;
