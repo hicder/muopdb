@@ -14,14 +14,14 @@ MuopDB is a vector database for machine learning. Here are the plans:
   - [x] Doc-sharding & query fan-out with aggregator-leaf architecture
   - [x] In-memory & disk-based storage with mmap
 ### V1 (Done)
-- [x] Query path
+- [x] Query & Indexing
   - [x] Inverted File (IVF)
   - [x] Improve locality for HNSW
   - [x] SPANN
 ### V2
 - [ ] Multiple index segments
-- [ ] Indexing path
-  - [ ] Support realtime indexing
+- [ ] Support realtime indexing
+
 ## Why MuopDB?
 This is an educational project for me to learn Rust & vector database.
 
