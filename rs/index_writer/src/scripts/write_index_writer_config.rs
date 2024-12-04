@@ -11,6 +11,7 @@ fn main() -> std::io::Result<()> {
     base_config.output_path = "NONE".to_string();
     base_config.max_memory_size = 1024 * 1024 * 1024; // 1 GB
     base_config.file_size = 1024 * 1024 * 1024; // 1 GB
+    base_config.index_type = index_writer::config::IndexType::HnswIvf;
 
     let mut ivf_config = IvfConfig::default();
     ivf_config.num_clusters = 5;

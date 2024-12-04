@@ -23,6 +23,7 @@ proto = {path='./rs/proto'}
 quantization = {path='./rs/quantization'}
 utils = {path='./rs/utils'}
 index = {path='./rs/index'}
+index_writer = {path='./rs/index_writer'}
 tonic = "0.8"
 prost = "0.11"
 tonic-build = "0.8"

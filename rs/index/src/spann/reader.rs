@@ -15,8 +15,11 @@ impl SpannReader {
     }
 
     pub fn read(&self) -> Result<Spann> {
-        let centroids = HnswReader::new(self.base_directory.clone()).read::<NoQuantizer>()?;
-        let posting_lists = IvfReader::new(self.base_directory.clone()).read()?;
+        let posting_list_path = format!("{}/ivf", self.base_directory);
+        let centroid_path = format!("{}/centroids", self.base_directory);
+
+        let centroids = HnswReader::new(centroid_path).read::<NoQuantizer>()?;
+        let posting_lists = IvfReader::new(posting_list_path).read()?;
 
         Ok(Spann::new(centroids, posting_lists))
     }
