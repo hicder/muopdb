@@ -36,7 +36,6 @@ pub struct KMeansResult {
 
 // TODO(hicder): Add support for different variants of k-means.
 // TODO(hicder): Add support for different distance metrics.
-// TODO(hicder): Use SIMD for computation.
 impl KMeansBuilder {
     pub fn new(
         num_cluters: usize,
@@ -154,42 +153,36 @@ impl KMeansBuilder {
             }
         }
 
-        let mut final_centroids = vec![0.0; self.num_cluters * self.dimension];
+        let mut cluster_sizes = vec![0; self.num_cluters];
+        for i in 0..num_data_points {
+            cluster_sizes[cluster_labels[i]] += 1;
+        }
+
+        let mut centroids = vec![0.0; self.num_cluters * self.dimension];
+        for i in 0..num_data_points {
+            let data_point = &data_points[i];
+            let label = cluster_labels[i];
+            for j in 0..self.dimension {
+                centroids[label * self.dimension + j] += data_point[j];
+            }
+        }
+
+        centroids.iter_mut().enumerate().for_each(|x| {
+            let idx = x.0 / self.dimension;
+            if cluster_sizes[idx] > 0 {
+                *x.1 /= cluster_sizes[idx] as f32;
+            }
+        });
+
+        // Add size penalty term
+        let mut penalties = vec![0.0; self.num_cluters];
+        penalties
+            .iter_mut()
+            .enumerate()
+            .for_each(|x| *x.1 = self.tolerance * cluster_sizes[x.0] as f32);
 
         for _iteration in 0..self.max_iter {
             let old_labels = cluster_labels.clone();
-
-            // Calculate current cluster sizes
-            let mut cluster_sizes = vec![0; self.num_cluters];
-            for i in 0..num_data_points {
-                cluster_sizes[old_labels[i]] += 1;
-            }
-
-            // Flattened centroids
-            let mut centroids = vec![0.0; self.num_cluters * self.dimension];
-            for i in 0..num_data_points {
-                let data_point = &data_points[i];
-                let label = old_labels[i];
-                for j in 0..self.dimension {
-                    centroids[label * self.dimension + j] += data_point[j];
-                }
-            }
-
-            centroids.iter_mut().enumerate().for_each(|x| {
-                let idx = x.0 / self.dimension;
-                if cluster_sizes[idx] > 0 {
-                    *x.1 /= cluster_sizes[idx] as f32;
-                }
-            });
-
-            final_centroids = centroids.clone();
-
-            // Add size penalty term
-            let mut penalties = vec![0.0; self.num_cluters];
-            penalties
-                .iter_mut()
-                .enumerate()
-                .for_each(|x| *x.1 = self.tolerance * cluster_sizes[x.0] as f32);
 
             // Reassign points using modified distance (Equation 8)
 
@@ -215,14 +208,67 @@ impl KMeansBuilder {
                 })
                 .collect::<Vec<usize>>();
 
+            // Reinitialize cluster sizes
+            cluster_sizes.iter_mut().for_each(|x| *x = 0);
+            for i in 0..num_data_points {
+                cluster_sizes[cluster_labels[i]] += 1;
+            }
+
+            // Flattened centroids
+            centroids.iter_mut().for_each(|x| *x = 0.0);
+            for i in 0..num_data_points {
+                let data_point = &data_points[i];
+                let label = cluster_labels[i];
+                for j in 0..self.dimension {
+                    centroids[label * self.dimension + j] += data_point[j];
+                }
+            }
+
+            centroids.iter_mut().enumerate().for_each(|x| {
+                let idx = x.0 / self.dimension;
+                if cluster_sizes[idx] > 0 {
+                    *x.1 /= cluster_sizes[idx] as f32;
+                }
+            });
+
+            // Compute largest cluster
+            let largest_cluster = cluster_sizes.iter().max().unwrap();
+            let largest_cluster_id = cluster_sizes
+                .iter()
+                .position(|x| x == largest_cluster)
+                .unwrap();
+            let chosen_point = cluster_labels
+                .iter()
+                .position(|x| *x == largest_cluster_id)
+                .unwrap();
+
+            // Handle empty clusters
+            for i in 0..self.num_cluters {
+                if cluster_sizes[i] == 0 {
+                    // Set the centroid of this cluster to the point
+                    for j in 0..self.dimension {
+                        centroids[i * self.dimension + j] = data_points[chosen_point][j];
+                    }
+                    cluster_sizes[i] = 1;
+                }
+            }
+
+            // Add size penalty term
+            let mut penalties = vec![0.0; self.num_cluters];
+            penalties
+                .iter_mut()
+                .enumerate()
+                .for_each(|x| *x.1 = self.tolerance * cluster_sizes[x.0] as f32);
+
             // Check convergence
             if cluster_labels == old_labels {
+                debug!("Converged at iteration {}", _iteration);
                 break;
             }
         }
 
         Ok(KMeansResult {
-            centroids: final_centroids,
+            centroids: centroids,
             assignments: cluster_labels,
         })
     }
@@ -309,7 +355,7 @@ mod tests {
             10000.0,
             2,
             KMeansVariant::Lloyd,
-            vec![0, 0, 0, 1, 1, 1, 2, 2, 2],
+            vec![0, 0, 0, 0, 0, 0, 2, 2, 2],
         );
         let result = kmeans
             .fit(flattened_data)
