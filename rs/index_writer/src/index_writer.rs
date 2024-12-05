@@ -10,7 +10,7 @@ use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderC
 use rand::seq::SliceRandom;
 
 use crate::config::{
-    HnswConfigWithBase, SpannConfigWithBase, IndexWriterConfig, IvfConfigWithBase, QuantizerType,
+    HnswConfigWithBase, IndexWriterConfig, IvfConfigWithBase, QuantizerType, SpannConfigWithBase,
 };
 use crate::input::Input;
 
@@ -131,6 +131,7 @@ impl IndexWriter {
             num_clusters: index_builder_config.ivf_config.num_clusters,
             num_data_points: index_builder_config.ivf_config.num_data_points,
             max_clusters_per_vector: index_builder_config.ivf_config.max_clusters_per_vector,
+            distance_threshold: index_builder_config.ivf_config.distance_threshold,
             base_directory: path.to_string(),
             memory_size: index_builder_config.base_config.max_memory_size,
             file_size: index_builder_config.base_config.file_size,
@@ -191,6 +192,7 @@ impl IndexWriter {
             num_clusters: ivf_config.num_clusters,
             num_data_points: ivf_config.num_data_points,
             max_clusters_per_vector: ivf_config.max_clusters_per_vector,
+            distance_threshold: ivf_config.distance_threshold,
             base_directory: index_writer_config.base_config.output_path.clone(),
             memory_size: index_writer_config.base_config.max_memory_size,
             file_size: index_writer_config.base_config.file_size,
@@ -453,6 +455,7 @@ mod tests {
             num_clusters: 2,
             num_data_points: 100,
             max_clusters_per_vector: 1,
+            distance_threshold: 0.1,
 
             max_iteration: 10,
             batch_size: 10,
@@ -527,6 +530,7 @@ mod tests {
             num_clusters: 2,
             num_data_points: 100,
             max_clusters_per_vector: 1,
+            distance_threshold: 0.1,
 
             max_iteration: 10,
             batch_size: 10,

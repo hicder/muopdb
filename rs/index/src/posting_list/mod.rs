@@ -16,7 +16,7 @@ pub struct PostingListStorageConfig {
 }
 
 pub struct PostingList<'a> {
-    slices: Vec<&'a [u8]>,
+    pub slices: Vec<&'a [u8]>,
 }
 
 pub struct PostingListIterator<'a> {
