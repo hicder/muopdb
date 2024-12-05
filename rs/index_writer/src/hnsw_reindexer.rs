@@ -4,7 +4,7 @@ use index::hnsw::reader::HnswReader;
 use index::hnsw::writer::HnswWriter;
 use index::vector::VectorStorageConfig;
 use log::error;
-use quantization::pq::ProductQuantizer;
+use quantization::pq::pq::ProductQuantizer;
 
 #[derive(Parser)]
 struct Args {

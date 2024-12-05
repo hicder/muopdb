@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use quantization::pq::ProductQuantizerConfig;
-use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
+use quantization::pq::pq::ProductQuantizerConfig;
+use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
 use quantization::quantization::Quantizer;
 use strum::IntoEnumIterator;
 use utils::distance::l2::L2DistanceCalculatorImpl;

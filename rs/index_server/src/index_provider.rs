@@ -2,7 +2,7 @@ use index::hnsw::reader::HnswReader;
 use index::index::BoxedIndex;
 use index::spann::reader::SpannReader;
 use index_writer::config::BaseConfig;
-use quantization::pq::ProductQuantizer;
+use quantization::pq::pq::ProductQuantizer;
 
 pub struct IndexProvider {
     data_directory: String,
