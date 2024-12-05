@@ -2,7 +2,11 @@
 
 ## Introduction
 
-MuopDB is a vector database for machine learning. Here are the plans:
+MuopDB is a vector database for machine learning. Currently, it supports:
+* Index type: HNSW, IVF, SPANN. All on-disk with mmap.
+* Quantization: product quantization
+
+Here are the plans for future MuopDB:
 ### V0 (Done)
 - [x] Query path
   - [x] Vector similarity search
@@ -19,8 +23,12 @@ MuopDB is a vector database for machine learning. Here are the plans:
   - [x] Improve locality for HNSW
   - [x] SPANN
 ### V2
-- [ ] Multiple index segments
-- [ ] Support realtime indexing
+- [ ] Query
+  - [ ] Multiple index segments
+  - [ ] Support realtime indexing
+  - [ ] Elias-Fano encoding for IVF
+- [ ] Quantization
+  - [ ] RabitQ
 
 ## Why MuopDB?
 This is an educational project for me to learn Rust & vector database.
