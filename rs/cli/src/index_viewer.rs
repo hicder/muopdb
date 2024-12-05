@@ -1,7 +1,7 @@
 use clap::Parser;
 use index::hnsw::reader::HnswReader;
 use index::hnsw::utils::GraphTraversal;
-use quantization::pq::ProductQuantizer;
+use quantization::pq::pq::ProductQuantizer;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]

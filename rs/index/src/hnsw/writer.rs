@@ -266,8 +266,8 @@ mod tests {
     use std::vec;
 
     use ordered_float::NotNan;
-    use quantization::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuantizerWriter};
-    use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
+    use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuantizerWriter};
+    use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
     use utils::test_utils::generate_random_vector;
 
     use super::*;

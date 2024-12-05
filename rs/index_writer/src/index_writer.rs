@@ -5,8 +5,8 @@ use index::ivf::builder::{IvfBuilder, IvfBuilderConfig};
 use index::ivf::writer::IvfWriter;
 use log::{debug, info};
 use quantization::no_op::{NoQuantizer, NoQuantizerWriter};
-use quantization::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuantizerWriter};
-use quantization::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
+use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuantizerWriter};
+use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
 use rand::seq::SliceRandom;
 
 use crate::config::{

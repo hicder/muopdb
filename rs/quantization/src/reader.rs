@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::Result;
 
 use crate::no_op::{NoQuantizer, NoQuantizerReader};
-use crate::pq::{ProductQuantizer, ProductQuantizerReader};
+use crate::pq::pq::{ProductQuantizer, ProductQuantizerReader};
 
 pub struct QuantizationReader {
     base_directory: String,

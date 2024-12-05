@@ -2,7 +2,7 @@ use anyhow::Result;
 use kmeans::*;
 use log::debug;
 
-use crate::pq::{ProductQuantizer, ProductQuantizerConfig};
+use crate::pq::pq::{ProductQuantizer, ProductQuantizerConfig};
 
 pub struct ProductQuantizerBuilderConfig {
     pub max_iteration: usize,
