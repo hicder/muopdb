@@ -182,9 +182,6 @@ pub struct FileBackedAppendablePostingListStorage {
     // Whether it's currently in memory
     resident: bool,
 
-    // Only has value if we spill to disk. We need to separate metadata and posting lists
-    // into 2 different files because num_clusters is not known beforehand.
-    base_directory: String,
     // Backing files for posting list metadata
     metadata_backing_files: BackingFiles,
     // Backing files for posting lists themselves
@@ -214,8 +211,6 @@ impl FileBackedAppendablePostingListStorage {
             size_bytes: 0,
             resident_posting_lists: vec![],
             resident: true,
-
-            base_directory: base_directory.clone(),
             metadata_backing_files: BackingFiles {
                 mmaps: vec![],
                 base_directory: base_directory.clone(),
