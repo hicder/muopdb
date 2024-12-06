@@ -34,10 +34,6 @@ impl<'a> PostingList<'a> {
         PostingList::new_with_slices(Vec::new())
     }
 
-    fn add_slice(&mut self, slice: &'a [u8]) {
-        self.slices.push(slice);
-    }
-
     pub fn iter(&'a self) -> PostingListIterator<'a> {
         PostingListIterator {
             slices: &self.slices,
