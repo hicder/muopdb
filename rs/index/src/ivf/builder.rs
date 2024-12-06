@@ -473,10 +473,7 @@ mod tests {
                 .posting_lists
                 .get(0)
                 .expect("Failed to get posting list")
-                .slices
                 .iter()
-                .flat_map(|slice| slice.chunks_exact(8))
-                .map(|chunk| u64::from_le_bytes(chunk.try_into().unwrap()))
                 .collect::<Vec<_>>(),
             vec![0, 1, 2, 3]
         );
@@ -485,10 +482,7 @@ mod tests {
                 .posting_lists
                 .get(1)
                 .expect("Failed to get posting list")
-                .slices
                 .iter()
-                .flat_map(|slice| slice.chunks_exact(8))
-                .map(|chunk| u64::from_le_bytes(chunk.try_into().unwrap()))
                 .collect::<Vec<_>>(),
             vec![3, 4, 5]
         );
