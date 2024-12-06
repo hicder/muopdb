@@ -135,13 +135,16 @@ impl FixedIndexFile {
 
         let metadata_offset =
             self.posting_list_metadata_offset + index * PL_METADATA_LEN * size_of::<u64>();
+
+        let posting_list_start_offset = self.posting_list_metadata_offset
+            + self.header.num_clusters as usize * PL_METADATA_LEN * size_of::<u64>();
+
         let slice = &self.mmap[metadata_offset..metadata_offset + size_of::<u64>()];
         let pl_len = u64::from_le_bytes(slice.try_into()?) as usize;
 
         let slice = &self.mmap[metadata_offset + size_of::<u64>()
             ..metadata_offset + PL_METADATA_LEN * size_of::<u64>()];
-        let pl_offset =
-            u64::from_le_bytes(slice.try_into()?) as usize + self.posting_list_metadata_offset;
+        let pl_offset = u64::from_le_bytes(slice.try_into()?) as usize + posting_list_start_offset;
 
         let slice = &self.mmap[pl_offset..pl_offset + pl_len * size_of::<u64>()];
         Ok(transmute_u8_to_slice::<u64>(slice))
@@ -208,7 +211,8 @@ mod tests {
         // No need for padding here
 
         let posting_lists: Vec<Vec<u64>> = vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9, 10]];
-        let metadata: Vec<u64> = vec![4, 32, 6, 64];
+        // Posting list offset starts at 0 (see FileBackedAppendablePostingListStorage)
+        let metadata: Vec<u64> = vec![4, 0, 6, 32];
         assert!(file.write_all(&num_clusters).is_ok());
         assert!(file.write_all(transmute_slice_to_u8(&metadata)).is_ok());
         assert!(file

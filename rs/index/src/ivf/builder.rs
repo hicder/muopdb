@@ -106,7 +106,6 @@ impl IvfBuilder {
             posting_lists_path,
             config.memory_size,
             config.file_size,
-            config.num_clusters,
         ));
 
         Ok(Self {
@@ -240,7 +239,6 @@ impl IvfBuilder {
             posting_list_storage_location,
             self.config.memory_size,
             self.config.file_size,
-            self.centroids.len(),
         ));
 
         // Move ownership of each posting list to the posting list storage

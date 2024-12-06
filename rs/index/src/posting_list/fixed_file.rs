@@ -37,11 +37,13 @@ impl FixedFilePostingListStorage {
         let data_offset = 8;
         let metadata_offset = data_offset + index * PL_METADATA_LEN * size_in_bytes;
 
+        let pl_start_offset = data_offset + self.num_clusters * PL_METADATA_LEN * size_in_bytes;
+
         let slice = &self.mmap[metadata_offset..metadata_offset + size_in_bytes];
         let pl_len = u64::from_le_bytes(slice.try_into()?) as usize;
         let slice = &self.mmap
             [metadata_offset + size_in_bytes..metadata_offset + PL_METADATA_LEN * size_in_bytes];
-        let pl_offset = u64::from_le_bytes(slice.try_into()?) as usize + data_offset;
+        let pl_offset = u64::from_le_bytes(slice.try_into()?) as usize + pl_start_offset;
 
         let slice = &self.mmap[pl_offset..pl_offset + pl_len * std::mem::size_of::<u64>()];
         Ok(transmute_u8_to_slice::<u64>(slice))
@@ -63,7 +65,7 @@ mod tests {
         let tempdir = tempdir::TempDir::new("fixed_file_posting_list_storage_test").unwrap();
         let base_directory = tempdir.path().to_str().unwrap().to_string();
         let mut appendable_storage =
-            FileBackedAppendablePostingListStorage::new(base_directory.clone(), 1024, 4096, 3);
+            FileBackedAppendablePostingListStorage::new(base_directory.clone(), 1024, 4096);
         appendable_storage
             .append(&vec![1, 2, 3, 4])
             .expect("Failed to append posting list");

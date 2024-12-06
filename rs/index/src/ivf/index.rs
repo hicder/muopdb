@@ -238,7 +238,8 @@ mod tests {
         // Write posting lists
         assert!(file.write_all(&(num_clusters as u64).to_le_bytes()).is_ok());
         offset += size_of::<u64>();
-        let mut pl_offset = num_clusters * 2 * size_of::<u64>();
+        // Posting list offset starts at 0 (see FileBackedAppendablePostingListStorage)
+        let mut pl_offset = 0;
         for posting_list in posting_lists.iter() {
             let pl_len = posting_list.len();
             assert!(file.write_all(&(pl_len as u64).to_le_bytes()).is_ok());
