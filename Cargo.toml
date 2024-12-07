@@ -52,3 +52,4 @@ strum = { version = "0.25.0", features = ["derive"] }
 bit-vec = "0.8.0"
 roaring = "0.10.6"
 rayon = "1.10.0"
+sorted-vec = "0.8.5"

@@ -1,9 +1,10 @@
-use std::cmp::Ordering;
-use std::collections::BinaryHeap;
+use std::cmp::{Ordering, Reverse};
+use std::collections::{BinaryHeap, HashMap};
 use std::fs::{create_dir, create_dir_all};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use rand::seq::SliceRandom;
+use sorted_vec::SortedVec;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::kmeans_builder::kmeans_builder::{KMeansBuilder, KMeansVariant};
 use utils::{CalculateSquared, DistanceCalculator};
@@ -72,6 +73,92 @@ impl PartialEq for PostingListInfo {
 }
 
 impl Eq for PostingListInfo {}
+
+#[derive(Debug)]
+struct DuplicatedVectorInstance {
+    posting_list_idx: usize,
+    idx: usize,
+}
+
+#[derive(Debug, Clone)]
+struct StoppingPoint {
+    duplicated_vector_idx: u64,
+    idx_in_posting_list: usize,
+}
+
+impl PartialOrd for StoppingPoint {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.duplicated_vector_idx
+            .partial_cmp(&other.duplicated_vector_idx)
+    }
+}
+
+impl Ord for StoppingPoint {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.duplicated_vector_idx.cmp(&other.duplicated_vector_idx)
+    }
+}
+
+impl PartialEq for StoppingPoint {
+    fn eq(&self, other: &Self) -> bool {
+        self.duplicated_vector_idx == other.duplicated_vector_idx
+    }
+}
+
+impl Eq for StoppingPoint {}
+
+#[derive(Debug)]
+struct PostingListWithStoppingPoints {
+    posting_list: Vec<u64>,
+    stopping_points: SortedVec<StoppingPoint>,
+}
+
+impl PostingListWithStoppingPoints {
+    pub fn new(posting_list: Vec<u64>, stopping_points: SortedVec<StoppingPoint>) -> Self {
+        Self {
+            posting_list,
+            stopping_points,
+        }
+    }
+
+    pub fn add_stopping_point(&mut self, duplicated_vector_idx: u64, idx_in_posting_list: usize) {
+        self.stopping_points.push(StoppingPoint {
+            duplicated_vector_idx,
+            idx_in_posting_list,
+        });
+    }
+}
+
+impl PartialOrd for PostingListWithStoppingPoints {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.stopping_points.first().and_then(|sp| {
+            other.stopping_points.first().map(|osp| {
+                sp.duplicated_vector_idx
+                    .partial_cmp(&osp.duplicated_vector_idx)
+            })
+        })?
+    }
+}
+
+impl Ord for PostingListWithStoppingPoints {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self.stopping_points.first(), other.stopping_points.first()) {
+            (Some(sp), Some(osp)) => sp.duplicated_vector_idx.cmp(&osp.duplicated_vector_idx),
+            _ => panic!("Comparison is only valid when stopping_points is not empty"),
+        }
+    }
+}
+
+impl PartialEq for PostingListWithStoppingPoints {
+    fn eq(&self, other: &Self) -> bool {
+        match (self.stopping_points.first(), other.stopping_points.first()) {
+            (Some(sp), Some(osp)) => sp.duplicated_vector_idx == osp.duplicated_vector_idx,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for PostingListWithStoppingPoints {}
 
 impl IvfBuilder {
     /// Create a new IvfBuilder
@@ -376,10 +463,145 @@ impl IvfBuilder {
         Ok(())
     }
 
-    /// Train kmeans on the dataset, and generate the posting lists
     pub fn build(&mut self) -> Result<()> {
         self.build_centroids()?;
         self.build_posting_lists()?;
+
+        Ok(())
+    }
+
+    fn build_posting_lists_with_stopping_points(
+        &self,
+    ) -> Result<Vec<PostingListWithStoppingPoints>> {
+        let mut lists_with_stopping_points = Vec::new();
+        let mut occurrence_map: HashMap<u64, Vec<DuplicatedVectorInstance>> = HashMap::new();
+
+        for list_index in 0..self.posting_lists.len() {
+            let posting_list = self.posting_lists.get(list_index as u32)?;
+            lists_with_stopping_points.push(PostingListWithStoppingPoints {
+                posting_list: posting_list.iter().collect::<Vec<_>>(),
+                stopping_points: SortedVec::new(),
+            });
+            for (index_in_list, vector_storage_index) in posting_list.iter().enumerate() {
+                let dup_vec_instance = DuplicatedVectorInstance {
+                    posting_list_idx: list_index,
+                    idx: index_in_list,
+                };
+                occurrence_map
+                    .entry(vector_storage_index)
+                    .or_insert(Vec::new())
+                    .push(dup_vec_instance);
+            }
+        }
+
+        for (duplicated_vector_idx, posting_list_indices) in &occurrence_map {
+            // Vector idx is not duplicated
+            if posting_list_indices.len() == 1 {
+                continue;
+            }
+
+            for dup_vec_instance in posting_list_indices {
+                lists_with_stopping_points[dup_vec_instance.posting_list_idx]
+                    .add_stopping_point(*duplicated_vector_idx, dup_vec_instance.idx);
+            }
+        }
+
+        // Filter out the posting lists with non-empty stopping_points
+        let filtered_lists: Vec<_> = lists_with_stopping_points
+            .into_iter()
+            .filter(|posting_list| !posting_list.stopping_points.is_empty())
+            .collect();
+
+        Ok(filtered_lists)
+    }
+
+    // [11,12,13]
+    // [0,2,4,6,8,20]
+    // [9,18,20]
+    // [14,15,16,18]
+    // [1,3,5,7,18,20]
+    // [10,15,21]
+    //
+    // cur_idx = -1
+    // 15 -> -1 + 2 + 1 = 2
+    // 14 -> 0
+    // 10 -> 1
+    //
+    // cur_idx = 2
+    // 18 -> 2 + 6 + 1 = 9
+    // 9 -> 3
+    // 16 -> 4
+    // 1 -> 5
+    // 3 -> 6
+    // 5 -> 7
+    // 7 -> 8
+    // 18 -> 9
+    //
+    // cur_idx = 9
+    // 20 -> 9 + 5 + 1 = 15
+    // 0 -> 10
+    // 2 -> 11
+    // 4 -> 12
+    // 6 -> 13
+    // 8 -> 14
+    fn reassign_duplicated_vectors(&mut self, assigned_ids: &mut Vec<i32>) -> Result<()> {
+        let mut min_heap: BinaryHeap<Reverse<PostingListWithStoppingPoints>> = BinaryHeap::from(
+            self.build_posting_lists_with_stopping_points()?
+                .into_iter()
+                .map(Reverse)
+                .collect::<Vec<_>>(),
+        );
+
+        let mut cur_idx = 0;
+        while let Some(Reverse(first_posting_list)) = min_heap.pop() {
+            let min_dup_vec_idx = first_posting_list.stopping_points[0].duplicated_vector_idx;
+
+            // Collect all elements with the same duplicated_vector_idx
+            let mut working_list = vec![first_posting_list];
+
+            while let Some(Reverse(next_posting_list)) = min_heap.peek() {
+                if next_posting_list.stopping_points[0].duplicated_vector_idx == min_dup_vec_idx {
+                    working_list.push(min_heap.pop().unwrap().0); // Pop and unwrap safely
+                } else {
+                    break; // Exit if we reach a different duplicated_vector_idx
+                }
+            }
+
+            // Process the collected elements
+            for list_with_stopping_points in working_list {
+                for (idx_in_posting_list, original_vector_idx) in
+                    list_with_stopping_points.posting_list.iter().enumerate()
+                {
+                    // All vectors coming before the min stopping point have been reassigned, the
+                    // (modified) posting list can now be reinserted to the binary heap if there
+                    // are more stopping points left
+                    if *original_vector_idx == min_dup_vec_idx {
+                        if list_with_stopping_points.stopping_points.len() > 1 {
+                            // Remove reassigned vectors from posting list, remove the min
+                            // duplicated vector idx from stopping point list
+                            min_heap.push(Reverse(PostingListWithStoppingPoints {
+                                posting_list: list_with_stopping_points.posting_list
+                                    [idx_in_posting_list + 1..]
+                                    .to_vec(),
+                                stopping_points: SortedVec::from_unsorted(
+                                    list_with_stopping_points.stopping_points[1..].to_vec(),
+                                ),
+                            }));
+                        }
+                        break;
+                    }
+                    if assigned_ids[*original_vector_idx as usize] >= 0 {
+                        return Err(anyhow!(
+                            "Vectors that come before a stopping point should not be reassigned"
+                        ));
+                    }
+                    assigned_ids[*original_vector_idx as usize] = cur_idx;
+                    cur_idx += 1;
+                }
+            }
+            assigned_ids[min_dup_vec_idx as usize] = cur_idx;
+            cur_idx += 1;
+        }
 
         Ok(())
     }
@@ -427,7 +649,7 @@ mod tests {
     fn test_build_posting_lists() {
         env_logger::init();
 
-        let temp_dir = tempdir::TempDir::new("buil_posting_lists_test")
+        let temp_dir = tempdir::TempDir::new("build_posting_lists_test")
             .expect("Failed to create temporary directory");
         let base_directory = temp_dir
             .path()
@@ -486,6 +708,180 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![3, 4, 5]
         );
+    }
+
+    #[test]
+    fn test_build_posting_lists_with_stopping_points_no_duplicates() {
+        let temp_dir =
+            tempdir::TempDir::new("build_posting_lists_with_stopping_points_no_duplicates_test")
+                .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 2;
+        let num_vectors = 6;
+        let num_features = 1;
+        let file_size = 4096;
+        let balance_factor = 0.0;
+        let max_posting_list_size = usize::MAX;
+        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points: num_vectors,
+            max_clusters_per_vector: 2,
+            distance_threshold: 0.1,
+            base_directory,
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: balance_factor,
+            max_posting_list_size,
+        })
+        .expect("Failed to create builder");
+
+        assert!(builder.add_posting_list(&vec![1, 2, 3]).is_ok());
+        assert!(builder.add_posting_list(&vec![4, 5, 6]).is_ok());
+        let result = builder.build_posting_lists_with_stopping_points().unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_build_posting_lists_with_stopping_points_with_duplicates() {
+        let temp_dir =
+            tempdir::TempDir::new("build_posting_lists_with_stopping_points_with_duplicates_test")
+                .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 3;
+        let num_vectors = 6;
+        let num_features = 1;
+        let file_size = 4096;
+        let balance_factor = 0.0;
+        let max_posting_list_size = usize::MAX;
+        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points: num_vectors,
+            max_clusters_per_vector: 2,
+            distance_threshold: 0.1,
+            base_directory,
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: balance_factor,
+            max_posting_list_size,
+        })
+        .expect("Failed to create builder");
+
+        assert!(builder.add_posting_list(&vec![1, 2, 3]).is_ok());
+        assert!(builder.add_posting_list(&vec![2, 4, 5]).is_ok());
+        assert!(builder.add_posting_list(&vec![3, 6, 7]).is_ok());
+
+        let result = builder.build_posting_lists_with_stopping_points().unwrap();
+
+        // Expected result
+        let expected_result = vec![
+            PostingListWithStoppingPoints {
+                posting_list: vec![1, 2, 3],
+                stopping_points: SortedVec::from_unsorted(vec![
+                    StoppingPoint {
+                        duplicated_vector_idx: 2,
+                        idx_in_posting_list: 1,
+                    },
+                    StoppingPoint {
+                        duplicated_vector_idx: 3,
+                        idx_in_posting_list: 2,
+                    },
+                ]),
+            },
+            PostingListWithStoppingPoints {
+                posting_list: vec![2, 4, 5],
+                stopping_points: SortedVec::from_unsorted(vec![StoppingPoint {
+                    duplicated_vector_idx: 2,
+                    idx_in_posting_list: 0,
+                }]),
+            },
+            PostingListWithStoppingPoints {
+                posting_list: vec![3, 6, 7],
+                stopping_points: SortedVec::from_unsorted(vec![StoppingPoint {
+                    duplicated_vector_idx: 3,
+                    idx_in_posting_list: 0,
+                }]),
+            },
+        ];
+
+        assert_eq!(result, expected_result);
+    }
+
+    #[test]
+    fn test_reassign_duplicated_vectors() {
+        let temp_dir = tempdir::TempDir::new("reassign_duplicated_vectors_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 4;
+        let num_vectors = 6;
+        let num_features = 1;
+        let file_size = 4096;
+        let balance_factor = 0.0;
+        let max_posting_list_size = usize::MAX;
+        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points: num_vectors,
+            max_clusters_per_vector: 2,
+            distance_threshold: 0.1,
+            base_directory,
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: balance_factor,
+            max_posting_list_size,
+        })
+        .expect("Failed to create builder");
+
+        assert!(builder.add_posting_list(&vec![1, 3, 5, 7, 18, 20]).is_ok());
+        assert!(builder.add_posting_list(&vec![9, 18, 20]).is_ok());
+        assert!(builder.add_posting_list(&vec![14, 15, 16, 18]).is_ok());
+        assert!(builder.add_posting_list(&vec![0, 2, 4, 6, 8, 20]).is_ok());
+        assert!(builder.add_posting_list(&vec![10, 15, 21]).is_ok());
+
+        let mut assigned_ids = vec![-1; 22];
+        assert!(builder
+            .reassign_duplicated_vectors(&mut assigned_ids)
+            .is_ok());
+
+        assert_eq!(assigned_ids[14], 0);
+        assert_eq!(assigned_ids[10], 1);
+        assert_eq!(assigned_ids[15], 2);
+        assert_eq!(assigned_ids[1], 3);
+        assert_eq!(assigned_ids[3], 4);
+        assert_eq!(assigned_ids[5], 5);
+        assert_eq!(assigned_ids[7], 6);
+        assert_eq!(assigned_ids[9], 7);
+        assert_eq!(assigned_ids[16], 8);
+        assert_eq!(assigned_ids[18], 9);
+        assert_eq!(assigned_ids[0], 10);
+        assert_eq!(assigned_ids[2], 11);
+        assert_eq!(assigned_ids[4], 12);
+        assert_eq!(assigned_ids[6], 13);
+        assert_eq!(assigned_ids[8], 14);
+        assert_eq!(assigned_ids[20], 15);
+        assert_eq!(assigned_ids[21], -1);
+        assert_eq!(assigned_ids[11], -1);
+        assert_eq!(assigned_ids[12], -1);
+        assert_eq!(assigned_ids[13], -1);
     }
 
     #[test]
