@@ -311,8 +311,12 @@ impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
         let i = id as usize;
 
         if self.resident {
-            if i >= self.resident_posting_lists.len() {
-                return Err(anyhow!("Posting list id out of bound"));
+            if i >= self.len() {
+                return Err(anyhow!(
+                    "Posting list id {} out of bound (current len {})",
+                    i,
+                    self.len()
+                ));
             }
             return Ok(PostingList::new_with_slices(vec![transmute_slice_to_u8(
                 &self.resident_posting_lists[i],
