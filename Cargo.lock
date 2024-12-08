@@ -1166,6 +1166,7 @@ dependencies = [
  "quantization",
  "rand 0.8.5",
  "roaring",
+ "sorted-vec",
  "tempdir",
  "utils",
 ]
@@ -2316,6 +2317,12 @@ dependencies = [
  "libc",
  "windows-sys 0.52.0",
 ]
+
+[[package]]
+name = "sorted-vec"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f64b077cc81ab5f1209bb44c6530a3277261aeaa5405111d48326897306918b"
 
 [[package]]
 name = "stable_deref_trait"

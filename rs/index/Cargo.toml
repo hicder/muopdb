@@ -18,3 +18,4 @@ roaring.workspace = true
 kmeans.workspace = true
 log.workspace = true
 env_logger.workspace = true
+sorted-vec.workspace = true
