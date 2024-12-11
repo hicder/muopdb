@@ -835,8 +835,8 @@ mod tests {
     }
 
     #[test]
-    fn test_get_reassigned_ids() {
-        let temp_dir = tempdir::TempDir::new("get_reassigned_ids_test")
+    fn test_get_reassigned_ids_0() {
+        let temp_dir = tempdir::TempDir::new("get_reassigned_ids_0_test")
             .expect("Failed to create temporary directory");
         let base_directory = temp_dir
             .path()
@@ -846,7 +846,7 @@ mod tests {
         let num_clusters = 4;
         let num_vectors = 22;
         let num_features = 1;
-        let file_size = 4096;
+        let file_size = 4096 * 4096;
         let balance_factor = 0.0;
         let max_posting_list_size = usize::MAX;
         let mut builder = IvfBuilder::new(IvfBuilderConfig {
@@ -881,7 +881,7 @@ mod tests {
 
         let assigned_ids = builder
             .get_reassigned_ids()
-            .expect("Failed to reassign ids for duplicated vectors");
+            .expect("Failed to reassign ids");
 
         assert_eq!(assigned_ids[10], 0);
         assert_eq!(assigned_ids[14], 1);
@@ -905,6 +905,252 @@ mod tests {
         assert_eq!(assigned_ids[21], 19);
         assert_eq!(assigned_ids[17], 20);
         assert_eq!(assigned_ids[19], 21);
+    }
+
+    #[test]
+    fn test_get_reassigned_ids_1() {
+        let temp_dir = tempdir::TempDir::new("get_reassigned_ids_1_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 4;
+        let num_vectors = 22;
+        let num_features = 1;
+        let file_size = 4096 * 4096;
+        let balance_factor = 0.0;
+        let max_posting_list_size = usize::MAX;
+        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points: num_vectors,
+            max_clusters_per_vector: 2,
+            distance_threshold: 0.1,
+            base_directory,
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: balance_factor,
+            max_posting_list_size,
+        })
+        .expect("Failed to create builder");
+
+        for i in 0..num_vectors {
+            builder
+                .add_vector(i as u64, generate_random_vector(num_features))
+                .expect("Vector should be added");
+        }
+
+        assert!(builder.add_posting_list(&vec![0, 1, 2, 3]).is_ok());
+        assert!(builder.add_posting_list(&vec![4, 5, 6, 7]).is_ok());
+        assert!(builder.add_posting_list(&vec![8, 9, 10, 11]).is_ok());
+        assert!(builder.add_posting_list(&vec![12, 13, 14, 15]).is_ok());
+        assert!(builder.add_posting_list(&vec![16, 17, 18, 19]).is_ok());
+        assert!(builder.add_posting_list(&vec![0, 4, 8, 12, 16]).is_ok());
+        assert!(builder.add_posting_list(&vec![1, 5, 9, 13, 17]).is_ok());
+        assert!(builder.add_posting_list(&vec![2, 6, 10, 14, 18]).is_ok());
+        assert!(builder.add_posting_list(&vec![3, 7, 11, 15, 19]).is_ok());
+
+        let assigned_ids = builder
+            .get_reassigned_ids()
+            .expect("Failed to reassign ids");
+
+        assert_eq!(assigned_ids[0], 0);
+        assert_eq!(assigned_ids[1], 1);
+        assert_eq!(assigned_ids[2], 2);
+        assert_eq!(assigned_ids[3], 3);
+        assert_eq!(assigned_ids[4], 4);
+        assert_eq!(assigned_ids[5], 5);
+        assert_eq!(assigned_ids[6], 6);
+        assert_eq!(assigned_ids[7], 7);
+        assert_eq!(assigned_ids[8], 8);
+        assert_eq!(assigned_ids[9], 9);
+        assert_eq!(assigned_ids[10], 10);
+        assert_eq!(assigned_ids[11], 11);
+        assert_eq!(assigned_ids[12], 12);
+        assert_eq!(assigned_ids[13], 13);
+        assert_eq!(assigned_ids[14], 14);
+        assert_eq!(assigned_ids[15], 15);
+        assert_eq!(assigned_ids[16], 16);
+        assert_eq!(assigned_ids[17], 17);
+        assert_eq!(assigned_ids[18], 18);
+        assert_eq!(assigned_ids[19], 19);
+    }
+
+    #[test]
+    fn test_get_reassigned_ids_2() {
+        let temp_dir = tempdir::TempDir::new("get_reassigned_ids_2_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 4;
+        let num_vectors = 30;
+        let num_features = 1;
+        let file_size = 4096 * 4096;
+        let balance_factor = 0.0;
+        let max_posting_list_size = usize::MAX;
+        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points: num_vectors,
+            max_clusters_per_vector: 2,
+            distance_threshold: 0.1,
+            base_directory,
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: balance_factor,
+            max_posting_list_size,
+        })
+        .expect("Failed to create builder");
+
+        for i in 0..num_vectors {
+            builder
+                .add_vector(i as u64, generate_random_vector(num_features))
+                .expect("Vector should be added");
+        }
+
+        assert!(builder
+            .add_posting_list(&vec![0, 5, 10, 15, 20, 25])
+            .is_ok());
+        assert!(builder
+            .add_posting_list(&vec![1, 6, 11, 16, 21, 26])
+            .is_ok());
+        assert!(builder
+            .add_posting_list(&vec![0, 7, 12, 17, 22, 27])
+            .is_ok());
+        assert!(builder
+            .add_posting_list(&vec![2, 8, 13, 18, 23, 28])
+            .is_ok());
+        assert!(builder
+            .add_posting_list(&vec![3, 9, 14, 19, 24, 29])
+            .is_ok());
+        assert!(builder
+            .add_posting_list(&vec![4, 20, 21, 22, 23, 24])
+            .is_ok());
+        assert!(builder
+            .add_posting_list(&vec![1, 25, 26, 27, 28, 29])
+            .is_ok());
+
+        let assigned_ids = builder
+            .get_reassigned_ids()
+            .expect("Failed to reassign ids");
+
+        assert_eq!(assigned_ids[0], 0);
+        assert_eq!(assigned_ids[1], 1);
+        assert_eq!(assigned_ids[4], 2);
+        assert_eq!(assigned_ids[5], 3);
+        assert_eq!(assigned_ids[10], 4);
+        assert_eq!(assigned_ids[15], 5);
+        assert_eq!(assigned_ids[20], 6);
+        assert_eq!(assigned_ids[6], 7);
+        assert_eq!(assigned_ids[11], 8);
+        assert_eq!(assigned_ids[16], 9);
+        assert_eq!(assigned_ids[21], 10);
+        assert_eq!(assigned_ids[7], 11);
+        assert_eq!(assigned_ids[12], 12);
+        assert_eq!(assigned_ids[17], 13);
+        assert_eq!(assigned_ids[22], 14);
+        assert_eq!(assigned_ids[2], 15);
+        assert_eq!(assigned_ids[8], 16);
+        assert_eq!(assigned_ids[13], 17);
+        assert_eq!(assigned_ids[18], 18);
+        assert_eq!(assigned_ids[23], 19);
+        assert_eq!(assigned_ids[3], 20);
+        assert_eq!(assigned_ids[9], 21);
+        assert_eq!(assigned_ids[14], 22);
+        assert_eq!(assigned_ids[19], 23);
+        assert_eq!(assigned_ids[24], 24);
+        assert_eq!(assigned_ids[25], 25);
+        assert_eq!(assigned_ids[26], 26);
+        assert_eq!(assigned_ids[27], 27);
+        assert_eq!(assigned_ids[28], 28);
+        assert_eq!(assigned_ids[29], 29);
+    }
+
+    #[test]
+    fn test_get_reassigned_ids_3() {
+        let temp_dir = tempdir::TempDir::new("get_reassigned_ids_3_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 4;
+        let num_vectors = 30;
+        let num_features = 1;
+        let file_size = 4096 * 4096;
+        let balance_factor = 0.0;
+        let max_posting_list_size = usize::MAX;
+        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points: num_vectors,
+            max_clusters_per_vector: 2,
+            distance_threshold: 0.1,
+            base_directory,
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: balance_factor,
+            max_posting_list_size,
+        })
+        .expect("Failed to create builder");
+
+        for i in 0..num_vectors {
+            builder
+                .add_vector(i as u64, generate_random_vector(num_features))
+                .expect("Vector should be added");
+        }
+
+        assert!(builder.add_posting_list(&vec![0, 4, 8, 12, 16, 20]).is_ok());
+        assert!(builder.add_posting_list(&vec![1, 5, 9, 13, 17, 21]).is_ok());
+        assert!(builder
+            .add_posting_list(&vec![2, 6, 10, 14, 18, 22])
+            .is_ok());
+        assert!(builder
+            .add_posting_list(&vec![3, 7, 11, 15, 19, 23])
+            .is_ok());
+        assert!(builder.add_posting_list(&vec![0, 6, 12, 18]).is_ok());
+        assert!(builder.add_posting_list(&vec![1, 7, 13, 19]).is_ok());
+
+        let assigned_ids = builder
+            .get_reassigned_ids()
+            .expect("Failed to reassign ids");
+
+        assert_eq!(assigned_ids[0], 0);
+        assert_eq!(assigned_ids[1], 1);
+        assert_eq!(assigned_ids[2], 2);
+        assert_eq!(assigned_ids[6], 3);
+        assert_eq!(assigned_ids[3], 4);
+        assert_eq!(assigned_ids[7], 5);
+        assert_eq!(assigned_ids[4], 6);
+        assert_eq!(assigned_ids[8], 7);
+        assert_eq!(assigned_ids[12], 8);
+        assert_eq!(assigned_ids[5], 9);
+        assert_eq!(assigned_ids[9], 10);
+        assert_eq!(assigned_ids[13], 11);
+        assert_eq!(assigned_ids[10], 12);
+        assert_eq!(assigned_ids[14], 13);
+        assert_eq!(assigned_ids[18], 14);
+        assert_eq!(assigned_ids[11], 15);
+        assert_eq!(assigned_ids[15], 16);
+        assert_eq!(assigned_ids[19], 17);
+        assert_eq!(assigned_ids[16], 18);
+        assert_eq!(assigned_ids[20], 19);
+        assert_eq!(assigned_ids[17], 20);
+        assert_eq!(assigned_ids[21], 21);
+        assert_eq!(assigned_ids[22], 22);
+        assert_eq!(assigned_ids[23], 23);
     }
 
     #[test]
