@@ -79,7 +79,7 @@ mod tests {
 
         assert!(builder.build().is_ok());
 
-        assert!(writer.write(&mut builder).is_ok());
+        assert!(writer.write(&mut builder, false).is_ok());
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader.read().expect("Failed to read index file");
@@ -200,7 +200,7 @@ mod tests {
         }
 
         assert!(builder.build().is_ok());
-        assert!(writer.write(&mut builder).is_ok());
+        assert!(writer.write(&mut builder, false).is_ok());
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader.read().expect("Failed to read index file");
@@ -213,7 +213,7 @@ mod tests {
             assert!(posting_list.is_ok());
             let posting_list = posting_list.unwrap();
 
-            // It's possible that the posting list size is more than max_posting_list_size, 
+            // It's possible that the posting list size is more than max_posting_list_size,
             // but it should be less than 2x.
             assert!(posting_list.len() <= 20);
         }

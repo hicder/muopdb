@@ -21,6 +21,7 @@ pub enum IndexType {
 pub struct BaseConfig {
     pub output_path: String,
     pub dimension: usize,
+    pub reindex: bool,
 
     // Vector storage parameters
     pub max_memory_size: usize,
@@ -35,7 +36,6 @@ pub struct HnswConfig {
     pub num_layers: u8,
     pub max_num_neighbors: usize,
     pub ef_construction: u32,
-    pub reindex: bool,
 
     // Quantizer parameters
     pub quantizer_type: QuantizerType,
