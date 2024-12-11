@@ -75,57 +75,21 @@ impl PartialEq for PostingListInfo {
 impl Eq for PostingListInfo {}
 
 #[derive(Debug)]
-struct DuplicatedVectorInstance {
-    posting_list_idx: usize,
-    idx: usize,
-}
-
-#[derive(Debug, Clone)]
-struct StoppingPoint {
-    duplicated_vector_idx: u64,
-    idx_in_posting_list: usize,
-}
-
-impl PartialOrd for StoppingPoint {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.duplicated_vector_idx
-            .partial_cmp(&other.duplicated_vector_idx)
-    }
-}
-
-impl Ord for StoppingPoint {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.duplicated_vector_idx.cmp(&other.duplicated_vector_idx)
-    }
-}
-
-impl PartialEq for StoppingPoint {
-    fn eq(&self, other: &Self) -> bool {
-        self.duplicated_vector_idx == other.duplicated_vector_idx
-    }
-}
-
-impl Eq for StoppingPoint {}
-
-#[derive(Debug)]
 struct PostingListWithStoppingPoints {
     posting_list: Vec<u64>,
-    stopping_points: SortedVec<StoppingPoint>,
+    stopping_points: SortedVec<u64>,
 }
 
 impl PostingListWithStoppingPoints {
-    pub fn new(posting_list: Vec<u64>, stopping_points: SortedVec<StoppingPoint>) -> Self {
+    pub fn new(posting_list: Vec<u64>, stopping_points: SortedVec<u64>) -> Self {
         Self {
             posting_list,
             stopping_points,
         }
     }
 
-    pub fn add_stopping_point(&mut self, duplicated_vector_idx: u64, idx_in_posting_list: usize) {
-        self.stopping_points.push(StoppingPoint {
-            duplicated_vector_idx,
-            idx_in_posting_list,
-        });
+    pub fn add_stopping_point(&mut self, stopping_point: u64) {
+        self.stopping_points.push(stopping_point);
     }
 }
 
@@ -133,10 +97,7 @@ impl PartialOrd for PostingListWithStoppingPoints {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if let (Some(sp), Some(osp)) = (self.stopping_points.first(), other.stopping_points.first())
         {
-            match sp
-                .duplicated_vector_idx
-                .partial_cmp(&osp.duplicated_vector_idx)
-            {
+            match sp.partial_cmp(osp) {
                 Some(Ordering::Equal) => self
                     .posting_list
                     .iter()
@@ -153,7 +114,7 @@ impl Ord for PostingListWithStoppingPoints {
     fn cmp(&self, other: &Self) -> Ordering {
         if let (Some(sp), Some(osp)) = (self.stopping_points.first(), other.stopping_points.first())
         {
-            match sp.duplicated_vector_idx.cmp(&osp.duplicated_vector_idx) {
+            match sp.cmp(osp) {
                 Ordering::Equal => self.posting_list.iter().cmp(other.posting_list.iter()),
                 other => other,
             }
@@ -167,8 +128,7 @@ impl PartialEq for PostingListWithStoppingPoints {
     fn eq(&self, other: &Self) -> bool {
         if let (Some(sp), Some(osp)) = (self.stopping_points.first(), other.stopping_points.first())
         {
-            sp.duplicated_vector_idx == osp.duplicated_vector_idx
-                && self.posting_list.iter().eq(other.posting_list.iter())
+            sp == osp && self.posting_list.iter().eq(other.posting_list.iter())
         } else {
             false
         }
@@ -491,7 +451,7 @@ impl IvfBuilder {
         &self,
     ) -> Result<Vec<PostingListWithStoppingPoints>> {
         let mut lists_with_stopping_points = Vec::new();
-        let mut occurrence_map: HashMap<u64, Vec<DuplicatedVectorInstance>> = HashMap::new();
+        let mut occurrence_map: HashMap<u64, Vec<usize>> = HashMap::new();
 
         for list_index in 0..self.posting_lists.len() {
             let posting_list = self.posting_lists.get(list_index as u32)?;
@@ -499,27 +459,22 @@ impl IvfBuilder {
                 posting_list.iter().collect::<Vec<_>>(),
                 SortedVec::new(),
             ));
-            for (index_in_list, vector_storage_index) in posting_list.iter().enumerate() {
-                let dup_vec_instance = DuplicatedVectorInstance {
-                    posting_list_idx: list_index,
-                    idx: index_in_list,
-                };
+            for vector_storage_index in posting_list.iter() {
                 occurrence_map
                     .entry(vector_storage_index)
                     .or_insert(Vec::new())
-                    .push(dup_vec_instance);
+                    .push(list_index);
             }
         }
 
-        for (duplicated_vector_idx, posting_list_indices) in &occurrence_map {
+        for (stopping_point, posting_list_indices) in &occurrence_map {
             // Vector idx is not duplicated
             if posting_list_indices.len() == 1 {
                 continue;
             }
 
-            for dup_vec_instance in posting_list_indices {
-                lists_with_stopping_points[dup_vec_instance.posting_list_idx]
-                    .add_stopping_point(*duplicated_vector_idx, dup_vec_instance.idx);
+            for list_index in posting_list_indices {
+                lists_with_stopping_points[*list_index].add_stopping_point(*stopping_point);
             }
         }
 
@@ -542,16 +497,16 @@ impl IvfBuilder {
 
         let mut cur_idx = 0;
         while let Some(Reverse(first_posting_list)) = min_heap.pop() {
-            let min_dup_vec_idx = first_posting_list.stopping_points[0].duplicated_vector_idx;
+            let min_dup_vec_idx = first_posting_list.stopping_points[0];
 
-            // Collect all elements with the same duplicated_vector_idx
+            // Collect all posting lists with the min stopping point
             let mut working_list = vec![first_posting_list];
 
             while let Some(Reverse(next_posting_list)) = min_heap.peek() {
-                if next_posting_list.stopping_points[0].duplicated_vector_idx == min_dup_vec_idx {
+                if next_posting_list.stopping_points[0] == min_dup_vec_idx {
                     working_list.push(min_heap.pop().unwrap().0); // Pop and unwrap safely
                 } else {
-                    break; // Exit if we reach a different duplicated_vector_idx
+                    break; // Exit if we reach a different stopping point
                 }
             }
 
@@ -797,30 +752,15 @@ mod tests {
         let expected_result = vec![
             PostingListWithStoppingPoints {
                 posting_list: vec![1, 2, 3],
-                stopping_points: SortedVec::from_unsorted(vec![
-                    StoppingPoint {
-                        duplicated_vector_idx: 2,
-                        idx_in_posting_list: 1,
-                    },
-                    StoppingPoint {
-                        duplicated_vector_idx: 3,
-                        idx_in_posting_list: 2,
-                    },
-                ]),
+                stopping_points: SortedVec::from_unsorted(vec![2, 3]),
             },
             PostingListWithStoppingPoints {
                 posting_list: vec![2, 4, 5],
-                stopping_points: SortedVec::from_unsorted(vec![StoppingPoint {
-                    duplicated_vector_idx: 2,
-                    idx_in_posting_list: 0,
-                }]),
+                stopping_points: SortedVec::from_unsorted(vec![2]),
             },
             PostingListWithStoppingPoints {
                 posting_list: vec![3, 6, 7],
-                stopping_points: SortedVec::from_unsorted(vec![StoppingPoint {
-                    duplicated_vector_idx: 3,
-                    idx_in_posting_list: 0,
-                }]),
+                stopping_points: SortedVec::from_unsorted(vec![3]),
             },
         ];
 
