@@ -568,6 +568,46 @@ impl IvfBuilder {
         Ok(assigned_ids)
     }
 
+    pub fn reindex(&mut self, temp_dir: String) -> Result<()> {
+        let assigned_ids = self.get_reassigned_ids()?;
+
+        // Update doc_id_mapping with reassigned IDs
+        let tmp_id_provider = self.doc_id_mapping.clone();
+        for (id, doc_id) in tmp_id_provider.into_iter().enumerate() {
+            let new_id = assigned_ids.get(id).ok_or(anyhow!(
+                "id in id_provider {} is larger than size of vectors",
+                id
+            ))?;
+            self.doc_id_mapping[*new_id as usize] = doc_id;
+        }
+
+        // Build reverse assigned ids
+        let mut reverse_assigned_ids = vec![-1; self.doc_id_mapping.len()];
+        for (i, id) in assigned_ids.iter().enumerate() {
+            reverse_assigned_ids[*id as usize] = i as i32;
+        }
+
+        // Put the vectors to their reassigned places
+        let vector_storage_config = self.vectors.config();
+        let mut new_vector_storage = Box::new(FileBackedAppendableVectorStorage::<f32>::new(
+            temp_dir.clone(),
+            vector_storage_config.memory_threshold,
+            vector_storage_config.file_size,
+            vector_storage_config.num_features,
+        ));
+
+        for i in 0..reverse_assigned_ids.len() {
+            let mapped_id = reverse_assigned_ids[i];
+            let vector = self.vectors.get(mapped_id as u32).unwrap();
+            new_vector_storage
+                .append(vector)
+                .unwrap_or_else(|_| panic!("append failed"));
+        }
+
+        self.vectors = new_vector_storage;
+        Ok(())
+    }
+
     pub fn cleanup(&mut self) -> Result<()> {
         let vectors_path = format!("{}/builder_vector_storage", self.config.base_directory);
         let centroids_path = format!("{}/builder_centroid_storage", self.config.base_directory);
@@ -1151,6 +1191,82 @@ mod tests {
         assert_eq!(assigned_ids[21], 21);
         assert_eq!(assigned_ids[22], 22);
         assert_eq!(assigned_ids[23], 23);
+    }
+
+    #[test]
+    fn test_ivf_builder_reindex() {
+        let temp_dir = tempdir::TempDir::new("ivf_builder_reindex_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 4;
+        let num_features = 1;
+        let file_size = 4096;
+        let balance_factor = 0.0;
+        let max_posting_list_size = usize::MAX;
+        const NUM_VECTORS: usize = 22;
+        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points: NUM_VECTORS,
+            max_clusters_per_vector: 2,
+            distance_threshold: 0.1,
+            base_directory: base_directory.clone(),
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: balance_factor,
+            max_posting_list_size,
+        })
+        .expect("Failed to create builder");
+
+        for i in 0..NUM_VECTORS {
+            builder
+                .add_vector(i as u64 + 100, vec![i as f32])
+                .expect("Vector should be added");
+        }
+
+        assert!(builder.add_posting_list(&vec![11, 12, 13]).is_ok());
+        assert!(builder.add_posting_list(&vec![0, 2, 4, 6, 8, 20]).is_ok());
+        assert!(builder.add_posting_list(&vec![9, 18, 20]).is_ok());
+        assert!(builder.add_posting_list(&vec![14, 15, 16, 18]).is_ok());
+        assert!(builder.add_posting_list(&vec![1, 3, 5, 7, 18, 20]).is_ok());
+        assert!(builder.add_posting_list(&vec![10, 15, 21]).is_ok());
+        assert!(builder.add_posting_list(&vec![10, 15, 17, 19]).is_ok());
+
+        builder
+            .reindex(base_directory.clone())
+            .expect("Failed to reindex");
+
+        let expected_vectors: [f32; NUM_VECTORS] = [
+            10.0, 14.0, 15.0, 1.0, 3.0, 5.0, 7.0, 9.0, 16.0, 18.0, 0.0, 2.0, 4.0, 6.0, 8.0, 20.0,
+            11.0, 12.0, 13.0, 21.0, 17.0, 19.0,
+        ];
+
+        for i in 0..NUM_VECTORS {
+            assert_eq!(
+                builder
+                    .vectors
+                    .get(i as u32)
+                    .expect(&format!("Failed to retrieve vector #{}", i))[0],
+                expected_vectors[i]
+            );
+        }
+
+        let expected_doc_ids: [u64; NUM_VECTORS] = [
+            10, 14, 15, 1, 3, 5, 7, 9, 16, 18, 0, 2, 4, 6, 8, 20, 11, 12, 13, 21, 17, 19,
+        ];
+
+        assert_eq!(builder.doc_id_mapping.len(), NUM_VECTORS);
+
+        for (expected_doc_id, doc_id) in expected_doc_ids.iter().zip(builder.doc_id_mapping.iter())
+        {
+            assert_eq!(*doc_id, expected_doc_id + 100);
+        }
     }
 
     #[test]

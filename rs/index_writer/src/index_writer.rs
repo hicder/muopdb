@@ -109,7 +109,7 @@ impl IndexWriter {
 
         info!("Start writing index");
         let hnsw_writer = HnswWriter::new(hnsw_directory);
-        hnsw_writer.write(&mut hnsw_builder, index_builder_config.hnsw_config.reindex)?;
+        hnsw_writer.write(&mut hnsw_builder, index_builder_config.base_config.reindex)?;
 
         // Cleanup tmp directory. It's ok to fail
         std::fs::remove_dir_all(&pg_temp_dir).unwrap_or_default();
@@ -157,7 +157,7 @@ impl IndexWriter {
 
         info!("Start writing index");
         let ivf_writer = IvfWriter::new(ivf_directory);
-        ivf_writer.write(&mut ivf_builder)?;
+        ivf_writer.write(&mut ivf_builder, index_builder_config.base_config.reindex)?;
 
         // Cleanup tmp directory. It's ok to fail
         ivf_builder.cleanup()?;
@@ -256,11 +256,11 @@ impl IndexWriter {
 
         info!("Start writing HNSW index for centroids");
         let hnsw_writer = HnswWriter::new(hnsw_directory);
-        hnsw_writer.write(&mut hnsw_builder, hnsw_config.reindex)?;
+        hnsw_writer.write(&mut hnsw_builder, index_writer_config.base_config.reindex)?;
 
         info!("Start writing IVF index");
         let ivf_writer = IvfWriter::new(ivf_directory);
-        ivf_writer.write(&mut ivf_builder)?;
+        ivf_writer.write(&mut ivf_builder, index_writer_config.base_config.reindex)?;
         ivf_builder.cleanup()?;
 
         // Finally, write the index writer config
@@ -379,6 +379,7 @@ mod tests {
         let base_config = BaseConfig {
             output_path: base_directory.clone(),
             dimension,
+            reindex: false,
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
             index_type: IndexType::Hnsw,
@@ -387,7 +388,6 @@ mod tests {
             num_layers: 2,
             max_num_neighbors: 10,
             ef_construction: 100,
-            reindex: false,
             quantizer_type: QuantizerType::ProductQuantizer,
             subvector_dimension: 2,
             num_bits: 2,
@@ -447,6 +447,7 @@ mod tests {
         let base_config = BaseConfig {
             output_path: base_directory.clone(),
             dimension,
+            reindex: false,
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
             index_type: IndexType::Ivf,
@@ -509,6 +510,7 @@ mod tests {
         let base_config = BaseConfig {
             output_path: base_directory.clone(),
             dimension,
+            reindex: false,
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
             index_type: IndexType::Spann,
@@ -517,7 +519,6 @@ mod tests {
             num_layers: 2,
             max_num_neighbors: 10,
             ef_construction: 100,
-            reindex: false,
             quantizer_type: QuantizerType::ProductQuantizer,
             subvector_dimension: 2,
             num_bits: 2,

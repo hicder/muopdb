@@ -1,7 +1,8 @@
-use std::fs::{remove_file, File};
+use std::fs::{create_dir_all, remove_file, File};
 use std::io::{BufWriter, Write};
 
 use anyhow::{anyhow, Context, Result};
+use log::debug;
 use utils::io::{append_file_to_writer, wrap_write};
 
 use crate::ivf::builder::IvfBuilder;
@@ -16,7 +17,18 @@ impl IvfWriter {
         Self { base_directory }
     }
 
-    pub fn write(&self, ivf_builder: &mut IvfBuilder) -> Result<()> {
+    pub fn write(&self, ivf_builder: &mut IvfBuilder, reindex: bool) -> Result<()> {
+        if reindex {
+            let temp_dir = format!("{}/temp", self.base_directory);
+            create_dir_all(&temp_dir).context("failed to create temp directory")?;
+
+            // Reindex the vectors for efficient lookup
+            ivf_builder
+                .reindex(temp_dir)
+                .context("failed to reindex during write")?;
+            debug!("Finish reindexing");
+        }
+
         let num_features = ivf_builder.config().num_features;
         let num_clusters = ivf_builder.centroids().len();
         let num_vectors = ivf_builder.vectors().len();
@@ -374,7 +386,7 @@ mod tests {
         assert_eq!(builder.doc_id_mapping().len(), 1000);
 
         assert!(builder.build().is_ok());
-        assert!(writer.write(&mut builder).is_ok());
+        assert!(writer.write(&mut builder, false).is_ok());
 
         // Check if files were created and removed correctly
         assert!(fs::metadata(format!("{}/vectors", base_directory)).is_ok());
