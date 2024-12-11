@@ -151,14 +151,7 @@ mod tests {
         let hnsw_dir = format!("{}/hnsw", base_directory);
         fs::create_dir_all(hnsw_dir.clone()).unwrap();
         let writer = HnswWriter::new(hnsw_dir);
-        match writer.write(&mut hnsw_builder, false) {
-            Ok(()) => {
-                assert!(true);
-            }
-            Err(_) => {
-                assert!(false);
-            }
-        }
+        assert!(writer.write(&mut hnsw_builder, false).is_ok());
 
         // Read from file
         let reader = HnswReader::new(base_directory.clone());
@@ -191,14 +184,7 @@ mod tests {
         let hnsw_dir = format!("{}/hnsw", base_directory);
         fs::create_dir_all(hnsw_dir.clone()).unwrap();
         let writer = HnswWriter::new(hnsw_dir);
-        match writer.write(&mut hnsw_builder, false) {
-            Ok(()) => {
-                assert!(true);
-            }
-            Err(_) => {
-                assert!(false);
-            }
-        }
+        assert!(writer.write(&mut hnsw_builder, false).is_ok());
 
         // Read from file
         let reader = HnswReader::new(base_directory.clone());
