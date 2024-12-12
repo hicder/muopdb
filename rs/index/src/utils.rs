@@ -35,6 +35,36 @@ impl SearchContext {
     }
 }
 
+pub trait TraversalContext {
+    fn visited(&self, i: u32) -> bool;
+    fn set_visited(&mut self, i: u32);
+    fn should_record_pages(&self) -> bool;
+    fn record_pages(&mut self, page_id: String);
+}
+
+impl TraversalContext for SearchContext {
+    fn visited(&self, i: u32) -> bool {
+        self.visited.contains(i)
+    }
+
+    fn set_visited(&mut self, i: u32) {
+        self.visited.insert(i);
+    }
+
+    fn should_record_pages(&self) -> bool {
+        self.record_pages
+    }
+
+    fn record_pages(&mut self, page_id: String) {
+        match &mut self.visited_pages {
+            Some(visited_pages) => {
+                visited_pages.insert(page_id);
+            }
+            None => {}
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct IdWithScore {
     pub id: u64,

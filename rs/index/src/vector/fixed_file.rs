@@ -5,8 +5,7 @@ use memmap2::Mmap;
 use num_traits::ToBytes;
 use utils::mem::transmute_u8_to_slice;
 
-use crate::hnsw::utils::TraversalContext;
-use crate::utils::SearchContext;
+use crate::utils::{SearchContext, TraversalContext};
 
 pub struct FixedFileVectorStorage<T> {
     _marker: PhantomData<T>,
