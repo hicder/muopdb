@@ -4,6 +4,7 @@ use bit_vec::BitVec;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 
+use crate::utils::TraversalContext;
 pub struct BuilderContext {
     visited: BitVec,
 }
@@ -37,13 +38,6 @@ impl TraversalContext for BuilderContext {
 pub struct PointAndDistance {
     pub point_id: u32,
     pub distance: NotNan<f32>,
-}
-
-pub trait TraversalContext {
-    fn visited(&self, i: u32) -> bool;
-    fn set_visited(&mut self, i: u32);
-    fn should_record_pages(&self) -> bool;
-    fn record_pages(&mut self, page_id: String);
 }
 
 /// Move the traversal logic out, since it's used in both indexing and query path

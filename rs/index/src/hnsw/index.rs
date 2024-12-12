@@ -8,34 +8,11 @@ use quantization::typing::VectorOps;
 use rand::Rng;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 
-use super::utils::{GraphTraversal, TraversalContext};
+use super::utils::GraphTraversal;
 use crate::hnsw::writer::Header;
 use crate::index::Index;
-use crate::utils::{IdWithScore, SearchContext};
+use crate::utils::{IdWithScore, SearchContext, TraversalContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
-
-impl TraversalContext for SearchContext {
-    fn visited(&self, i: u32) -> bool {
-        self.visited.contains(i)
-    }
-
-    fn set_visited(&mut self, i: u32) {
-        self.visited.insert(i);
-    }
-
-    fn should_record_pages(&self) -> bool {
-        self.record_pages
-    }
-
-    fn record_pages(&mut self, page_id: String) {
-        match &mut self.visited_pages {
-            Some(visited_pages) => {
-                visited_pages.insert(page_id);
-            }
-            None => {}
-        }
-    }
-}
 
 pub struct Hnsw<Q: Quantizer> {
     // Need this for mmap
