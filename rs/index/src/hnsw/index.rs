@@ -11,7 +11,7 @@ use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 use super::utils::GraphTraversal;
 use crate::hnsw::writer::Header;
 use crate::index::Index;
-use crate::utils::{IdWithScore, SearchContext, TraversalContext};
+use crate::utils::{IdWithScore, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
 
 pub struct Hnsw<Q: Quantizer> {
