@@ -154,16 +154,14 @@ impl<Q: Quantizer> Hnsw<Q> {
     /// Returns the level offsets slice
     pub fn get_level_offsets_slice(&self) -> &[u64] {
         let start = self.level_offsets_offset;
-        let slice =
-            &self.mmap[self.level_offsets_offset..start + self.header.level_offsets_len as usize];
+        let slice = &self.mmap[start..start + self.header.level_offsets_len as usize];
         return utils::mem::transmute_u8_to_slice(slice);
     }
 
     /// Returns the doc_id_mapping slice
     pub fn get_doc_id_mapping_slice(&self) -> &[u64] {
         let start = self.doc_id_mapping_offset;
-        let slice =
-            &self.mmap[self.doc_id_mapping_offset..start + self.header.doc_id_mapping_len as usize];
+        let slice = &self.mmap[start..start + self.header.doc_id_mapping_len as usize];
         return utils::mem::transmute_u8_to_slice(slice);
     }
 
