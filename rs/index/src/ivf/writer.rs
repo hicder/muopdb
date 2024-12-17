@@ -1,20 +1,28 @@
-use std::fs::{remove_file, File};
+use std::fs::{create_dir_all, remove_file, File};
 use std::io::{BufWriter, Write};
 
 use anyhow::{anyhow, Context, Result};
 use log::debug;
+use quantization::quantization::Quantizer;
+use quantization::typing::VectorOps;
 use utils::io::{append_file_to_writer, wrap_write};
 
 use crate::ivf::builder::IvfBuilder;
 use crate::posting_list::combined_file::{Header, Version};
+use crate::vector::file::FileBackedAppendableVectorStorage;
+use crate::vector::VectorStorage;
 
-pub struct IvfWriter {
+pub struct IvfWriter<Q: Quantizer> {
     base_directory: String,
+    quantizer: Q,
 }
 
-impl IvfWriter {
-    pub fn new(base_directory: String) -> Self {
-        Self { base_directory }
+impl<Q: Quantizer> IvfWriter<Q> {
+    pub fn new(base_directory: String, quantizer: Q) -> Self {
+        Self {
+            base_directory,
+            quantizer,
+        }
     }
 
     pub fn write(&self, ivf_builder: &mut IvfBuilder, reindex: bool) -> Result<()> {
@@ -32,10 +40,10 @@ impl IvfWriter {
 
         // Write vectors
         let vectors_len = self
-            .write_vectors(ivf_builder)
+            .quantize_and_write_vectors(ivf_builder)
             .context("Failed to write vectors")?;
-        let expected_bytes_written =
-            std::mem::size_of::<u64>() + std::mem::size_of::<f32>() * num_features * num_vectors;
+        let expected_bytes_written = std::mem::size_of::<u64>()
+            + std::mem::size_of::<Q::QuantizedT>() * num_features * num_vectors;
         if vectors_len != expected_bytes_written {
             return Err(anyhow!(
                 "Expected to write {} bytes in vector storage, but wrote {}",
@@ -100,12 +108,31 @@ impl IvfWriter {
         Ok(())
     }
 
-    fn write_vectors(&self, ivf_builder: &IvfBuilder) -> Result<usize> {
+    fn quantize_and_write_vectors(&self, ivf_builder: &IvfBuilder) -> Result<usize> {
+        // Quantize vectors
+        let full_vectors = &ivf_builder.vectors();
+        let config = ivf_builder.config();
+        let quantized_vectors_path = format!("{}/quantized/vector_storage", config.base_directory);
+        create_dir_all(&quantized_vectors_path)?;
+        let mut quantized_vectors =
+            Box::new(FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
+                quantized_vectors_path,
+                config.memory_size,
+                config.file_size,
+                config.num_features,
+            ));
+
+        for i in 0..full_vectors.len() {
+            let vector = full_vectors.get(i as u32)?;
+            let quantized_vector = Q::QuantizedT::process_vector(vector, &self.quantizer);
+            quantized_vectors.append(&quantized_vector)?;
+        }
+
         let path = format!("{}/vectors", self.base_directory);
         let mut file = File::create(path)?;
         let mut writer = BufWriter::new(&mut file);
 
-        let bytes_written = ivf_builder.vectors().write(&mut writer)?;
+        let bytes_written = quantized_vectors.write(&mut writer)?;
         Ok(bytes_written)
     }
 
@@ -216,6 +243,7 @@ mod tests {
     use std::io::Read;
 
     use byteorder::{LittleEndian, ReadBytesExt};
+    use quantization::no_op::NoQuantizer;
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
 
@@ -241,7 +269,9 @@ mod tests {
             .to_string();
 
         // Create an IvfWriter instance
-        let ivf_writer = IvfWriter::new(base_directory.clone());
+        let num_features = 10;
+        let quantizer = NoQuantizer::new(num_features);
+        let ivf_writer = IvfWriter::new(base_directory.clone(), quantizer);
 
         // Create test files
         create_test_file(&base_directory, "centroids", &[5, 6, 7, 8])?;
@@ -251,7 +281,7 @@ mod tests {
         // Create a test header
         let header = Header {
             version: Version::V0,
-            num_features: 10,
+            num_features: num_features as u32,
             num_clusters: 5,
             num_vectors: 4,
             doc_id_mapping_len: 4,
@@ -330,7 +360,8 @@ mod tests {
         let initial_size = writer.write(&[1, 2, 3]).unwrap() as usize;
 
         // Pad to 8-byte alignment
-        let padding_written = IvfWriter::write_pad(initial_size, &mut writer, 8).unwrap();
+        let padding_written =
+            IvfWriter::<NoQuantizer>::write_pad(initial_size, &mut writer, 8).unwrap();
 
         assert_eq!(padding_written, 5); // 3 bytes written, so 5 bytes of padding needed
 
@@ -354,7 +385,8 @@ mod tests {
         let num_vectors = 1000;
         let num_features = 4;
         let file_size = 4096;
-        let writer = IvfWriter::new(base_directory.clone());
+        let quantizer = NoQuantizer::new(num_features);
+        let writer = IvfWriter::new(base_directory.clone(), quantizer);
 
         let mut builder = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
