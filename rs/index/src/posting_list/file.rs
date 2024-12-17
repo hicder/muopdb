@@ -320,7 +320,7 @@ impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
             }
             return Ok(PostingList::new_with_slices(vec![transmute_slice_to_u8(
                 &self.resident_posting_lists[i],
-            )]));
+            )])?);
         }
 
         if i >= self.entry_count {
@@ -345,7 +345,7 @@ impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
         Ok(PostingList::new_with_slices(
             self.posting_list_backing_files
                 .get_slices_at(pl_offset, required_size)?,
-        ))
+        )?)
     }
 
     fn append(&mut self, posting_list: &[u64]) -> Result<()> {

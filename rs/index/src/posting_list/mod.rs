@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::mem::size_of;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 pub mod combined_file;
 pub mod file;
@@ -17,6 +17,7 @@ pub struct PostingListStorageConfig {
 
 pub struct PostingList<'a> {
     pub slices: Vec<&'a [u8]>,
+    pub elem_count: usize,
 }
 
 pub struct PostingListIterator<'a> {
@@ -26,12 +27,23 @@ pub struct PostingListIterator<'a> {
 }
 
 impl<'a> PostingList<'a> {
-    pub fn new_with_slices(slices: Vec<&'a [u8]>) -> Self {
-        PostingList { slices }
+    pub fn new_with_slices(slices: Vec<&'a [u8]>) -> Result<Self> {
+        let mut elem_count = 0;
+        let elem_size_in_bytes = size_of::<u64>();
+        for slice in &slices {
+            if slice.len() % elem_size_in_bytes != 0 {
+                return Err(anyhow!(
+                    "Invalid slice length {}: should be multiple of u64's size in bytes",
+                    slice.len()
+                ));
+            }
+            elem_count += slice.len() / elem_size_in_bytes;
+        }
+        Ok(PostingList { slices, elem_count })
     }
 
-    pub fn new() -> Self {
-        PostingList::new_with_slices(Vec::new())
+    pub fn new() -> Result<Self> {
+        Ok(PostingList::new_with_slices(Vec::new())?)
     }
 
     pub fn iter(&'a self) -> PostingListIterator<'a> {
