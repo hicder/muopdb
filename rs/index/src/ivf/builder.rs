@@ -568,8 +568,31 @@ impl IvfBuilder {
         Ok(assigned_ids)
     }
 
-    pub fn reindex(&mut self, temp_dir: String) -> Result<()> {
+    pub fn reindex(&mut self) -> Result<()> {
         let assigned_ids = self.get_reassigned_ids()?;
+
+        // Update posting lists with reassigned IDs
+        let new_posting_lists_path = format!(
+            "{}/reindex/builder_posting_list_storage",
+            self.config.base_directory
+        );
+        create_dir_all(&new_posting_lists_path)?;
+
+        let mut new_posting_list_storage = Box::new(FileBackedAppendablePostingListStorage::new(
+            new_posting_lists_path,
+            self.config.memory_size,
+            self.config.file_size,
+        ));
+
+        for list_index in 0..self.posting_lists.len() {
+            let posting_list = self.posting_lists.get(list_index as u32)?;
+            let mut new_posting_list = Vec::new();
+            for original_vector_index in posting_list.iter() {
+                new_posting_list.push(assigned_ids[original_vector_index as usize] as u64);
+            }
+            new_posting_list_storage.append(&new_posting_list)?;
+        }
+        self.posting_lists = new_posting_list_storage;
 
         // Update doc_id_mapping with reassigned IDs
         let tmp_id_provider = self.doc_id_mapping.clone();
@@ -588,12 +611,17 @@ impl IvfBuilder {
         }
 
         // Put the vectors to their reassigned places
-        let vector_storage_config = self.vectors.config();
+        let new_vectors_path = format!(
+            "{}/reindex/builder_vector_storage",
+            self.config.base_directory
+        );
+        create_dir_all(&new_vectors_path)?;
+
         let mut new_vector_storage = Box::new(FileBackedAppendableVectorStorage::<f32>::new(
-            temp_dir.clone(),
-            vector_storage_config.memory_threshold,
-            vector_storage_config.file_size,
-            vector_storage_config.num_features,
+            new_vectors_path,
+            self.config.memory_size,
+            self.config.file_size,
+            self.config.num_features,
         ));
 
         for i in 0..reverse_assigned_ids.len() {
@@ -1215,7 +1243,7 @@ mod tests {
             num_data_points: NUM_VECTORS,
             max_clusters_per_vector: 2,
             distance_threshold: 0.1,
-            base_directory: base_directory.clone(),
+            base_directory,
             memory_size: 1024,
             file_size,
             num_features,
@@ -1238,9 +1266,7 @@ mod tests {
         assert!(builder.add_posting_list(&vec![10, 15, 21]).is_ok());
         assert!(builder.add_posting_list(&vec![10, 15, 17, 19]).is_ok());
 
-        builder
-            .reindex(base_directory.clone())
-            .expect("Failed to reindex");
+        builder.reindex().expect("Failed to reindex");
 
         let expected_vectors: [f32; NUM_VECTORS] = [
             10.0, 14.0, 15.0, 1.0, 3.0, 5.0, 7.0, 9.0, 16.0, 18.0, 0.0, 2.0, 4.0, 6.0, 8.0, 20.0,
