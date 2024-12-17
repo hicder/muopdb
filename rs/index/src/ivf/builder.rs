@@ -1,6 +1,7 @@
 use std::cmp::{Ordering, Reverse};
 use std::collections::{BinaryHeap, HashMap};
 use std::fs::{create_dir, create_dir_all};
+use std::io::ErrorKind;
 
 use anyhow::{anyhow, Result};
 use rand::seq::SliceRandom;
@@ -643,9 +644,16 @@ impl IvfBuilder {
             "{}/builder_posting_list_storage",
             self.config.base_directory
         );
+        let reindex_path = format!("{}/reindex", self.config.base_directory);
         std::fs::remove_dir_all(&vectors_path)?;
         std::fs::remove_dir_all(&centroids_path)?;
         std::fs::remove_dir_all(&posting_lists_path)?;
+        // It is ok to fail here, as we do not always have reindex path
+        if let Err(err) = std::fs::remove_dir_all(&reindex_path) {
+            if err.kind() != ErrorKind::NotFound {
+                return Err(err.into());
+            }
+        }
         Ok(())
     }
 }
