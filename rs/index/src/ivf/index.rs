@@ -109,6 +109,16 @@ impl Ivf {
         results.sort();
         results
     }
+
+    fn map_point_id_to_doc_id(&self, point_ids: &[IdWithScore]) -> Vec<IdWithScore> {
+        point_ids
+            .iter()
+            .map(|x| IdWithScore {
+                id: self.index_storage.get_doc_id(x.id as usize).unwrap(),
+                score: x.score,
+            })
+            .collect()
+    }
 }
 
 impl Index for Ivf {
@@ -126,8 +136,9 @@ impl Index for Ivf {
             ef_construction as usize,
         ) {
             // Search in the posting lists of the nearest centroids.
-            let results = self.search_with_centroids(query, nearest_centroids, k, context);
-            Some(results)
+            let point_ids = self.search_with_centroids(query, nearest_centroids, k, context);
+            let doc_ids = self.map_point_id_to_doc_id(&point_ids);
+            Some(doc_ids)
         } else {
             println!("Error finding nearest centroids");
             return None;
@@ -385,8 +396,8 @@ mod tests {
             .expect("IVF search should return a result");
 
         assert_eq!(results.len(), 2);
-        assert_eq!(results[0].id, 3); // Closest to [2.0, 3.0, 4.0]
-        assert_eq!(results[1].id, 0); // Second closest to [2.0, 3.0, 4.0]
+        assert_eq!(results[0].id, 103); // Closest to [2.0, 3.0, 4.0]
+        assert_eq!(results[1].id, 100); // Second closest to [2.0, 3.0, 4.0]
         assert!(results[0].score < results[1].score);
     }
 
@@ -434,6 +445,6 @@ mod tests {
             .expect("IVF search should return a result");
 
         assert_eq!(results.len(), 1); // Only one result available
-        assert_eq!(results[0].id, 0);
+        assert_eq!(results[0].id, 100);
     }
 }
