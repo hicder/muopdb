@@ -263,30 +263,37 @@ impl IndexWriter {
         ivf_writer.write(&mut ivf_builder, index_writer_config.base_config.reindex)?;
         ivf_builder.cleanup()?;
 
-        // Finally, write the index writer config
-        let index_writer_config_path = format!(
-            "{}/base_config.yaml",
-            index_writer_config.base_config.output_path
-        );
-        std::fs::write(
-            index_writer_config_path,
-            serde_yaml::to_string(&index_writer_config.base_config)?,
-        )?;
         Ok(())
     }
 
     // TODO(hicder): Support multiple inputs
     pub fn process(&mut self, input: &mut impl Input) -> Result<()> {
         let cfg = self.config.clone();
-        match cfg {
+        let base_config = match cfg {
             IndexWriterConfig::Hnsw(hnsw_config) => {
-                Ok(self.do_build_hnsw_index(input, &hnsw_config)?)
+                self.do_build_hnsw_index(input, &hnsw_config)?;
+                hnsw_config.base_config
             }
-            IndexWriterConfig::Ivf(ivf_config) => Ok(self.do_build_ivf_index(input, &ivf_config)?),
+            IndexWriterConfig::Ivf(ivf_config) => {
+                self.do_build_ivf_index(input, &ivf_config)?;
+                ivf_config.base_config
+            }
             IndexWriterConfig::Spann(hnsw_ivf_config) => {
-                Ok(self.do_build_ivf_hnsw_index(input, &hnsw_ivf_config)?)
+                self.do_build_ivf_hnsw_index(input, &hnsw_ivf_config)?;
+                hnsw_ivf_config.base_config
             }
-        }
+        };
+
+        // Finally, write the index writer config
+        let index_type_str = format!("{:?}", base_config.index_type).to_lowercase();
+        let index_writer_config_path = format!("{}/{}", base_config.output_path, index_type_str);
+        std::fs::create_dir_all(&index_writer_config_path)?;
+        std::fs::write(
+            format!("{}/base_config.yaml", index_writer_config_path),
+            serde_yaml::to_string(&base_config)?,
+        )?;
+
+        Ok(())
     }
 }
 
