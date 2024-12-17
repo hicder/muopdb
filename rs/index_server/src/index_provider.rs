@@ -1,5 +1,6 @@
 use index::hnsw::reader::HnswReader;
 use index::index::BoxedIndex;
+use index::ivf::reader::IvfReader;
 use index::spann::reader::SpannReader;
 use index_writer::config::BaseConfig;
 use quantization::pq::pq::ProductQuantizer;
@@ -32,7 +33,16 @@ impl IndexProvider {
                     }
                 }
             }
-            index_writer::config::IndexType::Ivf => todo!(),
+            index_writer::config::IndexType::Ivf => {
+                let reader = IvfReader::new(index_path);
+                match reader.read() {
+                    Ok(index) => Some(Box::new(index)),
+                    Err(e) => {
+                        println!("Failed to read index: {}", e);
+                        None
+                    }
+                }
+            }
             index_writer::config::IndexType::Spann => {
                 let reader = SpannReader::new(index_path);
                 match reader.read() {
