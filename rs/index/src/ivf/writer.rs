@@ -1,4 +1,4 @@
-use std::fs::{create_dir_all, remove_file, File};
+use std::fs::{remove_file, File};
 use std::io::{BufWriter, Write};
 
 use anyhow::{anyhow, Context, Result};
@@ -19,12 +19,9 @@ impl IvfWriter {
 
     pub fn write(&self, ivf_builder: &mut IvfBuilder, reindex: bool) -> Result<()> {
         if reindex {
-            let temp_dir = format!("{}/temp", self.base_directory);
-            create_dir_all(&temp_dir).context("failed to create temp directory")?;
-
             // Reindex the vectors for efficient lookup
             ivf_builder
-                .reindex(temp_dir)
+                .reindex()
                 .context("failed to reindex during write")?;
             debug!("Finish reindexing");
         }
