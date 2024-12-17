@@ -203,7 +203,7 @@ impl IvfBuilder {
     }
 
     /// Add a new vector to the dataset for training
-    pub fn add_vector(&mut self, doc_id: u64, data: Vec<f32>) -> Result<()> {
+    pub fn add_vector(&mut self, doc_id: u64, data: &[f32]) -> Result<()> {
         self.vectors.append(&data)?;
         self.generate_id(doc_id)?;
         Ok(())
@@ -718,7 +718,7 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add_vector(i as u64, vec![(i + 1) as f32])
+                .add_vector(i as u64, &[(i + 1) as f32])
                 .expect("Vector should be added");
         }
 
@@ -943,7 +943,7 @@ mod tests {
 
         for i in 0..num_vectors {
             builder
-                .add_vector(i as u64, generate_random_vector(num_features))
+                .add_vector(i as u64, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 
@@ -1016,7 +1016,7 @@ mod tests {
 
         for i in 0..num_vectors {
             builder
-                .add_vector(i as u64, generate_random_vector(num_features))
+                .add_vector(i as u64, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 
@@ -1089,7 +1089,7 @@ mod tests {
 
         for i in 0..num_vectors {
             builder
-                .add_vector(i as u64, generate_random_vector(num_features))
+                .add_vector(i as u64, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 
@@ -1184,7 +1184,7 @@ mod tests {
 
         for i in 0..num_vectors {
             builder
-                .add_vector(i as u64, generate_random_vector(num_features))
+                .add_vector(i as u64, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 
@@ -1262,7 +1262,7 @@ mod tests {
 
         for i in 0..NUM_VECTORS {
             builder
-                .add_vector(i as u64 + 100, vec![i as f32])
+                .add_vector(i as u64 + 100, &[i as f32])
                 .expect("Vector should be added");
         }
 
@@ -1336,7 +1336,7 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add_vector(i as u64, generate_random_vector(num_features))
+                .add_vector(i as u64, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 

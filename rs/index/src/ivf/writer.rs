@@ -377,7 +377,7 @@ mod tests {
             let vector = generate_random_vector(num_features);
             original_vectors.push(vector.clone());
             builder
-                .add_vector((i + 100) as u64, vector)
+                .add_vector((i + 100) as u64, &vector)
                 .expect("Vector should be added");
         }
         assert_eq!(builder.doc_id_mapping().len(), 1000);
