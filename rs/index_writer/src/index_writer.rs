@@ -156,7 +156,8 @@ impl IndexWriter {
         std::fs::create_dir_all(&ivf_directory)?;
 
         info!("Start writing index");
-        let ivf_writer = IvfWriter::new(ivf_directory);
+        let quantizer = NoQuantizer::new(index_builder_config.base_config.dimension);
+        let ivf_writer = IvfWriter::new(ivf_directory, quantizer);
         ivf_writer.write(&mut ivf_builder, index_builder_config.base_config.reindex)?;
 
         // Cleanup tmp directory. It's ok to fail
@@ -213,7 +214,7 @@ impl IndexWriter {
         info!("Start building IVF index");
         ivf_builder.build()?;
 
-        // Builder HNSW index around cetroids. We don't quantize them for now.
+        // Builder HNSW index around centroids. We don't quantize them for now.
         // TODO(hicder): Have an option to quantize the centroids
         let centroid_storage = ivf_builder.centroids();
         let num_centroids = centroid_storage.len();
@@ -259,7 +260,8 @@ impl IndexWriter {
         hnsw_writer.write(&mut hnsw_builder, index_writer_config.base_config.reindex)?;
 
         info!("Start writing IVF index");
-        let ivf_writer = IvfWriter::new(ivf_directory);
+        let quantizer = NoQuantizer::new(index_writer_config.base_config.dimension);
+        let ivf_writer = IvfWriter::new(ivf_directory, quantizer);
         ivf_writer.write(&mut ivf_builder, index_writer_config.base_config.reindex)?;
         ivf_builder.cleanup()?;
 

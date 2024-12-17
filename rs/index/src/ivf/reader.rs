@@ -31,6 +31,7 @@ impl IvfReader {
 mod tests {
     use std::fs;
 
+    use quantization::no_op::NoQuantizer;
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
 
@@ -53,7 +54,8 @@ mod tests {
         let num_vectors = 1000;
         let num_features = 4;
         let file_size = 4096;
-        let writer = IvfWriter::new(base_directory.clone());
+        let quantizer = NoQuantizer::new(num_features);
+        let writer = IvfWriter::new(base_directory.clone(), quantizer);
 
         let mut builder = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
@@ -175,7 +177,8 @@ mod tests {
         let num_vectors = 1000;
         let num_features = 4;
         let file_size = 4096;
-        let writer = IvfWriter::new(base_directory.clone());
+        let quantizer = NoQuantizer::new(num_features);
+        let writer = IvfWriter::new(base_directory.clone(), quantizer);
 
         let mut builder = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
