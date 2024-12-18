@@ -241,9 +241,11 @@ impl<Q: Quantizer> IvfWriter<Q> {
 mod tests {
     use std::fs;
     use std::io::Read;
+    use std::path::Path;
 
     use byteorder::{LittleEndian, ReadBytesExt};
     use quantization::no_op::NoQuantizer;
+    use quantization::pq::pq::ProductQuantizer;
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
 
@@ -370,6 +372,100 @@ mod tests {
         // Check file size
         let metadata = fs::metadata(&path).unwrap();
         assert_eq!(metadata.len(), 8); // 3 bytes of data + 5 bytes of padding
+    }
+
+    #[test]
+    fn test_quantize_and_write_vectors() {
+        // Setup
+        let temp_dir = TempDir::new("test_quantize_and_write_vectors")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 1;
+        let num_vectors = 2;
+        let num_features = 3;
+        let subvector_dimension = 1;
+        let file_size = 4096;
+
+        let codebook = vec![1.5, 4.5, 2.3, 5.3, 3.1, 6.1];
+        let quantizer =
+            ProductQuantizer::new(3, 1, subvector_dimension, codebook, base_directory.clone())
+                .expect("Can't create product quantizer");
+        let ivf_writer = IvfWriter::new(base_directory.clone(), quantizer);
+
+        let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points: num_vectors,
+            max_clusters_per_vector: 1,
+            distance_threshold: 0.1,
+            base_directory: base_directory.clone(),
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: 0.0,
+            max_posting_list_size: usize::MAX,
+        })
+        .expect("Failed to create builder");
+
+        ivf_builder
+            .add_vector(0, &vec![1.0, 2.0, 3.0])
+            .expect("Vector should be added");
+        ivf_builder
+            .add_vector(1, &vec![4.0, 5.0, 6.0])
+            .expect("Vector should be added");
+
+        // Act
+        let result = ivf_writer.quantize_and_write_vectors(&ivf_builder);
+        assert!(result.is_ok());
+
+        let bytes_written = result.unwrap();
+        assert_eq!(bytes_written, 14); // 8 (number of vectors) + 6 (3 bytes each vector)
+
+        let vectors_path = format!("{}/vectors", base_directory);
+        assert!(Path::new(&vectors_path).exists());
+
+        // Read the quantized vectors file
+        let file = fs::File::open(vectors_path).expect("Failed to open vectors file");
+        let mut reader = std::io::BufReader::new(file);
+        let mut buffer = Vec::new();
+        reader
+            .read_to_end(&mut buffer)
+            .expect("Failed to read vectors file");
+
+        let expected_header = num_vectors.to_le_bytes();
+        assert_eq!(&buffer[0..8], &expected_header);
+
+        // Verify the contents of the quantized vectors
+        let expected_quantized_vector_length = num_features / subvector_dimension as usize;
+        let data_start = 8; // Skip the header
+        let data_end = buffer.len();
+        assert_eq!(
+            (data_end - data_start) % expected_quantized_vector_length,
+            0
+        );
+
+        let num_vectors_written = (data_end - data_start) / expected_quantized_vector_length;
+        assert_eq!(num_vectors_written, num_vectors);
+
+        // Check each quantized vector
+        let expected_quantized_vectors = vec![vec![0u8, 0u8, 0u8], vec![1u8, 1u8, 1u8]];
+
+        for i in 0..num_vectors_written {
+            let start = data_start + i * expected_quantized_vector_length;
+            let end = start + expected_quantized_vector_length;
+            let quantized_vector = &buffer[start..end];
+
+            assert_eq!(
+                quantized_vector, &expected_quantized_vectors[i],
+                "Quantized vector {} does not match expected",
+                i
+            );
+        }
     }
 
     #[test]
