@@ -43,7 +43,9 @@ impl<Q: Quantizer> IvfWriter<Q> {
             .quantize_and_write_vectors(ivf_builder)
             .context("Failed to write vectors")?;
         let expected_bytes_written = std::mem::size_of::<u64>()
-            + std::mem::size_of::<Q::QuantizedT>() * num_features * num_vectors;
+            + std::mem::size_of::<Q::QuantizedT>()
+                * self.quantizer.quantized_dimension()
+                * num_vectors;
         if vectors_len != expected_bytes_written {
             return Err(anyhow!(
                 "Expected to write {} bytes in vector storage, but wrote {}",
@@ -119,7 +121,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
                 quantized_vectors_path,
                 config.memory_size,
                 config.file_size,
-                config.num_features,
+                self.quantizer.quantized_dimension(),
             ));
 
         for i in 0..full_vectors.len() {
@@ -128,6 +130,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
             quantized_vectors.append(&quantized_vector)?;
         }
 
+        // Write quantized vectors
         let path = format!("{}/vectors", self.base_directory);
         let mut file = File::create(path)?;
         let mut writer = BufWriter::new(&mut file);

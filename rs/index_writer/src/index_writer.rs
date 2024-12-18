@@ -125,6 +125,40 @@ impl IndexWriter {
         info!("Start indexing (IVF)");
         let path = &index_builder_config.base_config.output_path;
 
+        let pg_temp_dir = format!("{}/pq_tmp", path);
+        std::fs::create_dir_all(&pg_temp_dir)?;
+
+        // First, train the product quantizer
+        let mut pq_builder = match index_builder_config.quantizer_config.quantizer_type {
+            QuantizerType::ProductQuantizer => {
+                let pq_config = ProductQuantizerConfig {
+                    dimension: index_builder_config.base_config.dimension,
+                    subvector_dimension: index_builder_config.quantizer_config.subvector_dimension,
+                    num_bits: index_builder_config.quantizer_config.num_bits,
+                };
+                let pq_builder_config = ProductQuantizerBuilderConfig {
+                    max_iteration: index_builder_config.quantizer_config.max_iteration,
+                    batch_size: index_builder_config.quantizer_config.batch_size,
+                };
+                ProductQuantizerBuilder::new(pq_config, pq_builder_config)
+            }
+            QuantizerType::NoQuantizer => {
+                todo!("Implement no quantizer")
+            }
+        };
+
+        info!("Start training product quantizer");
+        let sorted_random_rows = Self::get_sorted_random_rows(
+            input.num_rows(),
+            index_builder_config.quantizer_config.num_training_rows,
+        );
+        for row_idx in sorted_random_rows {
+            input.skip_to(row_idx as usize);
+            pq_builder.add(input.next().data.to_vec());
+        }
+
+        let quantizer = pq_builder.build(pg_temp_dir.clone())?;
+
         let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: index_builder_config.ivf_config.max_iteration,
             batch_size: index_builder_config.ivf_config.batch_size,
@@ -156,7 +190,6 @@ impl IndexWriter {
         std::fs::create_dir_all(&ivf_directory)?;
 
         info!("Start writing index");
-        let quantizer = NoQuantizer::new(index_builder_config.base_config.dimension);
         let ivf_writer = IvfWriter::new(ivf_directory, quantizer);
         ivf_writer.write(&mut ivf_builder, index_builder_config.base_config.reindex)?;
 
