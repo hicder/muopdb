@@ -172,7 +172,11 @@ impl<T: ToBytes + Clone + std::fmt::Debug> VectorStorage<T>
 
     fn append(&mut self, vector: &[T]) -> Result<()> {
         if vector.len() != self.num_features {
-            return Err(anyhow!("vector length mismatch"));
+            return Err(anyhow!(
+                "vector length mismatch: expected {}, got {}",
+                self.num_features,
+                vector.len()
+            ));
         }
 
         let size_required = vector.len() * std::mem::size_of::<T>();
