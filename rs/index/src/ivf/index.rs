@@ -200,6 +200,9 @@ mod tests {
         let mut offset = 1;
         assert!(file.write_all(&(num_features as u32).to_le_bytes()).is_ok());
         offset += size_of::<u32>();
+        // quantized_dimension
+        assert!(file.write_all(&(num_features as u32).to_le_bytes()).is_ok());
+        offset += size_of::<u32>();
         assert!(file.write_all(&(num_clusters as u32).to_le_bytes()).is_ok());
         offset += size_of::<u32>();
         assert!(file.write_all(&(num_vectors as u64).to_le_bytes()).is_ok());

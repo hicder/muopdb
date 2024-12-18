@@ -99,6 +99,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
         let header: Header = Header {
             version: Version::V0,
             num_features: num_features as u32,
+            quantized_dimension: self.quantizer.quantized_dimension() as u32,
             num_clusters: num_clusters as u32,
             num_vectors: num_vectors as u64,
             doc_id_mapping_len: doc_id_mapping_len as u64,
@@ -179,6 +180,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
         let mut written = 0;
         written += wrap_write(writer, &version_value.to_le_bytes())?;
         written += wrap_write(writer, &header.num_features.to_le_bytes())?;
+        written += wrap_write(writer, &header.quantized_dimension.to_le_bytes())?;
         written += wrap_write(writer, &header.num_clusters.to_le_bytes())?;
         written += wrap_write(writer, &header.num_vectors.to_le_bytes())?;
         written += wrap_write(writer, &header.doc_id_mapping_len.to_le_bytes())?;
@@ -287,6 +289,7 @@ mod tests {
         let header = Header {
             version: Version::V0,
             num_features: num_features as u32,
+            quantized_dimension: num_features as u32,
             num_clusters: 5,
             num_vectors: 4,
             doc_id_mapping_len: 4,
@@ -310,6 +313,7 @@ mod tests {
         let mut expected_header = vec![
             0u8, // Version::V0
             10, 0, 0, 0, // num_features (little-endian)
+            10, 0, 0, 0, // quantized_dimension (little-endian)
             5, 0, 0, 0, // num_clusters (little-endian)
             4, 0, 0, 0, 0, 0, 0, 0, // num_vectors (little-endian)
             4, 0, 0, 0, 0, 0, 0, 0, // doc_id_mapping_len (little-endian)
@@ -555,6 +559,11 @@ mod tests {
             .read_u32::<LittleEndian>()
             .expect("Failed to read num_features");
         assert_eq!(stored_num_features, num_features as u32);
+
+        let stored_quantized_dimension = index_reader
+            .read_u32::<LittleEndian>()
+            .expect("Failed to read quantized_dimension");
+        assert_eq!(stored_quantized_dimension, num_features as u32);
 
         let stored_num_clusters = index_reader
             .read_u32::<LittleEndian>()
