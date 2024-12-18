@@ -42,16 +42,16 @@ impl IndexWriter {
         std::fs::create_dir_all(&pg_temp_dir)?;
 
         // First, train the product quantizer
-        let mut pq_builder = match index_builder_config.hnsw_config.quantizer_type {
+        let mut pq_builder = match index_builder_config.quantizer_config.quantizer_type {
             QuantizerType::ProductQuantizer => {
                 let pq_config = ProductQuantizerConfig {
                     dimension: index_builder_config.base_config.dimension,
-                    subvector_dimension: index_builder_config.hnsw_config.subvector_dimension,
-                    num_bits: index_builder_config.hnsw_config.num_bits,
+                    subvector_dimension: index_builder_config.quantizer_config.subvector_dimension,
+                    num_bits: index_builder_config.quantizer_config.num_bits,
                 };
                 let pq_builder_config = ProductQuantizerBuilderConfig {
-                    max_iteration: index_builder_config.hnsw_config.max_iteration,
-                    batch_size: index_builder_config.hnsw_config.batch_size,
+                    max_iteration: index_builder_config.quantizer_config.max_iteration,
+                    batch_size: index_builder_config.quantizer_config.batch_size,
                 };
                 ProductQuantizerBuilder::new(pq_config, pq_builder_config)
             }
@@ -63,7 +63,7 @@ impl IndexWriter {
         info!("Start training product quantizer");
         let sorted_random_rows = Self::get_sorted_random_rows(
             input.num_rows(),
-            index_builder_config.hnsw_config.num_training_rows,
+            index_builder_config.quantizer_config.num_training_rows,
         );
         for row_idx in sorted_random_rows {
             input.skip_to(row_idx as usize);
@@ -90,7 +90,7 @@ impl IndexWriter {
             index_builder_config.base_config.max_memory_size,
             index_builder_config.base_config.file_size,
             index_builder_config.base_config.dimension
-                / index_builder_config.hnsw_config.subvector_dimension,
+                / index_builder_config.quantizer_config.subvector_dimension,
             pq,
             vector_directory.clone(),
         );
@@ -307,7 +307,7 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
-    use crate::config::{BaseConfig, HnswConfig, IndexType, IvfConfig};
+    use crate::config::{BaseConfig, HnswConfig, IndexType, IvfConfig, QuantizerConfig};
     use crate::input::Row;
 
     // Mock Input implementation for testing
@@ -393,10 +393,7 @@ mod tests {
             file_size: 1024 * 1024 * 1024,       // 1 GB
             index_type: IndexType::Hnsw,
         };
-        let hnsw_config = HnswConfig {
-            num_layers: 2,
-            max_num_neighbors: 10,
-            ef_construction: 100,
+        let quantizer_config = QuantizerConfig {
             quantizer_type: QuantizerType::ProductQuantizer,
             subvector_dimension: 2,
             num_bits: 2,
@@ -405,8 +402,14 @@ mod tests {
             max_iteration: 10,
             batch_size: 10,
         };
+        let hnsw_config = HnswConfig {
+            num_layers: 2,
+            max_num_neighbors: 10,
+            ef_construction: 100,
+        };
         let config = IndexWriterConfig::Hnsw(HnswConfigWithBase {
             base_config,
+            quantizer_config,
             hnsw_config,
         });
 
@@ -461,6 +464,15 @@ mod tests {
             file_size: 1024 * 1024 * 1024,       // 1 GB
             index_type: IndexType::Ivf,
         };
+        let quantizer_config = QuantizerConfig {
+            quantizer_type: QuantizerType::ProductQuantizer,
+            subvector_dimension: 2,
+            num_bits: 2,
+            num_training_rows: 50,
+
+            max_iteration: 10,
+            batch_size: 10,
+        };
         let ivf_config = IvfConfig {
             num_clusters: 2,
             num_data_points: 100,
@@ -474,6 +486,7 @@ mod tests {
         };
         let config = IndexWriterConfig::Ivf(IvfConfigWithBase {
             base_config,
+            quantizer_config,
             ivf_config,
         });
 
@@ -524,10 +537,7 @@ mod tests {
             file_size: 1024 * 1024 * 1024,       // 1 GB
             index_type: IndexType::Spann,
         };
-        let hnsw_config = HnswConfig {
-            num_layers: 2,
-            max_num_neighbors: 10,
-            ef_construction: 100,
+        let quantizer_config = QuantizerConfig {
             quantizer_type: QuantizerType::ProductQuantizer,
             subvector_dimension: 2,
             num_bits: 2,
@@ -535,6 +545,11 @@ mod tests {
 
             max_iteration: 10,
             batch_size: 10,
+        };
+        let hnsw_config = HnswConfig {
+            num_layers: 2,
+            max_num_neighbors: 10,
+            ef_construction: 100,
         };
         let ivf_config = IvfConfig {
             num_clusters: 2,
@@ -549,6 +564,7 @@ mod tests {
         };
         let config = IndexWriterConfig::Spann(SpannConfigWithBase {
             base_config,
+            quantizer_config,
             hnsw_config,
             ivf_config,
         });
