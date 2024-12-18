@@ -31,12 +31,7 @@ pub struct BaseConfig {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct HnswConfig {
-    // HNSW parameters
-    pub num_layers: u8,
-    pub max_num_neighbors: usize,
-    pub ef_construction: u32,
-
+pub struct QuantizerConfig {
     // Quantizer parameters
     pub quantizer_type: QuantizerType,
     pub subvector_dimension: usize,
@@ -46,6 +41,13 @@ pub struct HnswConfig {
     // Quantizer builder parameters
     pub max_iteration: usize,
     pub batch_size: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct HnswConfig {
+    pub num_layers: u8,
+    pub max_num_neighbors: usize,
+    pub ef_construction: u32,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -66,18 +68,21 @@ pub struct IvfConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct IvfConfigWithBase {
     pub base_config: BaseConfig,
+    pub quantizer_config: QuantizerConfig,
     pub ivf_config: IvfConfig,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HnswConfigWithBase {
     pub base_config: BaseConfig,
+    pub quantizer_config: QuantizerConfig,
     pub hnsw_config: HnswConfig,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SpannConfigWithBase {
     pub base_config: BaseConfig,
+    pub quantizer_config: QuantizerConfig,
     pub hnsw_config: HnswConfig,
     pub ivf_config: IvfConfig,
 }
