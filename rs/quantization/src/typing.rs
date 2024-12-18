@@ -27,15 +27,15 @@ impl<Q: Quantizer> VectorOps<Q> for u8 {
 }
 
 impl<Q: Quantizer> VectorOps<Q> for f32 {
-    fn process_vector(vector: &[f32], _quantizer: &Q) -> Vec<Q::QuantizedT> {
-        _quantizer.quantize(vector)
+    fn process_vector(vector: &[f32], quantizer: &Q) -> Vec<Q::QuantizedT> {
+        quantizer.quantize(vector)
     }
 
-    fn distance(vector: &[Q::QuantizedT], other: &[Q::QuantizedT], _quantizer: &Q) -> f32
+    fn distance(vector: &[Q::QuantizedT], other: &[Q::QuantizedT], quantizer: &Q) -> f32
     where
         Self: Sized,
     {
-        _quantizer.distance(vector, other, StreamingSIMD)
+        quantizer.distance(vector, other, StreamingSIMD)
     }
 }
 
