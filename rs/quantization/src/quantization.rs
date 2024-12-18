@@ -7,7 +7,7 @@ use utils::distance::l2::L2DistanceCalculatorImpl;
 use crate::typing::VectorT;
 
 pub trait Quantizer {
-    type QuantizedT: Clone + ToBytes + Debug + 'static + VectorT<Self>
+    type QuantizedT: VectorT<Self>
     where
         Self: Sized;
 
