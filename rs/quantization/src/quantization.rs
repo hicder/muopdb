@@ -1,7 +1,4 @@
-use std::fmt::Debug;
-
 use anyhow::Result;
-use num_traits::ToBytes;
 use utils::distance::l2::L2DistanceCalculatorImpl;
 
 use crate::typing::VectorT;
