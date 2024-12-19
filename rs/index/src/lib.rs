@@ -6,3 +6,4 @@ pub mod spann;
 pub mod traverse_state;
 pub mod utils;
 pub mod vector;
+pub mod collection;

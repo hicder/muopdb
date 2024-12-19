@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use utils::distance::l2::L2DistanceCalculator;
 use utils::DistanceCalculator;
 
-use crate::index::Index;
+use crate::index::Searchable;
 use crate::posting_list::combined_file::FixedIndexFile;
 use crate::utils::{IdWithScore, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
@@ -121,7 +121,7 @@ impl Ivf {
     }
 }
 
-impl Index for Ivf {
+impl Searchable for Ivf {
     fn search(
         &self,
         query: &[f32],
