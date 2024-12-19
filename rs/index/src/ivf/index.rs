@@ -1,7 +1,10 @@
 use std::collections::BinaryHeap;
 
 use anyhow::{Context, Result};
+use quantization::quantization::Quantizer;
+use quantization::typing::VectorOps;
 use utils::distance::l2::L2DistanceCalculator;
+use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 use utils::DistanceCalculator;
 
 use crate::index::Index;
@@ -9,9 +12,10 @@ use crate::posting_list::combined_file::FixedIndexFile;
 use crate::utils::{IdWithScore, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
 
-pub struct Ivf {
+pub struct Ivf<Q: Quantizer> {
     // The dataset.
-    pub vector_storage: FixedFileVectorStorage<f32>,
+    pub vector_storage: FixedFileVectorStorage<Q::QuantizedT>,
+
     // Each cluster is represented by a centroid vector.
     // This stores the list of centroids, along with a posting list
     // which maps each centroid to the vectors inside the same cluster
@@ -19,20 +23,25 @@ pub struct Ivf {
     //   index: centroid index to the list of centroids
     //   value: list of vector indices in `vector_storage`
     pub index_storage: FixedIndexFile,
+
     // Number of clusters.
     pub num_clusters: usize,
+
+    pub quantizer: Q,
 }
 
-impl Ivf {
+impl<Q: Quantizer> Ivf<Q> {
     pub fn new(
-        vector_storage: FixedFileVectorStorage<f32>,
+        vector_storage: FixedFileVectorStorage<Q::QuantizedT>,
         index_storage: FixedIndexFile,
         num_clusters: usize,
+        quantizer: Q,
     ) -> Self {
         Self {
             vector_storage,
             index_storage,
             num_clusters,
+            quantizer,
         }
     }
 
@@ -63,11 +72,14 @@ impl Ivf {
         context: &mut SearchContext,
     ) -> Vec<IdWithScore> {
         if let Ok(list) = self.index_storage.get_posting_list(centroid) {
+            let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
             let mut results: Vec<IdWithScore> = Vec::new();
             for &idx in list {
                 match self.vector_storage.get(idx as usize, context) {
                     Some(vector) => {
-                        let distance = L2DistanceCalculator::calculate(vector, query);
+                        let distance =
+                            self.quantizer
+                                .distance(&quantized_query, vector, StreamingSIMD);
                         results.push(IdWithScore {
                             score: distance,
                             id: idx,
@@ -121,7 +133,7 @@ impl Ivf {
     }
 }
 
-impl Index for Ivf {
+impl<Q: Quantizer> Index for Ivf<Q> {
     fn search(
         &self,
         query: &[f32],
@@ -152,6 +164,7 @@ mod tests {
     use std::io::Write;
 
     use anyhow::anyhow;
+    use quantization::no_op::NoQuantizer;
     use utils::mem::transmute_slice_to_u8;
 
     use super::*;
@@ -305,7 +318,8 @@ mod tests {
 
         let num_clusters = 2;
 
-        let ivf = Ivf::new(storage, index_storage, num_clusters);
+        let quantizer = NoQuantizer::new(3);
+        let ivf = Ivf::new(storage, index_storage, num_clusters, quantizer);
 
         assert_eq!(ivf.num_clusters, num_clusters);
         let cluster_0 = ivf.index_storage.get_posting_list(0);
@@ -343,8 +357,9 @@ mod tests {
             FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
         let num_probes = 2;
 
-        let nearest = Ivf::find_nearest_centroids(&vector, &index_storage, num_probes)
-            .expect("Nearest centroids should be found");
+        let nearest =
+            Ivf::<NoQuantizer>::find_nearest_centroids(&vector, &index_storage, num_probes)
+                .expect("Nearest centroids should be found");
 
         assert_eq!(nearest[0], 1);
         assert_eq!(nearest[1], 0);
@@ -368,7 +383,8 @@ mod tests {
             vec![2.0, 3.0, 4.0],
         ];
         assert!(create_fixed_file_vector_storage(&file_path, &dataset).is_ok());
-        let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
+        let num_features = 3;
+        let storage = FixedFileVectorStorage::<f32>::new(file_path, num_features)
             .expect("FixedFileVectorStorage should be created");
 
         let file_path = format!("{}/index", base_dir);
@@ -388,7 +404,8 @@ mod tests {
         let num_clusters = 2;
         let num_probes = 2;
 
-        let ivf = Ivf::new(storage, index_storage, num_clusters);
+        let quantizer = NoQuantizer::new(num_features);
+        let ivf = Ivf::new(storage, index_storage, num_clusters, quantizer);
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
@@ -417,7 +434,8 @@ mod tests {
         let file_path = format!("{}/vectors", base_dir);
         let dataset = vec![vec![100.0, 200.0, 300.0]];
         assert!(create_fixed_file_vector_storage(&file_path, &dataset).is_ok());
-        let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
+        let num_features = 3;
+        let storage = FixedFileVectorStorage::<f32>::new(file_path, num_features)
             .expect("FixedFileVectorStorage should be created");
 
         let file_path = format!("{}/index", base_dir);
@@ -437,7 +455,8 @@ mod tests {
         let num_clusters = 1;
         let num_probes = 1;
 
-        let ivf = Ivf::new(storage, index_storage, num_clusters);
+        let quantizer = NoQuantizer::new(num_features);
+        let ivf = Ivf::new(storage, index_storage, num_clusters, quantizer);
 
         let query = vec![1.0, 2.0, 3.0];
         let k = 5; // More than available results

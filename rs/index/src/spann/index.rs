@@ -6,11 +6,11 @@ use crate::ivf::index::Ivf;
 
 pub struct Spann {
     centroids: Hnsw<NoQuantizer>,
-    posting_lists: Ivf,
+    posting_lists: Ivf<NoQuantizer>,
 }
 
 impl Spann {
-    pub fn new(centroids: Hnsw<NoQuantizer>, posting_lists: Ivf) -> Self {
+    pub fn new(centroids: Hnsw<NoQuantizer>, posting_lists: Ivf<NoQuantizer>) -> Self {
         Self {
             centroids,
             posting_lists,
