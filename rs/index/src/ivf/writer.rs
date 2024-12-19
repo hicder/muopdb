@@ -1,4 +1,4 @@
-use std::fs::{create_dir_all, remove_file, File};
+use std::fs::{create_dir_all, remove_dir_all, remove_file, File};
 use std::io::{BufWriter, Write};
 
 use anyhow::{anyhow, Context, Result};
@@ -115,11 +115,11 @@ impl<Q: Quantizer> IvfWriter<Q> {
         // Quantize vectors
         let full_vectors = &ivf_builder.vectors();
         let config = ivf_builder.config();
-        let quantized_vectors_path = format!("{}/quantized/vector_storage", config.base_directory);
+        let quantized_vectors_path = format!("{}/quantized", self.base_directory);
         create_dir_all(&quantized_vectors_path)?;
         let mut quantized_vectors =
             Box::new(FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
-                quantized_vectors_path,
+                quantized_vectors_path.clone(),
                 config.memory_size,
                 config.file_size,
                 self.quantizer.quantized_dimension(),
@@ -137,6 +137,8 @@ impl<Q: Quantizer> IvfWriter<Q> {
         let mut writer = BufWriter::new(&mut file);
 
         let bytes_written = quantized_vectors.write(&mut writer)?;
+
+        remove_dir_all(&quantized_vectors_path)?;
         Ok(bytes_written)
     }
 
