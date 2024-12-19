@@ -1,4 +1,5 @@
 use anyhow::Result;
+use quantization::no_op::NoQuantizer;
 
 use crate::ivf::index::Ivf;
 use crate::posting_list::combined_file::FixedIndexFile;
@@ -13,7 +14,7 @@ impl IvfReader {
         Self { base_directory }
     }
 
-    pub fn read(&self) -> Result<Ivf> {
+    pub fn read(&self) -> Result<Ivf<NoQuantizer>> {
         let index_storage = FixedIndexFile::new(format!("{}/index", self.base_directory))?;
 
         let vector_storage_path = format!("{}/vectors", self.base_directory);
@@ -23,7 +24,13 @@ impl IvfReader {
         )?;
 
         let num_clusters = index_storage.header().num_clusters as usize;
-        Ok(Ivf::new(vector_storage, index_storage, num_clusters))
+        let quantizer = NoQuantizer::new(index_storage.header().num_features as usize);
+        Ok(Ivf::new(
+            vector_storage,
+            index_storage,
+            num_clusters,
+            quantizer,
+        ))
     }
 }
 
