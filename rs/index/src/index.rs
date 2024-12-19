@@ -1,7 +1,7 @@
 use crate::utils::{IdWithScore, SearchContext};
 
 /// Main trait for index
-pub trait Index {
+pub trait Searchable {
     /// Search for the nearest neighbors of a query vector
     fn search(
         &self,
@@ -12,4 +12,4 @@ pub trait Index {
     ) -> Option<Vec<IdWithScore>>;
 }
 
-pub type BoxedIndex = Box<dyn Index + Send + Sync>;
+pub type BoxedSearchable = Box<dyn Searchable + Send + Sync>;
