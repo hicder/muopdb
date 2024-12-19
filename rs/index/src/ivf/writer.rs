@@ -249,7 +249,7 @@ mod tests {
     use std::path::Path;
 
     use byteorder::{LittleEndian, ReadBytesExt};
-    use quantization::no_op::NoQuantizer;
+    use quantization::noq::noq::NoQuantizer;
     use quantization::pq::pq::ProductQuantizer;
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;

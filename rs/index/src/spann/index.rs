@@ -1,4 +1,4 @@
-use quantization::no_op::NoQuantizer;
+use quantization::noq::noq::NoQuantizer;
 
 use crate::hnsw::index::Hnsw;
 use crate::index::Index;

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use quantization::no_op::NoQuantizer;
+use quantization::noq::noq::NoQuantizer;
 
 use crate::ivf::index::Ivf;
 use crate::posting_list::combined_file::FixedIndexFile;
@@ -38,7 +38,7 @@ impl IvfReader {
 mod tests {
     use std::fs;
 
-    use quantization::no_op::NoQuantizer;
+    use quantization::noq::noq::NoQuantizer;
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
 

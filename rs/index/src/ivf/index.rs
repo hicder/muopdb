@@ -165,7 +165,7 @@ mod tests {
 
     use anyhow::anyhow;
     use num_traits::ops::bytes::ToBytes;
-    use quantization::no_op::NoQuantizer;
+    use quantization::noq::noq::NoQuantizer;
     use quantization::pq::pq::ProductQuantizer;
     use utils::mem::transmute_slice_to_u8;
 
