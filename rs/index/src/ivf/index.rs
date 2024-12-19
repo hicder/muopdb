@@ -164,12 +164,17 @@ mod tests {
     use std::io::Write;
 
     use anyhow::anyhow;
+    use num_traits::ops::bytes::ToBytes;
     use quantization::no_op::NoQuantizer;
+    use quantization::pq::pq::ProductQuantizer;
     use utils::mem::transmute_slice_to_u8;
 
     use super::*;
 
-    fn create_fixed_file_vector_storage(file_path: &String, dataset: &Vec<Vec<f32>>) -> Result<()> {
+    fn create_fixed_file_vector_storage<T: ToBytes>(
+        file_path: &String,
+        dataset: &Vec<Vec<T>>,
+    ) -> Result<()> {
         let mut file = File::create(file_path.clone())?;
 
         // Write number of vectors (8 bytes)
@@ -179,7 +184,7 @@ mod tests {
         // Write test data
         for vector in dataset.iter() {
             for element in vector.iter() {
-                file.write_all(&element.to_le_bytes())?;
+                file.write_all(element.to_le_bytes().as_ref())?;
             }
         }
         file.flush()?;
@@ -293,7 +298,7 @@ mod tests {
             .expect("Failed to convert temporary directory path to string")
             .to_string();
         let file_path = format!("{}/vectors", base_dir);
-        let dataset = vec![
+        let dataset: Vec<Vec<f32>> = vec![
             vec![1.0, 2.0, 3.0],
             vec![4.0, 5.0, 6.0],
             vec![7.0, 8.0, 9.0],
@@ -376,7 +381,7 @@ mod tests {
             .to_string();
 
         let file_path = format!("{}/vectors", base_dir);
-        let dataset = vec![
+        let dataset: Vec<Vec<f32>> = vec![
             vec![1.0, 2.0, 3.0],
             vec![4.0, 5.0, 6.0],
             vec![7.0, 8.0, 9.0],
@@ -422,6 +427,81 @@ mod tests {
     }
 
     #[test]
+    fn test_ivf_search_with_pq() {
+        let temp_dir = tempdir::TempDir::new("ivf_search_with_pq_test")
+            .expect("Failed to create temporary directory");
+        let base_dir = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let file_path = format!("{}/vectors", base_dir);
+        let dataset = vec![
+            vec![1.0, 2.0, 3.0],
+            vec![4.0, 5.0, 6.0],
+            vec![7.0, 8.0, 9.0],
+            vec![2.0, 3.0, 4.0],
+        ];
+        let num_features = 3;
+        let subvector_dimension = 1;
+
+        let codebook = vec![1.5, 5.5, 2.5, 6.5, 3.5, 7.5];
+        let quantizer = ProductQuantizer::new(
+            num_features,
+            1,
+            subvector_dimension,
+            codebook,
+            base_dir.clone(),
+        )
+        .expect("Can't create product quantizer");
+        let quantized_dataset: Vec<Vec<u8>> = dataset
+            .iter()
+            .map(|x| f32::process_vector(x, &quantizer))
+            .collect();
+
+        assert!(create_fixed_file_vector_storage(&file_path, &quantized_dataset).is_ok());
+        let storage = FixedFileVectorStorage::<u8>::new(
+            file_path,
+            num_features / subvector_dimension as usize,
+        )
+        .expect("FixedFileVectorStorage should be created");
+
+        let file_path = format!("{}/index", base_dir);
+        let doc_id_mapping = vec![100, 101, 102, 103];
+        let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
+        let posting_lists = vec![vec![0, 3], vec![1, 2]];
+        assert!(create_fixed_file_index_storage(
+            &file_path,
+            &doc_id_mapping,
+            &centroids,
+            &posting_lists
+        )
+        .is_ok());
+        let index_storage =
+            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
+
+        let num_clusters = 2;
+        let num_probes = 2;
+
+        let ivf = Ivf::new(storage, index_storage, num_clusters, quantizer);
+
+        let query = vec![2.0, 3.0, 4.0];
+        let k = 2;
+        let mut context = SearchContext::new(false);
+
+        let results = ivf
+            .search(&query, k, num_probes, &mut context)
+            .expect("IVF search should return a result");
+
+        assert_eq!(results.len(), 2);
+        // This demonstrates the accuracy loss due to quantization
+        assert!(results[0].score == results[1].score);
+        assert_eq!(results[0].id + results[1].id, 203);
+        assert_eq!(results[0].id.abs_diff(results[1].id), 3);
+    }
+
+    #[test]
     fn test_ivf_search_with_empty_result() {
         let temp_dir = tempdir::TempDir::new("ivf_search_error_test")
             .expect("Failed to create temporary directory");
@@ -432,7 +512,7 @@ mod tests {
             .to_string();
 
         let file_path = format!("{}/vectors", base_dir);
-        let dataset = vec![vec![100.0, 200.0, 300.0]];
+        let dataset: Vec<Vec<f32>> = vec![vec![100.0, 200.0, 300.0]];
         assert!(create_fixed_file_vector_storage(&file_path, &dataset).is_ok());
         let num_features = 3;
         let storage = FixedFileVectorStorage::<f32>::new(file_path, num_features)
