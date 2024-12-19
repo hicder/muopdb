@@ -17,6 +17,7 @@ pub enum Version {
 pub struct Header {
     pub version: Version,
     pub num_features: u32,
+    pub quantized_dimension: u32,
     pub num_clusters: u32,
     pub num_vectors: u64,
     pub doc_id_mapping_len: u64,
@@ -70,6 +71,8 @@ impl FixedIndexFile {
         let mut offset = 1;
         let num_features = LittleEndian::read_u32(&buffer[offset..]);
         offset += 4;
+        let quantized_dimension = LittleEndian::read_u32(&buffer[offset..]);
+        offset += 4;
         let num_clusters = LittleEndian::read_u32(&buffer[offset..]);
         offset += 4;
         let num_vectors = LittleEndian::read_u64(&buffer[offset..]);
@@ -84,6 +87,7 @@ impl FixedIndexFile {
         let header = Header {
             version,
             num_features,
+            quantized_dimension,
             num_clusters,
             num_vectors,
             doc_id_mapping_len,
@@ -182,6 +186,7 @@ mod tests {
         let mut header = vec![
             0u8, // Version::V0
             4, 0, 0, 0, // num_features (little-endian)
+            4, 0, 0, 0, // quantized_dimension (little-endian)
             2, 0, 0, 0, // num_clusters (little-endian)
             4, 0, 0, 0, 0, 0, 0, 0, // num_vectors (little-endian)
             40, 0, 0, 0, 0, 0, 0, 0, // doc_id_mapping_len (little-endian)
@@ -227,6 +232,7 @@ mod tests {
 
         assert_eq!(combined_file.header.version, Version::V0);
         assert_eq!(combined_file.header.num_features, 4);
+        assert_eq!(combined_file.header.quantized_dimension, 4);
         assert_eq!(combined_file.header.num_clusters, 2);
         assert_eq!(combined_file.header.num_vectors, 4);
         assert_eq!(combined_file.header.doc_id_mapping_len, 40);
