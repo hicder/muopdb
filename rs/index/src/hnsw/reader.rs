@@ -99,7 +99,7 @@ impl HnswReader {
 mod tests {
     use std::fs;
 
-    use quantization::no_op::{NoQuantizer, NoQuantizerWriter};
+    use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
     use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuantizerWriter};
     use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
     use utils::test_utils::generate_random_vector;

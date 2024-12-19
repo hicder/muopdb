@@ -1,5 +1,5 @@
 use anyhow::Result;
-use quantization::no_op::NoQuantizer;
+use quantization::noq::noq::NoQuantizer;
 
 use super::index::Spann;
 use crate::hnsw::reader::HnswReader;

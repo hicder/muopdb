@@ -50,7 +50,7 @@ impl Quantizer for NoQuantizer {
 
 #[derive(Serialize, Deserialize)]
 pub struct NoQuantizerConfig {
-    dimension: usize,
+    pub dimension: usize,
 }
 
 pub struct NoQuantizerReader {

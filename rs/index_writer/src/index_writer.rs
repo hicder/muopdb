@@ -4,9 +4,11 @@ use index::hnsw::writer::HnswWriter;
 use index::ivf::builder::{IvfBuilder, IvfBuilderConfig};
 use index::ivf::writer::IvfWriter;
 use log::{debug, info};
-use quantization::no_op::{NoQuantizer, NoQuantizerWriter};
+use quantization::noq::noq::{NoQuantizer, NoQuantizerConfig, NoQuantizerWriter};
+use quantization::noq::noq_builder::NoQuantizerBuilder;
 use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuantizerWriter};
 use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
+use quantization::quantization::Quantizer;
 use rand::seq::SliceRandom;
 
 use crate::config::{
@@ -31,59 +33,27 @@ impl IndexWriter {
         ret
     }
 
-    fn do_build_hnsw_index(
+    fn write_quantizer_and_build_hnsw_index<T: Quantizer, F: Fn(&String, &T) -> Result<()>>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &HnswConfigWithBase,
+        quantizer: T,
+        writer_fn: F,
     ) -> Result<()> {
-        info!("Start indexing (HNSW)");
-        let path = &index_builder_config.base_config.output_path;
-        let pg_temp_dir = format!("{}/pq_tmp", path);
-        std::fs::create_dir_all(&pg_temp_dir)?;
-
-        // First, train the product quantizer
-        let mut pq_builder = match index_builder_config.quantizer_config.quantizer_type {
-            QuantizerType::ProductQuantizer => {
-                let pq_config = ProductQuantizerConfig {
-                    dimension: index_builder_config.base_config.dimension,
-                    subvector_dimension: index_builder_config.quantizer_config.subvector_dimension,
-                    num_bits: index_builder_config.quantizer_config.num_bits,
-                };
-                let pq_builder_config = ProductQuantizerBuilderConfig {
-                    max_iteration: index_builder_config.quantizer_config.max_iteration,
-                    batch_size: index_builder_config.quantizer_config.batch_size,
-                };
-                ProductQuantizerBuilder::new(pq_config, pq_builder_config)
-            }
-            QuantizerType::NoQuantizer => {
-                todo!("Implement no quantizer")
-            }
-        };
-
-        info!("Start training product quantizer");
-        let sorted_random_rows = Self::get_sorted_random_rows(
-            input.num_rows(),
-            index_builder_config.quantizer_config.num_training_rows,
-        );
-        for row_idx in sorted_random_rows {
-            input.skip_to(row_idx as usize);
-            pq_builder.add(input.next().data.to_vec());
-        }
-
-        let pq = pq_builder.build(pg_temp_dir.clone())?;
-
         info!("Start writing product quantizer");
-        let pq_directory = format!("{}/quantizer", path);
-        std::fs::create_dir_all(&pq_directory)?;
+        let path = &index_builder_config.base_config.output_path;
 
-        let pq_writer = ProductQuantizerWriter::new(pq_directory);
-        pq_writer.write(&pq)?;
+        let quantizer_directory = format!("{}/quantizer", path);
+        std::fs::create_dir_all(&quantizer_directory)?;
+
+        // Use the provided writer function to write the quantizer
+        writer_fn(&quantizer_directory, &quantizer)?;
 
         info!("Start building index");
         let vector_directory = format!("{}/vectors", path);
         std::fs::create_dir_all(&vector_directory)?;
 
-        let mut hnsw_builder = HnswBuilder::<ProductQuantizer>::new(
+        let mut hnsw_builder = HnswBuilder::<T>::new(
             index_builder_config.hnsw_config.max_num_neighbors,
             index_builder_config.hnsw_config.num_layers,
             index_builder_config.hnsw_config.ef_construction,
@@ -91,7 +61,7 @@ impl IndexWriter {
             index_builder_config.base_config.file_size,
             index_builder_config.base_config.dimension
                 / index_builder_config.quantizer_config.subvector_dimension,
-            pq,
+            quantizer,
             vector_directory.clone(),
         );
 
@@ -112,52 +82,109 @@ impl IndexWriter {
         hnsw_writer.write(&mut hnsw_builder, index_builder_config.base_config.reindex)?;
 
         // Cleanup tmp directory. It's ok to fail
-        std::fs::remove_dir_all(&pg_temp_dir).unwrap_or_default();
         std::fs::remove_dir_all(&vector_directory).unwrap_or_default();
+
         Ok(())
     }
 
-    fn do_build_ivf_index(
+    fn build_hnsw_pq(
         &mut self,
         input: &mut impl Input,
-        index_builder_config: &IvfConfigWithBase,
+        index_builder_config: &HnswConfigWithBase,
     ) -> Result<()> {
-        info!("Start indexing (IVF)");
-        let path = &index_builder_config.base_config.output_path;
-
-        let pg_temp_dir = format!("{}/pq_tmp", path);
-        std::fs::create_dir_all(&pg_temp_dir)?;
-
-        // First, train the product quantizer
-        let mut pq_builder = match index_builder_config.quantizer_config.quantizer_type {
-            QuantizerType::ProductQuantizer => {
-                let pq_config = ProductQuantizerConfig {
-                    dimension: index_builder_config.base_config.dimension,
-                    subvector_dimension: index_builder_config.quantizer_config.subvector_dimension,
-                    num_bits: index_builder_config.quantizer_config.num_bits,
-                };
-                let pq_builder_config = ProductQuantizerBuilderConfig {
-                    max_iteration: index_builder_config.quantizer_config.max_iteration,
-                    batch_size: index_builder_config.quantizer_config.batch_size,
-                };
-                ProductQuantizerBuilder::new(pq_config, pq_builder_config)
-            }
-            QuantizerType::NoQuantizer => {
-                todo!("Implement no quantizer")
-            }
+        // Create and train product quantizer
+        let pq_config = ProductQuantizerConfig {
+            dimension: index_builder_config.base_config.dimension,
+            subvector_dimension: index_builder_config.quantizer_config.subvector_dimension,
+            num_bits: index_builder_config.quantizer_config.num_bits,
         };
+
+        let pq_builder_config = ProductQuantizerBuilderConfig {
+            max_iteration: index_builder_config.quantizer_config.max_iteration,
+            batch_size: index_builder_config.quantizer_config.batch_size,
+        };
+
+        let mut pq_builder = ProductQuantizerBuilder::new(pq_config, pq_builder_config);
 
         info!("Start training product quantizer");
         let sorted_random_rows = Self::get_sorted_random_rows(
             input.num_rows(),
             index_builder_config.quantizer_config.num_training_rows,
         );
+
         for row_idx in sorted_random_rows {
             input.skip_to(row_idx as usize);
             pq_builder.add(input.next().data.to_vec());
         }
 
-        let quantizer = pq_builder.build(pg_temp_dir.clone())?;
+        let pq = pq_builder.build(format!(
+            "{}/pq_tmp",
+            index_builder_config.base_config.output_path
+        ))?;
+
+        // Define the writer function for ProductQuantizer
+        let pq_writer_fn = |directory: &String, pq: &ProductQuantizer| {
+            let pq_writer = ProductQuantizerWriter::new(directory.clone());
+            pq_writer.write(pq)
+        };
+
+        self.write_quantizer_and_build_hnsw_index(input, index_builder_config, pq, pq_writer_fn)
+    }
+
+    fn build_hnsw_noq(
+        &mut self,
+        input: &mut impl Input,
+        index_builder_config: &HnswConfigWithBase,
+    ) -> Result<()> {
+        // Create NoQuantizer
+        let noq_config = NoQuantizerConfig {
+            dimension: index_builder_config.base_config.dimension,
+        };
+
+        let mut noq_builder = NoQuantizerBuilder::new(noq_config);
+
+        let noq = noq_builder.build()?;
+
+        // Define the writer function for NoQuantizer
+        let noq_writer_fn = |directory: &String, noq: &NoQuantizer| {
+            let noq_writer = NoQuantizerWriter::new(directory.clone());
+            noq_writer.write(noq)
+        };
+
+        self.write_quantizer_and_build_hnsw_index(input, index_builder_config, noq, noq_writer_fn)
+    }
+
+    fn do_build_hnsw_index(
+        &mut self,
+        input: &mut impl Input,
+        index_builder_config: &HnswConfigWithBase,
+    ) -> Result<()> {
+        match index_builder_config.quantizer_config.quantizer_type {
+            QuantizerType::ProductQuantizer => {
+                self.build_hnsw_pq(input, index_builder_config)?;
+            }
+            QuantizerType::NoQuantizer => {
+                self.build_hnsw_noq(input, index_builder_config)?;
+            }
+        };
+        Ok(())
+    }
+
+    fn write_quantizer_and_build_ivf_index<T: Quantizer, F: Fn(&String, &T) -> Result<()>>(
+        &mut self,
+        input: &mut impl Input,
+        index_builder_config: &IvfConfigWithBase,
+        quantizer: T,
+        writer_fn: F,
+    ) -> Result<()> {
+        info!("Start writing product quantizer");
+        let path = &index_builder_config.base_config.output_path;
+
+        let quantizer_directory = format!("{}/quantizer", path);
+        std::fs::create_dir_all(&quantizer_directory)?;
+
+        // Use the provided writer function to write the quantizer
+        writer_fn(&quantizer_directory, &quantizer)?;
 
         let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: index_builder_config.ivf_config.max_iteration,
@@ -195,6 +222,91 @@ impl IndexWriter {
 
         // Cleanup tmp directory. It's ok to fail
         ivf_builder.cleanup()?;
+
+        Ok(())
+    }
+
+    fn build_ivf_pq(
+        &mut self,
+        input: &mut impl Input,
+        index_builder_config: &IvfConfigWithBase,
+    ) -> Result<()> {
+        // Create and train product quantizer
+        let pq_config = ProductQuantizerConfig {
+            dimension: index_builder_config.base_config.dimension,
+            subvector_dimension: index_builder_config.quantizer_config.subvector_dimension,
+            num_bits: index_builder_config.quantizer_config.num_bits,
+        };
+
+        let pq_builder_config = ProductQuantizerBuilderConfig {
+            max_iteration: index_builder_config.quantizer_config.max_iteration,
+            batch_size: index_builder_config.quantizer_config.batch_size,
+        };
+
+        let mut pq_builder = ProductQuantizerBuilder::new(pq_config, pq_builder_config);
+
+        info!("Start training product quantizer");
+        let sorted_random_rows = Self::get_sorted_random_rows(
+            input.num_rows(),
+            index_builder_config.quantizer_config.num_training_rows,
+        );
+
+        for row_idx in sorted_random_rows {
+            input.skip_to(row_idx as usize);
+            pq_builder.add(input.next().data.to_vec());
+        }
+
+        let pq = pq_builder.build(format!(
+            "{}/pq_tmp",
+            index_builder_config.base_config.output_path
+        ))?;
+
+        // Define the writer function for ProductQuantizer
+        let pq_writer_fn = |directory: &String, pq: &ProductQuantizer| {
+            let pq_writer = ProductQuantizerWriter::new(directory.clone());
+            pq_writer.write(pq)
+        };
+
+        self.write_quantizer_and_build_ivf_index(input, index_builder_config, pq, pq_writer_fn)
+    }
+
+    fn build_ivf_noq(
+        &mut self,
+        input: &mut impl Input,
+        index_builder_config: &IvfConfigWithBase,
+    ) -> Result<()> {
+        // Create NoQuantizer
+        let noq_config = NoQuantizerConfig {
+            dimension: index_builder_config.base_config.dimension,
+        };
+
+        let mut noq_builder = NoQuantizerBuilder::new(noq_config);
+
+        let noq = noq_builder.build()?;
+
+        // Define the writer function for NoQuantizer
+        let noq_writer_fn = |directory: &String, noq: &NoQuantizer| {
+            let noq_writer = NoQuantizerWriter::new(directory.clone());
+            noq_writer.write(noq)
+        };
+
+        self.write_quantizer_and_build_ivf_index(input, index_builder_config, noq, noq_writer_fn)
+    }
+
+    fn do_build_ivf_index(
+        &mut self,
+        input: &mut impl Input,
+        index_builder_config: &IvfConfigWithBase,
+    ) -> Result<()> {
+        match index_builder_config.quantizer_config.quantizer_type {
+            QuantizerType::ProductQuantizer => {
+                self.build_ivf_pq(input, index_builder_config)?;
+            }
+            QuantizerType::NoQuantizer => {
+                self.build_ivf_noq(input, index_builder_config)?;
+            }
+        };
+
         Ok(())
     }
 
