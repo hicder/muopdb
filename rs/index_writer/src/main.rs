@@ -70,7 +70,7 @@ fn main() {
     // Open input
     let mut input = Hdf5Reader::new(1000, &arg.dataset_name, &arg.input_path)
         .expect("Failed to create Hdf5Reader");
-    let mut index_writer = IndexWriter::new(config);
+    let mut index_writer = IndexWriter::new(config).expect("Failed to create index writer");
 
     // Process
     index_writer

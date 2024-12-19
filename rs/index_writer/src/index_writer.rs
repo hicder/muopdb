@@ -18,11 +18,25 @@ use crate::input::Input;
 
 pub struct IndexWriter {
     config: IndexWriterConfig,
+    output_root: String,
 }
 
 impl IndexWriter {
-    pub fn new(config: IndexWriterConfig) -> Self {
-        Self { config }
+    pub fn new(config: IndexWriterConfig) -> Result<Self> {
+        let base_config = match config.clone() {
+            IndexWriterConfig::Hnsw(hnsw_config) => hnsw_config.base_config,
+            IndexWriterConfig::Ivf(ivf_config) => ivf_config.base_config,
+            IndexWriterConfig::Spann(hnsw_ivf_config) => hnsw_ivf_config.base_config,
+        };
+
+        let index_type_str = format!("{:?}", base_config.index_type).to_lowercase();
+        let output_root = format!("{}/{}", base_config.output_path, index_type_str);
+        std::fs::create_dir_all(&output_root)?;
+
+        Ok(Self {
+            config,
+            output_root,
+        })
     }
 
     fn get_sorted_random_rows(num_rows: usize, num_random_rows: usize) -> Vec<u64> {
@@ -41,7 +55,7 @@ impl IndexWriter {
         writer_fn: F,
     ) -> Result<()> {
         info!("Start writing product quantizer");
-        let path = &index_builder_config.base_config.output_path;
+        let path = &self.output_root;
 
         let quantizer_directory = format!("{}/quantizer", path);
         std::fs::create_dir_all(&quantizer_directory)?;
@@ -74,11 +88,10 @@ impl IndexWriter {
             }
         }
 
-        let hnsw_directory = format!("{}/hnsw", path);
-        std::fs::create_dir_all(&hnsw_directory)?;
+        std::fs::create_dir_all(&path)?;
 
         info!("Start writing index");
-        let hnsw_writer = HnswWriter::new(hnsw_directory);
+        let hnsw_writer = HnswWriter::new(path.to_string());
         hnsw_writer.write(&mut hnsw_builder, index_builder_config.base_config.reindex)?;
 
         // Cleanup tmp directory. It's ok to fail
@@ -117,10 +130,7 @@ impl IndexWriter {
             pq_builder.add(input.next().data.to_vec());
         }
 
-        let pq = pq_builder.build(format!(
-            "{}/pq_tmp",
-            index_builder_config.base_config.output_path
-        ))?;
+        let pq = pq_builder.build(format!("{}/pq_tmp", &self.output_root))?;
 
         // Define the writer function for ProductQuantizer
         let pq_writer_fn = |directory: &String, pq: &ProductQuantizer| {
@@ -178,7 +188,7 @@ impl IndexWriter {
         writer_fn: F,
     ) -> Result<()> {
         info!("Start writing product quantizer");
-        let path = &index_builder_config.base_config.output_path;
+        let path = &self.output_root;
 
         let quantizer_directory = format!("{}/quantizer", path);
         std::fs::create_dir_all(&quantizer_directory)?;
@@ -213,11 +223,11 @@ impl IndexWriter {
         info!("Start building index");
         ivf_builder.build()?;
 
-        let ivf_directory = format!("{}/ivf", path);
-        std::fs::create_dir_all(&ivf_directory)?;
+        std::fs::create_dir_all(&path)?;
 
         info!("Start writing index");
-        let ivf_writer = IvfWriter::new(ivf_directory, quantizer);
+        //let quantizer = NoQuantizer::new(index_builder_config.base_config.dimension);
+        let ivf_writer = IvfWriter::new(path.to_string(), quantizer);
         ivf_writer.write(&mut ivf_builder, index_builder_config.base_config.reindex)?;
 
         // Cleanup tmp directory. It's ok to fail
@@ -256,10 +266,7 @@ impl IndexWriter {
             pq_builder.add(input.next().data.to_vec());
         }
 
-        let pq = pq_builder.build(format!(
-            "{}/pq_tmp",
-            index_builder_config.base_config.output_path
-        ))?;
+        let pq = pq_builder.build(format!("{}/pq_tmp", &self.output_root))?;
 
         // Define the writer function for ProductQuantizer
         let pq_writer_fn = |directory: &String, pq: &ProductQuantizer| {
@@ -298,6 +305,14 @@ impl IndexWriter {
         input: &mut impl Input,
         index_builder_config: &IvfConfigWithBase,
     ) -> Result<()> {
+        // Directory structure:
+        // ivf_config.base_config.output_path
+        // └── ivf
+        //     ├── index
+        //     ├── quantizer
+        //     │   ├── codebook
+        //     │   └── product_quantizer_config.yaml
+        //     └── vectors
         match index_builder_config.quantizer_config.quantizer_type {
             QuantizerType::ProductQuantizer => {
                 self.build_ivf_pq(input, index_builder_config)?;
@@ -327,9 +342,10 @@ impl IndexWriter {
         // └── centroid_quantizer
         //     └── no_quantizer_config.yaml
 
+        let path = &self.output_root;
         // TODO(hicder): Support quantization for IVF
         let ivf_config = &index_writer_config.ivf_config;
-        let ivf_directory = format!("{}/ivf", index_writer_config.base_config.output_path);
+        let ivf_directory = format!("{}/ivf", path);
         std::fs::create_dir_all(&ivf_directory)?;
 
         let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
@@ -365,7 +381,6 @@ impl IndexWriter {
         let num_centroids = centroid_storage.len();
 
         let hnsw_config = &index_writer_config.hnsw_config;
-        let path = &index_writer_config.base_config.output_path;
         let quantizer = NoQuantizer::new(index_writer_config.base_config.dimension);
 
         let centroid_directory = format!("{}/centroids", path);
@@ -432,11 +447,8 @@ impl IndexWriter {
         };
 
         // Finally, write the index writer config
-        let index_type_str = format!("{:?}", base_config.index_type).to_lowercase();
-        let index_writer_config_path = format!("{}/{}", base_config.output_path, index_type_str);
-        std::fs::create_dir_all(&index_writer_config_path)?;
         std::fs::write(
-            format!("{}/base_config.yaml", index_writer_config_path),
+            format!("{}/base_config.yaml", self.output_root),
             serde_yaml::to_string(&base_config)?,
         )?;
 
@@ -454,7 +466,6 @@ mod tests {
     use super::*;
     use crate::config::{BaseConfig, HnswConfig, IndexType, IvfConfig, QuantizerConfig};
     use crate::input::Row;
-
     // Mock Input implementation for testing
     struct MockInput {
         data: Vec<Vec<f32>>,
@@ -558,16 +569,16 @@ mod tests {
             hnsw_config,
         });
 
-        let mut index_writer = IndexWriter::new(config);
+        let mut index_writer = IndexWriter::new(config).expect("Failed to create index writer");
 
         // Process the input
         index_writer.process(&mut mock_input).unwrap();
 
         // Check if output directories and files exist
-        let pq_directory_path = format!("{}/quantizer", base_directory);
-        let pq_directory = Path::new(&pq_directory_path);
         let hnsw_directory_path = format!("{}/hnsw", base_directory);
         let hnsw_directory = Path::new(&hnsw_directory_path);
+        let pq_directory_path = format!("{}/quantizer", hnsw_directory_path);
+        let pq_directory = Path::new(&pq_directory_path);
         let hnsw_vector_storage_path =
             format!("{}/vector_storage", hnsw_directory.to_str().unwrap());
         let hnsw_vector_storage = Path::new(&hnsw_vector_storage_path);
@@ -635,7 +646,7 @@ mod tests {
             ivf_config,
         });
 
-        let mut index_writer = IndexWriter::new(config);
+        let mut index_writer = IndexWriter::new(config).expect("Failed to create index writer");
 
         // Process the input
         index_writer.process(&mut mock_input).unwrap();
@@ -714,15 +725,16 @@ mod tests {
             ivf_config,
         });
 
-        let mut index_writer = IndexWriter::new(config);
+        let mut index_writer = IndexWriter::new(config).expect("Failed to create index writer");
 
         // Process the input
         assert!(index_writer.process(&mut mock_input).is_ok());
 
         // Check if output directories and files exist
-        let quantizer_directory_path = format!("{}/centroids/quantizer", base_directory);
+        let spann_directory_path = format!("{}/spann", base_directory);
+        let quantizer_directory_path = format!("{}/centroids/quantizer", spann_directory_path);
         let pq_directory = Path::new(&quantizer_directory_path);
-        let centroids_directory_path = format!("{}/centroids/hnsw", base_directory);
+        let centroids_directory_path = format!("{}/centroids/hnsw", spann_directory_path);
         let centroids_directory = Path::new(&centroids_directory_path);
         let hnsw_vector_storage_path =
             format!("{}/vector_storage", centroids_directory.to_str().unwrap());
