@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
 
 // TODO(hicder): support more quantizers
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub enum QuantizerType {
-    #[default]
     ProductQuantizer,
+    #[default]
     NoQuantizer,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub enum IndexType {
     Hnsw,
     Ivf,
@@ -87,7 +87,7 @@ pub struct SpannConfigWithBase {
     pub ivf_config: IvfConfig,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IndexWriterConfig {
     Hnsw(HnswConfigWithBase),
     Ivf(IvfConfigWithBase),
