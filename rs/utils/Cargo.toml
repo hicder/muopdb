@@ -24,6 +24,10 @@ harness = false
 name = "kmeans"
 harness = false
 
+[[bench]]
+name = "dot_product"
+harness = false
+
 [[bin]]
 name = "run_kmeans"
 path = "src/scripts/run_kmeans.rs"
