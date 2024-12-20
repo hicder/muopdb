@@ -1,5 +1,5 @@
 use anyhow::Result;
-use quantization::noq::noq::NoQuantizer;
+use quantization::quantization::Quantizer;
 
 use crate::ivf::index::Ivf;
 use crate::posting_list::combined_file::FixedIndexFile;
@@ -14,17 +14,21 @@ impl IvfReader {
         Self { base_directory }
     }
 
-    pub fn read(&self) -> Result<Ivf<NoQuantizer>> {
+    pub fn read<Q: Quantizer>(&self) -> Result<Ivf<Q>> {
         let index_storage = FixedIndexFile::new(format!("{}/index", self.base_directory))?;
 
         let vector_storage_path = format!("{}/vectors", self.base_directory);
-        let vector_storage = FixedFileVectorStorage::<f32>::new(
+        let vector_storage = FixedFileVectorStorage::<Q::QuantizedT>::new(
             vector_storage_path,
-            index_storage.header().num_features as usize,
+            index_storage.header().quantized_dimension as usize,
         )?;
 
         let num_clusters = index_storage.header().num_clusters as usize;
-        let quantizer = NoQuantizer::new(index_storage.header().num_features as usize);
+
+        // Read quantizer
+        let quantizer_directory = format!("{}/quantizer", self.base_directory);
+        let quantizer = Q::read(quantizer_directory).unwrap();
+
         Ok(Ivf::new(
             vector_storage,
             index_storage,
@@ -38,7 +42,7 @@ impl IvfReader {
 mod tests {
     use std::fs;
 
-    use quantization::noq::noq::NoQuantizer;
+    use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
 
@@ -90,8 +94,17 @@ mod tests {
 
         assert!(writer.write(&mut builder, false).is_ok());
 
+        let quantizer = NoQuantizer::new(num_features);
+        let quantizer_directory = format!("{}/quantizer", base_directory);
+        std::fs::create_dir_all(&quantizer_directory)
+            .expect("Failed to create quantizer directory");
+        let noq_writer = NoQuantizerWriter::new(quantizer_directory);
+        assert!(noq_writer.write(&quantizer).is_ok());
+
         let reader = IvfReader::new(base_directory.clone());
-        let index = reader.read().expect("Failed to read index file");
+        let index = reader
+            .read::<NoQuantizer>()
+            .expect("Failed to read index file");
 
         // Check if files were created
         assert!(fs::metadata(format!("{}/vectors", base_directory)).is_ok());
@@ -185,6 +198,12 @@ mod tests {
         let num_features = 4;
         let file_size = 4096;
         let quantizer = NoQuantizer::new(num_features);
+        let quantizer_directory = format!("{}/quantizer", base_directory);
+        std::fs::create_dir_all(&quantizer_directory)
+            .expect("Failed to create quantizer directory");
+        let noq_writer = NoQuantizerWriter::new(quantizer_directory);
+        assert!(noq_writer.write(&quantizer).is_ok());
+
         let writer = IvfWriter::new(base_directory.clone(), quantizer);
 
         let mut builder = IvfBuilder::new(IvfBuilderConfig {
@@ -213,7 +232,9 @@ mod tests {
         assert!(writer.write(&mut builder, false).is_ok());
 
         let reader = IvfReader::new(base_directory.clone());
-        let index = reader.read().expect("Failed to read index file");
+        let index = reader
+            .read::<NoQuantizer>()
+            .expect("Failed to read index file");
 
         let num_centroids = index.num_clusters;
 
