@@ -20,8 +20,8 @@ fn main() -> std::io::Result<()> {
     quantizer_config.quantizer_type = QuantizerType::NoQuantizer;
 
     let mut ivf_config = IvfConfig::default();
-    ivf_config.num_clusters = 5;
-    ivf_config.num_data_points = 10000;
+    ivf_config.num_clusters = 10;
+    ivf_config.num_data_points = 100000;
     ivf_config.max_clusters_per_vector = 1;
     ivf_config.max_iteration = 1000;
     ivf_config.batch_size = 4;
