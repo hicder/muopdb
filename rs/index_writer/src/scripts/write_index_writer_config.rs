@@ -9,15 +9,20 @@ use index_writer::config::{
 
 fn main() -> std::io::Result<()> {
     let mut base_config = BaseConfig::default();
-    base_config.reindex = false;
+    base_config.reindex = true;
     base_config.dimension = 128;
     base_config.output_path = "NONE".to_string();
     base_config.max_memory_size = 1024 * 1024 * 1024; // 1 GB
     base_config.file_size = 1024 * 1024 * 1024; // 1 GB
-    base_config.index_type = index_writer::config::IndexType::Spann;
+    base_config.index_type = index_writer::config::IndexType::Ivf;
 
     let mut quantizer_config = QuantizerConfig::default();
-    quantizer_config.quantizer_type = QuantizerType::NoQuantizer;
+    quantizer_config.quantizer_type = QuantizerType::ProductQuantizer;
+    quantizer_config.subvector_dimension = 8;
+    quantizer_config.num_bits = 8;
+    quantizer_config.num_training_rows = 10000;
+    quantizer_config.max_iteration = 1000;
+    quantizer_config.batch_size = 4;
 
     let mut ivf_config = IvfConfig::default();
     ivf_config.num_clusters = 5;
@@ -34,6 +39,7 @@ fn main() -> std::io::Result<()> {
 
     let mut config = SpannConfigWithBase::default();
     config.base_config = base_config;
+    config.quantizer_config = quantizer_config;
     config.ivf_config = ivf_config;
     config.hnsw_config = hnsw_config;
 

@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub enum QuantizerType {
     #[default]
-    ProductQuantizer,
     NoQuantizer,
+    ProductQuantizer,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -96,6 +96,64 @@ pub enum IndexWriterConfig {
 
 impl Default for IndexWriterConfig {
     fn default() -> Self {
-        IndexWriterConfig::Hnsw(HnswConfigWithBase::default())
+        IndexWriterConfig::Spann(SpannConfigWithBase::default())
+    }
+}
+
+pub fn default_base_config_for_bm(
+    reindex: bool,
+    quantize: bool,
+    index_type: IndexType,
+) -> BaseConfig {
+    let output_path = format!(
+        "/tmp/{:?}{}{}",
+        index_type,
+        if reindex { "_reindex" } else { "_no_reindex" },
+        if quantize { "_pq" } else { "_no_pq" },
+    )
+    .to_lowercase();
+    BaseConfig {
+        reindex,
+        dimension: 128,
+        output_path,
+        max_memory_size: 1024 * 1024 * 1024, // 1 GB
+        file_size: 1024 * 1024 * 1024,       // 1 GB
+        index_type,
+    }
+}
+
+pub fn default_quantizer_config_for_bm(quantize: bool) -> QuantizerConfig {
+    if quantize {
+        QuantizerConfig {
+            quantizer_type: QuantizerType::ProductQuantizer,
+            subvector_dimension: 8,
+            num_bits: 8,
+            num_training_rows: 10000,
+            max_iteration: 1000,
+            batch_size: 4,
+        }
+    } else {
+        QuantizerConfig::default()
+    }
+}
+
+pub fn default_ivf_config_for_bm() -> IvfConfig {
+    IvfConfig {
+        num_clusters: 10,
+        num_data_points: 100000,
+        max_clusters_per_vector: 1,
+        distance_threshold: 0.1,
+        max_iteration: 1000,
+        batch_size: 4,
+        tolerance: 0.0,
+        max_posting_list_size: 1000,
+    }
+}
+
+pub fn default_hnsw_config_for_bm() -> HnswConfig {
+    HnswConfig {
+        num_layers: 4,
+        max_num_neighbors: 32,
+        ef_construction: 200,
     }
 }
