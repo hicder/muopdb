@@ -431,25 +431,33 @@ impl IndexWriter {
     // TODO(hicder): Support multiple inputs
     pub fn process(&mut self, input: &mut impl Input) -> Result<()> {
         let cfg = self.config.clone();
-        let base_config = match cfg {
+        let (base_config, quantizer_config) = match cfg {
             IndexWriterConfig::Hnsw(hnsw_config) => {
                 self.do_build_hnsw_index(input, &hnsw_config)?;
-                hnsw_config.base_config
+                (hnsw_config.base_config, hnsw_config.quantizer_config)
             }
             IndexWriterConfig::Ivf(ivf_config) => {
                 self.do_build_ivf_index(input, &ivf_config)?;
-                ivf_config.base_config
+                (ivf_config.base_config, ivf_config.quantizer_config)
             }
             IndexWriterConfig::Spann(hnsw_ivf_config) => {
                 self.do_build_ivf_hnsw_index(input, &hnsw_ivf_config)?;
-                hnsw_ivf_config.base_config
+                (
+                    hnsw_ivf_config.base_config,
+                    hnsw_ivf_config.quantizer_config,
+                )
             }
         };
 
-        // Finally, write the index writer config
+        // Finally, write the base config and the quantizer config
         std::fs::write(
             format!("{}/base_config.yaml", self.output_root),
             serde_yaml::to_string(&base_config)?,
+        )?;
+
+        std::fs::write(
+            format!("{}/quantizer_config.yaml", self.output_root),
+            serde_yaml::to_string(&quantizer_config)?,
         )?;
 
         Ok(())
