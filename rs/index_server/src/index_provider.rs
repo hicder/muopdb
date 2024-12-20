@@ -3,6 +3,7 @@ use index::index::BoxedIndex;
 use index::ivf::reader::IvfReader;
 use index::spann::reader::SpannReader;
 use index_writer::config::BaseConfig;
+use quantization::noq::noq::NoQuantizer;
 use quantization::pq::pq::ProductQuantizer;
 
 pub struct IndexProvider {
@@ -35,7 +36,7 @@ impl IndexProvider {
             }
             index_writer::config::IndexType::Ivf => {
                 let reader = IvfReader::new(index_path);
-                match reader.read() {
+                match reader.read::<NoQuantizer>() {
                     Ok(index) => Some(Box::new(index)),
                     Err(e) => {
                         println!("Failed to read index: {}", e);
