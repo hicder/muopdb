@@ -7,7 +7,7 @@ use utils::distance::l2::L2DistanceCalculator;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 use utils::DistanceCalculator;
 
-use crate::index::Index;
+use crate::index::Searchable;
 use crate::posting_list::combined_file::FixedIndexFile;
 use crate::utils::{IdWithScore, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
@@ -133,7 +133,7 @@ impl<Q: Quantizer> Ivf<Q> {
     }
 }
 
-impl<Q: Quantizer> Index for Ivf<Q> {
+impl<Q: Quantizer> Searchable for Ivf<Q> {
     fn search(
         &self,
         query: &[f32],

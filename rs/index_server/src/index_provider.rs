@@ -1,5 +1,5 @@
 use index::hnsw::reader::HnswReader;
-use index::index::BoxedIndex;
+use index::index::BoxedSearchable;
 use index::ivf::reader::IvfReader;
 use index::spann::reader::SpannReader;
 use index_writer::config::{BaseConfig, QuantizerConfig, QuantizerType};
@@ -15,7 +15,7 @@ impl IndexProvider {
         Self { data_directory }
     }
 
-    pub fn read_index(&self, name: &str) -> Option<BoxedIndex> {
+    pub fn read_index(&self, name: &str) -> Option<BoxedSearchable> {
         let index_path = format!("{}/{}", self.data_directory, name);
         let base_config_path = format!("{}/base_config.yaml", index_path);
         let quantizer_config_path = format!("{}/quantizer_config.yaml", index_path);

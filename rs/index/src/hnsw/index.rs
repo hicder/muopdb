@@ -10,7 +10,7 @@ use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 
 use super::utils::GraphTraversal;
 use crate::hnsw::writer::Header;
-use crate::index::Index;
+use crate::index::Searchable;
 use crate::utils::{IdWithScore, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
 
@@ -386,7 +386,7 @@ impl<Q: Quantizer> GraphTraversal<Q> for Hnsw<Q> {
     }
 }
 
-impl<Q: Quantizer> Index for Hnsw<Q> {
+impl<Q: Quantizer> Searchable for Hnsw<Q> {
     fn search(
         &self,
         query: &[f32],

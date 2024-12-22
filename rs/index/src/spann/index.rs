@@ -1,7 +1,7 @@
 use quantization::noq::noq::NoQuantizer;
 
 use crate::hnsw::index::Hnsw;
-use crate::index::Index;
+use crate::index::Searchable;
 use crate::ivf::index::Ivf;
 
 pub struct Spann {
@@ -18,7 +18,7 @@ impl Spann {
     }
 }
 
-impl Index for Spann {
+impl Searchable for Spann {
     fn search(
         &self,
         query: &[f32],

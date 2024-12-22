@@ -97,7 +97,9 @@ impl Input for Hdf5Reader {
 mod tests {
     use std::vec;
 
-    use utils::{distance::l2::L2DistanceCalculator, kmeans_builder::kmeans_builder::{KMeansBuilder, KMeansVariant}, DistanceCalculator};
+    use utils::distance::l2::L2DistanceCalculator;
+    use utils::kmeans_builder::kmeans_builder::{KMeansBuilder, KMeansVariant};
+    use utils::DistanceCalculator;
 
     use super::*;
 
@@ -121,7 +123,8 @@ mod tests {
             "{}/resources/10k_rows_10_clusters.hdf5",
             env!("CARGO_MANIFEST_DIR")
         );
-        let mut reader = Hdf5Reader::new(101, "/train", &path).expect("Failed to create Hdf5Reader");
+        let mut reader =
+            Hdf5Reader::new(101, "/train", &path).expect("Failed to create Hdf5Reader");
         let mut flattened_dataset = vec![];
         while reader.has_next() {
             let row = reader.next();
@@ -141,7 +144,10 @@ mod tests {
             cluster_sizes[*assignment] += 1;
         }
 
-        assert_eq!(cluster_sizes, vec![1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000]);
+        assert_eq!(
+            cluster_sizes,
+            vec![1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000]
+        );
 
         // Check that the distance between the point to its centroid is less than 0.1
         for i in 0..flattened_dataset.len() / 128 {
