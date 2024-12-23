@@ -15,17 +15,37 @@ impl DotProductDistanceCalculator {
 
 impl DistanceCalculator for DotProductDistanceCalculator {
     fn calculate(a: &[f32], b: &[f32]) -> f32 {
-        // test lanes 32 first
         let mut res = 0.0;
-        let mut accumulator= Simd::<f32, 32>::splat(0.0);
-        Self::accumulate_lanes::<32>(a, b, &mut accumulator);
-        res += accumulator.reduce_sum();
+        let mut a_vec = a;
+        let mut b_vec = b;
+        
+        if a_vec.len() > 16 { 
+            let mut accumulator= Simd::<f32, 16>::splat(0.0);
+            Self::accumulate_lanes::<16>(a_vec, b_vec, &mut accumulator);
+            res += accumulator.reduce_sum();
+            a_vec = a_vec.chunks_exact(16).remainder();
+            b_vec = b_vec.chunks_exact(16).remainder();
+        }   
 
-        let a_vec = a.chunks_exact(32).remainder();
-        let b_vec = b.chunks_exact(32).remainder();
+        if a_vec.len() > 8 { 
+            let mut accumulator= Simd::<f32, 8>::splat(0.0);
+            Self::accumulate_lanes::<8>(a_vec, b_vec, &mut accumulator);
+            res += accumulator.reduce_sum();
+            a_vec = a_vec.chunks_exact(8).remainder();
+            b_vec = b_vec.chunks_exact(8).remainder();
+        }
+
+        if a_vec.len() > 4 {
+            let mut accumulator= Simd::<f32, 4>::splat(0.0);
+            Self::accumulate_lanes::<4>(a_vec, b_vec, &mut accumulator);
+            res += accumulator.reduce_sum();
+            a_vec = a_vec.chunks_exact(4).remainder();
+            b_vec = b_vec.chunks_exact(4).remainder();
+        }
+
         for i in 0..a_vec.len() {
             res += a_vec[i] * b_vec[i];
-        } 
+        }
         res
     }
 
