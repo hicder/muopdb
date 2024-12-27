@@ -1,3 +1,6 @@
+pub mod reader;
+pub mod snapshot;
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -5,9 +8,11 @@ use anyhow::Result;
 use dashmap::DashMap;
 use snapshot::Snapshot;
 
-use crate::index::BoxedSearchable;
+use crate::index::Searchable;
+use crate::segment::Segment;
 
-pub mod snapshot;
+pub trait SegmentSearchable: Searchable + Segment {}
+pub type BoxedSegmentSearchable = Box<dyn SegmentSearchable + Send + Sync>;
 
 pub struct TableOfContent {
     pub toc: Vec<String>,
@@ -39,7 +44,7 @@ impl VersionsInfo {
 /// TODO(hicder): Add open segment to add documents.
 pub struct Collection {
     versions: DashMap<u64, TableOfContent>,
-    all_segments: DashMap<String, Arc<BoxedSearchable>>,
+    all_segments: DashMap<String, Arc<BoxedSegmentSearchable>>,
 
     versions_info: Mutex<VersionsInfo>,
 }
@@ -82,7 +87,7 @@ impl Collection {
     }
 
     /// Add segments to the collection, effectively creating a new version.
-    pub fn add_segments(&self, names: Vec<String>, segments: Vec<Arc<BoxedSearchable>>) {
+    pub fn add_segments(&self, names: Vec<String>, segments: Vec<Arc<BoxedSegmentSearchable>>) {
         let mut locked_versions_info = self.versions_info.lock().unwrap();
         let current_version = locked_versions_info.current_version;
         let new_version = current_version + 1;
@@ -144,14 +149,32 @@ mod tests {
 
     use anyhow::{Ok, Result};
 
-    use crate::collection::Collection;
-    use crate::index::{BoxedSearchable, Searchable};
+    use super::SegmentSearchable;
+    use crate::collection::{BoxedSegmentSearchable, Collection};
+    use crate::index::Searchable;
+    use crate::segment::Segment;
 
     struct MockSearchable {}
 
     impl MockSearchable {
         pub fn new() -> Self {
             Self {}
+        }
+    }
+
+    impl SegmentSearchable for MockSearchable {}
+
+    impl Segment for MockSearchable {
+        fn insert(&mut self, _doc_id: u64, _data: &[f32]) -> Result<()> {
+            todo!()
+        }
+
+        fn remove(&mut self, _doc_id: u64) -> Result<bool> {
+            todo!()
+        }
+
+        fn may_contains(&self, _doc_id: u64) -> bool {
+            todo!()
         }
     }
 
@@ -163,8 +186,7 @@ mod tests {
             _ef_construction: u32,
             _context: &mut crate::utils::SearchContext,
         ) -> Option<Vec<crate::utils::IdWithScore>> {
-            // Don't do anything. Just for testing purpose.
-            None
+            todo!()
         }
     }
 
@@ -174,8 +196,8 @@ mod tests {
         let collection = Arc::new(Collection::new());
 
         {
-            let segment1: Arc<BoxedSearchable> = Arc::new(Box::new(MockSearchable::new()));
-            let segment2: Arc<BoxedSearchable> = Arc::new(Box::new(MockSearchable::new()));
+            let segment1: Arc<BoxedSegmentSearchable> = Arc::new(Box::new(MockSearchable::new()));
+            let segment2: Arc<BoxedSegmentSearchable> = Arc::new(Box::new(MockSearchable::new()));
 
             collection.add_segments(
                 vec!["segment1".to_string(), "segment2".to_string()],
@@ -238,8 +260,8 @@ mod tests {
         let stopped_cpy = stopped.clone();
         let collection_cpy = collection.clone();
         std::thread::spawn(move || {
-            let segment1: Arc<BoxedSearchable> = Arc::new(Box::new(MockSearchable::new()));
-            let segment2: Arc<BoxedSearchable> = Arc::new(Box::new(MockSearchable::new()));
+            let segment1: Arc<BoxedSegmentSearchable> = Arc::new(Box::new(MockSearchable::new()));
+            let segment2: Arc<BoxedSegmentSearchable> = Arc::new(Box::new(MockSearchable::new()));
 
             collection_cpy.add_segments(
                 vec!["segment1".to_string(), "segment2".to_string()],
