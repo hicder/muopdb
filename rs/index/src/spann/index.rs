@@ -16,6 +16,14 @@ impl Spann {
             posting_lists,
         }
     }
+
+    pub fn get_centroids(&self) -> &Hnsw<NoQuantizer> {
+        &self.centroids
+    }
+
+    pub fn get_posting_lists(&self) -> &Ivf<NoQuantizer> {
+        &self.posting_lists
+    }
 }
 
 impl Searchable for Spann {
