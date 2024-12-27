@@ -1,19 +1,19 @@
 use std::sync::Arc;
 
-use super::Collection;
-use crate::index::{BoxedSearchable, Searchable};
+use super::{BoxedSegmentSearchable, Collection};
+use crate::index::Searchable;
 use crate::utils::SearchContext;
 
 /// Snapshot provides a view of the collection at a given point in time
 pub struct Snapshot {
-    pub segments: Vec<Arc<BoxedSearchable>>,
+    pub segments: Vec<Arc<BoxedSegmentSearchable>>,
     pub version: u64,
     pub collection: Arc<Collection>,
 }
 
 impl Snapshot {
     pub fn new(
-        segments: Vec<Arc<BoxedSearchable>>,
+        segments: Vec<Arc<BoxedSegmentSearchable>>,
         version: u64,
         collection: Arc<Collection>,
     ) -> Self {
