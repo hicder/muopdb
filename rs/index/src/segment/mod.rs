@@ -1,4 +1,5 @@
 pub mod immutable_segment;
+pub mod mutable_segment;
 
 use anyhow::Result;
 

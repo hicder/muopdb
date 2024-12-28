@@ -1,9 +1,11 @@
 use anyhow::{Ok, Result};
 use quantization::noq::noq::NoQuantizer;
+use serde::{Deserialize, Serialize};
 
 use crate::hnsw::builder::HnswBuilder;
 use crate::ivf::builder::{IvfBuilder, IvfBuilderConfig};
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SpannBuilderConfig {
     // For centroids
     pub max_neighbors: usize,
@@ -32,6 +34,31 @@ pub struct SpannBuilderConfig {
     pub max_posting_list_size: usize,
 
     pub reindex: bool,
+}
+
+impl Default for SpannBuilderConfig {
+    fn default() -> Self {
+        Self {
+            max_neighbors: 10,
+            max_layers: 2,
+            ef_construction: 100,
+            vector_storage_memory_size: 1024,
+            vector_storage_file_size: 1024,
+            num_features: 768,
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters: 10,
+            num_data_points: 1000,
+            max_clusters_per_vector: 1,
+            distance_threshold: 0.1,
+            base_directory: "./".to_string(),
+            memory_size: 1024,
+            file_size: 1024,
+            tolerance: 0.1,
+            max_posting_list_size: usize::MAX,
+            reindex: true,
+        }
+    }
 }
 
 pub struct SpannBuilder {
@@ -99,5 +126,30 @@ impl SpannBuilder {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::spann::builder::SpannBuilderConfig;
+
+    #[test]
+    fn test_read_write_config() {
+        use std::fs::File;
+
+        let temp_dir = tempdir::TempDir::new("test_read_write_config").unwrap();
+        let base_directory = temp_dir.path().to_str().unwrap().to_string();
+
+        // Write the collection config
+        let collection_config_path = format!("{}/collection_config.json", base_directory);
+        let collection_config = SpannBuilderConfig::default();
+        std::fs::create_dir_all(&base_directory).unwrap();
+        let mut file = File::create(collection_config_path.clone()).unwrap();
+        serde_json::to_writer(&mut file, &collection_config).unwrap();
+
+        // Read the collection config
+        let read_collection_config: SpannBuilderConfig =
+            serde_json::from_reader(File::open(collection_config_path).unwrap()).unwrap();
+        assert_eq!(collection_config, read_collection_config);
     }
 }

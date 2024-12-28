@@ -6,6 +6,7 @@ use utils::io::get_latest_version;
 use super::{Collection, TableOfContent};
 use crate::collection::BoxedSegmentSearchable;
 use crate::segment::immutable_segment::ImmutableSegment;
+use crate::spann::builder::SpannBuilderConfig;
 use crate::spann::reader::SpannReader;
 
 pub struct Reader {
@@ -18,6 +19,11 @@ impl Reader {
     }
 
     pub fn read(&self) -> Result<Arc<Collection>> {
+        // Read the SpannBuilderConfig
+        let spann_builder_config_path = format!("{}/collection_config.json", self.path);
+        let spann_builder_config: SpannBuilderConfig =
+            serde_json::from_reader(std::fs::File::open(spann_builder_config_path)?)?;
+
         // Get the latest TOC
         let latest_version = get_latest_version(&self.path)?;
         let toc_path = format!("{}/version_{}", self.path, latest_version);
@@ -37,7 +43,8 @@ impl Reader {
             latest_version,
             toc,
             segments,
-        ));
+            spann_builder_config,
+        )?);
         Ok(collection)
     }
 }
@@ -53,34 +60,35 @@ mod tests {
     use crate::spann::builder::{SpannBuilder, SpannBuilderConfig};
     use crate::spann::writer::SpannWriter;
 
-    fn create_segment(base_directory: String) -> Result<()> {
-        let num_clusters = 10;
-        let num_vectors = 1000;
-        let num_features = 4;
-        let file_size = 4096;
-        let balance_factor = 0.0;
-        let max_posting_list_size = usize::MAX;
-        let mut builder = SpannBuilder::new(SpannBuilderConfig {
+    fn collection_config() -> SpannBuilderConfig {
+        SpannBuilderConfig {
             max_neighbors: 10,
             max_layers: 2,
             ef_construction: 100,
             vector_storage_memory_size: 1024,
-            vector_storage_file_size: file_size,
-            num_features,
+            vector_storage_file_size: 1024,
+            num_features: 4,
             max_iteration: 1000,
             batch_size: 4,
-            num_clusters,
-            num_data_points: num_vectors,
+            num_clusters: 10,
+            num_data_points: 1000,
             max_clusters_per_vector: 1,
             distance_threshold: 0.1,
-            base_directory: base_directory.clone(),
+            base_directory: "./".to_string(),
             memory_size: 1024,
-            file_size,
-            tolerance: balance_factor,
-            max_posting_list_size,
-            reindex: false,
-        })
-        .unwrap();
+            file_size: 1024,
+            tolerance: 0.1,
+            max_posting_list_size: usize::MAX,
+            reindex: true,
+        }
+    }
+
+    fn create_segment(base_directory: String) -> Result<()> {
+        let num_vectors = 1000;
+        let num_features = 4;
+        let mut collection_config = collection_config();
+        collection_config.base_directory = base_directory.clone();
+        let mut builder = SpannBuilder::new(collection_config).unwrap();
 
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
@@ -99,6 +107,15 @@ mod tests {
     fn test_reader() {
         let temp_dir = TempDir::new("test_reader").unwrap();
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+
+        // Write the collection config
+        let collection_config_path = format!("{}/collection_config.json", base_directory);
+        let collection_config = collection_config();
+        serde_json::to_writer(
+            std::fs::File::create(collection_config_path).unwrap(),
+            &collection_config,
+        )
+        .unwrap();
 
         // Create "segment1"
         let segment1_path = format!("{}/segment1", base_directory);

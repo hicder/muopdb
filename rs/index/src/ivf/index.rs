@@ -131,6 +131,18 @@ impl<Q: Quantizer> Ivf<Q> {
             })
             .collect()
     }
+
+    pub fn search_with_centroids_and_remap(
+        &self,
+        query: &[f32],
+        nearest_centroid_ids: Vec<usize>,
+        k: usize,
+        context: &mut SearchContext,
+    ) -> Vec<IdWithScore> {
+        let point_ids = self.search_with_centroids(query, nearest_centroid_ids, k, context);
+        let doc_ids = self.map_point_id_to_doc_id(&point_ids);
+        doc_ids
+    }
 }
 
 impl<Q: Quantizer> Searchable for Ivf<Q> {
