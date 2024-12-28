@@ -2,7 +2,7 @@ pub mod reader;
 pub mod snapshot;
 
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::{Ok, Result};
 use dashmap::DashMap;
@@ -10,7 +10,11 @@ use serde::{Deserialize, Serialize};
 use snapshot::Snapshot;
 
 use crate::index::Searchable;
+use crate::segment::immutable_segment::ImmutableSegment;
+use crate::segment::mutable_segment::MutableSegment;
 use crate::segment::Segment;
+use crate::spann::builder::SpannBuilderConfig;
+use crate::spann::reader::SpannReader;
 
 pub trait SegmentSearchable: Searchable + Segment {}
 pub type BoxedSegmentSearchable = Box<dyn SegmentSearchable + Send + Sync>;
@@ -47,23 +51,36 @@ impl VersionsInfo {
 pub struct Collection {
     versions: DashMap<u64, TableOfContent>,
     all_segments: DashMap<String, Arc<BoxedSegmentSearchable>>,
-
     versions_info: RwLock<VersionsInfo>,
-
     base_directory: String,
+    mutable_segment: RwLock<MutableSegment>,
+    segment_config: SpannBuilderConfig,
+
+    // A mutex for flushing
+    flushing: Mutex<()>,
 }
 
 impl Collection {
-    pub fn new(base_directory: String) -> Self {
+    pub fn new(base_directory: String, segment_config: SpannBuilderConfig) -> Result<Self> {
         let versions: DashMap<u64, TableOfContent> = DashMap::new();
         versions.insert(0, TableOfContent::new(vec![]));
 
-        Self {
+        // Create a new segment_config with a random name
+        let random_name = format!("segment_{}", rand::random::<u64>());
+        let mut segment_config_clone = segment_config.clone();
+        segment_config_clone.base_directory = format!("{}/{}", base_directory, random_name);
+
+        let mutable_segment = RwLock::new(MutableSegment::new(segment_config_clone)?);
+
+        Ok(Self {
             versions,
             all_segments: DashMap::new(),
             versions_info: RwLock::new(VersionsInfo::new()),
             base_directory,
-        }
+            mutable_segment,
+            segment_config,
+            flushing: Mutex::new(()),
+        })
     }
 
     pub fn init_from(
@@ -71,7 +88,8 @@ impl Collection {
         version: u64,
         toc: TableOfContent,
         segments: Vec<Arc<BoxedSegmentSearchable>>,
-    ) -> Self {
+        segment_config: SpannBuilderConfig,
+    ) -> Result<Self> {
         let versions_info = RwLock::new(VersionsInfo::new());
         versions_info.write().unwrap().current_version = version;
         versions_info
@@ -91,11 +109,64 @@ impl Collection {
         let versions = DashMap::new();
         versions.insert(version, toc);
 
-        Self {
+        // Create a new segment_config with a random name
+        let random_name = format!("segment_{}", rand::random::<u64>());
+        let mut segment_config_clone = segment_config.clone();
+        segment_config_clone.base_directory = format!("{}/{}", base_directory, random_name);
+        let mutable_segment = RwLock::new(MutableSegment::new(segment_config_clone)?);
+
+        Ok(Self {
             versions,
             all_segments,
             versions_info,
             base_directory,
+            mutable_segment,
+            segment_config,
+            flushing: Mutex::new(()),
+        })
+    }
+
+    pub fn insert(&self, doc_id: u64, data: &[f32]) -> Result<()> {
+        self.mutable_segment.write().unwrap().insert(doc_id, data)
+    }
+
+    pub fn dimensions(&self) -> usize {
+        self.segment_config.num_features
+    }
+
+    pub fn flush(&self) -> Result<()> {
+        // Try to acquire the flushing lock. If it fails, then another thread is already flushing.
+        // This is a best effort approach, and we don't want to block the main thread.
+        match self.flushing.try_lock() {
+            std::result::Result::Ok(_) => {
+                let tmp_name = format!("tmp_segment_{}", rand::random::<u64>());
+                let mut new_writable_segment_config = self.segment_config.clone();
+                new_writable_segment_config.base_directory =
+                    format!("{}/{}", self.base_directory, tmp_name);
+                let mut new_writable_segment = MutableSegment::new(new_writable_segment_config)?;
+
+                {
+                    // Grab the write lock and swap tmp_segment with mutable_segment
+                    let mut mutable_segment = self.mutable_segment.write().unwrap();
+                    std::mem::swap(&mut *mutable_segment, &mut new_writable_segment);
+                }
+
+                let name_for_new_segment = format!("segment_{}", rand::random::<u64>());
+                new_writable_segment
+                    .build(self.base_directory.clone(), name_for_new_segment.clone())?;
+
+                // Read the segment
+                let spann_reader =
+                    SpannReader::new(format!("{}/{}", self.base_directory, name_for_new_segment));
+                let index = spann_reader.read()?;
+                let segment: Arc<Box<dyn SegmentSearchable + Send + Sync>> =
+                    Arc::new(Box::new(ImmutableSegment::new(index)));
+
+                self.add_segments(vec![name_for_new_segment], vec![segment])
+            }
+            Err(_) => {
+                return Err(anyhow::anyhow!("Another thread is already flushing"));
+            }
         }
     }
 
@@ -208,6 +279,7 @@ mod tests {
     use crate::collection::{BoxedSegmentSearchable, Collection};
     use crate::index::Searchable;
     use crate::segment::Segment;
+    use crate::spann::builder::SpannBuilderConfig;
 
     struct MockSearchable {}
 
@@ -249,7 +321,9 @@ mod tests {
     fn test_collection() -> Result<()> {
         let temp_dir = TempDir::new("test_collection")?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
-        let collection = Arc::new(Collection::new(base_directory.clone()));
+        let mut segment_config = SpannBuilderConfig::default();
+        segment_config.base_directory = base_directory.clone();
+        let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
 
         {
             let segment1: Arc<BoxedSegmentSearchable> = Arc::new(Box::new(MockSearchable::new()));
@@ -315,8 +389,10 @@ mod tests {
     fn test_collection_multi_thread() -> Result<()> {
         let temp_dir = TempDir::new("test_collection")?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let mut segment_config = SpannBuilderConfig::default();
+        segment_config.base_directory = base_directory.clone();
 
-        let collection = Arc::new(Collection::new(base_directory.clone()));
+        let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
         let stopped = Arc::new(AtomicBool::new(false));
 
         // Create a thread to add segments, and let it runs for a while
