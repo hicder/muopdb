@@ -3,7 +3,9 @@ use std::sync::Arc;
 use index::utils::SearchContext;
 use log::info;
 use proto::muopdb::index_server_server::IndexServer;
-use proto::muopdb::{SearchRequest, SearchResponse};
+use proto::muopdb::{
+    FlushRequest, FlushResponse, InsertRequest, InsertResponse, SearchRequest, SearchResponse,
+};
 use tokio::sync::Mutex;
 
 use crate::index_catalog::IndexCatalog;
@@ -65,5 +67,19 @@ impl IndexServer for IndexServerImpl {
             scores: vec![],
             num_pages_accessed: 0,
         }))
+    }
+
+    async fn insert(
+        &self,
+        _request: tonic::Request<InsertRequest>,
+    ) -> Result<tonic::Response<InsertResponse>, tonic::Status> {
+        todo!()
+    }
+
+    async fn flush(
+        &self,
+        _request: tonic::Request<FlushRequest>,
+    ) -> Result<tonic::Response<FlushResponse>, tonic::Status> {
+        todo!()
     }
 }
