@@ -2,7 +2,7 @@ pub mod reader;
 pub mod snapshot;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
 use dashmap::DashMap;
@@ -46,7 +46,7 @@ pub struct Collection {
     versions: DashMap<u64, TableOfContent>,
     all_segments: DashMap<String, Arc<BoxedSegmentSearchable>>,
 
-    versions_info: Mutex<VersionsInfo>,
+    versions_info: RwLock<VersionsInfo>,
 }
 
 impl Collection {
@@ -57,7 +57,7 @@ impl Collection {
         Self {
             versions,
             all_segments: DashMap::new(),
-            versions_info: Mutex::new(VersionsInfo::new()),
+            versions_info: RwLock::new(VersionsInfo::new()),
         }
     }
 
@@ -88,7 +88,7 @@ impl Collection {
 
     /// Add segments to the collection, effectively creating a new version.
     pub fn add_segments(&self, names: Vec<String>, segments: Vec<Arc<BoxedSegmentSearchable>>) {
-        let mut locked_versions_info = self.versions_info.lock().unwrap();
+        let mut locked_versions_info = self.versions_info.write().unwrap();
         let current_version = locked_versions_info.current_version;
         let new_version = current_version + 1;
 
@@ -108,12 +108,12 @@ impl Collection {
     }
 
     pub fn current_version(&self) -> u64 {
-        self.versions_info.lock().unwrap().current_version
+        self.versions_info.read().unwrap().current_version
     }
 
     pub fn get_ref_count(&self, version_number: u64) -> usize {
         self.versions_info
-            .lock()
+            .read()
             .unwrap()
             .version_ref_counts
             .get(&version_number)
@@ -123,14 +123,14 @@ impl Collection {
 
     /// Release the ref count for the version once the snapshot is no longer needed.
     pub fn release_version(&self, version_number: u64) {
-        let mut lock = self.versions_info.lock().unwrap();
+        let mut lock = self.versions_info.write().unwrap();
         let count = *lock.version_ref_counts.get(&version_number).unwrap_or(&0);
         lock.version_ref_counts.insert(version_number, count - 1);
     }
 
     /// This is thread-safe, and will increment the ref count for the version.
     fn get_current_version_and_increment(&self) -> u64 {
-        let mut lock = self.versions_info.lock().unwrap();
+        let mut lock = self.versions_info.write().unwrap();
         let current_version = lock.current_version;
 
         let count = *lock.version_ref_counts.get(&current_version).unwrap_or(&0);

@@ -73,6 +73,7 @@ impl EliasFano {
     }
 
     /// Returns the value at the given index
+    #[allow(dead_code)]
     fn get(&self, index: usize) -> Result<u64> {
         if index >= self.size {
             return Err(anyhow!("Index {} out of bound", index));
