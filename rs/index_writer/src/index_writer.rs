@@ -472,7 +472,7 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
-    use crate::config::{BaseConfig, HnswConfig, IndexType, IvfConfig, QuantizerConfig};
+    use crate::config::{BaseConfig, DistanceType, HnswConfig, IndexType, IvfConfig, QuantizerConfig};
     use crate::input::Row;
     // Mock Input implementation for testing
     struct MockInput {
@@ -556,9 +556,11 @@ mod tests {
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
             index_type: IndexType::Hnsw,
+            index_distance_type: DistanceType::L2,
         };
         let quantizer_config = QuantizerConfig {
             quantizer_type: QuantizerType::ProductQuantizer,
+            quantizer_distance_type: DistanceType::L2,
             subvector_dimension: 2,
             num_bits: 2,
             num_training_rows: 50,
@@ -627,13 +629,15 @@ mod tests {
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
             index_type: IndexType::Ivf,
+            index_distance_type: DistanceType::DotProduct
         };
         let quantizer_config = QuantizerConfig {
             quantizer_type: QuantizerType::ProductQuantizer,
+            quantizer_distance_type: DistanceType::L2,
             subvector_dimension: 2,
             num_bits: 2,
             num_training_rows: 50,
-
+            
             max_iteration: 10,
             batch_size: 10,
         };
@@ -700,13 +704,15 @@ mod tests {
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
             index_type: IndexType::Spann,
+            index_distance_type: DistanceType::L2,
         };
         let quantizer_config = QuantizerConfig {
             quantizer_type: QuantizerType::ProductQuantizer,
+            quantizer_distance_type: DistanceType::L2,
             subvector_dimension: 2,
             num_bits: 2,
             num_training_rows: 50,
-
+ 
             max_iteration: 10,
             batch_size: 10,
         };

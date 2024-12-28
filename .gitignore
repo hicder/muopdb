@@ -6,4 +6,5 @@
 flamegraph.svg
 perf.data*
 .idea
+.DS_Store
 
