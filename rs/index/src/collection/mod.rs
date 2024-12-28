@@ -4,8 +4,9 @@ pub mod snapshot;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use anyhow::Result;
+use anyhow::{Ok, Result};
 use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use snapshot::Snapshot;
 
 use crate::index::Searchable;
@@ -14,6 +15,7 @@ use crate::segment::Segment;
 pub trait SegmentSearchable: Searchable + Segment {}
 pub type BoxedSegmentSearchable = Box<dyn SegmentSearchable + Send + Sync>;
 
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TableOfContent {
     pub toc: Vec<String>,
 }
@@ -47,10 +49,12 @@ pub struct Collection {
     all_segments: DashMap<String, Arc<BoxedSegmentSearchable>>,
 
     versions_info: RwLock<VersionsInfo>,
+
+    base_directory: String,
 }
 
 impl Collection {
-    pub fn new() -> Self {
+    pub fn new(base_directory: String) -> Self {
         let versions: DashMap<u64, TableOfContent> = DashMap::new();
         versions.insert(0, TableOfContent::new(vec![]));
 
@@ -58,6 +62,40 @@ impl Collection {
             versions,
             all_segments: DashMap::new(),
             versions_info: RwLock::new(VersionsInfo::new()),
+            base_directory,
+        }
+    }
+
+    pub fn init_from(
+        base_directory: String,
+        version: u64,
+        toc: TableOfContent,
+        segments: Vec<Arc<BoxedSegmentSearchable>>,
+    ) -> Self {
+        let versions_info = RwLock::new(VersionsInfo::new());
+        versions_info.write().unwrap().current_version = version;
+        versions_info
+            .write()
+            .unwrap()
+            .version_ref_counts
+            .insert(version, 0);
+
+        let all_segments = DashMap::new();
+        toc.toc
+            .iter()
+            .zip(segments.iter())
+            .for_each(|(name, segment)| {
+                all_segments.insert(name.clone(), segment.clone());
+            });
+
+        let versions = DashMap::new();
+        versions.insert(version, toc);
+
+        Self {
+            versions,
+            all_segments,
+            versions_info,
+            base_directory,
         }
     }
 
@@ -87,7 +125,19 @@ impl Collection {
     }
 
     /// Add segments to the collection, effectively creating a new version.
-    pub fn add_segments(&self, names: Vec<String>, segments: Vec<Arc<BoxedSegmentSearchable>>) {
+    pub fn add_segments(
+        &self,
+        names: Vec<String>,
+        segments: Vec<Arc<BoxedSegmentSearchable>>,
+    ) -> Result<()> {
+        for (name, segment) in names.iter().zip(segments) {
+            self.all_segments.insert(name.clone(), segment);
+        }
+
+        // Under the lock, we do the following:
+        // - Increment the current version
+        // - Add the new version to the toc, and persist to disk
+        // - Insert the new version to the toc
         let mut locked_versions_info = self.versions_info.write().unwrap();
         let current_version = locked_versions_info.current_version;
         let new_version = current_version + 1;
@@ -95,16 +145,20 @@ impl Collection {
         let mut new_toc = self.versions.get(&current_version).unwrap().toc.clone();
         new_toc.extend_from_slice(&names);
 
+        // Write the TOC to disk.
+        let toc_path = format!("{}/version_{}", self.base_directory, new_version);
+        let toc = TableOfContent { toc: new_toc };
+        serde_json::to_writer(std::fs::File::create(toc_path)?, &toc)?;
+
+        // Once success, update the current version and ref counts.
         locked_versions_info.current_version = new_version;
         locked_versions_info
             .version_ref_counts
             .insert(new_version, 0);
 
-        self.versions
-            .insert(new_version, TableOfContent { toc: new_toc });
-        for (name, segment) in names.iter().zip(segments) {
-            self.all_segments.insert(name.clone(), segment);
-        }
+        self.versions.insert(new_version, toc);
+
+        Ok(())
     }
 
     pub fn current_version(&self) -> u64 {
@@ -148,6 +202,7 @@ mod tests {
     use std::sync::Arc;
 
     use anyhow::{Ok, Result};
+    use tempdir::TempDir;
 
     use super::SegmentSearchable;
     use crate::collection::{BoxedSegmentSearchable, Collection};
@@ -192,17 +247,20 @@ mod tests {
 
     #[test]
     fn test_collection() -> Result<()> {
-        // let dir = tempdir()?;
-        let collection = Arc::new(Collection::new());
+        let temp_dir = TempDir::new("test_collection")?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let collection = Arc::new(Collection::new(base_directory.clone()));
 
         {
             let segment1: Arc<BoxedSegmentSearchable> = Arc::new(Box::new(MockSearchable::new()));
             let segment2: Arc<BoxedSegmentSearchable> = Arc::new(Box::new(MockSearchable::new()));
 
-            collection.add_segments(
-                vec!["segment1".to_string(), "segment2".to_string()],
-                vec![segment1.clone(), segment2.clone()],
-            );
+            collection
+                .add_segments(
+                    vec!["segment1".to_string(), "segment2".to_string()],
+                    vec![segment1.clone(), segment2.clone()],
+                )
+                .unwrap();
         }
         let current_version = collection.current_version();
         assert_eq!(current_version, 1);
@@ -227,13 +285,15 @@ mod tests {
             assert_eq!(snapshot.segments.len(), 2);
             assert_eq!(snapshot.version(), 1);
 
-            collection.add_segments(
-                vec!["segment3".to_string(), "segment4".to_string()],
-                vec![
-                    Arc::new(Box::new(MockSearchable::new())),
-                    Arc::new(Box::new(MockSearchable::new())),
-                ],
-            );
+            collection
+                .add_segments(
+                    vec!["segment3".to_string(), "segment4".to_string()],
+                    vec![
+                        Arc::new(Box::new(MockSearchable::new())),
+                        Arc::new(Box::new(MockSearchable::new())),
+                    ],
+                )
+                .unwrap();
 
             let ref_count = collection.clone().get_ref_count(version_1);
             assert_eq!(ref_count, 1);
@@ -253,7 +313,10 @@ mod tests {
 
     #[test]
     fn test_collection_multi_thread() -> Result<()> {
-        let collection = Arc::new(Collection::new());
+        let temp_dir = TempDir::new("test_collection")?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+
+        let collection = Arc::new(Collection::new(base_directory.clone()));
         let stopped = Arc::new(AtomicBool::new(false));
 
         // Create a thread to add segments, and let it runs for a while
@@ -263,10 +326,12 @@ mod tests {
             let segment1: Arc<BoxedSegmentSearchable> = Arc::new(Box::new(MockSearchable::new()));
             let segment2: Arc<BoxedSegmentSearchable> = Arc::new(Box::new(MockSearchable::new()));
 
-            collection_cpy.add_segments(
-                vec!["segment1".to_string(), "segment2".to_string()],
-                vec![segment1, segment2],
-            );
+            collection_cpy
+                .add_segments(
+                    vec!["segment1".to_string(), "segment2".to_string()],
+                    vec![segment1, segment2],
+                )
+                .unwrap();
 
             while !stopped_cpy.load(std::sync::atomic::Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_millis(100));
