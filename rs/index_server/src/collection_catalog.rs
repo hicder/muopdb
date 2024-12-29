@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use index::collection::Collection;
 
-pub struct IndexCatalog {
+pub struct CollectionCatalog {
     collections: HashMap<String, Arc<Collection>>,
 }
 
-impl IndexCatalog {
+impl CollectionCatalog {
     pub fn new() -> Self {
         Self {
             collections: HashMap::new(),

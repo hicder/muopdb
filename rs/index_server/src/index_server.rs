@@ -10,14 +10,14 @@ use proto::muopdb::{
 };
 use tokio::sync::Mutex;
 
-use crate::index_catalog::IndexCatalog;
+use crate::collection_catalog::CollectionCatalog;
 
 pub struct IndexServerImpl {
-    pub index_catalog: Arc<Mutex<IndexCatalog>>,
+    pub index_catalog: Arc<Mutex<CollectionCatalog>>,
 }
 
 impl IndexServerImpl {
-    pub fn new(index_catalog: Arc<Mutex<IndexCatalog>>) -> Self {
+    pub fn new(index_catalog: Arc<Mutex<CollectionCatalog>>) -> Self {
         Self { index_catalog }
     }
 }
