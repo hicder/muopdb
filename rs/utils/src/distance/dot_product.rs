@@ -1,4 +1,4 @@
-use crate::DistanceCalculator;
+use crate::{CalculateSquared, DistanceCalculator};
 use std::{ops::AddAssign, simd::{num::SimdFloat, LaneCount, Simd, SupportedLaneCount}};
 
 pub struct DotProductDistanceCalculator {}
@@ -13,7 +13,13 @@ impl DotProductDistanceCalculator {
     }
 } 
 
-impl DistanceCalculator for DotProductDistanceCalculator {
+impl CalculateSquared for DotProductDistanceCalculator {
+    fn calculate_squared(a: &[f32], b: &[f32]) -> f32 {
+        DotProductDistanceCalculator::calculate(a, b)
+    }
+}
+
+impl DistanceCalculator for DotProductDistanceCalculator { 
     fn calculate(a: &[f32], b: &[f32]) -> f32 {
         let mut res = 0.0;
         let mut a_vec = a;

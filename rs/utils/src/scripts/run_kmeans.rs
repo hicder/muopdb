@@ -1,4 +1,4 @@
-use utils::kmeans_builder::kmeans_builder::{KMeansBuilder, KMeansVariant};
+use utils::{distance::l2::L2DistanceCalculator, kmeans_builder::kmeans_builder::{KMeansBuilder, KMeansVariant}};
 
 fn main() {
     env_logger::init();
@@ -12,7 +12,7 @@ fn main() {
         }
     }
 
-    let kmeans = KMeansBuilder::new(10000, 5, 0.0, dimension, KMeansVariant::Lloyd);
+    let kmeans = KMeansBuilder::<L2DistanceCalculator>::new(10000, 5, 0.0, dimension, KMeansVariant::Lloyd);
     let _result = kmeans
         .fit(flattened_dataset)
         .expect("Failed to run KMeans model");

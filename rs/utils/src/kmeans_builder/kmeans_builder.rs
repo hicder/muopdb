@@ -1,18 +1,20 @@
+use std::marker::PhantomData;
+
 use anyhow::{anyhow, Ok, Result};
 use kmeans::KMeansConfig;
 use log::debug;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::slice::ParallelSlice;
 
-use crate::distance::l2::{L2DistanceCalculator, LaneConformingL2DistanceCalculator};
-use crate::CalculateSquared;
+use crate::distance::l2::{L2DistanceCalculator, LaneConformingDistanceCalculator};
+use crate::{CalculateSquared, DistanceCalculator};
 
 #[derive(PartialEq, Debug)]
 pub enum KMeansVariant {
     Lloyd,
 }
 
-pub struct KMeansBuilder {
+pub struct KMeansBuilder<D:DistanceCalculator + CalculateSquared + Send + Sync> {
     pub num_cluters: usize,
     pub max_iter: usize,
 
@@ -26,6 +28,8 @@ pub struct KMeansBuilder {
     pub variant: KMeansVariant,
 
     pub cluster_init_values: Option<Vec<usize>>,
+
+    _marker: PhantomData<D>,
 }
 
 pub struct KMeansResult {
@@ -36,7 +40,7 @@ pub struct KMeansResult {
 
 // TODO(hicder): Add support for different variants of k-means.
 // TODO(hicder): Add support for different distance metrics.
-impl KMeansBuilder {
+impl<D:DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
     pub fn new(
         num_cluters: usize,
         max_iter: usize,
@@ -51,6 +55,7 @@ impl KMeansBuilder {
             dimension,
             variant,
             cluster_init_values: None,
+            _marker: PhantomData,
         }
     }
 
@@ -69,6 +74,7 @@ impl KMeansBuilder {
             dimension,
             variant,
             cluster_init_values: Some(cluster_init_values),
+            _marker: PhantomData,
         }
     }
 
@@ -115,13 +121,13 @@ impl KMeansBuilder {
             KMeansVariant::Lloyd => {
                 if self.dimension % 16 == 0 {
                     return self
-                        .run_lloyd::<LaneConformingL2DistanceCalculator<16>>(flattened_data);
+                        .run_lloyd::<LaneConformingDistanceCalculator<16, D>>(flattened_data);
                 } else if self.dimension % 8 == 0 {
-                    return self.run_lloyd::<LaneConformingL2DistanceCalculator<8>>(flattened_data);
+                    return self.run_lloyd::<LaneConformingDistanceCalculator<8, D>>(flattened_data);
                 } else if self.dimension % 4 == 0 {
-                    return self.run_lloyd::<LaneConformingL2DistanceCalculator<4>>(flattened_data);
+                    return self.run_lloyd::<LaneConformingDistanceCalculator<4, D>>(flattened_data);
                 } else {
-                    return self.run_lloyd::<L2DistanceCalculator>(flattened_data);
+                    return self.run_lloyd::<D>(flattened_data);
                 }
             }
         }
@@ -282,6 +288,7 @@ impl KMeansBuilder {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[test]
@@ -305,7 +312,7 @@ mod tests {
             .cloned()
             .collect();
 
-        let kmeans = KMeansBuilder::new_with_cluster_init_values(
+        let kmeans = KMeansBuilder::<L2DistanceCalculator>::new_with_cluster_init_values(
             3,
             100,
             1e-4,
@@ -355,7 +362,7 @@ mod tests {
             .flatten()
             .cloned()
             .collect();
-        let kmeans = KMeansBuilder::new_with_cluster_init_values(
+        let kmeans: KMeansBuilder<L2DistanceCalculator> = KMeansBuilder::new_with_cluster_init_values(
             3,
             100,
             10000.0,
@@ -396,7 +403,7 @@ mod tests {
             .flatten()
             .cloned()
             .collect();
-        let kmeans = KMeansBuilder::new_with_cluster_init_values(
+        let kmeans: KMeansBuilder<L2DistanceCalculator> = KMeansBuilder::new_with_cluster_init_values(
             3,
             100,
             0.0,

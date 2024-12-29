@@ -131,7 +131,7 @@ mod tests {
             flattened_dataset.extend_from_slice(row.data);
         }
 
-        let kmeans = KMeansBuilder::new(10, 10000, 0.0, 128, KMeansVariant::Lloyd);
+        let kmeans = KMeansBuilder::<L2DistanceCalculator>::new(10, 10000, 0.0, 128, KMeansVariant::Lloyd);
         let result = kmeans
             .fit(flattened_dataset.clone())
             .expect("Failed to run KMeans model");

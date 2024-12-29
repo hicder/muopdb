@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::ops::Mul;
 use std::simd::num::SimdFloat;
 use std::simd::{f32x16, f32x4, f32x8, LaneCount, Simd, SupportedLaneCount};
@@ -90,18 +91,20 @@ impl DistanceCalculator for L2DistanceCalculator {
 
 /// Calculator where we know in advance that the dimension of vectors is a multiple of LANES.
 /// This skips a bunch of checks and allows for a more efficient implementation.
-pub struct LaneConformingL2DistanceCalculator<const LANES: usize>
+pub struct LaneConformingDistanceCalculator<const LANES: usize, D:DistanceCalculator + Send + Sync>
 where
-    LaneCount<LANES>: SupportedLaneCount, {}
+    LaneCount<LANES>: SupportedLaneCount, {
+        _marker: PhantomData<D>
+    }
 
-impl<const LANES: usize> CalculateSquared for LaneConformingL2DistanceCalculator<LANES>
+impl<const LANES: usize, D:DistanceCalculator + Send + Sync> CalculateSquared for LaneConformingDistanceCalculator<LANES, D>
 where
     LaneCount<LANES>: SupportedLaneCount,
 {
     #[inline(always)]
     fn calculate_squared(a: &[f32], b: &[f32]) -> f32 {
         let mut simd = Simd::<f32, LANES>::splat(0.0);
-        L2DistanceCalculator::accumulate_lanes(a, b, &mut simd);
+        D::accumulate_lanes(a, b, &mut simd);
         simd.reduce_sum()
     }
 }

@@ -10,9 +10,12 @@ use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuan
 use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
 use quantization::quantization::Quantizer;
 use rand::seq::SliceRandom;
+use utils::distance::dot_product::DotProductDistanceCalculator;
+use utils::distance::l2::L2DistanceCalculator;
+use utils::{CalculateSquared, DistanceCalculator};
 
 use crate::config::{
-    HnswConfigWithBase, IndexWriterConfig, IvfConfigWithBase, QuantizerType, SpannConfigWithBase,
+    DistanceType, HnswConfigWithBase, IndexWriterConfig, IvfConfigWithBase, QuantizerType, SpannConfigWithBase
 };
 use crate::input::Input;
 
@@ -180,13 +183,18 @@ impl IndexWriter {
         Ok(())
     }
 
-    fn write_quantizer_and_build_ivf_index<T: Quantizer, F: Fn(&String, &T) -> Result<()>>(
+    fn write_quantizer_and_build_ivf_index<T, D, F>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &IvfConfigWithBase,
         quantizer: T,
         writer_fn: F,
-    ) -> Result<()> {
+    ) -> Result<()> 
+    where 
+        T: Quantizer,
+        D: DistanceCalculator + CalculateSquared + Send + Sync,
+        F: Fn(&String, &T)  -> Result<()>,
+    {
         info!("Start writing product quantizer");
         let path = &self.output_root;
 
@@ -196,7 +204,7 @@ impl IndexWriter {
         // Use the provided writer function to write the quantizer
         writer_fn(&quantizer_directory, &quantizer)?;
 
-        let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut ivf_builder = IvfBuilder::<D>::new(IvfBuilderConfig {
             max_iteration: index_builder_config.ivf_config.max_iteration,
             batch_size: index_builder_config.ivf_config.batch_size,
             num_clusters: index_builder_config.ivf_config.num_clusters,
@@ -274,7 +282,11 @@ impl IndexWriter {
             pq_writer.write(pq)
         };
 
-        self.write_quantizer_and_build_ivf_index(input, index_builder_config, pq, pq_writer_fn)
+        match index_builder_config.base_config.index_distance_type {
+            DistanceType::DotProduct => self.write_quantizer_and_build_ivf_index::<_, DotProductDistanceCalculator, _>(input, index_builder_config, pq, pq_writer_fn),
+            DistanceType::L2 => self.write_quantizer_and_build_ivf_index::<_, L2DistanceCalculator, _>(input, index_builder_config, pq, pq_writer_fn),
+        }
+        
     }
 
     fn build_ivf_noq(
@@ -297,7 +309,10 @@ impl IndexWriter {
             noq_writer.write(noq)
         };
 
-        self.write_quantizer_and_build_ivf_index(input, index_builder_config, noq, noq_writer_fn)
+        match index_builder_config.base_config.index_distance_type {
+            DistanceType::DotProduct => self.write_quantizer_and_build_ivf_index::<_, DotProductDistanceCalculator, _>(input, index_builder_config, noq, noq_writer_fn),
+            DistanceType::L2 => self.write_quantizer_and_build_ivf_index::<_, L2DistanceCalculator, _>(input, index_builder_config, noq, noq_writer_fn)
+        }
     }
 
     fn do_build_ivf_index(
@@ -348,7 +363,8 @@ impl IndexWriter {
         let ivf_directory = format!("{}/ivf", path);
         std::fs::create_dir_all(&ivf_directory)?;
 
-        let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
+        // TODO: support multiple distance type
+        let mut ivf_builder: IvfBuilder<_> = IvfBuilder::<L2DistanceCalculator>::new(IvfBuilderConfig {
             max_iteration: ivf_config.max_iteration,
             batch_size: ivf_config.batch_size,
             num_clusters: ivf_config.num_clusters,
