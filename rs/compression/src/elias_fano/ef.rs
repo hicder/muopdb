@@ -2,6 +2,8 @@ use anyhow::{anyhow, Result};
 use bitvec::prelude::*;
 
 pub struct EliasFano {
+    #[cfg(any(debug_assertions, test))]
+    universe: usize,
     size: usize,
     lower_bits: BitVec,
     upper_bits: BitVec,
@@ -41,6 +43,8 @@ impl EliasFano {
         // consecutive elements (the total number of possible distinct values that can be
         // represented by the high parts is limited by the number of elements in the sequence)
         Self {
+            #[cfg(any(debug_assertions, test))]
+            universe,
             size,
             lower_bits,
             upper_bits: BitVec::with_capacity(2 * size),
@@ -51,9 +55,18 @@ impl EliasFano {
 
     /// Encodes a sorted slice of integers
     // Algorithm described in https://vigna.di.unimi.it/ftp/papers/QuasiSuccinctIndices.pdf
-    pub fn encode(&mut self, values: &[u64]) {
+    pub fn encode(&mut self, values: &[u64]) -> Result<()> {
         let mut prev_high = 0;
         for (i, &val) in values.iter().enumerate() {
+            // Sanity check only in debug or test builds
+            #[cfg(any(debug_assertions, test))]
+            if val > self.universe as u64 {
+                return Err(anyhow!(
+                    "Element {}th ({}) is greater than universe",
+                    i,
+                    val
+                ));
+            }
             // Encode lower bits efficiently
             if self.lower_bit_length > 0 {
                 let low = val & self.lower_bit_mask;
@@ -63,6 +76,12 @@ impl EliasFano {
 
             // Encode upper bits using unary coding
             let high = val >> self.lower_bit_length;
+            // Sanity check only in debug or test builds
+            #[cfg(any(debug_assertions, test))]
+            if high < prev_high {
+                return Err(anyhow!("Sequence is not sorted"));
+            }
+
             let gap = high - prev_high;
             self.upper_bits
                 .extend_from_bitslice(&BitVec::<u8>::repeat(false, gap as usize));
@@ -70,6 +89,7 @@ impl EliasFano {
 
             prev_high = high;
         }
+        Ok(())
     }
 
     /// Returns the value at the given index
@@ -120,7 +140,7 @@ mod tests {
         let values = vec![5, 8, 8, 15, 32];
         let upper_bound = 36;
         let mut ef = EliasFano::new(upper_bound, values.len());
-        ef.encode(&values);
+        assert!(ef.encode(&values).is_ok());
 
         // Calculate expected lower bits
         // L = floor(log2(36/5)) = 2
@@ -136,6 +156,18 @@ mod tests {
         assert_eq!(ef.lower_bit_length, 2);
         assert_eq!(ef.lower_bits, expected_lower_bits,);
         assert_eq!(ef.upper_bits, expected_upper_bits,);
+
+        // Test unsorted sequence
+        let values = vec![5, 8, 7, 15, 32];
+        let upper_bound = 36;
+        let mut ef = EliasFano::new(upper_bound, values.len());
+        assert!(ef.encode(&values).is_err());
+
+        // Test sequence with element exceeding upper bound
+        let values = vec![5, 8, 8, 15, 32];
+        let upper_bound = 31;
+        let mut ef = EliasFano::new(upper_bound, values.len());
+        assert!(ef.encode(&values).is_err());
     }
 
     #[test]
@@ -150,7 +182,7 @@ mod tests {
 
         for (values, upper_bound) in test_cases {
             let mut ef = EliasFano::new(upper_bound, values.len());
-            ef.encode(&values);
+            assert!(ef.encode(&values).is_ok());
 
             for i in 0..values.len() {
                 let decoded_value = ef.get(i).expect("Failed to decode value");
@@ -163,7 +195,7 @@ mod tests {
         let upper_bound = 9999;
 
         let mut ef = EliasFano::new(upper_bound, values.len());
-        ef.encode(&values);
+        assert!(ef.encode(&values).is_ok());
 
         // Check random accesses
         assert_eq!(ef.get(0).expect("Failed to decode value"), 1);
