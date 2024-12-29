@@ -9,3 +9,4 @@ bitvec = "1"
 env_logger.workspace = true
 log.workspace = true
 tempdir.workspace = true
+utils.workspace = true
