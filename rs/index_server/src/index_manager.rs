@@ -90,23 +90,23 @@ impl IndexManager {
                 .index_catalog
                 .lock()
                 .await
-                .get_all_index_names_sorted()
+                .get_all_collection_names_sorted()
                 .await;
 
             // TODO(hicder): Remove indexes that are not in the new config
-            let indexes_to_add = Self::get_indexes_to_add(&current_index_names, &new_index_names);
-            for index_name in indexes_to_add.iter() {
-                info!("Fetching index {}", index_name);
-                let index = self.index_provider.read_index(index_name);
-                if let Some(index) = index {
-                    let idx = Arc::new(index);
+            let collections_to_add =
+                Self::get_indexes_to_add(&current_index_names, &new_index_names);
+            for collection_name in collections_to_add.iter() {
+                info!("Fetching collection {}", collection_name);
+                let collection_opt = self.index_provider.read_index(collection_name);
+                if let Some(collection) = collection_opt {
                     self.index_catalog
                         .lock()
                         .await
-                        .add_index(index_name.clone(), idx)
+                        .add_collection(collection_name.clone(), collection)
                         .await;
                 } else {
-                    warn!("Failed to fetch index {}", index_name);
+                    warn!("Failed to fetch collection {}", collection_name);
                 }
             }
         } else {

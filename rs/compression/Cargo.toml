@@ -1,0 +1,11 @@
+[package]
+name = "compression"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+bitvec = "1"
+env_logger.workspace = true
+log.workspace = true
+tempdir.workspace = true

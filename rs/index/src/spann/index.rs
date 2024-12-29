@@ -17,6 +17,14 @@ impl Spann {
             posting_lists,
         }
     }
+
+    pub fn get_centroids(&self) -> &Hnsw<NoQuantizer> {
+        &self.centroids
+    }
+
+    pub fn get_posting_lists(&self) -> &Ivf<NoQuantizer> {
+        &self.posting_lists
+    }
 }
 
 impl Searchable for Spann {
@@ -35,7 +43,7 @@ impl Searchable for Spann {
                 if nearest_centroids.is_empty() {
                     return None;
                 }
-                let results = self.posting_lists.search_with_centroids(
+                let results = self.posting_lists.search_with_centroids_and_remap(
                     query,
                     nearest_centroid_ids,
                     k,
