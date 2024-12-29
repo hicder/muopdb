@@ -44,23 +44,6 @@ class IndexServerClient:
         self.channel.close()
 
 if __name__ == '__main__':
-    # Example usage for Aggregator
-    aggregator_client = AggregatorClient()
-    try:
-        get_response = aggregator_client.get(
-            index="my_index",
-            vector=[0.1, 0.2, 0.3],
-            top_k=5,
-            ef_construction=100,
-            record_metrics=True
-        )
-        print("Aggregator Get Response:", get_response)
-    except grpc.RpcError as e:
-         print(f"Aggregator RPC Error: {e}")
-    finally:
-        aggregator_client.close()
-
-
     # Example usage for IndexServer
     index_server_client = IndexServerClient()
     try:
