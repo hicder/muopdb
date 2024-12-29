@@ -1,5 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use utils::{distance::l2::L2DistanceCalculator, kmeans_builder::kmeans_builder};
+use utils::distance::l2::L2DistanceCalculator;
+use utils::kmeans_builder::kmeans_builder;
 
 fn bench_kmeans(c: &mut Criterion) {
     let mut group = c.benchmark_group("K-Means");

@@ -6,7 +6,7 @@ use log::debug;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::slice::ParallelSlice;
 
-use crate::distance::l2::{L2DistanceCalculator, LaneConformingDistanceCalculator};
+use crate::distance::l2::LaneConformingDistanceCalculator;
 use crate::{CalculateSquared, DistanceCalculator};
 
 #[derive(PartialEq, Debug)]
@@ -14,7 +14,7 @@ pub enum KMeansVariant {
     Lloyd,
 }
 
-pub struct KMeansBuilder<D:DistanceCalculator + CalculateSquared + Send + Sync> {
+pub struct KMeansBuilder<D: DistanceCalculator + CalculateSquared + Send + Sync> {
     pub num_cluters: usize,
     pub max_iter: usize,
 
@@ -40,7 +40,7 @@ pub struct KMeansResult {
 
 // TODO(hicder): Add support for different variants of k-means.
 // TODO(hicder): Add support for different distance metrics.
-impl<D:DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
+impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
     pub fn new(
         num_cluters: usize,
         max_iter: usize,
@@ -123,9 +123,11 @@ impl<D:DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
                     return self
                         .run_lloyd::<LaneConformingDistanceCalculator<16, D>>(flattened_data);
                 } else if self.dimension % 8 == 0 {
-                    return self.run_lloyd::<LaneConformingDistanceCalculator<8, D>>(flattened_data);
+                    return self
+                        .run_lloyd::<LaneConformingDistanceCalculator<8, D>>(flattened_data);
                 } else if self.dimension % 4 == 0 {
-                    return self.run_lloyd::<LaneConformingDistanceCalculator<4, D>>(flattened_data);
+                    return self
+                        .run_lloyd::<LaneConformingDistanceCalculator<4, D>>(flattened_data);
                 } else {
                     return self.run_lloyd::<D>(flattened_data);
                 }
@@ -289,6 +291,8 @@ impl<D:DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
 #[cfg(test)]
 mod tests {
 
+    use crate::distance::l2::L2DistanceCalculator;
+
     use super::*;
 
     #[test]
@@ -362,14 +366,15 @@ mod tests {
             .flatten()
             .cloned()
             .collect();
-        let kmeans: KMeansBuilder<L2DistanceCalculator> = KMeansBuilder::new_with_cluster_init_values(
-            3,
-            100,
-            10000.0,
-            2,
-            KMeansVariant::Lloyd,
-            vec![0, 0, 0, 0, 0, 0, 2, 2, 2],
-        );
+        let kmeans: KMeansBuilder<L2DistanceCalculator> =
+            KMeansBuilder::new_with_cluster_init_values(
+                3,
+                100,
+                10000.0,
+                2,
+                KMeansVariant::Lloyd,
+                vec![0, 0, 0, 0, 0, 0, 2, 2, 2],
+            );
         let result = kmeans
             .fit(flattened_data)
             .expect("KMeans run should succeed");
@@ -403,14 +408,15 @@ mod tests {
             .flatten()
             .cloned()
             .collect();
-        let kmeans: KMeansBuilder<L2DistanceCalculator> = KMeansBuilder::new_with_cluster_init_values(
-            3,
-            100,
-            0.0,
-            2,
-            KMeansVariant::Lloyd,
-            vec![0, 0, 0, 1, 1, 1, 2, 2, 2],
-        );
+        let kmeans: KMeansBuilder<L2DistanceCalculator> =
+            KMeansBuilder::new_with_cluster_init_values(
+                3,
+                100,
+                0.0,
+                2,
+                KMeansVariant::Lloyd,
+                vec![0, 0, 0, 1, 1, 1, 2, 2, 2],
+            );
 
         let result = kmeans
             .fit(flattened_data)

@@ -36,7 +36,7 @@ pub struct IvfBuilderConfig {
     pub max_posting_list_size: usize,
 }
 
-pub struct IvfBuilder<D:DistanceCalculator+CalculateSquared + Send + Sync> {
+pub struct IvfBuilder<D: DistanceCalculator + CalculateSquared + Send + Sync> {
     config: IvfBuilderConfig,
     vectors: Box<dyn VectorStorage<f32>>,
     centroids: Box<dyn VectorStorage<f32>>,
@@ -140,7 +140,7 @@ impl PartialEq for PostingListWithStoppingPoints {
 
 impl Eq for PostingListWithStoppingPoints {}
 
-impl <D:DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
+impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
     /// Create a new IvfBuilder
     pub fn new(config: IvfBuilderConfig) -> Result<Self> {
         // Create the base directory and all parent directories if they don't exist

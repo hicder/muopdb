@@ -1,12 +1,3 @@
-use index::hnsw::reader::HnswReader;
-use index::index::BoxedSearchable;
-use index::ivf::reader::IvfReader;
-use index::spann::reader::SpannReader;
-use index_writer::config::{BaseConfig, DistanceType, QuantizerConfig, QuantizerType};
-use quantization::noq::noq::NoQuantizer;
-use quantization::pq::pq::ProductQuantizer;
-use utils::distance::dot_product::DotProductDistanceCalculator;
-use utils::distance::l2::L2DistanceCalculator;
 use std::sync::Arc;
 
 use index::collection::reader::Reader;

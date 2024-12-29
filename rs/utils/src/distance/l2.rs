@@ -91,13 +91,15 @@ impl DistanceCalculator for L2DistanceCalculator {
 
 /// Calculator where we know in advance that the dimension of vectors is a multiple of LANES.
 /// This skips a bunch of checks and allows for a more efficient implementation.
-pub struct LaneConformingDistanceCalculator<const LANES: usize, D:DistanceCalculator + Send + Sync>
+pub struct LaneConformingDistanceCalculator<const LANES: usize, D: DistanceCalculator + Send + Sync>
 where
-    LaneCount<LANES>: SupportedLaneCount, {
-        _marker: PhantomData<D>
-    }
+    LaneCount<LANES>: SupportedLaneCount,
+{
+    _marker: PhantomData<D>,
+}
 
-impl<const LANES: usize, D:DistanceCalculator + Send + Sync> CalculateSquared for LaneConformingDistanceCalculator<LANES, D>
+impl<const LANES: usize, D: DistanceCalculator + Send + Sync> CalculateSquared
+    for LaneConformingDistanceCalculator<LANES, D>
 where
     LaneCount<LANES>: SupportedLaneCount,
 {

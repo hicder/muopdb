@@ -4,7 +4,6 @@ use std::marker::PhantomData;
 use anyhow::{Context, Result};
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
-use utils::distance::l2::L2DistanceCalculator;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 use utils::DistanceCalculator;
 
@@ -30,7 +29,7 @@ pub struct Ivf<Q: Quantizer, D: DistanceCalculator> {
 
     pub quantizer: Q,
 
-    _marker: PhantomData<D>
+    _marker: PhantomData<D>,
 }
 
 impl<Q: Quantizer, D: DistanceCalculator> Ivf<Q, D> {
@@ -60,7 +59,7 @@ impl<Q: Quantizer, D: DistanceCalculator> Ivf<Q, D> {
                 .get_centroid(i as usize)
                 .with_context(|| format!("Failed to get centroid at index {}", i))?;
             let dist = D::calculate(&vector, &centroid);
-            distances.push((i as usize, dist));    
+            distances.push((i as usize, dist));
         }
         distances.select_nth_unstable_by(num_probes - 1, |a, b| a.1.total_cmp(&b.1));
         let mut nearest_centroids: Vec<(usize, f32)> =
@@ -183,8 +182,9 @@ mod tests {
     use num_traits::ops::bytes::ToBytes;
     use quantization::noq::noq::NoQuantizer;
     use quantization::pq::pq::ProductQuantizer;
+    use utils::distance::l2::L2DistanceCalculator;
     use utils::mem::transmute_slice_to_u8;
-
+    
     use super::*;
 
     fn create_fixed_file_vector_storage<T: ToBytes>(
@@ -340,7 +340,12 @@ mod tests {
         let num_clusters = 2;
 
         let quantizer = NoQuantizer::new(3);
-        let ivf = Ivf::<NoQuantizer, L2DistanceCalculator>::new(storage, index_storage, num_clusters, quantizer);
+        let ivf = Ivf::<NoQuantizer, L2DistanceCalculator>::new(
+            storage,
+            index_storage,
+            num_clusters,
+            quantizer,
+        );
 
         assert_eq!(ivf.num_clusters, num_clusters);
         let cluster_0 = ivf.index_storage.get_posting_list(0);
@@ -378,9 +383,12 @@ mod tests {
             FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
         let num_probes = 2;
 
-        let nearest =
-            Ivf::<NoQuantizer, L2DistanceCalculator>::find_nearest_centroids(&vector, &index_storage, num_probes)
-                .expect("Nearest centroids should be found");
+        let nearest = Ivf::<NoQuantizer, L2DistanceCalculator>::find_nearest_centroids(
+            &vector,
+            &index_storage,
+            num_probes,
+        )
+        .expect("Nearest centroids should be found");
 
         assert_eq!(nearest[0], 1);
         assert_eq!(nearest[1], 0);
@@ -426,7 +434,8 @@ mod tests {
         let num_probes = 2;
 
         let quantizer = NoQuantizer::new(num_features);
-        let ivf: Ivf<NoQuantizer, L2DistanceCalculator> = Ivf::new(storage, index_storage, num_clusters, quantizer);
+        let ivf: Ivf<NoQuantizer, L2DistanceCalculator> =
+            Ivf::new(storage, index_storage, num_clusters, quantizer);
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
@@ -500,7 +509,8 @@ mod tests {
         let num_clusters = 2;
         let num_probes = 2;
 
-        let ivf: Ivf<ProductQuantizer, L2DistanceCalculator> = Ivf::new(storage, index_storage, num_clusters, quantizer);
+        let ivf: Ivf<ProductQuantizer, L2DistanceCalculator> =
+            Ivf::new(storage, index_storage, num_clusters, quantizer);
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
@@ -552,7 +562,8 @@ mod tests {
         let num_probes = 1;
 
         let quantizer = NoQuantizer::new(num_features);
-        let ivf: Ivf<NoQuantizer, L2DistanceCalculator> = Ivf::new(storage, index_storage, num_clusters, quantizer);
+        let ivf: Ivf<NoQuantizer, L2DistanceCalculator> =
+            Ivf::new(storage, index_storage, num_clusters, quantizer);
 
         let query = vec![1.0, 2.0, 3.0];
         let k = 5; // More than available results

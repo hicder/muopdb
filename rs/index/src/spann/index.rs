@@ -11,7 +11,10 @@ pub struct Spann {
 }
 
 impl Spann {
-    pub fn new(centroids: Hnsw<NoQuantizer>, posting_lists: Ivf<NoQuantizer, L2DistanceCalculator>) -> Self {
+    pub fn new(
+        centroids: Hnsw<NoQuantizer>,
+        posting_lists: Ivf<NoQuantizer, L2DistanceCalculator>,
+    ) -> Self {
         Self {
             centroids,
             posting_lists,
@@ -22,7 +25,7 @@ impl Spann {
         &self.centroids
     }
 
-    pub fn get_posting_lists(&self) -> &Ivf<NoQuantizer> {
+    pub fn get_posting_lists(&self) -> &Ivf<NoQuantizer, L2DistanceCalculator> {
         &self.posting_lists
     }
 }

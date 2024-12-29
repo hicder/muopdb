@@ -285,7 +285,8 @@ mod tests {
         // Create an IvfWriter instance
         let num_features = 10;
         let quantizer = NoQuantizer::new(num_features);
-        let ivf_writer: IvfWriter<NoQuantizer, L2DistanceCalculator> = IvfWriter::new(base_directory.clone(), quantizer);
+        let ivf_writer: IvfWriter<NoQuantizer, L2DistanceCalculator> =
+            IvfWriter::new(base_directory.clone(), quantizer);
 
         // Create test files
         create_test_file(&base_directory, "centroids", &[5, 6, 7, 8])?;
@@ -377,7 +378,8 @@ mod tests {
 
         // Pad to 8-byte alignment
         let padding_written =
-            IvfWriter::<NoQuantizer, L2DistanceCalculator>::write_pad(initial_size, &mut writer, 8).unwrap();
+            IvfWriter::<NoQuantizer, L2DistanceCalculator>::write_pad(initial_size, &mut writer, 8)
+                .unwrap();
 
         assert_eq!(padding_written, 5); // 3 bytes written, so 5 bytes of padding needed
 

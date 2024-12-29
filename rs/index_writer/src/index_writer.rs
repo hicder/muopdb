@@ -17,7 +17,8 @@ use utils::distance::l2::L2DistanceCalculator;
 use utils::{CalculateSquared, DistanceCalculator};
 
 use crate::config::{
-    DistanceType, HnswConfigWithBase, IndexWriterConfig, IvfConfigWithBase, QuantizerType, SpannConfigWithBase
+    DistanceType, HnswConfigWithBase, IndexWriterConfig, IvfConfigWithBase, QuantizerType,
+    SpannConfigWithBase,
 };
 use crate::input::Input;
 
@@ -191,11 +192,11 @@ impl IndexWriter {
         index_builder_config: &IvfConfigWithBase,
         quantizer: T,
         writer_fn: F,
-    ) -> Result<()> 
-    where 
+    ) -> Result<()>
+    where
         T: Quantizer,
         D: DistanceCalculator + CalculateSquared + Send + Sync,
-        F: Fn(&String, &T)  -> Result<()>,
+        F: Fn(&String, &T) -> Result<()>,
     {
         info!("Start writing product quantizer");
         let path = &self.output_root;
@@ -285,10 +286,21 @@ impl IndexWriter {
         };
 
         match index_builder_config.base_config.index_distance_type {
-            DistanceType::DotProduct => self.write_quantizer_and_build_ivf_index::<_, DotProductDistanceCalculator, _>(input, index_builder_config, pq, pq_writer_fn),
-            DistanceType::L2 => self.write_quantizer_and_build_ivf_index::<_, L2DistanceCalculator, _>(input, index_builder_config, pq, pq_writer_fn),
+            DistanceType::DotProduct => self
+                .write_quantizer_and_build_ivf_index::<_, DotProductDistanceCalculator, _>(
+                    input,
+                    index_builder_config,
+                    pq,
+                    pq_writer_fn,
+                ),
+            DistanceType::L2 => self
+                .write_quantizer_and_build_ivf_index::<_, L2DistanceCalculator, _>(
+                    input,
+                    index_builder_config,
+                    pq,
+                    pq_writer_fn,
+                ),
         }
-        
     }
 
     fn build_ivf_noq(
@@ -312,8 +324,20 @@ impl IndexWriter {
         };
 
         match index_builder_config.base_config.index_distance_type {
-            DistanceType::DotProduct => self.write_quantizer_and_build_ivf_index::<_, DotProductDistanceCalculator, _>(input, index_builder_config, noq, noq_writer_fn),
-            DistanceType::L2 => self.write_quantizer_and_build_ivf_index::<_, L2DistanceCalculator, _>(input, index_builder_config, noq, noq_writer_fn)
+            DistanceType::DotProduct => self
+                .write_quantizer_and_build_ivf_index::<_, DotProductDistanceCalculator, _>(
+                    input,
+                    index_builder_config,
+                    noq,
+                    noq_writer_fn,
+                ),
+            DistanceType::L2 => self
+                .write_quantizer_and_build_ivf_index::<_, L2DistanceCalculator, _>(
+                    input,
+                    index_builder_config,
+                    noq,
+                    noq_writer_fn,
+                ),
         }
     }
 
@@ -445,7 +469,9 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
-    use crate::config::{BaseConfig, DistanceType, HnswConfig, IndexType, IvfConfig, QuantizerConfig};
+    use crate::config::{
+        BaseConfig, DistanceType, HnswConfig, IndexType, IvfConfig, QuantizerConfig,
+    };
     use crate::input::Row;
     // Mock Input implementation for testing
     struct MockInput {
@@ -602,7 +628,7 @@ mod tests {
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
             index_type: IndexType::Ivf,
-            index_distance_type: DistanceType::DotProduct
+            index_distance_type: DistanceType::DotProduct,
         };
         let quantizer_config = QuantizerConfig {
             quantizer_type: QuantizerType::ProductQuantizer,
@@ -610,7 +636,7 @@ mod tests {
             subvector_dimension: 2,
             num_bits: 2,
             num_training_rows: 50,
-            
+
             max_iteration: 10,
             batch_size: 10,
         };
@@ -685,7 +711,7 @@ mod tests {
             subvector_dimension: 2,
             num_bits: 2,
             num_training_rows: 50,
- 
+
             max_iteration: 10,
             batch_size: 10,
         };
