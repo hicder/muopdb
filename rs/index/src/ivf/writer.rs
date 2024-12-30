@@ -1,8 +1,10 @@
 use std::cmp::min;
 use std::fs::{create_dir_all, remove_dir_all, remove_file, File};
 use std::io::{BufWriter, Write};
+use std::marker::PhantomData;
 
 use anyhow::{anyhow, Context, Result};
+use compression::compression::IntSeqEncoder;
 use log::debug;
 use num_traits::ToBytes;
 use quantization::quantization::Quantizer;
@@ -12,16 +14,18 @@ use utils::io::{append_file_to_writer, wrap_write};
 use crate::ivf::builder::IvfBuilder;
 use crate::posting_list::combined_file::{Header, Version};
 
-pub struct IvfWriter<Q: Quantizer> {
+pub struct IvfWriter<Q: Quantizer, C: IntSeqEncoder> {
     base_directory: String,
     quantizer: Q,
+    _marker: PhantomData<C>,
 }
 
-impl<Q: Quantizer> IvfWriter<Q> {
+impl<Q: Quantizer, C: IntSeqEncoder + 'static> IvfWriter<Q, C> {
     pub fn new(base_directory: String, quantizer: Q) -> Self {
         Self {
             base_directory,
             quantizer,
+            _marker: PhantomData,
         }
     }
 
@@ -86,17 +90,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
         // Write posting_lists
         let posting_lists_and_metadata_len = self
             .write_posting_lists_and_metadata(ivf_builder)
-            .context("Failed to write posting_lists")?;
-        let expected_bytes_written = std::mem::size_of::<u64>() * 2 * num_clusters
-            + std::mem::size_of::<u64>() * num_vectors
-            + std::mem::size_of::<u64>();
-        if posting_lists_and_metadata_len != expected_bytes_written {
-            return Err(anyhow!(
-                "Expected to write {} bytes in posting list storage, but wrote {}",
-                expected_bytes_written,
-                posting_lists_and_metadata_len,
-            ));
-        }
+            .context("Failed to write posting lists and metadata")?;
         debug!("Finish writing posting_lists_and_metadata");
 
         let header: Header = Header {
@@ -125,7 +119,9 @@ impl<Q: Quantizer> IvfWriter<Q> {
         // Write quantized vectors
         let path = format!("{}/vectors", self.base_directory);
         let mut file = File::create(path)?;
-        let capacity = full_vectors.borrow().len() * self.quantizer.quantized_dimension() * std::mem::size_of::<Q::QuantizedT>();
+        let capacity = full_vectors.borrow().len()
+            * self.quantizer.quantized_dimension()
+            * std::mem::size_of::<Q::QuantizedT>();
         let mut writer = BufWriter::with_capacity(min(1 << 30, capacity), &mut file);
 
         let mut bytes_written = 0;
@@ -137,7 +133,8 @@ impl<Q: Quantizer> IvfWriter<Q> {
                 &self.quantizer,
             );
             for j in 0..quantized_vector.len() {
-                bytes_written += wrap_write(&mut writer, quantized_vector[j].to_le_bytes().as_ref())?;
+                bytes_written +=
+                    wrap_write(&mut writer, quantized_vector[j].to_le_bytes().as_ref())?;
             }
         }
 
@@ -170,12 +167,52 @@ impl<Q: Quantizer> IvfWriter<Q> {
     }
 
     fn write_posting_lists_and_metadata(&self, ivf_builder: &mut IvfBuilder) -> Result<usize> {
-        let path = format!("{}/posting_lists", self.base_directory);
-        let mut file = File::create(path)?;
-        let mut writer = BufWriter::new(&mut file);
+        let metadata_path = format!("{}/posting_list_metadata", self.base_directory);
+        let mut metadata_file = File::create(metadata_path)?;
+        let mut metadata_writer = BufWriter::new(&mut metadata_file);
 
-        let bytes_written = ivf_builder.posting_lists_mut().write(&mut writer)?;
-        Ok(bytes_written)
+        let posting_list_path = format!("{}/posting_lists", self.base_directory);
+        let mut posting_list_file = File::create(posting_list_path)?;
+        let mut posting_list_writer = BufWriter::new(&mut posting_list_file);
+
+        let mut metadata_bytes_written = 0;
+        let mut posting_list_bytes_written = 0;
+
+        let num_posting_lists = ivf_builder.posting_lists().len();
+        // First write the total number of posting lists
+        metadata_bytes_written +=
+            wrap_write(&mut metadata_writer, &num_posting_lists.to_le_bytes())?;
+        for i in 0..num_posting_lists {
+            let posting_list = ivf_builder
+                .posting_lists()
+                .get(i as u32)?
+                .iter()
+                .collect::<Vec<_>>();
+            let mut encoder = C::new_encoder(/*universe*/ None, posting_list.len());
+            // Encode to get the length of the encoded data
+            encoder.encode(&posting_list)?;
+            // Write the length of the encoded posting list
+            metadata_bytes_written +=
+                wrap_write(&mut metadata_writer, &encoder.len().to_le_bytes())?;
+            // Write the offset to the current posting list
+            metadata_bytes_written += wrap_write(
+                &mut metadata_writer,
+                &((posting_list_bytes_written as u64).to_le_bytes()),
+            )?;
+            // Now write the posting list itself
+            posting_list_bytes_written += encoder.write(&mut posting_list_writer)?;
+        }
+
+        let expected_bytes_written =
+            std::mem::size_of::<u64>() * 2 * num_posting_lists + std::mem::size_of::<u64>();
+        if metadata_bytes_written != expected_bytes_written {
+            return Err(anyhow!(
+                "Expected to write {} bytes of posting list metadata, but wrote {}",
+                expected_bytes_written,
+                metadata_bytes_written,
+            ));
+        }
+        Ok(metadata_bytes_written + posting_list_bytes_written)
     }
 
     fn write_header(&self, header: &Header, writer: &mut BufWriter<&mut File>) -> Result<usize> {
@@ -198,6 +235,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
     fn combine_files(&self, header: &Header) -> Result<usize> {
         let doc_id_mapping_path = format!("{}/doc_id_mapping", self.base_directory);
         let centroids_path = format!("{}/centroids", self.base_directory);
+        let posting_list_metadata_path = format!("{}/posting_list_metadata", self.base_directory);
         let posting_lists_path = format!("{}/posting_lists", self.base_directory);
 
         let combined_path = format!("{}/index", self.base_directory);
@@ -217,6 +255,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
 
         // Pad again in case num_features and num_clusters are both odd
         written += Self::write_pad(written, &mut combined_buffer_writer, 8)?;
+        written += append_file_to_writer(&posting_list_metadata_path, &mut combined_buffer_writer)?;
         written += append_file_to_writer(&posting_lists_path, &mut combined_buffer_writer)?;
 
         combined_buffer_writer
@@ -225,6 +264,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
 
         remove_file(format!("{}/doc_id_mapping", self.base_directory))?;
         remove_file(format!("{}/centroids", self.base_directory))?;
+        remove_file(format!("{}/posting_list_metadata", self.base_directory))?;
         remove_file(format!("{}/posting_lists", self.base_directory))?;
 
         Ok(written)
@@ -254,6 +294,7 @@ mod tests {
     use std::path::Path;
 
     use byteorder::{LittleEndian, ReadBytesExt};
+    use compression::noc::noc::PlainEncoder;
     use quantization::noq::noq::NoQuantizer;
     use quantization::pq::pq::ProductQuantizer;
     use tempdir::TempDir;
@@ -283,10 +324,11 @@ mod tests {
         // Create an IvfWriter instance
         let num_features = 10;
         let quantizer = NoQuantizer::new(num_features);
-        let ivf_writer = IvfWriter::new(base_directory.clone(), quantizer);
+        let ivf_writer = IvfWriter::<_, PlainEncoder>::new(base_directory.clone(), quantizer);
 
         // Create test files
         create_test_file(&base_directory, "centroids", &[5, 6, 7, 8])?;
+        create_test_file(&base_directory, "posting_list_metadata", &[1, 2, 3, 4])?;
         create_test_file(&base_directory, "posting_lists", &[9, 10, 11, 12])?;
         create_test_file(&base_directory, "doc_id_mapping", &[100, 101, 102, 103])?;
 
@@ -355,6 +397,14 @@ mod tests {
             next_offset += 1;
         }
 
+        // posting_list_metadata
+        assert_eq!(
+            &combined_content[next_offset..next_offset + 4],
+            [1, 2, 3, 4]
+        );
+
+        // posting_lists
+        next_offset += 4;
         assert_eq!(
             &combined_content[next_offset..next_offset + 4],
             [9, 10, 11, 12]
@@ -375,7 +425,8 @@ mod tests {
 
         // Pad to 8-byte alignment
         let padding_written =
-            IvfWriter::<NoQuantizer>::write_pad(initial_size, &mut writer, 8).unwrap();
+            IvfWriter::<NoQuantizer, PlainEncoder>::write_pad(initial_size, &mut writer, 8)
+                .unwrap();
 
         assert_eq!(padding_written, 5); // 3 bytes written, so 5 bytes of padding needed
 
@@ -406,7 +457,7 @@ mod tests {
         let quantizer =
             ProductQuantizer::new(3, 1, subvector_dimension, codebook, base_directory.clone())
                 .expect("Can't create product quantizer");
-        let ivf_writer = IvfWriter::new(base_directory.clone(), quantizer);
+        let ivf_writer = IvfWriter::<_, PlainEncoder>::new(base_directory.clone(), quantizer);
 
         let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
@@ -494,7 +545,7 @@ mod tests {
         let num_features = 4;
         let file_size = 4096;
         let quantizer = NoQuantizer::new(num_features);
-        let writer = IvfWriter::new(base_directory.clone(), quantizer);
+        let writer = IvfWriter::<_, PlainEncoder>::new(base_directory.clone(), quantizer);
 
         let mut builder = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,

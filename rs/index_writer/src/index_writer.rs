@@ -1,4 +1,5 @@
 use anyhow::{Ok, Result};
+use compression::noc::noc::PlainEncoder;
 use index::hnsw::builder::HnswBuilder;
 use index::hnsw::writer::HnswWriter;
 use index::ivf::builder::{IvfBuilder, IvfBuilderConfig};
@@ -228,7 +229,7 @@ impl IndexWriter {
         std::fs::create_dir_all(&path)?;
 
         info!("Start writing index");
-        let ivf_writer = IvfWriter::new(path.to_string(), quantizer);
+        let ivf_writer = IvfWriter::<_, PlainEncoder>::new(path.to_string(), quantizer);
         ivf_writer.write(&mut ivf_builder, index_builder_config.base_config.reindex)?;
 
         // Cleanup tmp directory. It's ok to fail
