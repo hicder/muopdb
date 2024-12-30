@@ -4,7 +4,7 @@ import muopdb_pb2_grpc
 
 """
 Make sure to build the proto files first:
-pip install grpcio protobuf grpcio-tools
+pip install grpcio protobuf grpcio-tools ollama
 python3 -m grpc.tools.protoc -I=rs/proto/proto --python_out=py/ --grpc_python_out=py/ rs/proto/proto/muopdb.proto
 """
 
