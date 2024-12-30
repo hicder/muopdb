@@ -82,17 +82,17 @@ impl<Q: Quantizer> IvfWriter<Q> {
         }
 
         // Write posting_lists
-        let posting_lists_len = self
-            .write_posting_lists(ivf_builder)
+        let posting_lists_and_metadata_len = self
+            .write_posting_lists_and_metadata(ivf_builder)
             .context("Failed to write posting_lists")?;
         let expected_bytes_written = std::mem::size_of::<u64>() * 2 * num_clusters
             + std::mem::size_of::<u64>() * num_vectors
             + std::mem::size_of::<u64>();
-        if posting_lists_len != expected_bytes_written {
+        if posting_lists_and_metadata_len != expected_bytes_written {
             return Err(anyhow!(
                 "Expected to write {} bytes in posting list storage, but wrote {}",
                 expected_bytes_written,
-                posting_lists_len,
+                posting_lists_and_metadata_len,
             ));
         }
 
@@ -104,7 +104,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
             num_vectors: num_vectors as u64,
             doc_id_mapping_len: doc_id_mapping_len as u64,
             centroids_len: centroids_len as u64,
-            posting_lists_len: posting_lists_len as u64,
+            posting_lists_and_metadata_len: posting_lists_and_metadata_len as u64,
         };
 
         self.combine_files(&header)?;
@@ -166,7 +166,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
         Ok(bytes_written)
     }
 
-    fn write_posting_lists(&self, ivf_builder: &mut IvfBuilder) -> Result<usize> {
+    fn write_posting_lists_and_metadata(&self, ivf_builder: &mut IvfBuilder) -> Result<usize> {
         let path = format!("{}/posting_lists", self.base_directory);
         let mut file = File::create(path)?;
         let mut writer = BufWriter::new(&mut file);
@@ -187,7 +187,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
         written += wrap_write(writer, &header.num_vectors.to_le_bytes())?;
         written += wrap_write(writer, &header.doc_id_mapping_len.to_le_bytes())?;
         written += wrap_write(writer, &header.centroids_len.to_le_bytes())?;
-        written += wrap_write(writer, &header.posting_lists_len.to_le_bytes())?;
+        written += wrap_write(writer, &header.posting_lists_and_metadata_len.to_le_bytes())?;
         Ok(written)
     }
 
@@ -296,7 +296,7 @@ mod tests {
             num_vectors: 4,
             doc_id_mapping_len: 4,
             centroids_len: 4,
-            posting_lists_len: 4,
+            posting_lists_and_metadata_len: 4,
         };
 
         // Call combine_files
@@ -320,7 +320,7 @@ mod tests {
             4, 0, 0, 0, 0, 0, 0, 0, // num_vectors (little-endian)
             4, 0, 0, 0, 0, 0, 0, 0, // doc_id_mapping_len (little-endian)
             4, 0, 0, 0, 0, 0, 0, 0, // centroids_len (little-endian)
-            4, 0, 0, 0, 0, 0, 0, 0, // posting_lists_len (little-endian)
+            4, 0, 0, 0, 0, 0, 0, 0, // posting_lists_and_metadata_len (little-endian)
         ];
 
         // Add padding to align to 8 bytes
@@ -588,9 +588,9 @@ mod tests {
         let centroids_len = index_reader
             .read_u64::<LittleEndian>()
             .expect("Failed to read centroids_len");
-        let posting_lists_len = index_reader
+        let posting_lists_and_metadata_len = index_reader
             .read_u64::<LittleEndian>()
-            .expect("Failed to read posting_lists_len");
+            .expect("Failed to read posting_lists_and_metadata_len");
 
         // Verify file size
         let file_size = index_file
@@ -599,7 +599,7 @@ mod tests {
             .len();
         assert_eq!(
             file_size,
-            41 + 7 + doc_id_mapping_len + centroids_len + posting_lists_len
+            41 + 7 + doc_id_mapping_len + centroids_len + posting_lists_and_metadata_len
         ); // 41 bytes for header + 7 padding
     }
 }
