@@ -3,7 +3,7 @@ use std::vec;
 
 use index::index::Searchable;
 use index::utils::SearchContext;
-use log::info;
+use log::{debug, info};
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
     FlushRequest, FlushResponse, InsertRequest, InsertResponse, SearchRequest, SearchResponse,
@@ -87,6 +87,7 @@ impl IndexServer for IndexServerImpl {
         &self,
         request: tonic::Request<InsertRequest>,
     ) -> Result<tonic::Response<InsertResponse>, tonic::Status> {
+        let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
         let ids = req.ids;
@@ -117,6 +118,10 @@ impl IndexServer for IndexServerImpl {
                         collection.insert(*id, vector).unwrap()
                     });
 
+                // log the duration
+                let end = std::time::Instant::now();
+                let duration = end.duration_since(start);
+                debug!("Inserted {} vectors in {:?}", ids.len(), duration);
                 Ok(tonic::Response::new(InsertResponse { inserted_ids: ids }))
             }
             None => Err(tonic::Status::new(
@@ -130,6 +135,7 @@ impl IndexServer for IndexServerImpl {
         &self,
         request: tonic::Request<FlushRequest>,
     ) -> Result<tonic::Response<FlushResponse>, tonic::Status> {
+        let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
 
@@ -139,6 +145,10 @@ impl IndexServer for IndexServerImpl {
             .await
             .get_collection(&collection_name)
             .await;
+
+        let end = std::time::Instant::now();
+        let duration = end.duration_since(start);
+        debug!("Indexing collection {} in {:?}", collection_name, duration);
 
         match collection_opt {
             Some(collection) => {

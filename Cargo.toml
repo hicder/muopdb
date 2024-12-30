@@ -1,5 +1,6 @@
 [workspace]
-members = [
+members = [ 
+    "rs/demo",
     "rs/aggregator", 
     "rs/cli", 
     "rs/compression", 

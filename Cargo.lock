@@ -580,6 +580,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "demo"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "hdf5-metno",
+ "log",
+ "ndarray",
+ "proto",
+ "tokio",
+ "tonic",
+]
+
+[[package]]
 name = "dirs"
 version = "3.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
