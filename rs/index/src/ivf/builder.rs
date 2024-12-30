@@ -198,6 +198,10 @@ impl IvfBuilder {
         &*self.centroids
     }
 
+    pub fn posting_lists(&self) -> &dyn for<'a> PostingListStorage<'a> {
+        &*self.posting_lists
+    }
+
     pub fn posting_lists_mut(&mut self) -> &mut dyn for<'a> PostingListStorage<'a> {
         &mut *self.posting_lists
     }
