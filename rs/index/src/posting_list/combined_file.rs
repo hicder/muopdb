@@ -22,7 +22,7 @@ pub struct Header {
     pub num_vectors: u64,
     pub doc_id_mapping_len: u64,
     pub centroids_len: u64,
-    pub posting_lists_len: u64,
+    pub posting_lists_and_metadata_len: u64,
 }
 
 pub struct FixedIndexFile {
@@ -81,7 +81,7 @@ impl FixedIndexFile {
         offset += 8;
         let centroids_len = LittleEndian::read_u64(&buffer[offset..]);
         offset += 8;
-        let posting_lists_len = LittleEndian::read_u64(&buffer[offset..]);
+        let posting_lists_and_metadata_len = LittleEndian::read_u64(&buffer[offset..]);
         offset += 8;
 
         let header = Header {
@@ -92,7 +92,7 @@ impl FixedIndexFile {
             num_vectors,
             doc_id_mapping_len,
             centroids_len,
-            posting_lists_len,
+            posting_lists_and_metadata_len,
         };
 
         // Align to the next 8-byte boundary
@@ -191,7 +191,8 @@ mod tests {
             4, 0, 0, 0, 0, 0, 0, 0, // num_vectors (little-endian)
             40, 0, 0, 0, 0, 0, 0, 0, // doc_id_mapping_len (little-endian)
             40, 0, 0, 0, 0, 0, 0, 0, // centroids_len (little-endian)
-            9, 0, 0, 0, 0, 0, 0, 0, // posting_lists_len - garbage (little-endian)
+            9, 0, 0, 0, 0, 0, 0,
+            0, // posting_lists_and_metadata_len - garbage (little-endian)
         ];
 
         // Add padding to align to 8 bytes
@@ -237,7 +238,7 @@ mod tests {
         assert_eq!(combined_file.header.num_vectors, 4);
         assert_eq!(combined_file.header.doc_id_mapping_len, 40);
         assert_eq!(combined_file.header.centroids_len, 40);
-        assert_eq!(combined_file.header.posting_lists_len, 9);
+        assert_eq!(combined_file.header.posting_lists_and_metadata_len, 9);
 
         assert_eq!(
             combined_file
