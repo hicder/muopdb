@@ -12,3 +12,14 @@ anyhow.workspace = true
 proto.workspace = true
 tokio.workspace = true
 ndarray.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+
+[[bin]]
+name = "insert"
+path = "src/main.rs"
+
+[[bin]]
+name = "search"
+path = "src/search.rs"

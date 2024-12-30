@@ -28,6 +28,7 @@ impl IndexServer for IndexServerImpl {
         &self,
         request: tonic::Request<SearchRequest>,
     ) -> Result<tonic::Response<SearchResponse>, tonic::Status> {
+        let start = std::time::Instant::now();
         let req = request.into_inner();
         let index_name = req.index_name;
         let vec = req.vector;
@@ -56,6 +57,9 @@ impl IndexServer for IndexServerImpl {
                             ids.push(id_with_score.id);
                             scores.push(id_with_score.score);
                         }
+                        let end = std::time::Instant::now();
+                        let duration = end.duration_since(start);
+                        debug!("Searched collection {} in {:?}", index_name, duration);
                         return Ok(tonic::Response::new(SearchResponse {
                             ids: ids,
                             scores: scores,
