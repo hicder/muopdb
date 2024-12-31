@@ -5,6 +5,7 @@ use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
+use utils::mem::transmute_u8_to_slice;
 use utils::DistanceCalculator;
 
 use crate::index::Searchable;
@@ -71,18 +72,18 @@ impl<Q: Quantizer> Ivf<Q> {
         query: &[f32],
         context: &mut SearchContext,
     ) -> Vec<IdWithScore> {
-        if let Ok(list) = self.index_storage.get_posting_list(centroid) {
+        if let Ok(byte_slice) = self.index_storage.get_posting_list(centroid) {
             let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
             let mut results: Vec<IdWithScore> = Vec::new();
-            for &idx in list {
-                match self.vector_storage.get(idx as usize, context) {
+            for idx in transmute_u8_to_slice::<u64>(byte_slice).iter() {
+                match self.vector_storage.get(*idx as usize, context) {
                     Some(vector) => {
                         let distance =
                             self.quantizer
                                 .distance(&quantized_query, vector, StreamingSIMD);
                         results.push(IdWithScore {
                             score: distance,
-                            id: idx,
+                            id: *idx,
                         });
                     }
                     None => {}
@@ -339,11 +340,18 @@ mod tests {
         let ivf = Ivf::new(storage, index_storage, num_clusters, quantizer);
 
         assert_eq!(ivf.num_clusters, num_clusters);
-        let cluster_0 = ivf.index_storage.get_posting_list(0);
-        let cluster_1 = ivf.index_storage.get_posting_list(1);
-        println!("{:?} {:?}", cluster_0, cluster_1);
-        assert!(cluster_0.map_or(false, |list| list.contains(&0)));
-        assert!(cluster_1.map_or(false, |list| list.contains(&2)));
+        let cluster_0 = transmute_u8_to_slice::<u64>(
+            ivf.index_storage
+                .get_posting_list(0)
+                .expect("Failed to get posting list"),
+        );
+        let cluster_1 = transmute_u8_to_slice::<u64>(
+            ivf.index_storage
+                .get_posting_list(1)
+                .expect("Failed to get posting list"),
+        );
+        assert!(cluster_0.contains(&0));
+        assert!(cluster_1.contains(&2));
     }
 
     #[test]
