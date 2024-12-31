@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::BufWriter;
 
 use anyhow::Result;
+use memmap2::Mmap;
 
 pub trait IntSeqEncoder {
     /// Creates an encoder
@@ -18,4 +19,14 @@ pub trait IntSeqEncoder {
     /// Writes to disk and returns number of bytes written (which can be just len(),
     /// or more if extra info is also required for decoding)
     fn write(&self, writer: &mut BufWriter<&mut File>) -> Result<usize>;
+}
+
+pub trait IntSeqDecoderIterator: Iterator {
+    /// Creates a decoder
+    fn new_decoder(mmap: &Mmap, offset: usize, size: usize) -> Self
+    where
+        Self: Sized;
+
+    /// Returns the number of elements in the sequence
+    fn len(&self) -> usize;
 }
