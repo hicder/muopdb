@@ -2,7 +2,6 @@ use std::cmp::{max, min, Ordering, Reverse};
 use std::collections::{BinaryHeap, HashMap};
 use std::fs::{create_dir, create_dir_all};
 use std::io::ErrorKind;
-use std::time::Instant;
 
 use anyhow::{anyhow, Result};
 use atomic_refcell::AtomicRefCell;
@@ -280,6 +279,7 @@ impl IvfBuilder {
 
     pub fn build_posting_lists(&mut self) -> Result<()> {
         debug!("Building posting lists");
+
         let mut posting_lists: Vec<Vec<u64>> =
             vec![Vec::with_capacity(0); self.centroids.borrow().len()];
         // Assign vectors to nearest centroids
@@ -425,43 +425,9 @@ impl IvfBuilder {
 
         let flattened_dataset =
             self.get_sample_dataset_from_doc_ids(&doc_ids, num_points_for_clustering)?;
-        debug!(
-            "Local clustering with {} docs, sample size {}, num_clusters {}",
-            doc_ids.len(),
-            flattened_dataset.len() / self.config.num_features,
-            num_clusters
-        );
-        let start = Instant::now();
         let result = kmeans.fit(flattened_dataset)?;
-        debug!("Time taken for kmeans: {}", start.elapsed().as_micros());
-        let posting_list_infos = self.assign_docs_to_cluster(doc_ids, result.centroids.as_ref())?;
 
-        {
-            let mut num_more_max = 0;
-            let mut num_less_max = 0;
-            let mut max_size = 0;
-            for pli in &posting_list_infos {
-                if pli.posting_list.len() > max_posting_list_size {
-                    num_more_max += 1;
-                } else {
-                    num_less_max += 1;
-                }
-
-                if pli.posting_list.len() > max_size {
-                    max_size = pli.posting_list.len();
-                }
-            }
-            debug!(
-                "Number of posting lists with more than max_posting_list_size: {}",
-                num_more_max
-            );
-            debug!(
-                "Number of posting lists with less than max_posting_list_size: {}",
-                num_less_max
-            );
-            debug!("Max posting list size: {}", max_size);
-        }
-        Ok(posting_list_infos)
+        self.assign_docs_to_cluster(doc_ids, result.centroids.as_ref())
     }
 
     fn compute_actual_num_clusters(
@@ -479,15 +445,13 @@ impl IvfBuilder {
     }
 
     pub fn build_centroids(&mut self) -> Result<()> {
+        debug!("Building centroids");
+
         // First pass to get the initial centroids
         let num_clusters = self.compute_actual_num_clusters(
             self.vectors.borrow().len(),
             self.config.num_clusters,
             self.config.max_posting_list_size,
-        );
-        debug!(
-            "First pass, will attemp to build {} centroids",
-            num_clusters
         );
         let kmeans = KMeansBuilder::new(
             num_clusters,
@@ -507,10 +471,6 @@ impl IvfBuilder {
 
         let num_points_for_clustering =
             max(num_clusters, self.config.num_data_points_for_clustering);
-        debug!(
-            "Partial clustering with {} points",
-            num_points_for_clustering
-        );
         let selected = indices
             .choose_multiple(&mut rng, num_points_for_clustering)
             .cloned()
@@ -522,32 +482,14 @@ impl IvfBuilder {
         let result = kmeans.fit(flattened_dataset)?;
         let posting_list_infos = self.assign_docs_to_cluster(indices, result.centroids.as_ref())?;
 
-        {
-            let mut num_more_max = 0;
-            let mut num_less_max = 0;
-            for pli in &posting_list_infos {
-                if pli.posting_list.len() > self.config.max_posting_list_size {
-                    num_more_max += 1;
-                } else {
-                    num_less_max += 1;
-                }
-            }
-            debug!(
-                "Number of posting lists with more than max_posting_list_size: {}",
-                num_more_max
-            );
-            debug!(
-                "Number of posting lists with less than max_posting_list_size: {}",
-                num_less_max
-            );
-        }
         // Repeatedly run kmeans on the longest posting list until no posting list is longer
         // than max_posting_list_size
         let mut heap = BinaryHeap::<PostingListInfo>::new();
         for posting_list_info in posting_list_infos {
             heap.push(posting_list_info);
         }
-        let mut num_iter = 0;
+
+        let mut num_iter = 0 as usize;
         while heap.len() > 0 {
             match heap.peek() {
                 None => break,
@@ -560,10 +502,6 @@ impl IvfBuilder {
             }
 
             let longest_posting_list = heap.pop().unwrap();
-            debug!(
-                "Clustering longest posting list with length: {}",
-                longest_posting_list.posting_list.len()
-            );
             num_iter += 1;
             let new_posting_list_infos = self.cluster_docs(
                 longest_posting_list.posting_list.clone(),
@@ -575,7 +513,6 @@ impl IvfBuilder {
                 heap.push(posting_list_info);
             }
         }
-
         debug!("Number of iterations to cluster: {}", num_iter);
 
         // Add the centroids to the centroid storage
