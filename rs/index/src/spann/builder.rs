@@ -1,4 +1,5 @@
 use anyhow::{Ok, Result};
+use log::debug;
 use quantization::noq::noq::NoQuantizer;
 use serde::{Deserialize, Serialize};
 
@@ -116,6 +117,7 @@ impl SpannBuilder {
 
     pub fn build(&mut self) -> Result<()> {
         self.ivf_builder.build()?;
+        debug!("Finish building IVF index");
 
         let centroid_storage = self.ivf_builder.centroids();
         let num_centroids = centroid_storage.borrow().len();
@@ -124,7 +126,7 @@ impl SpannBuilder {
             self.centroid_builder
                 .insert(i as u64, &centroid_storage.borrow().get(i as u32).unwrap())?;
         }
-
+        debug!("Finish building centroids");
         Ok(())
     }
 }
