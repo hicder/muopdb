@@ -35,8 +35,8 @@ impl<Q: Quantizer> IvfWriter<Q> {
         }
 
         let num_features = ivf_builder.config().num_features;
-        let num_clusters = ivf_builder.centroids().len();
-        let num_vectors = ivf_builder.vectors().len();
+        let num_clusters = ivf_builder.centroids().borrow().len();
+        let num_vectors = ivf_builder.vectors().borrow().len();
 
         // Write vectors
         let vectors_len = self
@@ -125,9 +125,11 @@ impl<Q: Quantizer> IvfWriter<Q> {
                 self.quantizer.quantized_dimension(),
             ));
 
-        for i in 0..full_vectors.len() {
-            let vector = full_vectors.get(i as u32)?;
-            let quantized_vector = Q::QuantizedT::process_vector(vector, &self.quantizer);
+        for i in 0..full_vectors.borrow().len() {
+            let quantized_vector = Q::QuantizedT::process_vector(
+                full_vectors.borrow().get(i as u32)?,
+                &self.quantizer,
+            );
             quantized_vectors.append(&quantized_vector)?;
         }
 
@@ -162,7 +164,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
         let mut file = File::create(path)?;
         let mut writer = BufWriter::new(&mut file);
 
-        let bytes_written = ivf_builder.centroids().write(&mut writer)?;
+        let bytes_written = ivf_builder.centroids().borrow().write(&mut writer)?;
         Ok(bytes_written)
     }
 
@@ -409,7 +411,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 1,
             distance_threshold: 0.1,
             base_directory: base_directory.clone(),
@@ -497,7 +499,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 1,
             distance_threshold: 0.1,
             base_directory: base_directory.clone(),

@@ -23,3 +23,7 @@ pub trait DistanceCalculator {
 pub trait CalculateSquared {
     fn calculate_squared(a: &[f32], b: &[f32]) -> f32;
 }
+
+pub fn ceil_div(a: usize, b: usize) -> usize {
+    (a + b - 1) / b
+}

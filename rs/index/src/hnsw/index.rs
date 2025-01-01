@@ -394,7 +394,6 @@ impl<Q: Quantizer> Searchable for Hnsw<Q> {
         ef_construction: u32,
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>> {
-        // TODO(hicder): Add ef parameter
         Some(self.ann_search(query, k, ef_construction, context))
     }
 }

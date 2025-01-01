@@ -3,9 +3,9 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use hdf5::File;
 use log::{LevelFilter, info};
+use ndarray::s;
 use proto::muopdb::index_server_client::IndexServerClient;
 use proto::muopdb::{FlushRequest, InsertRequest};
-use ndarray::s;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
         });
 
         client.insert(request).await?;
-           start_idx = end_idx;
+        start_idx = end_idx;
     }
 
     let mut duration = start.elapsed();

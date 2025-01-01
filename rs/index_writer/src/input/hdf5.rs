@@ -144,20 +144,23 @@ mod tests {
             cluster_sizes[*assignment] += 1;
         }
 
-        assert_eq!(
-            cluster_sizes,
-            vec![1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000]
-        );
-
-        // Check that the distance between the point to its centroid is less than 0.1
+        // Check that each point is assigned to its closest centroid
         for i in 0..flattened_dataset.len() / 128 {
             let point = &flattened_dataset[i * 128..(i + 1) * 128];
             let centroid_id = result.assignments[i];
             let centroid = &result.centroids[centroid_id * 128..(centroid_id + 1) * 128];
             let dist = L2DistanceCalculator::calculate(&point, &centroid);
 
-            // We might need to adjust this threshold
-            assert!(dist < 70.0);
+            for j in 0..10 {
+                let dist_to_centroid = L2DistanceCalculator::calculate(
+                    &point,
+                    &result.centroids[j * 128..(j + 1) * 128],
+                );
+                if dist_to_centroid < dist {
+                    println!("Point {} is assigned to centroid {} with distance {}, but should be assigned to centroid {} with distance {}", i, centroid_id, dist, j, dist_to_centroid);
+                }
+                assert!(dist_to_centroid >= dist);
+            }
         }
     }
 }

@@ -71,7 +71,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters: 10,
-            num_data_points: 1000,
+            num_data_points_for_clustering: 1000,
             max_clusters_per_vector: 1,
             distance_threshold: 0.1,
             base_directory: "./".to_string(),

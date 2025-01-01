@@ -19,7 +19,7 @@ pub struct SpannBuilderConfig {
     pub max_iteration: usize,
     pub batch_size: usize,
     pub num_clusters: usize,
-    pub num_data_points: usize,
+    pub num_data_points_for_clustering: usize,
     pub max_clusters_per_vector: usize,
     // Threshold to add a vector to more than one cluster
     pub distance_threshold: f32,
@@ -48,7 +48,7 @@ impl Default for SpannBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters: 10,
-            num_data_points: 1000,
+            num_data_points_for_clustering: 1000,
             max_clusters_per_vector: 1,
             distance_threshold: 0.1,
             base_directory: "./".to_string(),
@@ -73,7 +73,7 @@ impl SpannBuilder {
             max_iteration: config.max_iteration,
             batch_size: config.batch_size,
             num_clusters: config.num_clusters,
-            num_data_points: config.num_data_points,
+            num_data_points_for_clustering: config.num_data_points_for_clustering,
             max_clusters_per_vector: config.max_clusters_per_vector,
             distance_threshold: config.distance_threshold,
             base_directory: config.base_directory.clone(),
@@ -118,11 +118,11 @@ impl SpannBuilder {
         self.ivf_builder.build()?;
 
         let centroid_storage = self.ivf_builder.centroids();
-        let num_centroids = centroid_storage.len();
+        let num_centroids = centroid_storage.borrow().len();
 
         for i in 0..num_centroids {
             self.centroid_builder
-                .insert(i as u64, &centroid_storage.get(i as u32).unwrap())?;
+                .insert(i as u64, &centroid_storage.borrow().get(i as u32).unwrap())?;
         }
 
         Ok(())
