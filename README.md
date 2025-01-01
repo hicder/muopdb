@@ -23,12 +23,11 @@ Here are the plans for future MuopDB:
   - [x] Improve locality for HNSW
   - [x] SPANN
 ### V2
-- [ ] Query
+- [x] Query
   - [x] Multiple index segments
-  - [ ] Support realtime indexing
+- [x] Index
+  - [x] Optimizing index build time
   - [ ] Elias-Fano encoding for IVF
-- [ ] Quantization
-  - [ ] RabitQ
 
 ## Why MuopDB?
 This is an educational project for me to learn Rust & vector database.
