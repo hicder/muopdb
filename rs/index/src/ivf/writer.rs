@@ -124,7 +124,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
         // Write quantized vectors
         let path = format!("{}/vectors", self.base_directory);
         let mut file = File::create(path)?;
-        let mut writer = BufWriter::with_capacity((1 as usize) << 30, &mut file);
+        let mut writer = BufWriter::new(&mut file);
 
         let mut bytes_written = 0;
         bytes_written += wrap_write(&mut writer, &full_vectors.borrow().len().to_le_bytes())?;
