@@ -228,7 +228,6 @@ impl IndexWriter {
         std::fs::create_dir_all(&path)?;
 
         info!("Start writing index");
-        //let quantizer = NoQuantizer::new(index_builder_config.base_config.dimension);
         let ivf_writer = IvfWriter::new(path.to_string(), quantizer);
         ivf_writer.write(&mut ivf_builder, index_builder_config.base_config.reindex)?;
 
