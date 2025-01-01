@@ -3,14 +3,13 @@ use std::io::{BufWriter, Write};
 
 use anyhow::{anyhow, Context, Result};
 use log::debug;
+use num_traits::ToBytes;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use utils::io::{append_file_to_writer, wrap_write};
 
 use crate::ivf::builder::IvfBuilder;
 use crate::posting_list::combined_file::{Header, Version};
-use crate::vector::file::FileBackedAppendableVectorStorage;
-use crate::vector::VectorStorage;
 
 pub struct IvfWriter<Q: Quantizer> {
     base_directory: String,
@@ -66,6 +65,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
                 doc_id_mapping_len,
             ));
         }
+        debug!("Finish writing doc_id_mapping");
 
         // Write centroids
         let centroids_len = self
@@ -80,6 +80,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
                 centroids_len,
             ));
         }
+        debug!("Finish writing centroids");
 
         // Write posting_lists
         let posting_lists_and_metadata_len = self
@@ -95,6 +96,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
                 posting_lists_and_metadata_len,
             ));
         }
+        debug!("Finish writing posting_lists_and_metadata");
 
         let header: Header = Header {
             version: Version::V0,
@@ -108,37 +110,34 @@ impl<Q: Quantizer> IvfWriter<Q> {
         };
 
         self.combine_files(&header)?;
+        debug!("Finish combining files");
+
         Ok(())
     }
 
     fn quantize_and_write_vectors(&self, ivf_builder: &IvfBuilder) -> Result<usize> {
         // Quantize vectors
         let full_vectors = &ivf_builder.vectors();
-        let config = ivf_builder.config();
         let quantized_vectors_path = format!("{}/quantized", self.base_directory);
         create_dir_all(&quantized_vectors_path)?;
-        let mut quantized_vectors =
-            Box::new(FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
-                quantized_vectors_path.clone(),
-                config.memory_size,
-                config.file_size,
-                self.quantizer.quantized_dimension(),
-            ));
+
+        // Write quantized vectors
+        let path = format!("{}/vectors", self.base_directory);
+        let mut file = File::create(path)?;
+        let mut writer = BufWriter::with_capacity((1 as usize) << 30, &mut file);
+
+        let mut bytes_written = 0;
+        bytes_written += wrap_write(&mut writer, &full_vectors.borrow().len().to_le_bytes())?;
 
         for i in 0..full_vectors.borrow().len() {
             let quantized_vector = Q::QuantizedT::process_vector(
                 full_vectors.borrow().get(i as u32)?,
                 &self.quantizer,
             );
-            quantized_vectors.append(&quantized_vector)?;
+            for j in 0..quantized_vector.len() {
+                bytes_written += wrap_write(&mut writer, quantized_vector[j].to_le_bytes().as_ref())?;
+            }
         }
-
-        // Write quantized vectors
-        let path = format!("{}/vectors", self.base_directory);
-        let mut file = File::create(path)?;
-        let mut writer = BufWriter::new(&mut file);
-
-        let bytes_written = quantized_vectors.write(&mut writer)?;
 
         remove_dir_all(&quantized_vectors_path)?;
         Ok(bytes_written)

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use log::debug;
 use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
 
 use super::builder::SpannBuilder;
@@ -26,11 +27,13 @@ impl SpannWriter {
         let hnsw_directory = format!("{}/hnsw", centroid_directory);
         std::fs::create_dir_all(&hnsw_directory)?;
 
+        debug!("Writing centroids");
         let hnsw_writer = HnswWriter::new(hnsw_directory);
         hnsw_writer.write(
             &mut spann_builder.centroid_builder,
             index_writer_config.reindex,
         )?;
+        debug!("Finish writing centroids");
 
         // Write the quantizer to disk, even though it's no quantizer
         let quantizer_writer = NoQuantizerWriter::new(centroid_quantizer_directory);
@@ -46,9 +49,11 @@ impl SpannWriter {
         let ivf_quantizer_writer = NoQuantizerWriter::new(ivf_quantizer_directory);
         ivf_quantizer_writer.write(&ivf_quantizer)?;
 
+        debug!("Writing IVF index");
         let ivf_writer = IvfWriter::new(ivf_directory, ivf_quantizer);
         ivf_writer.write(&mut spann_builder.ivf_builder, index_writer_config.reindex)?;
         spann_builder.ivf_builder.cleanup()?;
+        debug!("Finish writing IVF index");
 
         Ok(())
     }
