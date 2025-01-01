@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::fs::{create_dir_all, remove_dir_all, remove_file, File};
 use std::io::{BufWriter, Write};
 
@@ -124,7 +125,8 @@ impl<Q: Quantizer> IvfWriter<Q> {
         // Write quantized vectors
         let path = format!("{}/vectors", self.base_directory);
         let mut file = File::create(path)?;
-        let mut writer = BufWriter::new(&mut file);
+        let capacity = full_vectors.borrow().len() * self.quantizer.quantized_dimension() * std::mem::size_of::<Q::QuantizedT>();
+        let mut writer = BufWriter::with_capacity(min(1 << 30, capacity), &mut file);
 
         let mut bytes_written = 0;
         bytes_written += wrap_write(&mut writer, &full_vectors.borrow().len().to_le_bytes())?;

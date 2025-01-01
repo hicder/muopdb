@@ -5,7 +5,7 @@ use hdf5::File;
 use log::{LevelFilter, info};
 use ndarray::s;
 use proto::muopdb::index_server_client::IndexServerClient;
-use proto::muopdb::{FlushRequest, InsertRequest};
+use proto::muopdb::{FlushRequest, InsertBinaryRequest};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -38,22 +38,24 @@ async fn main() -> Result<()> {
         let end_idx = (start_idx + batch_size).min(total_embeddings);
         let batch = &embeddings.slice(s![start_idx..end_idx, ..]);
 
-        let mut vectors = Vec::with_capacity(batch.len());
+        let mut vectors = Vec::with_capacity(batch.len() * 768);
         for row in batch.rows() {
             vectors.extend(row.iter().map(|&v| v as f32));
         }
 
         // Generate IDs
         let ids: Vec<u64> = (start_idx + 1..=end_idx).map(|i| i as u64).collect();
+        let id_buffer = utils::mem::transmute_slice_to_u8(&ids);
+        let vector_buffer = utils::mem::transmute_slice_to_u8(&vectors);
 
         // Create and send insert request
-        let request = tonic::Request::new(InsertRequest {
+        let request = tonic::Request::new(InsertBinaryRequest {
             collection_name: "test-collection-1".to_string(),
-            ids: ids.clone(),
-            vectors,
+            ids: id_buffer.to_vec(),
+            vectors: vector_buffer.to_vec(),
         });
 
-        client.insert(request).await?;
+        client.insert_binary(request).await?;
         start_idx = end_idx;
     }
 

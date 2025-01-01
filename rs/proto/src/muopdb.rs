@@ -77,6 +77,19 @@ pub struct FlushResponse {
     #[prost(string, repeated, tag = "1")]
     pub flushed_segments: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InsertBinaryRequest {
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "2")]
+    pub ids: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub vectors: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InsertBinaryResponse {}
 /// Generated client implementations.
 pub mod aggregator_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -272,6 +285,25 @@ pub mod index_server_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn insert_binary(
+            &mut self,
+            request: impl tonic::IntoRequest<super::InsertBinaryRequest>,
+        ) -> Result<tonic::Response<super::InsertBinaryResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/muopdb.IndexServer/InsertBinary",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
         pub async fn flush(
             &mut self,
             request: impl tonic::IntoRequest<super::FlushRequest>,
@@ -452,6 +484,10 @@ pub mod index_server_server {
             &self,
             request: tonic::Request<super::InsertRequest>,
         ) -> Result<tonic::Response<super::InsertResponse>, tonic::Status>;
+        async fn insert_binary(
+            &self,
+            request: tonic::Request<super::InsertBinaryRequest>,
+        ) -> Result<tonic::Response<super::InsertBinaryResponse>, tonic::Status>;
         async fn flush(
             &self,
             request: tonic::Request<super::FlushRequest>,
@@ -581,6 +617,46 @@ pub mod index_server_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = InsertSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/muopdb.IndexServer/InsertBinary" => {
+                    #[allow(non_camel_case_types)]
+                    struct InsertBinarySvc<T: IndexServer>(pub Arc<T>);
+                    impl<
+                        T: IndexServer,
+                    > tonic::server::UnaryService<super::InsertBinaryRequest>
+                    for InsertBinarySvc<T> {
+                        type Response = super::InsertBinaryResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::InsertBinaryRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).insert_binary(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = InsertBinarySvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
