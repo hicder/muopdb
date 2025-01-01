@@ -42,7 +42,11 @@ async fn main() -> Result<()> {
     let response_body = response.text().await.expect("Failed to read response body");
     let response_map: serde_json::Value = serde_json::from_str(&response_body).unwrap();
     let query_vector_value = response_map["embedding"].as_array().unwrap();
-    let query_vector: Vec<f32> = query_vector_value.iter().map(|x| x.as_f64().unwrap()).map(|x| x as f32).collect();
+    let query_vector: Vec<f32> = query_vector_value
+        .iter()
+        .map(|x| x.as_f64().unwrap())
+        .map(|x| x as f32)
+        .collect();
 
     // Create search request
     let request = tonic::Request::new(SearchRequest {

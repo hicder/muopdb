@@ -72,7 +72,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 1,
             distance_threshold: 0.1,
             base_directory: base_directory.clone(),
@@ -115,8 +115,10 @@ mod tests {
         for i in 0..num_vectors {
             let ref_vector = builder
                 .vectors()
+                .borrow()
                 .get(i as u32)
-                .expect("Failed to read vector from FileBackedAppendableVectorStorage");
+                .expect("Failed to read vector from FileBackedAppendableVectorStorage")
+                .to_vec();
             let read_vector = index
                 .vector_storage
                 .get(i, &mut context)
@@ -156,8 +158,10 @@ mod tests {
         for i in 0..num_clusters {
             let ref_vector = builder
                 .centroids()
+                .borrow()
                 .get(i as u32)
-                .expect("Failed to read centroid from FileBackedAppendableVectorStorage");
+                .expect("Failed to read centroid from FileBackedAppendableVectorStorage")
+                .to_vec();
             let read_vector = index
                 .index_storage
                 .get_centroid(i)
@@ -210,7 +214,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 1,
             distance_threshold: 0.1,
             base_directory: base_directory.clone(),

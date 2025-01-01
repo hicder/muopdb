@@ -203,7 +203,6 @@ impl<Q: Quantizer> HnswBuilder<Q> {
             }
             while let Some(node) = queue.pop_front() {
                 visited.set(node.try_into().unwrap(), true);
-                debug!("Visited node {}", node);
 
                 let edges = graph.edges.get_mut(&node);
                 if let Some(edges) = edges {
