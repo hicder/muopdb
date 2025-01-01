@@ -607,6 +607,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tonic",
+ "utils",
 ]
 
 [[package]]

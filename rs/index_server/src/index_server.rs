@@ -6,7 +6,7 @@ use index::utils::SearchContext;
 use log::{debug, info};
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
-    FlushRequest, FlushResponse, InsertRequest, InsertResponse, SearchRequest, SearchResponse,
+    FlushRequest, FlushResponse, InsertBinaryRequest, InsertBinaryResponse, InsertRequest, InsertResponse, SearchRequest, SearchResponse
 };
 use tokio::sync::Mutex;
 
@@ -167,5 +167,57 @@ impl IndexServer for IndexServerImpl {
                 "Collection not found",
             )),
         }
+    }
+
+    async fn insert_binary(
+        &self,
+        request: tonic::Request<InsertBinaryRequest>,
+    ) -> Result<tonic::Response<InsertBinaryResponse>, tonic::Status> {
+        let start = std::time::Instant::now();
+        let req = request.into_inner();
+        let collection_name = req.collection_name;
+        let ids_buffer = req.ids;
+        let vectors_buffer = req.vectors;
+
+        let collection_opt = self
+            .index_catalog
+            .lock()
+            .await
+            .get_collection(&collection_name)
+            .await;
+
+        match collection_opt {
+           Some(collection) => {
+               let dimensions = collection.dimensions();
+               let vectors = unsafe { std::slice::from_raw_parts(vectors_buffer.as_ptr() as *const f32, vectors_buffer.len() / 4) };
+               let ids = unsafe { std::slice::from_raw_parts(ids_buffer.as_ptr() as *const u64, ids_buffer.len() / 8) };
+
+               if vectors.len() % dimensions != 0 {
+                   return Err(tonic::Status::new(
+                       tonic::Code::InvalidArgument,
+                       "Vectors must be a multiple of the number of dimensions",
+                   ));
+               }
+
+               vectors
+                   .chunks(dimensions)
+                   .zip(ids)
+                   .for_each(|(vector, id)| {
+                       // TODO(hicder): Handle errors
+                       collection.insert(*id, vector).unwrap()
+                   });
+
+               // log the duration
+               let end = std::time::Instant::now();
+               let duration = end.duration_since(start);
+               debug!("Inserted {} vectors in {:?}", ids.len(), duration);
+               Ok(tonic::Response::new(InsertBinaryResponse {}))
+           }
+           None => Err(tonic::Status::new(
+               tonic::Code::NotFound,
+               "Collection not found",
+           )),
+        }
+
     }
 }
