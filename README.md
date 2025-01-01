@@ -24,7 +24,7 @@ Here are the plans for future MuopDB:
   - [x] SPANN
 ### V2
 - [ ] Query
-  - [ ] Multiple index segments
+  - [x] Multiple index segments
   - [ ] Support realtime indexing
   - [ ] Elias-Fano encoding for IVF
 - [ ] Quantization
