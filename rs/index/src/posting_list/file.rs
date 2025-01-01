@@ -250,8 +250,9 @@ impl FileBackedAppendablePostingListStorage {
             self.metadata_backing_files.new_backing_file()?;
         }
         // Write the length of the posting list
-        self.metadata_backing_files
-            .write_to_current_mmap(&posting_list.len().to_le_bytes())?;
+        self.metadata_backing_files.write_to_current_mmap(
+            &((posting_list.len() * size_of::<u64>()) as u64).to_le_bytes(),
+        )?;
         // Write the offset to the current posting list
         self.metadata_backing_files.write_to_current_mmap(
             &self
@@ -337,10 +338,8 @@ impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
             .next()
             .ok_or(anyhow!("Expected a single slice but got none"))?;
 
-        let pl_len = u64::from_le_bytes(metadata_slice[..u64_bytes].try_into()?) as usize;
+        let required_size = u64::from_le_bytes(metadata_slice[..u64_bytes].try_into()?) as usize;
         let pl_offset = u64::from_le_bytes(metadata_slice[u64_bytes..].try_into()?) as usize;
-
-        let required_size = pl_len * u64_bytes;
 
         Ok(PostingList::new_with_slices(
             self.posting_list_backing_files
@@ -508,7 +507,7 @@ mod tests {
         // Read length
         let length_bytes: [u8; 8] = mmap[0..u64_bytes].try_into().unwrap();
         let length = u64::from_le_bytes(length_bytes);
-        assert_eq!(length, pl1.len() as u64);
+        assert_eq!(length, (pl1.len() * u64_bytes) as u64);
 
         // Read offset
         let offset_bytes: [u8; 8] = mmap[u64_bytes..metadata_size].try_into().unwrap();
@@ -751,7 +750,14 @@ mod tests {
             let length = u64::from_le_bytes(length_bytes);
             let offset = u64::from_le_bytes(offset_bytes);
 
-            assert_eq!(length as usize, if i == 0 { pl1.len() } else { pl2.len() });
+            assert_eq!(
+                length as usize,
+                if i == 0 {
+                    pl1.len() * size_of::<u64>()
+                } else {
+                    pl2.len() * size_of::<u64>()
+                }
+            );
             assert_eq!(
                 offset as usize,
                 if i == 0 {

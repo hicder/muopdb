@@ -45,7 +45,7 @@ impl FixedFilePostingListStorage {
             [metadata_offset + size_in_bytes..metadata_offset + PL_METADATA_LEN * size_in_bytes];
         let pl_offset = u64::from_le_bytes(slice.try_into()?) as usize + pl_start_offset;
 
-        let slice = &self.mmap[pl_offset..pl_offset + pl_len * std::mem::size_of::<u64>()];
+        let slice = &self.mmap[pl_offset..pl_offset + pl_len];
         Ok(transmute_u8_to_slice::<u64>(slice))
     }
 }
