@@ -2,7 +2,6 @@ use std::fs::File;
 use std::io::BufWriter;
 
 use anyhow::Result;
-use memmap2::Mmap;
 
 pub trait IntSeqEncoder {
     /// Creates an encoder
@@ -23,7 +22,7 @@ pub trait IntSeqEncoder {
 
 pub trait IntSeqDecoderIterator: Iterator {
     /// Creates a decoder
-    fn new_decoder(mmap: &Mmap, offset: usize, size: usize) -> Self
+    fn new_decoder(encoded_data: &[u8]) -> Self
     where
         Self: Sized;
 

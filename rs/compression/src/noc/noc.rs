@@ -2,9 +2,8 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 
 use anyhow::Result;
-use memmap2::Mmap;
 use utils::io::wrap_write;
-use utils::mem::{get_ith_val_from_raw_ptr, transmute_u8_to_slice};
+use utils::mem::get_ith_val_from_raw_ptr;
 
 use crate::compression::{IntSeqDecoderIterator, IntSeqEncoder};
 
@@ -56,11 +55,9 @@ pub struct PlainDecoderIterator {
 }
 
 impl IntSeqDecoderIterator for PlainDecoderIterator {
-    fn new_decoder(mmap: &Mmap, offset: usize, size: usize) -> Self {
-        let slice = &mmap[offset..offset + size * size_of::<u64>()];
-        let encoded_data = transmute_u8_to_slice::<u64>(slice);
+    fn new_decoder(encoded_data: &[u8]) -> Self {
         Self {
-            size,
+            size: encoded_data.len(),
             cur_index: 0,
             encoded_data_ptr: encoded_data.as_ptr() as *const u64,
         }

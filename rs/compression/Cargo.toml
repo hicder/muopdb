@@ -8,6 +8,5 @@ anyhow.workspace = true
 bitvec = "1"
 env_logger.workspace = true
 log.workspace = true
-memmap2.workspace = true
 tempdir.workspace = true
 utils.workspace = true
