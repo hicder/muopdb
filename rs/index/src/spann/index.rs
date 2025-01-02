@@ -1,3 +1,6 @@
+use std::cmp::Ordering;
+
+use log::debug;
 use quantization::noq::noq::NoQuantizer;
 
 use crate::hnsw::index::Hnsw;
@@ -16,6 +19,14 @@ impl Spann {
             posting_lists,
         }
     }
+
+    pub fn get_centroids(&self) -> &Hnsw<NoQuantizer> {
+        &self.centroids
+    }
+
+    pub fn get_posting_lists(&self) -> &Ivf<NoQuantizer> {
+        &self.posting_lists
+    }
 }
 
 impl Searchable for Spann {
@@ -29,12 +40,31 @@ impl Searchable for Spann {
         // TODO(hicder): Fully implement SPANN, which includes adjusting number of centroids
         match self.centroids.search(query, k, ef_construction, context) {
             Some(nearest_centroids) => {
-                let nearest_centroid_ids =
-                    nearest_centroids.iter().map(|x| x.id as usize).collect();
                 if nearest_centroids.is_empty() {
                     return None;
                 }
-                let results = self.posting_lists.search_with_centroids(
+
+                // Get the nearest centroid, and only search those that are within 10% of the distance of the nearest centroid
+                let nearest_distance = nearest_centroids
+                    .iter()
+                    .map(|pad| pad.score)
+                    .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Greater))
+                    .expect("nearest_distance should not be None");
+
+                let nearest_centroid_ids: Vec<usize> = nearest_centroids
+                    .iter()
+                    .filter(|centroid_and_distance| {
+                        centroid_and_distance.score - nearest_distance < nearest_distance * 0.1
+                    })
+                    .map(|x| x.id as usize)
+                    .collect();
+
+                debug!(
+                    "Number of nearest centroids: {}",
+                    nearest_centroid_ids.len()
+                );
+
+                let results = self.posting_lists.search_with_centroids_and_remap(
                     query,
                     nearest_centroid_ids,
                     k,

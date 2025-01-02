@@ -48,8 +48,6 @@ impl<Q: Quantizer> Hnsw<Q> {
     ) -> Self {
         // Read quantizer
         let quantizer_directory = format!("{}/quantizer", base_directory);
-        // let pq_reader = ProductQuantizerReader::new(pq_directory);
-        // let pq = pq_reader.read().unwrap();
 
         let quantizer = Q::read(quantizer_directory).unwrap();
         let index_mmap = unsafe { Mmap::map(&backing_file).unwrap() };
@@ -394,7 +392,6 @@ impl<Q: Quantizer> Searchable for Hnsw<Q> {
         ef_construction: u32,
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>> {
-        // TODO(hicder): Add ef parameter
         Some(self.ann_search(query, k, ef_construction, context))
     }
 }

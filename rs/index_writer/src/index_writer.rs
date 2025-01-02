@@ -3,6 +3,8 @@ use index::hnsw::builder::HnswBuilder;
 use index::hnsw::writer::HnswWriter;
 use index::ivf::builder::{IvfBuilder, IvfBuilderConfig};
 use index::ivf::writer::IvfWriter;
+use index::spann::builder::{SpannBuilder, SpannBuilderConfig};
+use index::spann::writer::SpannWriter;
 use log::{debug, info};
 use quantization::noq::noq::{NoQuantizer, NoQuantizerConfig, NoQuantizerWriter};
 use quantization::noq::noq_builder::NoQuantizerBuilder;
@@ -200,7 +202,7 @@ impl IndexWriter {
             max_iteration: index_builder_config.ivf_config.max_iteration,
             batch_size: index_builder_config.ivf_config.batch_size,
             num_clusters: index_builder_config.ivf_config.num_clusters,
-            num_data_points: index_builder_config.ivf_config.num_data_points,
+            num_data_points_for_clustering: index_builder_config.ivf_config.num_data_points,
             max_clusters_per_vector: index_builder_config.ivf_config.max_clusters_per_vector,
             distance_threshold: index_builder_config.ivf_config.distance_threshold,
             base_directory: path.to_string(),
@@ -226,7 +228,6 @@ impl IndexWriter {
         std::fs::create_dir_all(&path)?;
 
         info!("Start writing index");
-        //let quantizer = NoQuantizer::new(index_builder_config.base_config.dimension);
         let ivf_writer = IvfWriter::new(path.to_string(), quantizer);
         ivf_writer.write(&mut ivf_builder, index_builder_config.base_config.reindex)?;
 
@@ -342,88 +343,44 @@ impl IndexWriter {
         // └── centroid_quantizer
         //     └── no_quantizer_config.yaml
 
-        let path = &self.output_root;
-        // TODO(hicder): Support quantization for IVF
-        let ivf_config = &index_writer_config.ivf_config;
-        let ivf_directory = format!("{}/ivf", path);
-        std::fs::create_dir_all(&ivf_directory)?;
+        let root_path = &self.output_root;
 
-        let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
-            max_iteration: ivf_config.max_iteration,
-            batch_size: ivf_config.batch_size,
-            num_clusters: ivf_config.num_clusters,
-            num_data_points: ivf_config.num_data_points,
-            max_clusters_per_vector: ivf_config.max_clusters_per_vector,
-            distance_threshold: ivf_config.distance_threshold,
-            base_directory: index_writer_config.base_config.output_path.clone(),
+        let spann_config = SpannBuilderConfig {
+            max_neighbors: index_writer_config.hnsw_config.max_num_neighbors,
+            max_layers: index_writer_config.hnsw_config.num_layers,
+            ef_construction: index_writer_config.hnsw_config.ef_construction,
+            vector_storage_memory_size: index_writer_config.base_config.max_memory_size,
+            vector_storage_file_size: index_writer_config.base_config.file_size,
+            num_features: index_writer_config.base_config.dimension,
+            max_iteration: index_writer_config.ivf_config.max_iteration,
+            batch_size: index_writer_config.ivf_config.batch_size,
+            num_clusters: index_writer_config.ivf_config.num_clusters,
+            num_data_points_for_clustering: index_writer_config.ivf_config.num_data_points,
+            max_clusters_per_vector: index_writer_config.ivf_config.max_clusters_per_vector,
+            distance_threshold: index_writer_config.ivf_config.distance_threshold,
+            base_directory: root_path.to_string(),
             memory_size: index_writer_config.base_config.max_memory_size,
             file_size: index_writer_config.base_config.file_size,
-            num_features: index_writer_config.base_config.dimension,
-            tolerance: ivf_config.tolerance,
-            max_posting_list_size: ivf_config.max_posting_list_size,
-        })?;
+            tolerance: index_writer_config.ivf_config.tolerance,
+            max_posting_list_size: index_writer_config.ivf_config.max_posting_list_size,
+            reindex: index_writer_config.base_config.reindex,
+        };
+        let mut spann_builder = SpannBuilder::new(spann_config)?;
 
         input.reset();
         while input.has_next() {
             let row = input.next();
-            ivf_builder.add_vector(row.id, row.data)?;
+            spann_builder.add(row.id, row.data)?;
             if row.id % 10000 == 0 {
                 debug!("Inserted {} rows", row.id);
             }
         }
 
         info!("Start building IVF index");
-        ivf_builder.build()?;
+        spann_builder.build()?;
 
-        // Builder HNSW index around centroids. We don't quantize them for now.
-        // TODO(hicder): Have an option to quantize the centroids
-        let centroid_storage = ivf_builder.centroids();
-        let num_centroids = centroid_storage.len();
-
-        let hnsw_config = &index_writer_config.hnsw_config;
-        let quantizer = NoQuantizer::new(index_writer_config.base_config.dimension);
-
-        let centroid_directory = format!("{}/centroids", path);
-        std::fs::create_dir_all(&centroid_directory)?;
-
-        // Write the quantizer to disk, even though it's no quantizer
-        let centroid_quantizer_directory = format!("{}/quantizer", centroid_directory);
-        std::fs::create_dir_all(&centroid_quantizer_directory)?;
-
-        let hnsw_directory = format!("{}/hnsw", centroid_directory);
-        std::fs::create_dir_all(&hnsw_directory)?;
-
-        let centroid_quantizer_writer = NoQuantizerWriter::new(centroid_quantizer_directory);
-        centroid_quantizer_writer.write(&quantizer)?;
-
-        let mut hnsw_builder = HnswBuilder::new(
-            hnsw_config.max_num_neighbors,
-            hnsw_config.num_layers,
-            hnsw_config.ef_construction,
-            index_writer_config.base_config.max_memory_size,
-            index_writer_config.base_config.file_size,
-            index_writer_config.base_config.dimension,
-            quantizer,
-            hnsw_directory.clone(),
-        );
-
-        info!("Start building HNSW index for centroids");
-        for i in 0..num_centroids {
-            hnsw_builder.insert(i as u64, &centroid_storage.get(i as u32).unwrap())?;
-            if i % 100 == 0 {
-                debug!("Inserted {} centroids", i);
-            }
-        }
-
-        info!("Start writing HNSW index for centroids");
-        let hnsw_writer = HnswWriter::new(hnsw_directory);
-        hnsw_writer.write(&mut hnsw_builder, index_writer_config.base_config.reindex)?;
-
-        info!("Start writing IVF index");
-        let quantizer = NoQuantizer::new(index_writer_config.base_config.dimension);
-        let ivf_writer = IvfWriter::new(ivf_directory, quantizer);
-        ivf_writer.write(&mut ivf_builder, index_writer_config.base_config.reindex)?;
-        ivf_builder.cleanup()?;
+        let spann_writer = SpannWriter::new(root_path.to_string());
+        spann_writer.write(&mut spann_builder)?;
 
         Ok(())
     }

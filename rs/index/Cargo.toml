@@ -20,3 +20,7 @@ roaring.workspace = true
 sorted-vec.workspace = true
 tempdir.workspace = true
 utils.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rayon.workspace = true
+atomic_refcell.workspace = true
