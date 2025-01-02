@@ -10,6 +10,7 @@ use num_traits::ToBytes;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use utils::io::{append_file_to_writer, wrap_write};
+use utils::mem::transmute_u8_to_slice;
 
 use crate::ivf::builder::IvfBuilder;
 use crate::posting_list::combined_file::{Header, Version};
@@ -183,14 +184,22 @@ impl<Q: Quantizer, C: IntSeqEncoder + 'static> IvfWriter<Q, C> {
         metadata_bytes_written +=
             wrap_write(&mut metadata_writer, &num_posting_lists.to_le_bytes())?;
         for i in 0..num_posting_lists {
-            let posting_list = ivf_builder
-                .posting_lists()
-                .get(i as u32)?
-                .iter()
-                .collect::<Vec<_>>();
-            let mut encoder = C::new_encoder(/*universe*/ None, posting_list.len());
-            // Encode to get the length of the encoded data
-            encoder.encode(&posting_list)?;
+            let posting_list = ivf_builder.posting_lists().get(i as u32)?;
+            let encoder = if posting_list.slices.len() == 1 {
+                // If the posting list is contiguous, we can directly create the encoder
+                // without collecting into a Vec
+                let slice = transmute_u8_to_slice::<u64>(posting_list.slices[0]);
+                let len = slice.len() / std::mem::size_of::<u64>();
+                let mut encoder = C::new_encoder(/*universe*/ None, len);
+                encoder.encode(slice)?;
+                encoder
+            } else {
+                // If it's not contiguous, we still need to collect
+                let collected_list = posting_list.iter().collect::<Vec<_>>();
+                let mut encoder = C::new_encoder(/*universe*/ None, collected_list.len());
+                encoder.encode(&collected_list)?;
+                encoder
+            };
             // Write the length of the encoded posting list
             metadata_bytes_written +=
                 wrap_write(&mut metadata_writer, &encoder.len().to_le_bytes())?;
