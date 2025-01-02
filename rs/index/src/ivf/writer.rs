@@ -183,6 +183,8 @@ impl<Q: Quantizer, C: IntSeqEncoder + 'static> IvfWriter<Q, C> {
         metadata_bytes_written +=
             wrap_write(&mut metadata_writer, &num_posting_lists.to_le_bytes())?;
         for i in 0..num_posting_lists {
+            // TODO(tyb): we need to materialize the posting list here since we are
+            // not sure the whole list is on the same page. Optimize this in a separate PR
             let posting_list = ivf_builder
                 .posting_lists()
                 .get(i as u32)?
