@@ -4,7 +4,7 @@ use std::io::{BufWriter, Write};
 use anyhow::Result;
 use memmap2::Mmap;
 use utils::io::wrap_write;
-use utils::mem::{get_ith_val_from_raw_ptr, transmute_u8_to_slice};
+use utils::mem::transmute_u8_to_slice;
 
 use crate::compression::{IntSeqDecoderIterator, IntSeqEncoder};
 
@@ -49,20 +49,20 @@ impl IntSeqEncoder for PlainEncoder {
     }
 }
 
-pub struct PlainDecoderIterator {
+pub struct PlainDecoderIterator<'a> {
     size: usize,
     cur_index: usize,
-    encoded_data_ptr: *const u64,
+    encoded_data_ptr: &'a [u64],
 }
 
-impl IntSeqDecoderIterator for PlainDecoderIterator {
-    fn new_decoder(mmap: &Mmap, offset: usize, size: usize) -> Self {
+impl<'a> IntSeqDecoderIterator<'a> for PlainDecoderIterator<'a> {
+    fn new_decoder(mmap: &'a Mmap, offset: usize, size: usize) -> Self {
         let slice = &mmap[offset..offset + size * size_of::<u64>()];
         let encoded_data = transmute_u8_to_slice::<u64>(slice);
         Self {
             size,
             cur_index: 0,
-            encoded_data_ptr: encoded_data.as_ptr() as *const u64,
+            encoded_data_ptr: encoded_data,
         }
     }
 
@@ -71,14 +71,12 @@ impl IntSeqDecoderIterator for PlainDecoderIterator {
     }
 }
 
-impl Iterator for PlainDecoderIterator {
+impl Iterator for PlainDecoderIterator<'_> {
     type Item = u64;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.cur_index < self.size {
-            let value = get_ith_val_from_raw_ptr(self.encoded_data_ptr, self.cur_index);
-            self.cur_index += 1;
-            Some(value)
+            Some(self.encoded_data_ptr[self.cur_index])
         } else {
             None
         }
