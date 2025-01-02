@@ -443,7 +443,7 @@ mod tests {
             .flatten()
             .cloned()
             .collect();
-        let kmeans = KMeansBuilder::new_with_cluster_init_values(
+        let kmeans = KMeansBuilder::<L2DistanceCalculator>::new_with_cluster_init_values(
             3,
             100,
             0.0,
