@@ -42,6 +42,7 @@ impl IvfReader {
 mod tests {
     use std::fs;
 
+    use compression::noc::noc::PlainEncoder;
     use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
@@ -66,7 +67,7 @@ mod tests {
         let num_features = 4;
         let file_size = 4096;
         let quantizer = NoQuantizer::new(num_features);
-        let writer = IvfWriter::new(base_directory.clone(), quantizer);
+        let writer = IvfWriter::<_, PlainEncoder>::new(base_directory.clone(), quantizer);
 
         let mut builder = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
@@ -208,7 +209,7 @@ mod tests {
         let noq_writer = NoQuantizerWriter::new(quantizer_directory);
         assert!(noq_writer.write(&quantizer).is_ok());
 
-        let writer = IvfWriter::new(base_directory.clone(), quantizer);
+        let writer = IvfWriter::<_, PlainEncoder>::new(base_directory.clone(), quantizer);
 
         let mut builder = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
