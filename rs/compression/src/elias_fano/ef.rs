@@ -1,12 +1,18 @@
+use std::fs::File;
+use std::io::{BufWriter, Write};
+
 use anyhow::{anyhow, Result};
 use bitvec::prelude::*;
+use utils::io::wrap_write;
+
+use crate::compression::IntSeqEncoder;
 
 pub struct EliasFano {
     #[cfg(any(debug_assertions, test))]
     universe: usize,
     size: usize,
-    lower_bits: BitVec,
-    upper_bits: BitVec,
+    lower_bits: BitVec<u64>,
+    upper_bits: BitVec<u64>,
     lower_bit_mask: u64,
     lower_bit_length: usize,
 }
@@ -53,9 +59,47 @@ impl EliasFano {
         }
     }
 
-    /// Encodes a sorted slice of integers
+    /// Returns the value at the given index
+    #[allow(dead_code)]
+    fn get(&self, index: usize) -> Result<u64> {
+        if index >= self.size {
+            return Err(anyhow!("Index {} out of bound", index));
+        }
+
+        // Calculate the position in upper bits
+        let mut high = 0;
+        let mut pos = 0;
+
+        // Calculate the high part of the value
+        for _ in 0..index + 1 {
+            while pos < self.upper_bits.len() && !self.upper_bits[pos] {
+                // Add the gap to high
+                high += 1;
+                pos += 1;
+            }
+            // Skip the '1' that terminates the unary code
+            pos += 1;
+        }
+
+        // Calculate the low part of the value
+        let mut low = 0;
+        if self.lower_bit_length > 0 {
+            let low_start = index * self.lower_bit_length;
+            low = (self.lower_bits[low_start..low_start + self.lower_bit_length].load::<u64>()
+                & self.lower_bit_mask) as usize;
+        }
+
+        Ok((high << self.lower_bit_length | low) as u64)
+    }
+}
+
+impl IntSeqEncoder for EliasFano {
+    fn new_encoder(universe: usize, size: usize) -> Self {
+        Self::new(universe, size)
+    }
+
     // Algorithm described in https://vigna.di.unimi.it/ftp/papers/QuasiSuccinctIndices.pdf
-    pub fn encode(&mut self, values: &[u64]) -> Result<()> {
+    fn encode(&mut self, values: &[u64]) -> Result<()> {
         let mut prev_high = 0;
         for (i, &val) in values.iter().enumerate() {
             // Sanity check only in debug or test builds
@@ -92,66 +136,58 @@ impl EliasFano {
         Ok(())
     }
 
-    /// Returns the value at the given index
-    #[allow(dead_code)]
-    fn get(&self, index: usize) -> Result<u64> {
-        if index >= self.size {
-            return Err(anyhow!("Index {} out of bound", index));
-        }
-
-        // Calculate the position in upper bits
-        let mut high = 0;
-        let mut pos = 0;
-
-        // Calculate the high part of the value
-        for _ in 0..index + 1 {
-            while pos < self.upper_bits.len() && !self.upper_bits[pos] {
-                // Add the gap to high
-                high += 1;
-                pos += 1;
-            }
-            // Skip the '1' that terminates the unary code
-            pos += 1;
-        }
-
-        // Calculate the low part of the value
-        let mut low = 0;
-        if self.lower_bit_length > 0 {
-            let low_start = index * self.lower_bit_length;
-            low = (self.lower_bits[low_start..low_start + self.lower_bit_length].load::<u64>()
-                & self.lower_bit_mask) as usize;
-        }
-
-        Ok((high << self.lower_bit_length | low) as u64)
+    fn len(&self) -> usize {
+        self.size
     }
 
-    /// Returns the number of elements in the encoded sequence
-    pub fn len(&self) -> usize {
-        self.size as usize
+    fn write(&self, writer: &mut BufWriter<&mut File>) -> Result<usize> {
+        let mut total_bytes_written =
+            wrap_write(writer, &((self.lower_bit_length as u64).to_le_bytes()))?;
+        let lower_vec: &[u64] = self.lower_bits.as_raw_slice();
+        let upper_vec: &[u64] = self.upper_bits.as_raw_slice();
+        total_bytes_written += wrap_write(writer, &((lower_vec.len() as u64).to_le_bytes()))?;
+        total_bytes_written += wrap_write(writer, &((upper_vec.len() as u64).to_le_bytes()))?;
+
+        for &val in lower_vec.iter() {
+            total_bytes_written += wrap_write(writer, &val.to_le_bytes())?;
+        }
+        for &val in upper_vec.iter() {
+            total_bytes_written += wrap_write(writer, &val.to_le_bytes())?;
+        }
+
+        writer.flush()?;
+
+        Ok(total_bytes_written)
     }
 }
-
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+    use std::io::{BufReader, BufWriter, Read};
+
+    use tempdir::TempDir;
+
     use super::*;
 
     #[test]
     fn test_elias_fano_encoding() {
         let values = vec![5, 8, 8, 15, 32];
         let upper_bound = 36;
-        let mut ef = EliasFano::new(upper_bound, values.len());
+        let mut ef = EliasFano::new_encoder(upper_bound, values.len());
         assert!(ef.encode(&values).is_ok());
 
         // Calculate expected lower bits
         // L = floor(log2(36/5)) = 2
         // Lower 2 bits of each value: 01, 00, 00, 11, 00
-        let expected_lower_bits = bitvec![u8, Lsb0; 1, 0, 0, 0, 0, 0, 1, 1, 0, 0];
+        // lower_bits: 0011000001
+        let expected_lower_bits = bitvec![u64, Lsb0; 1, 0, 0, 0, 0, 0, 1, 1, 0, 0];
 
         // Calculate expected upper bits
         // Upper bits: 1, 2, 2, 3, 8
         // Gaps: 1, 1, 0, 1, 5
         // Unary encoding: 01|01|1|01|000001
-        let expected_upper_bits = bitvec![u8, Lsb0; 0, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1];
+        // upper_bits: 1000001011010
+        let expected_upper_bits = bitvec![u64, Lsb0; 0, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1];
 
         assert_eq!(ef.lower_bit_length, 2);
         assert_eq!(ef.lower_bits, expected_lower_bits,);
@@ -160,13 +196,13 @@ mod tests {
         // Test unsorted sequence
         let values = vec![5, 8, 7, 15, 32];
         let upper_bound = 36;
-        let mut ef = EliasFano::new(upper_bound, values.len());
+        let mut ef = EliasFano::new_encoder(upper_bound, values.len());
         assert!(ef.encode(&values).is_err());
 
         // Test sequence with element exceeding upper bound
         let values = vec![5, 8, 8, 15, 32];
         let upper_bound = 31;
-        let mut ef = EliasFano::new(upper_bound, values.len());
+        let mut ef = EliasFano::new_encoder(upper_bound, values.len());
         assert!(ef.encode(&values).is_err());
     }
 
@@ -181,7 +217,7 @@ mod tests {
         ];
 
         for (values, upper_bound) in test_cases {
-            let mut ef = EliasFano::new(upper_bound, values.len());
+            let mut ef = EliasFano::new_encoder(upper_bound, values.len());
             assert!(ef.encode(&values).is_ok());
 
             for i in 0..values.len() {
@@ -194,7 +230,7 @@ mod tests {
         let values: Vec<u64> = (1..=100).collect(); // Sorted list from 1 to 100
         let upper_bound = 9999;
 
-        let mut ef = EliasFano::new(upper_bound, values.len());
+        let mut ef = EliasFano::new_encoder(upper_bound, values.len());
         assert!(ef.encode(&values).is_ok());
 
         // Check random accesses
@@ -204,5 +240,48 @@ mod tests {
 
         // Test out of bounds
         assert!(ef.get(100).is_err());
+    }
+
+    #[test]
+    fn test_elias_fano_write() {
+        // Create a mock EliasFano instance
+        let ef = EliasFano {
+            universe: 100,
+            size: 5,
+            lower_bits: BitVec::from_slice(&[0b10101010_01010101]),
+            upper_bits: BitVec::from_slice(&[0b11001100_00110011]),
+            lower_bit_mask: 0b1111,
+            lower_bit_length: 4,
+        };
+
+        let temp_dir =
+            TempDir::new("test_elias_fano_write").expect("Failed to create temporary directory");
+        let file_path = temp_dir.path().join("test_file");
+        let mut file = File::create(&file_path).expect("Failed to create test file");
+        let mut writer = BufWriter::new(&mut file);
+
+        // Call the write method
+        let bytes_written = ef
+            .write(&mut writer)
+            .expect("Failed to write encoded sequence");
+
+        // Read the contents of the file
+        let mut file = File::open(&file_path).expect("Failed to open test file for reading");
+        let mut written_data = Vec::new();
+        assert!(BufReader::new(&mut file)
+            .read_to_end(&mut written_data)
+            .is_ok());
+
+        // Expected data
+        let expected_data = vec![
+            4, 0, 0, 0, 0, 0, 0, 0, // lower_bit_length (4 as u64)
+            1, 0, 0, 0, 0, 0, 0, 0, // lower_vec.len() (1 as u64)
+            1, 0, 0, 0, 0, 0, 0, 0, // upper_vec.len() (1 as u64)
+            0b01010101, 0b10101010, 0, 0, 0, 0, 0, 0, // lower_bits
+            0b00110011, 0b11001100, 0, 0, 0, 0, 0, 0, // upper_bits
+        ];
+
+        assert_eq!(written_data, expected_data);
+        assert_eq!(bytes_written, expected_data.len());
     }
 }
