@@ -188,7 +188,10 @@ impl<Q: Quantizer, C: IntSeqEncoder + 'static> IvfWriter<Q, C> {
                 .get(i as u32)?
                 .iter()
                 .collect::<Vec<_>>();
-            let mut encoder = C::new_encoder(/*universe*/ None, posting_list.len());
+            let mut encoder = C::new_encoder(
+                *posting_list.last().unwrap_or(&0) as usize,
+                posting_list.len(),
+            );
             // Encode to get the length of the encoded data
             encoder.encode(&posting_list)?;
             // Write the length of the encoded posting list
