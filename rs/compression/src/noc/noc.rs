@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::ptr::NonNull;
 
 use anyhow::Result;
 use utils::io::wrap_write;
@@ -51,20 +52,22 @@ impl IntSeqEncoder for PlainEncoder {
 pub struct PlainDecoderIterator {
     size: usize,
     cur_index: usize,
-    encoded_data_ptr: *const u64,
+    encoded_data_ptr: NonNull<u64>,
 }
 
 impl IntSeqDecoderIterator for PlainDecoderIterator {
     fn new_decoder(encoded_data: &[u8]) -> Self {
+        let encoded_data_ptr = NonNull::new(encoded_data.as_ptr() as *mut u64)
+            .expect("Encoded data pointer should not be null");
         Self {
             size: encoded_data.len(),
             cur_index: 0,
-            encoded_data_ptr: encoded_data.as_ptr() as *const u64,
+            encoded_data_ptr,
         }
     }
 
-    fn len(&self) -> usize {
-        self.size
+    fn num_elem(&self) -> usize {
+        self.size / std::mem::size_of::<Self::Item>()
     }
 }
 
@@ -72,8 +75,8 @@ impl Iterator for PlainDecoderIterator {
     type Item = u64;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.cur_index < self.size {
-            let value = get_ith_val_from_raw_ptr(self.encoded_data_ptr, self.cur_index);
+        if self.cur_index < self.num_elem() {
+            let value = get_ith_val_from_raw_ptr(self.encoded_data_ptr.as_ptr(), self.cur_index);
             self.cur_index += 1;
             Some(value)
         } else {

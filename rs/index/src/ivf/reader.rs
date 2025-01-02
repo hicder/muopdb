@@ -1,4 +1,5 @@
 use anyhow::Result;
+use compression::compression::IntSeqDecoderIterator;
 use quantization::quantization::Quantizer;
 
 use crate::ivf::index::Ivf;
@@ -14,7 +15,7 @@ impl IvfReader {
         Self { base_directory }
     }
 
-    pub fn read<Q: Quantizer>(&self) -> Result<Ivf<Q>> {
+    pub fn read<Q: Quantizer, D: IntSeqDecoderIterator>(&self) -> Result<Ivf<Q, D>> {
         let index_storage = FixedIndexFile::new(format!("{}/index", self.base_directory))?;
 
         let vector_storage_path = format!("{}/vectors", self.base_directory);
@@ -29,7 +30,7 @@ impl IvfReader {
         let quantizer_directory = format!("{}/quantizer", self.base_directory);
         let quantizer = Q::read(quantizer_directory).unwrap();
 
-        Ok(Ivf::new(
+        Ok(Ivf::<_, D>::new(
             vector_storage,
             index_storage,
             num_clusters,
@@ -42,7 +43,7 @@ impl IvfReader {
 mod tests {
     use std::fs;
 
-    use compression::noc::noc::PlainEncoder;
+    use compression::noc::noc::{PlainDecoderIterator, PlainEncoder};
     use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
     use tempdir::TempDir;
     use utils::mem::transmute_u8_to_slice;
@@ -105,7 +106,7 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer>()
+            .read::<NoQuantizer, PlainDecoderIterator>()
             .expect("Failed to read index file");
 
         // Check if files were created
@@ -241,7 +242,7 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer>()
+            .read::<NoQuantizer, PlainDecoderIterator>()
             .expect("Failed to read index file");
 
         let num_centroids = index.num_clusters;

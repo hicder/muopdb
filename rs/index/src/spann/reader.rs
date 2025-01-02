@@ -1,4 +1,5 @@
 use anyhow::Result;
+use compression::noc::noc::PlainDecoderIterator;
 use quantization::noq::noq::NoQuantizer;
 
 use super::index::Spann;
@@ -19,7 +20,8 @@ impl SpannReader {
         let centroid_path = format!("{}/centroids", self.base_directory);
 
         let centroids = HnswReader::new(centroid_path).read::<NoQuantizer>()?;
-        let posting_lists = IvfReader::new(posting_list_path).read::<NoQuantizer>()?;
+        let posting_lists =
+            IvfReader::new(posting_list_path).read::<NoQuantizer, PlainDecoderIterator>()?;
 
         Ok(Spann::new(centroids, posting_lists))
     }

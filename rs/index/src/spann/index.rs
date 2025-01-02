@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use compression::noc::noc::PlainDecoderIterator;
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
 
@@ -9,11 +10,14 @@ use crate::ivf::index::Ivf;
 
 pub struct Spann {
     centroids: Hnsw<NoQuantizer>,
-    posting_lists: Ivf<NoQuantizer>,
+    posting_lists: Ivf<NoQuantizer, PlainDecoderIterator>,
 }
 
 impl Spann {
-    pub fn new(centroids: Hnsw<NoQuantizer>, posting_lists: Ivf<NoQuantizer>) -> Self {
+    pub fn new(
+        centroids: Hnsw<NoQuantizer>,
+        posting_lists: Ivf<NoQuantizer, PlainDecoderIterator>,
+    ) -> Self {
         Self {
             centroids,
             posting_lists,
@@ -24,7 +28,7 @@ impl Spann {
         &self.centroids
     }
 
-    pub fn get_posting_lists(&self) -> &Ivf<NoQuantizer> {
+    pub fn get_posting_lists(&self) -> &Ivf<NoQuantizer, PlainDecoderIterator> {
         &self.posting_lists
     }
 }

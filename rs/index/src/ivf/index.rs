@@ -1,6 +1,8 @@
 use std::collections::BinaryHeap;
+use std::marker::PhantomData;
 
 use anyhow::{Context, Result};
+use compression::compression::IntSeqDecoderIterator;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use utils::distance::l2::L2DistanceCalculator;
@@ -13,7 +15,7 @@ use crate::posting_list::combined_file::FixedIndexFile;
 use crate::utils::{IdWithScore, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
 
-pub struct Ivf<Q: Quantizer> {
+pub struct Ivf<Q: Quantizer, D: IntSeqDecoderIterator> {
     // The dataset.
     pub vector_storage: FixedFileVectorStorage<Q::QuantizedT>,
 
@@ -29,9 +31,10 @@ pub struct Ivf<Q: Quantizer> {
     pub num_clusters: usize,
 
     pub quantizer: Q,
+    _marker: PhantomData<D>,
 }
 
-impl<Q: Quantizer> Ivf<Q> {
+impl<Q: Quantizer, D: IntSeqDecoderIterator> Ivf<Q, D> {
     pub fn new(
         vector_storage: FixedFileVectorStorage<Q::QuantizedT>,
         index_storage: FixedIndexFile,
@@ -43,6 +46,7 @@ impl<Q: Quantizer> Ivf<Q> {
             index_storage,
             num_clusters,
             quantizer,
+            _marker: PhantomData,
         }
     }
 
@@ -75,15 +79,16 @@ impl<Q: Quantizer> Ivf<Q> {
         if let Ok(byte_slice) = self.index_storage.get_posting_list(centroid) {
             let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
             let mut results: Vec<IdWithScore> = Vec::new();
-            for idx in transmute_u8_to_slice::<u64>(byte_slice).iter() {
-                match self.vector_storage.get(*idx as usize, context) {
+            let decoder = D::new_decoder(&byte_slice);
+            for idx in decoder {
+                match self.vector_storage.get(idx as usize, context) {
                     Some(vector) => {
                         let distance =
                             self.quantizer
                                 .distance(&quantized_query, vector, StreamingSIMD);
                         results.push(IdWithScore {
                             score: distance,
-                            id: *idx,
+                            id: idx,
                         });
                     }
                     None => {}
@@ -146,7 +151,7 @@ impl<Q: Quantizer> Ivf<Q> {
     }
 }
 
-impl<Q: Quantizer> Searchable for Ivf<Q> {
+impl<Q: Quantizer, D: IntSeqDecoderIterator> Searchable for Ivf<Q, D> {
     fn search(
         &self,
         query: &[f32],
@@ -177,10 +182,11 @@ mod tests {
     use std::io::Write;
 
     use anyhow::anyhow;
+    use compression::noc::noc::PlainDecoderIterator;
     use num_traits::ops::bytes::ToBytes;
     use quantization::noq::noq::NoQuantizer;
     use quantization::pq::pq::ProductQuantizer;
-    use utils::mem::transmute_slice_to_u8;
+    use utils::mem::{transmute_slice_to_u8, transmute_u8_to_slice};
 
     use super::*;
 
@@ -337,7 +343,8 @@ mod tests {
         let num_clusters = 2;
 
         let quantizer = NoQuantizer::new(3);
-        let ivf = Ivf::new(storage, index_storage, num_clusters, quantizer);
+        let ivf =
+            Ivf::<_, PlainDecoderIterator>::new(storage, index_storage, num_clusters, quantizer);
 
         assert_eq!(ivf.num_clusters, num_clusters);
         let cluster_0 = transmute_u8_to_slice::<u64>(
@@ -383,9 +390,12 @@ mod tests {
             FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
         let num_probes = 2;
 
-        let nearest =
-            Ivf::<NoQuantizer>::find_nearest_centroids(&vector, &index_storage, num_probes)
-                .expect("Nearest centroids should be found");
+        let nearest = Ivf::<NoQuantizer, PlainDecoderIterator>::find_nearest_centroids(
+            &vector,
+            &index_storage,
+            num_probes,
+        )
+        .expect("Nearest centroids should be found");
 
         assert_eq!(nearest[0], 1);
         assert_eq!(nearest[1], 0);
@@ -431,7 +441,8 @@ mod tests {
         let num_probes = 2;
 
         let quantizer = NoQuantizer::new(num_features);
-        let ivf = Ivf::new(storage, index_storage, num_clusters, quantizer);
+        let ivf =
+            Ivf::<_, PlainDecoderIterator>::new(storage, index_storage, num_clusters, quantizer);
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
@@ -505,7 +516,8 @@ mod tests {
         let num_clusters = 2;
         let num_probes = 2;
 
-        let ivf = Ivf::new(storage, index_storage, num_clusters, quantizer);
+        let ivf =
+            Ivf::<_, PlainDecoderIterator>::new(storage, index_storage, num_clusters, quantizer);
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
@@ -557,7 +569,8 @@ mod tests {
         let num_probes = 1;
 
         let quantizer = NoQuantizer::new(num_features);
-        let ivf = Ivf::new(storage, index_storage, num_clusters, quantizer);
+        let ivf =
+            Ivf::<_, PlainDecoderIterator>::new(storage, index_storage, num_clusters, quantizer);
 
         let query = vec![1.0, 2.0, 3.0];
         let k = 5; // More than available results
