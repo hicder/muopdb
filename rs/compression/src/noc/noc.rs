@@ -7,22 +7,22 @@ use utils::io::wrap_write;
 use crate::compression::IntSeqEncoder;
 
 pub struct PlainEncoder {
-    size: usize,
+    num_elem: usize,
     sequence: Vec<u64>,
 }
 
 impl PlainEncoder {
-    pub fn new(size: usize) -> Self {
+    pub fn new(num_elem: usize) -> Self {
         Self {
-            size,
+            num_elem,
             sequence: Vec::new(),
         }
     }
 }
 
 impl IntSeqEncoder for PlainEncoder {
-    fn new_encoder(_universe: Option<usize>, size: usize) -> Self {
-        Self::new(size)
+    fn new_encoder(_universe: Option<usize>, num_elem: usize) -> Self {
+        Self::new(num_elem)
     }
 
     fn encode(&mut self, values: &[u64]) -> Result<()> {
@@ -31,7 +31,7 @@ impl IntSeqEncoder for PlainEncoder {
     }
 
     fn len(&self) -> usize {
-        self.size
+        self.num_elem * std::mem::size_of::<u64>()
     }
 
     fn write(&self, writer: &mut BufWriter<&mut File>) -> Result<usize> {
