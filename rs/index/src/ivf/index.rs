@@ -184,7 +184,7 @@ mod tests {
     use quantization::pq::pq::ProductQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
     use utils::mem::transmute_slice_to_u8;
-    
+
     use super::*;
 
     fn create_fixed_file_vector_storage<T: ToBytes>(
