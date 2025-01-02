@@ -482,6 +482,7 @@ dependencies = [
  "bitvec",
  "env_logger",
  "log",
+ "memmap2",
  "tempdir",
  "utils",
 ]
