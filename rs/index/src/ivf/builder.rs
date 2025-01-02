@@ -418,7 +418,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             num_clusters * 10,
             self.config.num_data_points_for_clustering,
         );
-        let kmeans = KMeansBuilder::new(
+        let kmeans = KMeansBuilder::<D>::new(
             num_clusters,
             self.config.max_iteration,
             self.config.tolerance,
@@ -456,7 +456,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             self.config.num_clusters,
             self.config.max_posting_list_size,
         );
-        let kmeans = KMeansBuilder::new(
+        let kmeans = KMeansBuilder::<D>::new(
             num_clusters,
             self.config.max_iteration,
             self.config.tolerance,

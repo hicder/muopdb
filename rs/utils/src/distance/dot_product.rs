@@ -86,6 +86,11 @@ impl DistanceCalculator for DotProductDistanceCalculator {
                 accumulator.add_assign(a_simd * b_simd);
             });
     }
+
+    #[inline(always)] 
+    fn outermost_op(x: f32) -> f32 {
+        Self::neg_score(x)
+    }
 }
 
 #[cfg(test)]

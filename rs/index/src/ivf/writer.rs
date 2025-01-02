@@ -288,7 +288,7 @@ mod tests {
         // Create an IvfWriter instance
         let num_features = 10;
         let quantizer = NoQuantizer::new(num_features);
-        let ivf_writer: IvfWriter<NoQuantizer, L2DistanceCalculator> =
+        let ivf_writer: IvfWriter<_, L2DistanceCalculator> =
             IvfWriter::new(base_directory.clone(), quantizer);
 
         // Create test files

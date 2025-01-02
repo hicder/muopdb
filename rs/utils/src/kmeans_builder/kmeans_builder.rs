@@ -9,7 +9,7 @@ use rand::seq::SliceRandom;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::slice::ParallelSlice;
 
-use crate::distance::l2::{L2DistanceCalculator, LaneConformingDistanceCalculator};
+use crate::distance::lane_conforming::LaneConformingDistanceCalculator;
 use crate::{CalculateSquared, DistanceCalculator};
 
 #[derive(PartialEq, Debug)]
@@ -291,7 +291,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
                                     .nth(cluster_id)
                                     .unwrap();
                                 let distance =
-                                    L2DistanceCalculator::calculate_squared(point, cluster);
+                                    T::calculate_squared(point, cluster);
                                 if distance > max_distance {
                                     max_distance = distance;
                                     chosen_point_id = i;

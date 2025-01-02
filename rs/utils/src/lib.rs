@@ -18,6 +18,12 @@ pub trait DistanceCalculator {
         accumulator: &mut Simd<f32, LANES>,
     ) where
         LaneCount<LANES>: SupportedLaneCount;
+
+    /* 
+     * The outermost operator of the distance function, 
+     * to be used with accumulate_lanes for lane conforming code.
+     */
+    fn outermost_op(x: f32) -> f32;
 }
 
 pub trait CalculateSquared {
