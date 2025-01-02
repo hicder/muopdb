@@ -285,10 +285,10 @@ mod tests {
         // Posting list offset starts at 0 (see FileBackedAppendablePostingListStorage)
         let mut pl_offset = 0;
         for posting_list in posting_lists.iter() {
-            let pl_len = posting_list.len();
+            let pl_len = posting_list.len() * size_of::<u64>();
             assert!(file.write_all(&(pl_len as u64).to_le_bytes()).is_ok());
             assert!(file.write_all(&(pl_offset as u64).to_le_bytes()).is_ok());
-            pl_offset += pl_len * size_of::<u64>();
+            pl_offset += pl_len;
             offset += 2 * size_of::<u64>();
         }
         for posting_list in posting_lists.iter() {
@@ -341,6 +341,7 @@ mod tests {
         assert_eq!(ivf.num_clusters, num_clusters);
         let cluster_0 = ivf.index_storage.get_posting_list(0);
         let cluster_1 = ivf.index_storage.get_posting_list(1);
+        println!("{:?} {:?}", cluster_0, cluster_1);
         assert!(cluster_0.map_or(false, |list| list.contains(&0)));
         assert!(cluster_1.map_or(false, |list| list.contains(&2)));
     }
