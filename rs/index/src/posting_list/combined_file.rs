@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 use std::mem::size_of;
 
 use anyhow::{anyhow, Result};
@@ -26,8 +25,6 @@ pub struct Header {
 }
 
 pub struct FixedIndexFile {
-    _marker: PhantomData<u64>,
-
     mmap: Mmap,
     header: Header,
     doc_id_mapping_offset: usize,
@@ -52,7 +49,6 @@ impl FixedIndexFile {
             Self::align_to_next_boundary(centroid_offset + header.centroids_len as usize, 8)
                 + size_of::<u64>(); // FileBackedAppendablePostingListStorage's first u64 encodes num_clusters
         Ok(Self {
-            _marker: PhantomData,
             mmap,
             header,
             doc_id_mapping_offset,

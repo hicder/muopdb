@@ -45,3 +45,5 @@ impl Searchable for ImmutableSegment {
 }
 
 impl SegmentSearchable for ImmutableSegment {}
+unsafe impl Send for ImmutableSegment {}
+unsafe impl Sync for ImmutableSegment {}
