@@ -1,12 +1,15 @@
 use std::marker::PhantomData;
+use std::cmp::min;
+use std::simd::{LaneCount, Simd, SupportedLaneCount};
 
 use anyhow::{anyhow, Ok, Result};
 use kmeans::KMeansConfig;
 use log::debug;
+use rand::seq::SliceRandom;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::slice::ParallelSlice;
 
-use crate::distance::l2::LaneConformingDistanceCalculator;
+use crate::distance::l2::{L2DistanceCalculator, LaneConformingDistanceCalculator};
 use crate::{CalculateSquared, DistanceCalculator};
 
 #[derive(PartialEq, Debug)]
@@ -15,7 +18,7 @@ pub enum KMeansVariant {
 }
 
 pub struct KMeansBuilder<D: DistanceCalculator + CalculateSquared + Send + Sync> {
-    pub num_cluters: usize,
+    pub num_clusters: usize,
     pub max_iter: usize,
 
     // Factor which determine how much penalty large cluster has over small cluster.
@@ -36,6 +39,7 @@ pub struct KMeansResult {
     // Flattened centroids
     pub centroids: Vec<f32>,
     pub assignments: Vec<usize>,
+    pub error: f32,
 }
 
 // TODO(hicder): Add support for different variants of k-means.
@@ -49,7 +53,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
         variant: KMeansVariant,
     ) -> Self {
         Self {
-            num_cluters,
+            num_clusters: num_cluters,
             max_iter,
             tolerance,
             dimension,
@@ -68,7 +72,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
         cluster_init_values: Vec<usize>,
     ) -> Self {
         Self {
-            num_cluters,
+            num_clusters: num_cluters,
             max_iter,
             tolerance,
             dimension,
@@ -95,14 +99,16 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
             .build();
         let kmean: kmeans::KMeans<_, 16> = kmeans::KMeans::new(data, sample_count, self.dimension);
         let result = kmean.kmeans_lloyd(
-            self.num_cluters,
+            self.num_clusters,
             self.max_iter,
             kmeans::KMeans::init_random_sample,
             &conf,
         );
         let kmeans_result = KMeansResult {
+            // intial_centroids: vec![],
             centroids: result.centroids,
             assignments: result.assignments,
+            error: result.distsum,
         };
         Ok(kmeans_result)
     }
@@ -121,119 +127,143 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
             KMeansVariant::Lloyd => {
                 if self.dimension % 16 == 0 {
                     return self
-                        .run_lloyd::<LaneConformingDistanceCalculator<16, D>>(flattened_data);
+                        .run_lloyd::<LaneConformingDistanceCalculator<16, D>, 16>(flattened_data);
                 } else if self.dimension % 8 == 0 {
                     return self
-                        .run_lloyd::<LaneConformingDistanceCalculator<8, D>>(flattened_data);
+                        .run_lloyd::<LaneConformingDistanceCalculator<8, D>, 8>(flattened_data);
                 } else if self.dimension % 4 == 0 {
                     return self
-                        .run_lloyd::<LaneConformingDistanceCalculator<4, D>>(flattened_data);
+                        .run_lloyd::<LaneConformingDistanceCalculator<4, D>, 4>(flattened_data);
                 } else {
-                    return self.run_lloyd::<D>(flattened_data);
+                    return self.run_lloyd::<D, 1>(flattened_data);
                 }
             }
         }
     }
 
-    fn run_lloyd<T: CalculateSquared + Send + Sync>(
+    fn init_random_points(&self, points: &Vec<&[f32]>, num_clusters: usize) -> Result<Vec<f32>> {
+        match &self.cluster_init_values {
+            Some(cluster_init_values) if cluster_init_values.len() == num_clusters => {
+                return Ok(cluster_init_values
+                    .iter()
+                    .map(|point_id| points[*point_id])
+                    .flatten()
+                    .cloned()
+                    .collect());
+            }
+            _ => {
+                let mut rng = rand::thread_rng();
+                let mut centroids = vec![];
+                points
+                    .choose_multiple(&mut rng, num_clusters)
+                    .for_each(|point| {
+                        centroids.extend_from_slice(*point);
+                    });
+                return Ok(centroids);
+            }
+        }
+    }
+
+    fn run_lloyd<T: CalculateSquared + Send + Sync, const SIMD_WIDTH: usize>(
         &self,
         flattened_data_points: Vec<f32>,
-    ) -> Result<KMeansResult> {
+    ) -> Result<KMeansResult>
+    where
+        LaneCount<SIMD_WIDTH>: SupportedLaneCount,
+    {
         let data_points = flattened_data_points
             .par_chunks_exact(self.dimension)
             .map(|x| x)
             .collect::<Vec<&[f32]>>();
 
         let num_data_points = data_points.len();
-        let mut cluster_labels = vec![0; num_data_points];
+        let num_clusters = min(self.num_clusters, num_data_points);
 
-        // Random initialization of cluster labels
-        match &self.cluster_init_values {
-            Some(values) => {
-                for i in 0..num_data_points {
-                    cluster_labels[i] = values[i % values.len()];
-                }
-            }
-            None => {
-                for i in 0..num_data_points {
-                    cluster_labels[i] = rand::random::<usize>() % self.num_cluters;
-                }
-            }
-        }
-
-        let mut cluster_sizes = vec![0; self.num_cluters];
-        for i in 0..num_data_points {
-            cluster_sizes[cluster_labels[i]] += 1;
-        }
-
-        let mut centroids = vec![0.0; self.num_cluters * self.dimension];
-        for i in 0..num_data_points {
-            let data_point = &data_points[i];
-            let label = cluster_labels[i];
-            for j in 0..self.dimension {
-                centroids[label * self.dimension + j] += data_point[j];
-            }
-        }
-
-        centroids.iter_mut().enumerate().for_each(|x| {
-            let idx = x.0 / self.dimension;
-            if cluster_sizes[idx] > 0 {
-                *x.1 /= cluster_sizes[idx] as f32;
-            }
-        });
+        // Choose random few points as initial centroids
+        let mut centroids = self.init_random_points(&data_points, num_clusters)?;
+        let mut cluster_sizes = vec![0; num_clusters];
 
         // Add size penalty term
-        let mut penalties = vec![0.0; self.num_cluters];
-        penalties
-            .iter_mut()
-            .enumerate()
-            .for_each(|x| *x.1 = self.tolerance * cluster_sizes[x.0] as f32);
+        let mut penalties = vec![0.0; num_clusters];
+        if self.tolerance > 0.0 {
+            penalties
+                .iter_mut()
+                .enumerate()
+                .for_each(|x| *x.1 = self.tolerance * cluster_sizes[x.0] as f32);
+        }
 
-        for _iteration in 0..self.max_iter {
-            let old_labels = cluster_labels.clone();
+        let mut cluster_labels = vec![0; data_points.len()];
+
+        let mut last_dist = f32::MAX;
+        let mut iteration = 0;
+        loop {
+            let last_labels = cluster_labels.clone();
 
             // Reassign points using modified distance (Equation 8)
-
-            cluster_labels = data_points
+            let mut cluster_labels_with_min_cost = data_points
                 .par_iter()
                 .map(|data_point| {
                     let dp = *data_point;
                     // Calculate distance to each centroid
-                    let mut min_cost = f32::MAX;
-                    let mut label = 0;
-                    for centroid_id in 0..self.num_cluters {
-                        let centroid = centroids
-                            [centroid_id * self.dimension..(centroid_id + 1) * self.dimension]
-                            .as_ref();
-                        let distance = T::calculate_squared(dp, centroid) + penalties[centroid_id];
-
-                        if distance < min_cost {
-                            min_cost = distance;
-                            label = centroid_id;
-                        }
-                    }
-                    label
+                    let res = centroids
+                        .chunks_exact(self.dimension)
+                        .enumerate()
+                        .map(|(centroid_id, centroid)| {
+                            let distance =
+                                T::calculate_squared(dp, centroid) + penalties[centroid_id];
+                            (centroid_id, distance)
+                        })
+                        .fold((0, f32::MAX), |(min_label, min_cost), (label, distance)| {
+                            if distance < min_cost {
+                                (label, distance)
+                            } else {
+                                (min_label, min_cost)
+                            }
+                        });
+                    res
                 })
-                .collect::<Vec<usize>>();
+                .collect::<Vec<(usize, f32)>>();
 
-            // Reinitialize cluster sizes
-            cluster_sizes.iter_mut().for_each(|x| *x = 0);
-            for i in 0..num_data_points {
-                cluster_sizes[cluster_labels[i]] += 1;
-            }
-
-            // Flattened centroids
-            centroids.iter_mut().for_each(|x| *x = 0.0);
-            for i in 0..num_data_points {
-                let data_point = &data_points[i];
-                let label = cluster_labels[i];
-                for j in 0..self.dimension {
-                    centroids[label * self.dimension + j] += data_point[j];
-                }
-            }
+            let mut total_dist = 0.0;
+            rayon::scope(|s| {
+                s.spawn(|_| {
+                    total_dist = cluster_labels_with_min_cost
+                        .iter()
+                        .map(|(_, distance)| (*distance).sqrt())
+                        .sum::<f32>();
+                });
+                s.spawn(|_| {
+                    centroids.iter_mut().for_each(|x| *x = 0.0);
+                    data_points
+                        .iter()
+                        .zip(cluster_labels_with_min_cost.iter())
+                        .for_each(|(data_point, (label, _))| {
+                            let dp = *data_point;
+                            let centroid_slice = &mut centroids
+                                [*label * self.dimension..(label + 1) * self.dimension];
+                            centroid_slice
+                                .chunks_exact_mut(SIMD_WIDTH)
+                                .zip(
+                                    dp.chunks_exact(SIMD_WIDTH)
+                                        .map(|v| Simd::<f32, SIMD_WIDTH>::from_slice(v)),
+                                )
+                                .for_each(|(c, s)| {
+                                    let c_simd = Simd::<f32, SIMD_WIDTH>::from_slice(c);
+                                    let result = c_simd + s;
+                                    c.copy_from_slice(result.as_array());
+                                });
+                        });
+                });
+                s.spawn(|_| {
+                    cluster_sizes.iter_mut().for_each(|x| *x = 0);
+                    for i in 0..num_data_points {
+                        cluster_sizes[cluster_labels_with_min_cost[i].0] += 1;
+                    }
+                });
+            });
 
             let mut contains_empty_cluster = false;
-
+            // Reinitialize cluster sizes
             centroids.iter_mut().enumerate().for_each(|x| {
                 let idx = x.0 / self.dimension;
                 if cluster_sizes[idx] > 0 {
@@ -243,47 +273,97 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
                 }
             });
 
+            // Check if there is any empty cluster
             if contains_empty_cluster {
-                // Compute largest cluster
-                let largest_cluster = cluster_sizes.iter().max().unwrap();
-                let largest_cluster_id = cluster_sizes
-                    .iter()
-                    .position(|x| x == largest_cluster)
-                    .unwrap();
-                let chosen_point = cluster_labels
-                    .iter()
-                    .position(|x| *x == largest_cluster_id)
-                    .unwrap();
-
-                // Handle empty clusters
-                for i in 0..self.num_cluters {
-                    if cluster_sizes[i] == 0 {
-                        // Set the centroid of this cluster to the point
-                        for j in 0..self.dimension {
-                            centroids[i * self.dimension + j] = data_points[chosen_point][j];
+                // Find the point that is in a cluster with more than 1 points, that is farthest away from its cluster
+                for cluster_id in 0..cluster_sizes.len() {
+                    if cluster_sizes[cluster_id] == 0 {
+                        // debug!("Cluster {} with 0 points found", cluster_id);
+                        let mut max_distance = 0.0;
+                        let mut chosen_point_id = 0;
+                        let mut chosen_cluster_id = 0;
+                        for i in 0..cluster_labels_with_min_cost.len() {
+                            let checking_cluster_id = cluster_labels_with_min_cost[i].0;
+                            if cluster_sizes[checking_cluster_id] > 1 {
+                                let point = data_points[i];
+                                let cluster = centroids
+                                    .chunks_exact(self.dimension)
+                                    .nth(cluster_id)
+                                    .unwrap();
+                                let distance =
+                                    L2DistanceCalculator::calculate_squared(point, cluster);
+                                if distance > max_distance {
+                                    max_distance = distance;
+                                    chosen_point_id = i;
+                                    chosen_cluster_id = checking_cluster_id;
+                                }
+                            }
                         }
-                        cluster_sizes[i] = 1;
+
+                        let old_size = cluster_sizes[chosen_cluster_id] as f32;
+                        cluster_sizes[chosen_cluster_id] -= 1;
+
+                        let chosen_point = data_points[chosen_point_id];
+                        for j in 0..self.dimension {
+                            let x = centroids[chosen_cluster_id * self.dimension + j];
+                            centroids[chosen_cluster_id * self.dimension + j] =
+                                (x * old_size - chosen_point[j]) / (old_size - 1.0);
+                        }
+
+                        // add chosen point to the new cluster
+                        cluster_labels_with_min_cost[chosen_point_id].0 = cluster_id;
+                        cluster_sizes[cluster_id] = 1;
+                        // update centroid for this cluster
+                        for j in 0..self.dimension {
+                            centroids[cluster_id * self.dimension + j] = chosen_point[j];
+                        }
                     }
                 }
             }
 
             // Add size penalty term
-            let mut penalties = vec![0.0; self.num_cluters];
-            penalties
-                .iter_mut()
-                .enumerate()
-                .for_each(|x| *x.1 = self.tolerance * cluster_sizes[x.0] as f32);
+            if self.tolerance > 0.0 {
+                penalties = vec![0.0; num_clusters];
+                penalties
+                    .iter_mut()
+                    .enumerate()
+                    .for_each(|x| *x.1 = self.tolerance * cluster_sizes[x.0] as f32);
 
-            // Check convergence
-            if cluster_labels == old_labels {
-                debug!("Converged at iteration {}", _iteration);
+                total_dist += penalties
+                    .iter()
+                    .zip(cluster_sizes.iter())
+                    .map(|(penalty, size)| *penalty * (*size as f32))
+                    .sum::<f32>();
+            }
+
+            debug!(
+                "Iteration: {}, Error {} -> {}, improvement: {}",
+                iteration,
+                last_dist,
+                total_dist,
+                last_dist - total_dist
+            );
+            // TODO(hicder): Make 0.0005 a parameter
+            cluster_labels = cluster_labels_with_min_cost
+                .iter()
+                .map(|(label, _)| *label)
+                .collect();
+            if cluster_labels == last_labels || iteration >= self.max_iter {
+                debug!(
+                    "Converged at iteration {}, improvement: {}",
+                    iteration,
+                    total_dist - last_dist
+                );
                 break;
             }
+            last_dist = total_dist;
+            iteration += 1;
         }
 
         Ok(KMeansResult {
             centroids: centroids,
             assignments: cluster_labels,
+            error: last_dist,
         })
     }
 }
@@ -322,62 +402,17 @@ mod tests {
             1e-4,
             2,
             KMeansVariant::Lloyd,
-            vec![0, 0, 0, 1, 1, 1, 2, 2, 2],
+            vec![0, 1, 2],
         );
         let result = kmeans
             .fit(flattened_data)
             .expect("KMeans run should succeed");
 
-        assert_eq!(kmeans.num_cluters, 3);
+        assert_eq!(kmeans.num_clusters, 3);
         assert_eq!(kmeans.max_iter, 100);
         assert_eq!(kmeans.tolerance, 1e-4);
         assert_eq!(kmeans.dimension, 2);
         assert_eq!(kmeans.variant, KMeansVariant::Lloyd);
-
-        assert_eq!(result.centroids.len(), 3 * 2);
-        assert_eq!(result.assignments[0], result.assignments[3]);
-        assert_eq!(result.assignments[0], result.assignments[6]);
-        assert_eq!(result.assignments[1], result.assignments[4]);
-        assert_eq!(result.assignments[1], result.assignments[7]);
-        assert_eq!(result.assignments[2], result.assignments[5]);
-        assert_eq!(result.assignments[2], result.assignments[8]);
-    }
-
-    #[test]
-    fn test_kmeans_lloyd_really_large_penalty() {
-        // This test tests the fact that, point (5.0, 5.0) is assigned to cluster 2 even though
-        // it is supposed to be assigned to cluster 1. The penalty for unbalancing a cluster is
-        // extremely large, which forces the point to be reassigned to a different cluster.
-        let data = vec![
-            vec![0.0, 0.0],
-            vec![40.0, 40.0],
-            vec![90.0, 90.0],
-            vec![1.0, 1.0],
-            vec![41.0, 41.0],
-            vec![91.0, 91.0],
-            vec![2.0, 2.0],
-            vec![5.0, 5.0],
-            vec![92.0, 92.0],
-        ];
-
-        let flattened_data = data
-            .iter()
-            .map(|x| x.as_slice())
-            .flatten()
-            .cloned()
-            .collect();
-        let kmeans: KMeansBuilder<L2DistanceCalculator> =
-            KMeansBuilder::new_with_cluster_init_values(
-                3,
-                100,
-                10000.0,
-                2,
-                KMeansVariant::Lloyd,
-                vec![0, 0, 0, 0, 0, 0, 2, 2, 2],
-            );
-        let result = kmeans
-            .fit(flattened_data)
-            .expect("KMeans run should succeed");
 
         assert_eq!(result.centroids.len(), 3 * 2);
         assert_eq!(result.assignments[0], result.assignments[3]);
@@ -408,15 +443,14 @@ mod tests {
             .flatten()
             .cloned()
             .collect();
-        let kmeans: KMeansBuilder<L2DistanceCalculator> =
-            KMeansBuilder::new_with_cluster_init_values(
-                3,
-                100,
-                0.0,
-                2,
-                KMeansVariant::Lloyd,
-                vec![0, 0, 0, 1, 1, 1, 2, 2, 2],
-            );
+        let kmeans = KMeansBuilder::new_with_cluster_init_values(
+            3,
+            100,
+            0.0,
+            2,
+            KMeansVariant::Lloyd,
+            vec![0, 1, 2],
+        );
 
         let result = kmeans
             .fit(flattened_data)

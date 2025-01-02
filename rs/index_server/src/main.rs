@@ -1,15 +1,15 @@
-mod index_catalog;
-mod index_manager;
-mod index_provider;
+mod collection_catalog;
+mod collection_manager;
+mod collection_provider;
 mod index_server;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use clap::Parser;
-use index_catalog::IndexCatalog;
-use index_manager::IndexManager;
-use index_provider::IndexProvider;
+use collection_catalog::CollectionCatalog;
+use collection_manager::CollectionManager;
+use collection_provider::CollectionProvider;
 use index_server::IndexServerImpl;
 use log::{error, info};
 use proto::muopdb::index_server_server::IndexServerServer;
@@ -43,16 +43,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let index_data_path = arg.index_data_path;
     let node_id = arg.node_id;
 
-    let index_catalog = Arc::new(Mutex::new(IndexCatalog::new()));
+    let index_catalog = Arc::new(Mutex::new(CollectionCatalog::new()));
     let index_catalog_for_manager = index_catalog.clone();
     let index_catalog_for_server = index_catalog.clone();
 
     info!("Node: {}, listening on port {}", node_id, arg.port);
 
     let index_manager_thread = spawn(async move {
-        let index_provider = IndexProvider::new(index_data_path);
+        let index_provider = CollectionProvider::new(index_data_path);
         let mut index_manager =
-            IndexManager::new(index_config_path, index_provider, index_catalog_for_manager);
+            CollectionManager::new(index_config_path, index_provider, index_catalog_for_manager);
         loop {
             if let Err(e) = index_manager.check_for_update().await {
                 error!("Error checking for index manager update: {}", e);

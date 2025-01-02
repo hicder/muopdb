@@ -129,16 +129,15 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
         if self.current_offset + vector.len() * std::mem::size_of::<T>() > self.backing_file_size {
             return Err(anyhow!("vector too big to be flushed to backing file"));
         }
-        let size_required = vector.len() * std::mem::size_of::<T>();
-        let mut buffer: Vec<u8> = vec![];
-        for i in 0..vector.len() {
-            buffer.extend_from_slice(vector[i].to_le_bytes().as_ref());
-        }
 
         let mmap = &mut self.mmaps[self.current_backing_id as usize];
-        // Copy buffer to current offset in mmap
-        mmap[self.current_offset..self.current_offset + size_required].copy_from_slice(&buffer);
-        self.current_offset += size_required;
+        vector.iter().for_each(|v| {
+            let item_bytes = v.to_le_bytes();
+            let bytes = item_bytes.as_ref();
+            mmap[self.current_offset..self.current_offset + bytes.len()].copy_from_slice(bytes);
+            self.current_offset += bytes.len();
+        });
+
         Ok(())
     }
 }

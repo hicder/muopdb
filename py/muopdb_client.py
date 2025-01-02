@@ -4,7 +4,7 @@ import muopdb_pb2_grpc
 
 """
 Make sure to build the proto files first:
-pip install grpcio protobuf grpcio-tools
+pip install grpcio protobuf grpcio-tools ollama
 python3 -m grpc.tools.protoc -I=rs/proto/proto --python_out=py/ --grpc_python_out=py/ rs/proto/proto/muopdb.proto
 """
 
@@ -44,23 +44,6 @@ class IndexServerClient:
         self.channel.close()
 
 if __name__ == '__main__':
-    # Example usage for Aggregator
-    aggregator_client = AggregatorClient()
-    try:
-        get_response = aggregator_client.get(
-            index="my_index",
-            vector=[0.1, 0.2, 0.3],
-            top_k=5,
-            ef_construction=100,
-            record_metrics=True
-        )
-        print("Aggregator Get Response:", get_response)
-    except grpc.RpcError as e:
-         print(f"Aggregator RPC Error: {e}")
-    finally:
-        aggregator_client.close()
-
-
     # Example usage for IndexServer
     index_server_client = IndexServerClient()
     try:

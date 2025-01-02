@@ -1,9 +1,11 @@
+use std::cmp::min;
 use std::fs::{create_dir_all, remove_dir_all, remove_file, File};
 use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
 
 use anyhow::{anyhow, Context, Result};
 use log::debug;
+use num_traits::ToBytes;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use utils::io::{append_file_to_writer, wrap_write};
@@ -11,8 +13,6 @@ use utils::{CalculateSquared, DistanceCalculator};
 
 use crate::ivf::builder::IvfBuilder;
 use crate::posting_list::combined_file::{Header, Version};
-use crate::vector::file::FileBackedAppendableVectorStorage;
-use crate::vector::VectorStorage;
 
 pub struct IvfWriter<Q: Quantizer, D: DistanceCalculator + CalculateSquared + Send + Sync> {
     base_directory: String,
@@ -39,8 +39,8 @@ impl<Q: Quantizer, D: DistanceCalculator + CalculateSquared + Send + Sync> IvfWr
         }
 
         let num_features = ivf_builder.config().num_features;
-        let num_clusters = ivf_builder.centroids().len();
-        let num_vectors = ivf_builder.vectors().len();
+        let num_clusters = ivf_builder.centroids().borrow().len();
+        let num_vectors = ivf_builder.vectors().borrow().len();
 
         // Write vectors
         let vectors_len = self
@@ -70,6 +70,7 @@ impl<Q: Quantizer, D: DistanceCalculator + CalculateSquared + Send + Sync> IvfWr
                 doc_id_mapping_len,
             ));
         }
+        debug!("Finish writing doc_id_mapping");
 
         // Write centroids
         let centroids_len = self
@@ -84,21 +85,23 @@ impl<Q: Quantizer, D: DistanceCalculator + CalculateSquared + Send + Sync> IvfWr
                 centroids_len,
             ));
         }
+        debug!("Finish writing centroids");
 
         // Write posting_lists
-        let posting_lists_len = self
-            .write_posting_lists(ivf_builder)
+        let posting_lists_and_metadata_len = self
+            .write_posting_lists_and_metadata(ivf_builder)
             .context("Failed to write posting_lists")?;
         let expected_bytes_written = std::mem::size_of::<u64>() * 2 * num_clusters
             + std::mem::size_of::<u64>() * num_vectors
             + std::mem::size_of::<u64>();
-        if posting_lists_len != expected_bytes_written {
+        if posting_lists_and_metadata_len != expected_bytes_written {
             return Err(anyhow!(
                 "Expected to write {} bytes in posting list storage, but wrote {}",
                 expected_bytes_written,
-                posting_lists_len,
+                posting_lists_and_metadata_len,
             ));
         }
+        debug!("Finish writing posting_lists_and_metadata");
 
         let header: Header = Header {
             version: Version::V0,
@@ -108,39 +111,39 @@ impl<Q: Quantizer, D: DistanceCalculator + CalculateSquared + Send + Sync> IvfWr
             num_vectors: num_vectors as u64,
             doc_id_mapping_len: doc_id_mapping_len as u64,
             centroids_len: centroids_len as u64,
-            posting_lists_len: posting_lists_len as u64,
+            posting_lists_and_metadata_len: posting_lists_and_metadata_len as u64,
         };
 
         self.combine_files(&header)?;
+        debug!("Finish combining files");
+
         Ok(())
     }
 
     fn quantize_and_write_vectors(&self, ivf_builder: &IvfBuilder<D>) -> Result<usize> {
         // Quantize vectors
         let full_vectors = &ivf_builder.vectors();
-        let config = ivf_builder.config();
         let quantized_vectors_path = format!("{}/quantized", self.base_directory);
         create_dir_all(&quantized_vectors_path)?;
-        let mut quantized_vectors =
-            Box::new(FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
-                quantized_vectors_path.clone(),
-                config.memory_size,
-                config.file_size,
-                self.quantizer.quantized_dimension(),
-            ));
-
-        for i in 0..full_vectors.len() {
-            let vector = full_vectors.get(i as u32)?;
-            let quantized_vector = Q::QuantizedT::process_vector(vector, &self.quantizer);
-            quantized_vectors.append(&quantized_vector)?;
-        }
 
         // Write quantized vectors
         let path = format!("{}/vectors", self.base_directory);
         let mut file = File::create(path)?;
-        let mut writer = BufWriter::new(&mut file);
+        let capacity = full_vectors.borrow().len() * self.quantizer.quantized_dimension() * std::mem::size_of::<Q::QuantizedT>();
+        let mut writer = BufWriter::with_capacity(min(1 << 30, capacity), &mut file);
 
-        let bytes_written = quantized_vectors.write(&mut writer)?;
+        let mut bytes_written = 0;
+        bytes_written += wrap_write(&mut writer, &full_vectors.borrow().len().to_le_bytes())?;
+
+        for i in 0..full_vectors.borrow().len() {
+            let quantized_vector = Q::QuantizedT::process_vector(
+                full_vectors.borrow().get(i as u32)?,
+                &self.quantizer,
+            );
+            for j in 0..quantized_vector.len() {
+                bytes_written += wrap_write(&mut writer, quantized_vector[j].to_le_bytes().as_ref())?;
+            }
+        }
 
         remove_dir_all(&quantized_vectors_path)?;
         Ok(bytes_written)
@@ -166,11 +169,11 @@ impl<Q: Quantizer, D: DistanceCalculator + CalculateSquared + Send + Sync> IvfWr
         let mut file = File::create(path)?;
         let mut writer = BufWriter::new(&mut file);
 
-        let bytes_written = ivf_builder.centroids().write(&mut writer)?;
+        let bytes_written = ivf_builder.centroids().borrow().write(&mut writer)?;
         Ok(bytes_written)
     }
 
-    fn write_posting_lists(&self, ivf_builder: &mut IvfBuilder<D>) -> Result<usize> {
+    fn write_posting_lists_and_metadata(&self, ivf_builder: &mut IvfBuilder<D>) -> Result<usize> {
         let path = format!("{}/posting_lists", self.base_directory);
         let mut file = File::create(path)?;
         let mut writer = BufWriter::new(&mut file);
@@ -191,7 +194,7 @@ impl<Q: Quantizer, D: DistanceCalculator + CalculateSquared + Send + Sync> IvfWr
         written += wrap_write(writer, &header.num_vectors.to_le_bytes())?;
         written += wrap_write(writer, &header.doc_id_mapping_len.to_le_bytes())?;
         written += wrap_write(writer, &header.centroids_len.to_le_bytes())?;
-        written += wrap_write(writer, &header.posting_lists_len.to_le_bytes())?;
+        written += wrap_write(writer, &header.posting_lists_and_metadata_len.to_le_bytes())?;
         Ok(written)
     }
 
@@ -302,7 +305,7 @@ mod tests {
             num_vectors: 4,
             doc_id_mapping_len: 4,
             centroids_len: 4,
-            posting_lists_len: 4,
+            posting_lists_and_metadata_len: 4,
         };
 
         // Call combine_files
@@ -326,7 +329,7 @@ mod tests {
             4, 0, 0, 0, 0, 0, 0, 0, // num_vectors (little-endian)
             4, 0, 0, 0, 0, 0, 0, 0, // doc_id_mapping_len (little-endian)
             4, 0, 0, 0, 0, 0, 0, 0, // centroids_len (little-endian)
-            4, 0, 0, 0, 0, 0, 0, 0, // posting_lists_len (little-endian)
+            4, 0, 0, 0, 0, 0, 0, 0, // posting_lists_and_metadata_len (little-endian)
         ];
 
         // Add padding to align to 8 bytes
@@ -416,7 +419,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 1,
             distance_threshold: 0.1,
             base_directory: base_directory.clone(),
@@ -504,7 +507,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 1,
             distance_threshold: 0.1,
             base_directory: base_directory.clone(),
@@ -595,9 +598,9 @@ mod tests {
         let centroids_len = index_reader
             .read_u64::<LittleEndian>()
             .expect("Failed to read centroids_len");
-        let posting_lists_len = index_reader
+        let posting_lists_and_metadata_len = index_reader
             .read_u64::<LittleEndian>()
-            .expect("Failed to read posting_lists_len");
+            .expect("Failed to read posting_lists_and_metadata_len");
 
         // Verify file size
         let file_size = index_file
@@ -606,7 +609,7 @@ mod tests {
             .len();
         assert_eq!(
             file_size,
-            41 + 7 + doc_id_mapping_len + centroids_len + posting_lists_len
+            41 + 7 + doc_id_mapping_len + centroids_len + posting_lists_and_metadata_len
         ); // 41 bytes for header + 7 padding
     }
 }

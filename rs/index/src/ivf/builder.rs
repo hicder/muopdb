@@ -1,15 +1,18 @@
-use std::cmp::{Ordering, Reverse};
+use std::cmp::{max, min, Ordering, Reverse};
 use std::collections::{BinaryHeap, HashMap};
 use std::fs::{create_dir, create_dir_all};
 use std::io::ErrorKind;
 use std::marker::PhantomData;
 
 use anyhow::{anyhow, Result};
+use atomic_refcell::AtomicRefCell;
+use log::debug;
 use rand::seq::SliceRandom;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use sorted_vec::SortedVec;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::kmeans_builder::kmeans_builder::{KMeansBuilder, KMeansVariant};
-use utils::{CalculateSquared, DistanceCalculator};
+use utils::{ceil_div, CalculateSquared, DistanceCalculator};
 
 use crate::posting_list::file::FileBackedAppendablePostingListStorage;
 use crate::posting_list::PostingListStorage;
@@ -20,7 +23,7 @@ pub struct IvfBuilderConfig {
     pub max_iteration: usize,
     pub batch_size: usize,
     pub num_clusters: usize,
-    pub num_data_points: usize,
+    pub num_data_points_for_clustering: usize,
     pub max_clusters_per_vector: usize,
     // Threshold to add a vector to more than one cluster
     pub distance_threshold: f32,
@@ -38,8 +41,8 @@ pub struct IvfBuilderConfig {
 
 pub struct IvfBuilder<D: DistanceCalculator + CalculateSquared + Send + Sync> {
     config: IvfBuilderConfig,
-    vectors: Box<dyn VectorStorage<f32>>,
-    centroids: Box<dyn VectorStorage<f32>>,
+    vectors: AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>>,
+    centroids: AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>>,
     posting_lists: Box<dyn for<'a> PostingListStorage<'a>>,
     doc_id_mapping: Vec<u64>,
     _marker: PhantomData<D>,
@@ -149,22 +152,24 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         let vectors_path = format!("{}/builder_vector_storage", config.base_directory);
         create_dir(&vectors_path)?;
 
-        let vectors = Box::new(FileBackedAppendableVectorStorage::<f32>::new(
-            vectors_path,
-            config.memory_size,
-            config.file_size,
-            config.num_features,
-        ));
+        let vectors: AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>> =
+            AtomicRefCell::new(Box::new(FileBackedAppendableVectorStorage::<f32>::new(
+                vectors_path,
+                config.memory_size,
+                config.file_size,
+                config.num_features,
+            )));
 
         let centroids_path = format!("{}/builder_centroid_storage", config.base_directory);
         create_dir(&centroids_path)?;
 
-        let centroids = Box::new(FileBackedAppendableVectorStorage::<f32>::new(
-            centroids_path,
-            config.memory_size,
-            config.file_size,
-            config.num_features,
-        ));
+        let centroids: AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>> =
+            AtomicRefCell::new(Box::new(FileBackedAppendableVectorStorage::<f32>::new(
+                centroids_path,
+                config.memory_size,
+                config.file_size,
+                config.num_features,
+            )));
 
         let posting_lists_path = format!("{}/builder_posting_list_storage", config.base_directory);
         create_dir(&posting_lists_path)?;
@@ -189,16 +194,20 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         &self.config
     }
 
-    pub fn vectors(&self) -> &dyn VectorStorage<f32> {
-        &*self.vectors
+    pub fn vectors(&self) -> &AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>> {
+        &self.vectors
     }
 
     pub fn doc_id_mapping(&self) -> &[u64] {
         &*self.doc_id_mapping
     }
 
-    pub fn centroids(&self) -> &dyn VectorStorage<f32> {
-        &*self.centroids
+    pub fn centroids(&self) -> &AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>> {
+        &self.centroids
+    }
+
+    pub fn posting_lists(&self) -> &dyn for<'a> PostingListStorage<'a> {
+        &*self.posting_lists
     }
 
     pub fn posting_lists_mut(&mut self) -> &mut dyn for<'a> PostingListStorage<'a> {
@@ -207,14 +216,14 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
     /// Add a new vector to the dataset for training
     pub fn add_vector(&mut self, doc_id: u64, data: &[f32]) -> Result<()> {
-        self.vectors.append(&data)?;
+        self.vectors.borrow_mut().append(&data)?;
         self.generate_id(doc_id)?;
         Ok(())
     }
 
     /// Add a new centroid
-    pub fn add_centroid(&mut self, centroid: &[f32]) -> Result<()> {
-        self.centroids.append(centroid)?;
+    pub fn add_centroid(&self, centroid: &[f32]) -> Result<()> {
+        self.centroids.borrow_mut().append(centroid)?;
         Ok(())
     }
 
@@ -272,30 +281,52 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
     }
 
     pub fn build_posting_lists(&mut self) -> Result<()> {
-        let mut posting_lists: Vec<Vec<u64>> = vec![Vec::with_capacity(0); self.centroids.len()];
+        debug!("Building posting lists");
+
+        let mut posting_lists: Vec<Vec<u64>> =
+            vec![Vec::with_capacity(0); self.centroids.borrow().len()];
         // Assign vectors to nearest centroids
-        for i in 0..self.vectors.len() {
-            let vector = self.vectors.get(i as u32)?;
-            let nearest_centroids = Self::find_nearest_centroids(
-                &vector,
-                self.centroids.as_ref(),
-                self.config.max_clusters_per_vector,
-            )?;
-            // Find the nearest distance, ensuring that NaN values are treated as greater than any
-            // other value
-            let nearest_distance = nearest_centroids
-                .iter()
-                .map(|pad| pad.distance)
-                .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Greater))
-                .expect("nearest_distance should not be None");
-            for point_and_distance in nearest_centroids.iter() {
-                if (point_and_distance.distance - nearest_distance).abs()
-                    <= nearest_distance * self.config.distance_threshold
-                {
-                    posting_lists[point_and_distance.point_id].push(i as u64);
+        // self.assign_docs_to_cluster(doc_ids, flattened_centroids)
+
+        let doc_ids = (0..self.vectors.borrow().len()).collect::<Vec<usize>>();
+        // let vector_clone = self.vectors.clone();
+        let max_clusters_per_vector = self.config.max_clusters_per_vector;
+        let posting_list_per_doc = doc_ids
+            .par_iter()
+            .map(|doc_id| {
+                let nearest_centroids = Self::find_nearest_centroids(
+                    self.vectors.borrow().get(*doc_id as u32).unwrap(),
+                    self.centroids.borrow().as_ref(),
+                    max_clusters_per_vector,
+                )
+                .expect("Nearest centroids should not be None");
+                // Find the nearest distance, ensuring that NaN values are treated as greater than any
+                // other value
+                let nearest_distance = nearest_centroids
+                    .iter()
+                    .map(|pad| pad.distance)
+                    .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Greater))
+                    .expect("nearest_distance should not be None");
+                let mut accepted_centroid_ids = vec![];
+                for centroid_and_distance in nearest_centroids.iter() {
+                    if (centroid_and_distance.distance - nearest_distance).abs()
+                        <= nearest_distance * self.config.distance_threshold
+                    {
+                        accepted_centroid_ids.push(centroid_and_distance.point_id as u64);
+                    }
                 }
-            }
-        }
+                accepted_centroid_ids
+            })
+            .collect::<Vec<Vec<u64>>>();
+
+        posting_list_per_doc
+            .iter()
+            .enumerate()
+            .for_each(|(i, posting_list_for_doc)| {
+                posting_list_for_doc.iter().for_each(|posting_list_id| {
+                    posting_lists[*posting_list_id as usize].push(i as u64);
+                });
+            });
 
         let posting_list_storage_location = format!(
             "{}/builder_posting_list_storage",
@@ -339,47 +370,94 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             });
         }
 
-        for doc_id in doc_ids {
-            let vector = self.vectors.get(doc_id as u32)?;
-            let nearest_centroid = Self::find_nearest_centroid_inmemory(
-                &vector,
-                flattened_centroids,
-                self.config.num_features,
-            );
-            posting_list_infos[nearest_centroid]
+        let num_features = self.config.num_features;
+        let vectors = self.vectors.borrow();
+        let nearest_centroids = doc_ids
+            .par_iter()
+            .map(|doc_id| {
+                Self::find_nearest_centroid_inmemory(
+                    vectors.get(*doc_id as u32).unwrap(),
+                    &flattened_centroids,
+                    num_features,
+                )
+            })
+            .collect::<Vec<usize>>();
+
+        for (doc_id, nearest_centroid) in doc_ids.iter().zip(nearest_centroids.iter()) {
+            posting_list_infos[*nearest_centroid]
                 .posting_list
-                .push(doc_id);
+                .push(*doc_id);
         }
         Ok(posting_list_infos)
     }
 
-    fn get_flattened_dataset(&self, doc_ids: &[usize]) -> Result<Vec<f32>> {
+    fn get_sample_dataset_from_doc_ids(
+        &self,
+        doc_ids: &[usize],
+        sample_size: usize,
+    ) -> Result<Vec<f32>> {
+        let mut rng = rand::thread_rng();
         let mut flattened_dataset: Vec<f32> = vec![];
-        for i in 0..doc_ids.len() {
-            let vector = self.vectors.get(doc_ids[i] as u32)?;
-            flattened_dataset.extend_from_slice(vector);
-        }
+        doc_ids
+            .choose_multiple(&mut rng, sample_size)
+            .for_each(|doc_id| {
+                flattened_dataset
+                    .extend_from_slice(self.vectors.borrow().get(*doc_id as u32).unwrap());
+            });
         Ok(flattened_dataset)
     }
 
-    fn cluster_docs(&self, doc_ids: Vec<usize>) -> Result<Vec<PostingListInfo>> {
-        let kmeans = KMeansBuilder::<D>::new(
-            self.config.num_clusters,
+    fn cluster_docs(
+        &self,
+        doc_ids: Vec<usize>,
+        max_posting_list_size: usize,
+    ) -> Result<Vec<PostingListInfo>> {
+        let num_clusters = ceil_div(doc_ids.len(), max_posting_list_size);
+
+        let num_points_for_clustering = max(
+            num_clusters * 10,
+            self.config.num_data_points_for_clustering,
+        );
+        let kmeans = KMeansBuilder::new(
+            num_clusters,
             self.config.max_iteration,
             self.config.tolerance,
             self.config.num_features,
             KMeansVariant::Lloyd,
         );
 
-        let flattened_dataset = self.get_flattened_dataset(doc_ids.as_ref())?;
+        let flattened_dataset =
+            self.get_sample_dataset_from_doc_ids(&doc_ids, num_points_for_clustering)?;
         let result = kmeans.fit(flattened_dataset)?;
+
         self.assign_docs_to_cluster(doc_ids, result.centroids.as_ref())
     }
 
+    fn compute_actual_num_clusters(
+        &self,
+        total_data_points: usize,
+        num_clusters: usize,
+        max_points_per_centroid: usize,
+    ) -> usize {
+        let num_centroids = num_clusters;
+        let num_points_per_centroid = total_data_points / num_centroids;
+        ceil_div(
+            total_data_points,
+            min(num_points_per_centroid, max_points_per_centroid),
+        )
+    }
+
     pub fn build_centroids(&mut self) -> Result<()> {
+        debug!("Building centroids");
+
         // First pass to get the initial centroids
-        let kmeans = KMeansBuilder::<D>::new(
+        let num_clusters = self.compute_actual_num_clusters(
+            self.vectors.borrow().len(),
             self.config.num_clusters,
+            self.config.max_posting_list_size,
+        );
+        let kmeans = KMeansBuilder::new(
+            num_clusters,
             self.config.max_iteration,
             self.config.tolerance,
             self.config.num_features,
@@ -388,18 +466,20 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
         // Sample the dataset to build the first set of centroids
         let mut rng = rand::thread_rng();
-        let num_input_vectors = self.vectors.len();
+        let num_input_vectors = self.vectors.borrow().len();
 
         // Create a vector from 0 to num_input_vectors and then shuffle it
         let mut flattened_dataset: Vec<f32> = vec![];
         let indices: Vec<usize> = (0..num_input_vectors as usize).collect();
 
+        let num_points_for_clustering =
+            max(num_clusters, self.config.num_data_points_for_clustering);
         let selected = indices
-            .choose_multiple(&mut rng, self.config.num_data_points)
+            .choose_multiple(&mut rng, num_points_for_clustering)
             .cloned()
             .collect::<Vec<usize>>();
         selected.iter().for_each(|index| {
-            flattened_dataset.extend_from_slice(self.vectors.get(*index as u32).unwrap());
+            flattened_dataset.extend_from_slice(self.vectors.borrow().get(*index as u32).unwrap());
         });
 
         let result = kmeans.fit(flattened_dataset)?;
@@ -411,25 +491,32 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         for posting_list_info in posting_list_infos {
             heap.push(posting_list_info);
         }
+
+        let mut num_iter = 0 as usize;
         while heap.len() > 0 {
             match heap.peek() {
                 None => break,
                 Some(longest_posting_list) => {
-                    if longest_posting_list.posting_list.len() < self.config.max_posting_list_size {
+                    if longest_posting_list.posting_list.len() <= self.config.max_posting_list_size
+                    {
                         break;
                     }
                 }
             }
 
             let longest_posting_list = heap.pop().unwrap();
-            let new_posting_list_infos =
-                self.cluster_docs(longest_posting_list.posting_list.clone())?;
+            num_iter += 1;
+            let new_posting_list_infos = self.cluster_docs(
+                longest_posting_list.posting_list.clone(),
+                self.config.max_posting_list_size,
+            )?;
 
             // Add the new posting list infos to the heap
             for posting_list_info in new_posting_list_infos {
                 heap.push(posting_list_info);
             }
         }
+        debug!("Number of iterations to cluster: {}", num_iter);
 
         // Add the centroids to the centroid storage
         // We don't need to add the posting lists to the posting list storage, since later on
@@ -554,7 +641,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
     /// Assign new ids to the vectors
     fn get_reassigned_ids(&mut self) -> Result<Vec<i32>> {
-        let vector_length = self.vectors.len();
+        let vector_length = self.vectors.borrow().len();
         let mut assigned_ids = vec![-1; vector_length];
 
         let mut cur_idx = self.assign_ids_until_last_stopping_point(&mut assigned_ids)?;
@@ -621,18 +708,20 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         );
         create_dir_all(&new_vectors_path)?;
 
-        let mut new_vector_storage = Box::new(FileBackedAppendableVectorStorage::<f32>::new(
-            new_vectors_path,
-            self.config.memory_size,
-            self.config.file_size,
-            self.config.num_features,
-        ));
+        let new_vector_storage: AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>> =
+            AtomicRefCell::new(Box::new(FileBackedAppendableVectorStorage::<f32>::new(
+                new_vectors_path,
+                self.config.memory_size,
+                self.config.file_size,
+                self.config.num_features,
+            )));
 
         for i in 0..reverse_assigned_ids.len() {
             let mapped_id = reverse_assigned_ids[i];
-            let vector = self.vectors.get(mapped_id as u32).unwrap();
+            // let vector = self.vectors.borrow().get(mapped_id as u32).unwrap();
             new_vector_storage
-                .append(vector)
+                .borrow_mut()
+                .append(self.vectors.borrow().get(mapped_id as u32).unwrap())
                 .unwrap_or_else(|_| panic!("append failed"));
         }
 
@@ -707,7 +796,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 2,
             distance_threshold: 0.1,
             base_directory,
@@ -771,7 +860,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 2,
             distance_threshold: 0.1,
             base_directory,
@@ -809,7 +898,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 2,
             distance_threshold: 0.1,
             base_directory,
@@ -865,7 +954,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 2,
             distance_threshold: 0.1,
             base_directory,
@@ -932,7 +1021,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 2,
             distance_threshold: 0.1,
             base_directory,
@@ -1005,7 +1094,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 2,
             distance_threshold: 0.1,
             base_directory,
@@ -1078,7 +1167,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 2,
             distance_threshold: 0.1,
             base_directory,
@@ -1173,7 +1262,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 2,
             distance_threshold: 0.1,
             base_directory,
@@ -1251,7 +1340,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: NUM_VECTORS,
+            num_data_points_for_clustering: NUM_VECTORS,
             max_clusters_per_vector: 2,
             distance_threshold: 0.1,
             base_directory,
@@ -1288,6 +1377,7 @@ mod tests {
             assert_eq!(
                 builder
                     .vectors
+                    .borrow()
                     .get(i as u32)
                     .expect(&format!("Failed to retrieve vector #{}", i))[0],
                 expected_vectors[i]
@@ -1325,7 +1415,7 @@ mod tests {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
-            num_data_points: num_vectors,
+            num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 1,
             distance_threshold: 0.1,
             base_directory,
@@ -1346,8 +1436,8 @@ mod tests {
         let result = builder.build();
         assert!(result.is_ok());
 
-        assert_eq!(builder.vectors.len(), num_vectors);
-        assert_eq!(builder.centroids.len(), num_clusters);
+        assert_eq!(builder.vectors.borrow().len(), num_vectors);
+        assert_eq!(builder.centroids.borrow().len(), num_clusters);
         assert_eq!(builder.posting_lists.len(), num_clusters);
 
         // Total size of vectors is bigger than file size, check that they are flushed to disk
@@ -1375,5 +1465,16 @@ mod tests {
                 + num_clusters * 2 * std::mem::size_of::<u64>()) // posting list metadata
             .div_ceil(builder.config.file_size)
         );
+    }
+
+    #[test]
+    fn test_sample() {
+        let num: Vec<usize> = (0..100).collect();
+        let mut rng = rand::thread_rng();
+        let sample = num
+            .choose_multiple(&mut rng, 10)
+            .cloned()
+            .collect::<Vec<usize>>();
+        println!("{:?}", sample);
     }
 }

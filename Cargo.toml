@@ -1,5 +1,6 @@
 [workspace]
-members = [
+members = [ 
+    "rs/demo",
     "rs/aggregator", 
     "rs/cli", 
     "rs/compression", 
@@ -56,3 +57,5 @@ roaring = "0.10.6"
 rayon = "1.10.0"
 sorted-vec = "0.8.5"
 dashmap = "6.1.0"
+reqwest = {version = "0.12.11", features = ["json"]}
+atomic_refcell = "0.1.13"

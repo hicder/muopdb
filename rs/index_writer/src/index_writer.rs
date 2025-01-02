@@ -211,7 +211,7 @@ impl IndexWriter {
             max_iteration: index_builder_config.ivf_config.max_iteration,
             batch_size: index_builder_config.ivf_config.batch_size,
             num_clusters: index_builder_config.ivf_config.num_clusters,
-            num_data_points: index_builder_config.ivf_config.num_data_points,
+            num_data_points_for_clustering: index_builder_config.ivf_config.num_data_points,
             max_clusters_per_vector: index_builder_config.ivf_config.max_clusters_per_vector,
             distance_threshold: index_builder_config.ivf_config.distance_threshold,
             base_directory: path.to_string(),
@@ -237,7 +237,6 @@ impl IndexWriter {
         std::fs::create_dir_all(&path)?;
 
         info!("Start writing index");
-        //let quantizer = NoQuantizer::new(index_builder_config.base_config.dimension);
         let ivf_writer = IvfWriter::new(path.to_string(), quantizer);
         ivf_writer.write(&mut ivf_builder, index_builder_config.base_config.reindex)?;
 
@@ -395,7 +394,7 @@ impl IndexWriter {
             max_iteration: index_writer_config.ivf_config.max_iteration,
             batch_size: index_writer_config.ivf_config.batch_size,
             num_clusters: index_writer_config.ivf_config.num_clusters,
-            num_data_points: index_writer_config.ivf_config.num_data_points,
+            num_data_points_for_clustering: index_writer_config.ivf_config.num_data_points,
             max_clusters_per_vector: index_writer_config.ivf_config.max_clusters_per_vector,
             distance_threshold: index_writer_config.ivf_config.distance_threshold,
             base_directory: root_path.to_string(),

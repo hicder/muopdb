@@ -12,7 +12,18 @@ impl DotProductDistanceCalculator {
         for i in 0..a.len() {
             ret += a[i] * b[i];
         }
-        ret
+        Self::neg_score(ret)
+    }
+
+    /* 
+     * In our code, the lower distance value, the greater similarity between two vectors.
+     * However, in dot product, two vector having the same direction 
+     * will yield the largest distance.
+     * Thus, we need to take negative value of the original dot product value. 
+     */
+    #[inline(always)]
+    pub fn neg_score(x: f32) -> f32 {
+        -x
     }
 }
 
@@ -23,6 +34,7 @@ impl CalculateSquared for DotProductDistanceCalculator {
 }
 
 impl DistanceCalculator for DotProductDistanceCalculator {
+    #[inline(always)]
     fn calculate(a: &[f32], b: &[f32]) -> f32 {
         let mut res = 0.0;
         let mut a_vec = a;
@@ -55,9 +67,10 @@ impl DistanceCalculator for DotProductDistanceCalculator {
         for i in 0..a_vec.len() {
             res += a_vec[i] * b_vec[i];
         }
-        res
+        Self::neg_score(res)
     }
 
+    #[inline(always)]
     fn accumulate_lanes<const LANES: usize>(
         a: &[f32],
         b: &[f32],

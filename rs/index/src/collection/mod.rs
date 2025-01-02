@@ -66,7 +66,7 @@ impl Collection {
         versions.insert(0, TableOfContent::new(vec![]));
 
         // Create a new segment_config with a random name
-        let random_name = format!("segment_{}", rand::random::<u64>());
+        let random_name = format!("tmp_segment_{}", rand::random::<u64>());
         let mut segment_config_clone = segment_config.clone();
         segment_config_clone.base_directory = format!("{}/{}", base_directory, random_name);
 
@@ -110,7 +110,7 @@ impl Collection {
         versions.insert(version, toc);
 
         // Create a new segment_config with a random name
-        let random_name = format!("segment_{}", rand::random::<u64>());
+        let random_name = format!("tmp_segment_{}", rand::random::<u64>());
         let mut segment_config_clone = segment_config.clone();
         segment_config_clone.base_directory = format!("{}/{}", base_directory, random_name);
         let mutable_segment = RwLock::new(MutableSegment::new(segment_config_clone)?);
