@@ -53,6 +53,23 @@ impl<'a> PostingList<'a> {
             current_index: 0,
         }
     }
+
+    pub fn last(&self) -> Option<u64> {
+        if self.elem_count == 0 {
+            return None;
+        }
+
+        // Get the last slice (guaranteed to exist and be non-empty at this point)
+        let last_slice = self.slices.last().unwrap();
+
+        // Calculate the index of the last u64 in the slice
+        let last_index = last_slice.len() - size_of::<u64>();
+
+        // Extract and return the last u64
+        Some(u64::from_le_bytes(
+            last_slice[last_index..].try_into().unwrap(),
+        ))
+    }
 }
 
 impl<'a> Iterator for PostingListIterator<'a> {
