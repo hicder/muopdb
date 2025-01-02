@@ -21,7 +21,7 @@ impl PlainEncoder {
 }
 
 impl IntSeqEncoder for PlainEncoder {
-    fn new_encoder(_universe: Option<usize>, num_elem: usize) -> Self {
+    fn new_encoder(_universe: usize, num_elem: usize) -> Self {
         Self::new(num_elem)
     }
 

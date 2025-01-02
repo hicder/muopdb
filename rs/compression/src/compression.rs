@@ -5,7 +5,7 @@ use anyhow::Result;
 
 pub trait IntSeqEncoder {
     /// Creates an encoder
-    fn new_encoder(universe: Option<usize>, num_elem: usize) -> Self
+    fn new_encoder(universe: usize, num_elem: usize) -> Self
     where
         Self: Sized;
 
