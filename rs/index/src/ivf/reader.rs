@@ -45,6 +45,7 @@ mod tests {
     use compression::noc::noc::PlainEncoder;
     use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
     use tempdir::TempDir;
+    use utils::mem::transmute_u8_to_slice;
     use utils::test_utils::generate_random_vector;
 
     use super::*;
@@ -178,10 +179,12 @@ mod tests {
                 .posting_lists_mut()
                 .get(i as u32)
                 .expect("Failed to read vector from FileBackedAppendablePostingListStorage");
-            let read_vector = index
-                .index_storage
-                .get_posting_list(i)
-                .expect("Failed to read vector from FixedIndexFile");
+            let read_vector = transmute_u8_to_slice::<u64>(
+                index
+                    .index_storage
+                    .get_posting_list(i)
+                    .expect("Failed to read vector from FixedIndexFile"),
+            );
             for (val_ref, val_read) in ref_vector.iter().zip(read_vector.iter()) {
                 assert_eq!(val_ref, *val_read);
             }
@@ -245,9 +248,9 @@ mod tests {
 
         for i in 0..num_centroids {
             // Assert that posting lists size is less than or equal to max_posting_list_size
-            let posting_list = index.index_storage.get_posting_list(i);
-            assert!(posting_list.is_ok());
-            let posting_list = posting_list.unwrap();
+            let posting_list_byte_arr = index.index_storage.get_posting_list(i);
+            assert!(posting_list_byte_arr.is_ok());
+            let posting_list = transmute_u8_to_slice::<u64>(posting_list_byte_arr.unwrap());
 
             // It's possible that the posting list size is more than max_posting_list_size,
             // but it should be less than 2x.

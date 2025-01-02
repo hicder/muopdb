@@ -132,7 +132,7 @@ impl FixedIndexFile {
         Ok(transmute_u8_to_slice::<f32>(slice))
     }
 
-    pub fn get_posting_list(&self, index: usize) -> Result<&[u64]> {
+    pub fn get_posting_list(&self, index: usize) -> Result<&[u8]> {
         if index >= self.header.num_clusters as usize {
             return Err(anyhow!("Index out of bound"));
         }
@@ -150,8 +150,7 @@ impl FixedIndexFile {
             ..metadata_offset + PL_METADATA_LEN * size_of::<u64>()];
         let pl_offset = u64::from_le_bytes(slice.try_into()?) as usize + posting_list_start_offset;
 
-        let slice = &self.mmap[pl_offset..pl_offset + pl_len];
-        Ok(transmute_u8_to_slice::<u64>(slice))
+        Ok(&self.mmap[pl_offset..pl_offset + pl_len])
     }
 
     pub fn header(&self) -> &Header {
@@ -281,16 +280,20 @@ mod tests {
         assert!(combined_file.get_centroid(2).is_err());
 
         assert_eq!(
-            combined_file
-                .get_posting_list(0)
-                .expect("Failed to read posting_list"),
-            &posting_lists[0]
+            transmute_u8_to_slice::<u64>(
+                combined_file
+                    .get_posting_list(0)
+                    .expect("Failed to read posting_list")
+            ),
+            posting_lists[0]
         );
         assert_eq!(
-            combined_file
-                .get_posting_list(1)
-                .expect("Failed to read posting_list"),
-            &posting_lists[1]
+            transmute_u8_to_slice::<u64>(
+                combined_file
+                    .get_posting_list(1)
+                    .expect("Failed to read posting_list")
+            ),
+            posting_lists[1]
         );
         assert!(combined_file.get_posting_list(2).is_err());
     }
