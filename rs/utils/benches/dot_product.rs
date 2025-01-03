@@ -1,7 +1,6 @@
-
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use utils::test_utils::generate_random_vector;
 use utils::distance::dot_product::DotProductDistanceCalculator;
+use utils::test_utils::generate_random_vector;
 use utils::DistanceCalculator;
 
 fn benches_dot_product(c: &mut Criterion) {
@@ -14,7 +13,8 @@ fn benches_dot_product(c: &mut Criterion) {
         1536, // VECTOR_DIM_OPENAI_SMALL
         3072, // VECTOR_DIM_OPENAI_LARGE
     ]
-    .iter() {
+    .iter()
+    {
         let a = generate_random_vector(*size);
         let b = generate_random_vector(*size);
 

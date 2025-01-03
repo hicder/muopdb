@@ -2,6 +2,7 @@ use std::cmp::{max, min, Ordering, Reverse};
 use std::collections::{BinaryHeap, HashMap};
 use std::fs::{create_dir, create_dir_all};
 use std::io::ErrorKind;
+use std::marker::PhantomData;
 
 use anyhow::{anyhow, Result};
 use atomic_refcell::AtomicRefCell;
@@ -38,12 +39,13 @@ pub struct IvfBuilderConfig {
     pub max_posting_list_size: usize,
 }
 
-pub struct IvfBuilder {
+pub struct IvfBuilder<D: DistanceCalculator + CalculateSquared + Send + Sync> {
     config: IvfBuilderConfig,
     vectors: AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>>,
     centroids: AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>>,
     posting_lists: Box<dyn for<'a> PostingListStorage<'a>>,
     doc_id_mapping: Vec<u64>,
+    _marker: PhantomData<D>,
 }
 
 // TODO(tyb): maybe merge with HNSW's one
@@ -141,7 +143,7 @@ impl PartialEq for PostingListWithStoppingPoints {
 
 impl Eq for PostingListWithStoppingPoints {}
 
-impl IvfBuilder {
+impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
     /// Create a new IvfBuilder
     pub fn new(config: IvfBuilderConfig) -> Result<Self> {
         // Create the base directory and all parent directories if they don't exist
@@ -184,6 +186,7 @@ impl IvfBuilder {
             centroids,
             posting_lists,
             doc_id_mapping: Vec::new(),
+            _marker: PhantomData,
         })
     }
 
@@ -245,7 +248,7 @@ impl IvfBuilder {
         let mut centroid_index = 0;
         for i in 0..flattened_centroids.len() / dimension {
             let centroid = &flattened_centroids[i * dimension..(i + 1) * dimension];
-            let dist = L2DistanceCalculator::calculate(&vector, &centroid);
+            let dist = D::calculate(&vector, &centroid);
             if dist > max_distance {
                 max_distance = dist;
                 centroid_index = i;
@@ -415,7 +418,7 @@ impl IvfBuilder {
             num_clusters * 10,
             self.config.num_data_points_for_clustering,
         );
-        let kmeans = KMeansBuilder::new(
+        let kmeans = KMeansBuilder::<D>::new(
             num_clusters,
             self.config.max_iteration,
             self.config.tolerance,
@@ -453,7 +456,7 @@ impl IvfBuilder {
             self.config.num_clusters,
             self.config.max_posting_list_size,
         );
-        let kmeans = KMeansBuilder::new(
+        let kmeans = KMeansBuilder::<D>::new(
             num_clusters,
             self.config.max_iteration,
             self.config.tolerance,
@@ -789,7 +792,7 @@ mod tests {
         let file_size = 4096;
         let balance_factor = 0.0;
         let max_posting_list_size = usize::MAX;
-        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
@@ -853,7 +856,7 @@ mod tests {
         let file_size = 4096;
         let balance_factor = 0.0;
         let max_posting_list_size = usize::MAX;
-        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
@@ -891,7 +894,7 @@ mod tests {
         let file_size = 4096;
         let balance_factor = 0.0;
         let max_posting_list_size = usize::MAX;
-        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
@@ -947,7 +950,7 @@ mod tests {
         let file_size = 4096;
         let balance_factor = 0.0;
         let max_posting_list_size = usize::MAX;
-        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
@@ -1014,7 +1017,7 @@ mod tests {
         let file_size = 4096 * 4096;
         let balance_factor = 0.0;
         let max_posting_list_size = usize::MAX;
-        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
@@ -1087,7 +1090,7 @@ mod tests {
         let file_size = 4096 * 4096;
         let balance_factor = 0.0;
         let max_posting_list_size = usize::MAX;
-        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
@@ -1160,7 +1163,7 @@ mod tests {
         let file_size = 4096 * 4096;
         let balance_factor = 0.0;
         let max_posting_list_size = usize::MAX;
-        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
@@ -1255,7 +1258,7 @@ mod tests {
         let file_size = 4096 * 4096;
         let balance_factor = 0.0;
         let max_posting_list_size = usize::MAX;
-        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
@@ -1333,7 +1336,7 @@ mod tests {
         let balance_factor = 0.0;
         let max_posting_list_size = usize::MAX;
         const NUM_VECTORS: usize = 22;
-        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
@@ -1408,7 +1411,7 @@ mod tests {
         let file_size = 4096;
         let balance_factor = 0.0;
         let max_posting_list_size = usize::MAX;
-        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,

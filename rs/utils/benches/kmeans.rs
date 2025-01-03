@@ -1,4 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use utils::distance::l2::L2DistanceCalculator;
 use utils::kmeans_builder::kmeans_builder;
 
 fn bench_kmeans(c: &mut Criterion) {
@@ -12,7 +13,7 @@ fn bench_kmeans(c: &mut Criterion) {
         }
     }
 
-    let kmeans = kmeans_builder::KMeansBuilder::new(
+    let kmeans = kmeans_builder::KMeansBuilder::<L2DistanceCalculator>::new(
         100,
         1000,
         0.0,

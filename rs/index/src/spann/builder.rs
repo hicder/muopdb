@@ -2,6 +2,7 @@ use anyhow::{Ok, Result};
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
 use serde::{Deserialize, Serialize};
+use utils::distance::l2::L2DistanceCalculator;
 
 use crate::hnsw::builder::HnswBuilder;
 use crate::ivf::builder::{IvfBuilder, IvfBuilderConfig};
@@ -64,13 +65,13 @@ impl Default for SpannBuilderConfig {
 
 pub struct SpannBuilder {
     pub config: SpannBuilderConfig,
-    pub ivf_builder: IvfBuilder,
+    pub ivf_builder: IvfBuilder<L2DistanceCalculator>,
     pub centroid_builder: HnswBuilder<NoQuantizer>,
 }
 
 impl SpannBuilder {
     pub fn new(config: SpannBuilderConfig) -> Result<Self> {
-        let ivf_builder = IvfBuilder::new(IvfBuilderConfig {
+        let ivf_builder = IvfBuilder::<L2DistanceCalculator>::new(IvfBuilderConfig {
             max_iteration: config.max_iteration,
             batch_size: config.batch_size,
             num_clusters: config.num_clusters,

@@ -13,9 +13,13 @@ use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuan
 use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
 use quantization::quantization::Quantizer;
 use rand::seq::SliceRandom;
+use utils::distance::dot_product::DotProductDistanceCalculator;
+use utils::distance::l2::L2DistanceCalculator;
+use utils::{CalculateSquared, DistanceCalculator};
 
 use crate::config::{
-    HnswConfigWithBase, IndexWriterConfig, IvfConfigWithBase, QuantizerType, SpannConfigWithBase,
+    DistanceType, HnswConfigWithBase, IndexWriterConfig, IvfConfigWithBase, QuantizerType,
+    SpannConfigWithBase,
 };
 use crate::input::Input;
 
@@ -183,13 +187,18 @@ impl IndexWriter {
         Ok(())
     }
 
-    fn write_quantizer_and_build_ivf_index<T: Quantizer, F: Fn(&String, &T) -> Result<()>>(
+    fn write_quantizer_and_build_ivf_index<T, D, F>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &IvfConfigWithBase,
         quantizer: T,
         writer_fn: F,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        T: Quantizer,
+        D: DistanceCalculator + CalculateSquared + Send + Sync,
+        F: Fn(&String, &T) -> Result<()>,
+    {
         info!("Start writing product quantizer");
         let path = &self.output_root;
 
@@ -199,7 +208,7 @@ impl IndexWriter {
         // Use the provided writer function to write the quantizer
         writer_fn(&quantizer_directory, &quantizer)?;
 
-        let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut ivf_builder = IvfBuilder::<D>::new(IvfBuilderConfig {
             max_iteration: index_builder_config.ivf_config.max_iteration,
             batch_size: index_builder_config.ivf_config.batch_size,
             num_clusters: index_builder_config.ivf_config.num_clusters,
@@ -229,7 +238,7 @@ impl IndexWriter {
         std::fs::create_dir_all(&path)?;
 
         info!("Start writing index");
-        let ivf_writer = IvfWriter::<_, PlainEncoder>::new(path.to_string(), quantizer);
+        let ivf_writer = IvfWriter::<_, PlainEncoder, D>::new(path.to_string(), quantizer);
         ivf_writer.write(&mut ivf_builder, index_builder_config.base_config.reindex)?;
 
         // Cleanup tmp directory. It's ok to fail
@@ -276,7 +285,22 @@ impl IndexWriter {
             pq_writer.write(pq)
         };
 
-        self.write_quantizer_and_build_ivf_index(input, index_builder_config, pq, pq_writer_fn)
+        match index_builder_config.base_config.index_distance_type {
+            DistanceType::DotProduct => self
+                .write_quantizer_and_build_ivf_index::<_, DotProductDistanceCalculator, _>(
+                    input,
+                    index_builder_config,
+                    pq,
+                    pq_writer_fn,
+                ),
+            DistanceType::L2 => self
+                .write_quantizer_and_build_ivf_index::<_, L2DistanceCalculator, _>(
+                    input,
+                    index_builder_config,
+                    pq,
+                    pq_writer_fn,
+                ),
+        }
     }
 
     fn build_ivf_noq(
@@ -299,7 +323,22 @@ impl IndexWriter {
             noq_writer.write(noq)
         };
 
-        self.write_quantizer_and_build_ivf_index(input, index_builder_config, noq, noq_writer_fn)
+        match index_builder_config.base_config.index_distance_type {
+            DistanceType::DotProduct => self
+                .write_quantizer_and_build_ivf_index::<_, DotProductDistanceCalculator, _>(
+                    input,
+                    index_builder_config,
+                    noq,
+                    noq_writer_fn,
+                ),
+            DistanceType::L2 => self
+                .write_quantizer_and_build_ivf_index::<_, L2DistanceCalculator, _>(
+                    input,
+                    index_builder_config,
+                    noq,
+                    noq_writer_fn,
+                ),
+        }
     }
 
     fn do_build_ivf_index(
@@ -430,7 +469,9 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
-    use crate::config::{BaseConfig, HnswConfig, IndexType, IvfConfig, QuantizerConfig};
+    use crate::config::{
+        BaseConfig, DistanceType, HnswConfig, IndexType, IvfConfig, QuantizerConfig,
+    };
     use crate::input::Row;
     // Mock Input implementation for testing
     struct MockInput {
@@ -514,9 +555,11 @@ mod tests {
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
             index_type: IndexType::Hnsw,
+            index_distance_type: DistanceType::L2,
         };
         let quantizer_config = QuantizerConfig {
             quantizer_type: QuantizerType::ProductQuantizer,
+            quantizer_distance_type: DistanceType::L2,
             subvector_dimension: 2,
             num_bits: 2,
             num_training_rows: 50,
@@ -585,9 +628,11 @@ mod tests {
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
             index_type: IndexType::Ivf,
+            index_distance_type: DistanceType::DotProduct,
         };
         let quantizer_config = QuantizerConfig {
             quantizer_type: QuantizerType::ProductQuantizer,
+            quantizer_distance_type: DistanceType::L2,
             subvector_dimension: 2,
             num_bits: 2,
             num_training_rows: 50,
@@ -658,9 +703,11 @@ mod tests {
             max_memory_size: 1024 * 1024 * 1024, // 1 GB
             file_size: 1024 * 1024 * 1024,       // 1 GB
             index_type: IndexType::Spann,
+            index_distance_type: DistanceType::L2,
         };
         let quantizer_config = QuantizerConfig {
             quantizer_type: QuantizerType::ProductQuantizer,
+            quantizer_distance_type: DistanceType::L2,
             subvector_dimension: 2,
             num_bits: 2,
             num_training_rows: 50,

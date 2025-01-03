@@ -9,6 +9,13 @@ pub enum QuantizerType {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub enum DistanceType {
+    DotProduct,
+    #[default]
+    L2,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub enum IndexType {
     Hnsw,
     Ivf,
@@ -28,6 +35,7 @@ pub struct BaseConfig {
     pub file_size: usize,
 
     pub index_type: IndexType,
+    pub index_distance_type: DistanceType,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -37,6 +45,7 @@ pub struct QuantizerConfig {
     pub subvector_dimension: usize,
     pub num_bits: u8,
     pub num_training_rows: usize,
+    pub quantizer_distance_type: DistanceType,
 
     // Quantizer builder parameters
     pub max_iteration: usize,

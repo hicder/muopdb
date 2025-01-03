@@ -1,5 +1,8 @@
-use crate::DistanceCalculator;
-use std::{ops::AddAssign, simd::{num::SimdFloat, LaneCount, Simd, SupportedLaneCount}};
+use std::ops::AddAssign;
+use std::simd::num::SimdFloat;
+use std::simd::{LaneCount, Simd, SupportedLaneCount};
+
+use crate::{CalculateSquared, DistanceCalculator};
 
 pub struct DotProductDistanceCalculator {}
 
@@ -22,7 +25,13 @@ impl DotProductDistanceCalculator {
     pub fn neg_score(x: f32) -> f32 {
         -x
     }
-} 
+}
+
+impl CalculateSquared for DotProductDistanceCalculator {
+    fn calculate_squared(a: &[f32], b: &[f32]) -> f32 {
+        DotProductDistanceCalculator::calculate(a, b)
+    }
+}
 
 impl DistanceCalculator for DotProductDistanceCalculator {
     #[inline(always)]
@@ -30,17 +39,17 @@ impl DistanceCalculator for DotProductDistanceCalculator {
         let mut res = 0.0;
         let mut a_vec = a;
         let mut b_vec = b;
-        
-        if a_vec.len() > 16 { 
-            let mut accumulator= Simd::<f32, 16>::splat(0.0);
+
+        if a_vec.len() > 16 {
+            let mut accumulator = Simd::<f32, 16>::splat(0.0);
             Self::accumulate_lanes::<16>(a_vec, b_vec, &mut accumulator);
             res += accumulator.reduce_sum();
             a_vec = a_vec.chunks_exact(16).remainder();
             b_vec = b_vec.chunks_exact(16).remainder();
         }
 
-        if a_vec.len() > 8 { 
-            let mut accumulator= Simd::<f32, 8>::splat(0.0);
+        if a_vec.len() > 8 {
+            let mut accumulator = Simd::<f32, 8>::splat(0.0);
             Self::accumulate_lanes::<8>(a_vec, b_vec, &mut accumulator);
             res += accumulator.reduce_sum();
             a_vec = a_vec.chunks_exact(8).remainder();
@@ -48,7 +57,7 @@ impl DistanceCalculator for DotProductDistanceCalculator {
         }
 
         if a_vec.len() > 4 {
-            let mut accumulator= Simd::<f32, 4>::splat(0.0);
+            let mut accumulator = Simd::<f32, 4>::splat(0.0);
             Self::accumulate_lanes::<4>(a_vec, b_vec, &mut accumulator);
             res += accumulator.reduce_sum();
             a_vec = a_vec.chunks_exact(4).remainder();
@@ -66,8 +75,8 @@ impl DistanceCalculator for DotProductDistanceCalculator {
         a: &[f32],
         b: &[f32],
         accumulator: &mut Simd<f32, LANES>,
-    ) where 
-        LaneCount<LANES>: SupportedLaneCount, 
+    ) where
+        LaneCount<LANES>: SupportedLaneCount,
     {
         a.chunks_exact(LANES)
             .zip(b.chunks_exact(LANES))
@@ -77,13 +86,17 @@ impl DistanceCalculator for DotProductDistanceCalculator {
                 accumulator.add_assign(a_simd * b_simd);
             });
     }
+
+    #[inline(always)] 
+    fn outermost_op(x: f32) -> f32 {
+        Self::neg_score(x)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_utils::generate_random_vector;
-    
     #[test]
     fn test_dot_product_distance_calculator() {
         let a = generate_random_vector(128);

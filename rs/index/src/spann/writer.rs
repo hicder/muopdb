@@ -2,6 +2,7 @@ use anyhow::Result;
 use compression::noc::noc::PlainEncoder;
 use log::debug;
 use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
+use utils::distance::l2::L2DistanceCalculator;
 
 use super::builder::SpannBuilder;
 use crate::hnsw::writer::HnswWriter;
@@ -51,7 +52,7 @@ impl SpannWriter {
         ivf_quantizer_writer.write(&ivf_quantizer)?;
 
         debug!("Writing IVF index");
-        let ivf_writer = IvfWriter::<_, PlainEncoder>::new(ivf_directory, ivf_quantizer);
+        let ivf_writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(ivf_directory, ivf_quantizer);
         ivf_writer.write(&mut spann_builder.ivf_builder, index_writer_config.reindex)?;
         spann_builder.ivf_builder.cleanup()?;
         debug!("Finish writing IVF index");

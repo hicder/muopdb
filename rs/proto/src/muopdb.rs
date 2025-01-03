@@ -93,8 +93,8 @@ pub struct InsertBinaryResponse {}
 /// Generated client implementations.
 pub mod aggregator_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct AggregatorClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -138,9 +138,8 @@ pub mod aggregator_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
         {
             AggregatorClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -163,15 +162,12 @@ pub mod aggregator_client {
             &mut self,
             request: impl tonic::IntoRequest<super::GetRequest>,
         ) -> Result<tonic::Response<super::GetResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/muopdb.Aggregator/Get");
             self.inner.unary(request.into_request(), path, codec).await
@@ -181,8 +177,8 @@ pub mod aggregator_client {
 /// Generated client implementations.
 pub mod index_server_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct IndexServerClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -226,9 +222,8 @@ pub mod index_server_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
         {
             IndexServerClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -251,38 +246,28 @@ pub mod index_server_client {
             &mut self,
             request: impl tonic::IntoRequest<super::SearchRequest>,
         ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/muopdb.IndexServer/Search",
-            );
+            let path = http::uri::PathAndQuery::from_static("/muopdb.IndexServer/Search");
             self.inner.unary(request.into_request(), path, codec).await
         }
         pub async fn insert(
             &mut self,
             request: impl tonic::IntoRequest<super::InsertRequest>,
         ) -> Result<tonic::Response<super::InsertResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/muopdb.IndexServer/Insert",
-            );
+            let path = http::uri::PathAndQuery::from_static("/muopdb.IndexServer/Insert");
             self.inner.unary(request.into_request(), path, codec).await
         }
         pub async fn insert_binary(
@@ -308,15 +293,12 @@ pub mod index_server_client {
             &mut self,
             request: impl tonic::IntoRequest<super::FlushRequest>,
         ) -> Result<tonic::Response<super::FlushResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/muopdb.IndexServer/Flush");
             self.inner.unary(request.into_request(), path, codec).await
@@ -354,10 +336,7 @@ pub mod aggregator_server {
                 send_compression_encodings: Default::default(),
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -385,10 +364,7 @@ pub mod aggregator_server {
         type Response = http::Response<tonic::body::BoxBody>;
         type Error = std::convert::Infallible;
         type Future = BoxFuture<Self::Response, Self::Error>;
-        fn poll_ready(
-            &mut self,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -397,13 +373,9 @@ pub mod aggregator_server {
                 "/muopdb.Aggregator/Get" => {
                     #[allow(non_camel_case_types)]
                     struct GetSvc<T: Aggregator>(pub Arc<T>);
-                    impl<T: Aggregator> tonic::server::UnaryService<super::GetRequest>
-                    for GetSvc<T> {
+                    impl<T: Aggregator> tonic::server::UnaryService<super::GetRequest> for GetSvc<T> {
                         type Response = super::GetResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::GetRequest>,
@@ -420,28 +392,23 @@ pub mod aggregator_server {
                         let inner = inner.0;
                         let method = GetSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        Ok(
-                            http::Response::builder()
-                                .status(200)
-                                .header("grpc-status", "12")
-                                .header("content-type", "application/grpc")
-                                .body(empty_body())
-                                .unwrap(),
-                        )
-                    })
-                }
+                _ => Box::pin(async move {
+                    Ok(http::Response::builder()
+                        .status(200)
+                        .header("grpc-status", "12")
+                        .header("content-type", "application/grpc")
+                        .body(empty_body())
+                        .unwrap())
+                }),
             }
         }
     }
@@ -512,10 +479,7 @@ pub mod index_server_server {
                 send_compression_encodings: Default::default(),
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -543,10 +507,7 @@ pub mod index_server_server {
         type Response = http::Response<tonic::body::BoxBody>;
         type Error = std::convert::Infallible;
         type Future = BoxFuture<Self::Response, Self::Error>;
-        fn poll_ready(
-            &mut self,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -555,15 +516,9 @@ pub mod index_server_server {
                 "/muopdb.IndexServer/Search" => {
                     #[allow(non_camel_case_types)]
                     struct SearchSvc<T: IndexServer>(pub Arc<T>);
-                    impl<
-                        T: IndexServer,
-                    > tonic::server::UnaryService<super::SearchRequest>
-                    for SearchSvc<T> {
+                    impl<T: IndexServer> tonic::server::UnaryService<super::SearchRequest> for SearchSvc<T> {
                         type Response = super::SearchResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::SearchRequest>,
@@ -580,11 +535,10 @@ pub mod index_server_server {
                         let inner = inner.0;
                         let method = SearchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
@@ -593,15 +547,9 @@ pub mod index_server_server {
                 "/muopdb.IndexServer/Insert" => {
                     #[allow(non_camel_case_types)]
                     struct InsertSvc<T: IndexServer>(pub Arc<T>);
-                    impl<
-                        T: IndexServer,
-                    > tonic::server::UnaryService<super::InsertRequest>
-                    for InsertSvc<T> {
+                    impl<T: IndexServer> tonic::server::UnaryService<super::InsertRequest> for InsertSvc<T> {
                         type Response = super::InsertResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::InsertRequest>,
@@ -618,11 +566,10 @@ pub mod index_server_server {
                         let inner = inner.0;
                         let method = InsertSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
@@ -671,13 +618,9 @@ pub mod index_server_server {
                 "/muopdb.IndexServer/Flush" => {
                     #[allow(non_camel_case_types)]
                     struct FlushSvc<T: IndexServer>(pub Arc<T>);
-                    impl<T: IndexServer> tonic::server::UnaryService<super::FlushRequest>
-                    for FlushSvc<T> {
+                    impl<T: IndexServer> tonic::server::UnaryService<super::FlushRequest> for FlushSvc<T> {
                         type Response = super::FlushResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::FlushRequest>,
@@ -694,28 +637,23 @@ pub mod index_server_server {
                         let inner = inner.0;
                         let method = FlushSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        Ok(
-                            http::Response::builder()
-                                .status(200)
-                                .header("grpc-status", "12")
-                                .header("content-type", "application/grpc")
-                                .body(empty_body())
-                                .unwrap(),
-                        )
-                    })
-                }
+                _ => Box::pin(async move {
+                    Ok(http::Response::builder()
+                        .status(200)
+                        .header("grpc-status", "12")
+                        .header("content-type", "application/grpc")
+                        .body(empty_body())
+                        .unwrap())
+                }),
             }
         }
     }
