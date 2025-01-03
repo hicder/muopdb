@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use compression::noc::noc::PlainDecoder;
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
 use utils::distance::l2::L2DistanceCalculator;
@@ -10,13 +11,13 @@ use crate::ivf::index::Ivf;
 
 pub struct Spann {
     centroids: Hnsw<NoQuantizer>,
-    posting_lists: Ivf<NoQuantizer, L2DistanceCalculator>,
+    posting_lists: Ivf<NoQuantizer, L2DistanceCalculator, PlainDecoder>,
 }
 
 impl Spann {
     pub fn new(
         centroids: Hnsw<NoQuantizer>,
-        posting_lists: Ivf<NoQuantizer, L2DistanceCalculator>,
+        posting_lists: Ivf<NoQuantizer, L2DistanceCalculator, PlainDecoder>,
     ) -> Self {
         Self {
             centroids,
@@ -28,7 +29,7 @@ impl Spann {
         &self.centroids
     }
 
-    pub fn get_posting_lists(&self) -> &Ivf<NoQuantizer, L2DistanceCalculator> {
+    pub fn get_posting_lists(&self) -> &Ivf<NoQuantizer, L2DistanceCalculator, PlainDecoder> {
         &self.posting_lists
     }
 }

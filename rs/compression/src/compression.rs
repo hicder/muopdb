@@ -23,12 +23,19 @@ pub trait IntSeqEncoder {
     fn write(&self, writer: &mut BufWriter<&mut File>) -> Result<usize>;
 }
 
-pub trait IntSeqDecoderIterator: Iterator {
+pub trait IntSeqDecoder {
+    type IteratorType: Iterator<Item = Self::Item>;
+    type Item;
+
     /// Creates a decoder
     fn new_decoder(encoded_data: &[u8]) -> Self
     where
         Self: Sized;
 
+    /// Creates an iterator that iterates the encoded data and decodes one element at a time on the
+    /// fly
+    fn get_iterator(&self) -> Self::IteratorType;
+
     /// Returns the number of elements in the sequence
-    fn len(&self) -> usize;
+    fn num_elem(&self) -> usize;
 }

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use compression::compression::IntSeqDecoder;
 use quantization::quantization::Quantizer;
 use utils::DistanceCalculator;
 
@@ -15,7 +16,9 @@ impl IvfReader {
         Self { base_directory }
     }
 
-    pub fn read<Q: Quantizer, D: DistanceCalculator>(&self) -> Result<Ivf<Q, D>> {
+    pub fn read<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>>(
+        &self,
+    ) -> Result<Ivf<Q, DC, D>> {
         let index_storage = FixedIndexFile::new(format!("{}/index", self.base_directory))?;
 
         let vector_storage_path = format!("{}/vectors", self.base_directory);
@@ -30,7 +33,7 @@ impl IvfReader {
         let quantizer_directory = format!("{}/quantizer", self.base_directory);
         let quantizer = Q::read(quantizer_directory).unwrap();
 
-        Ok(Ivf::new(
+        Ok(Ivf::<_, DC, D>::new(
             vector_storage,
             index_storage,
             num_clusters,
@@ -43,7 +46,7 @@ impl IvfReader {
 mod tests {
     use std::fs;
 
-    use compression::noc::noc::PlainEncoder;
+    use compression::noc::noc::{PlainDecoder, PlainEncoder};
     use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
     use tempdir::TempDir;
     use utils::distance::l2::L2DistanceCalculator;
@@ -70,7 +73,10 @@ mod tests {
         let num_features = 4;
         let file_size = 4096;
         let quantizer = NoQuantizer::new(num_features);
-        let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(base_directory.clone(), quantizer);
+        let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
+            base_directory.clone(),
+            quantizer,
+        );
 
         let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
@@ -107,7 +113,7 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer, L2DistanceCalculator>()
+            .read::<NoQuantizer, L2DistanceCalculator, PlainDecoder>()
             .expect("Failed to read index file");
 
         // Check if files were created
@@ -214,7 +220,10 @@ mod tests {
         let noq_writer = NoQuantizerWriter::new(quantizer_directory);
         assert!(noq_writer.write(&quantizer).is_ok());
 
-        let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(base_directory.clone(), quantizer);
+        let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
+            base_directory.clone(),
+            quantizer,
+        );
 
         let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
@@ -243,7 +252,7 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer, L2DistanceCalculator>()
+            .read::<NoQuantizer, L2DistanceCalculator, PlainDecoder>()
             .expect("Failed to read index file");
 
         let num_centroids = index.num_clusters;
