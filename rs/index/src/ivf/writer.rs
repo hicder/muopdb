@@ -1,6 +1,7 @@
 use std::cmp::min;
 use std::fs::{create_dir_all, remove_dir_all, remove_file, File};
 use std::io::{BufWriter, Write};
+use std::marker::PhantomData;
 
 use anyhow::{anyhow, Context, Result};
 use log::debug;
@@ -8,24 +9,27 @@ use num_traits::ToBytes;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use utils::io::{append_file_to_writer, wrap_write};
+use utils::{CalculateSquared, DistanceCalculator};
 
 use crate::ivf::builder::IvfBuilder;
 use crate::posting_list::combined_file::{Header, Version};
 
-pub struct IvfWriter<Q: Quantizer> {
+pub struct IvfWriter<Q: Quantizer, D: DistanceCalculator + CalculateSquared + Send + Sync> {
     base_directory: String,
     quantizer: Q,
+    _marker: PhantomData<D>,
 }
 
-impl<Q: Quantizer> IvfWriter<Q> {
+impl<Q: Quantizer, D: DistanceCalculator + CalculateSquared + Send + Sync> IvfWriter<Q, D> {
     pub fn new(base_directory: String, quantizer: Q) -> Self {
         Self {
             base_directory,
             quantizer,
+            _marker: PhantomData,
         }
     }
 
-    pub fn write(&self, ivf_builder: &mut IvfBuilder, reindex: bool) -> Result<()> {
+    pub fn write(&self, ivf_builder: &mut IvfBuilder<D>, reindex: bool) -> Result<()> {
         if reindex {
             // Reindex the vectors for efficient lookup
             ivf_builder
@@ -116,7 +120,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
         Ok(())
     }
 
-    fn quantize_and_write_vectors(&self, ivf_builder: &IvfBuilder) -> Result<usize> {
+    fn quantize_and_write_vectors(&self, ivf_builder: &IvfBuilder<D>) -> Result<usize> {
         // Quantize vectors
         let full_vectors = &ivf_builder.vectors();
         let quantized_vectors_path = format!("{}/quantized", self.base_directory);
@@ -145,7 +149,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
         Ok(bytes_written)
     }
 
-    fn write_doc_id_mapping(&self, ivf_builder: &IvfBuilder) -> Result<usize> {
+    fn write_doc_id_mapping(&self, ivf_builder: &IvfBuilder<D>) -> Result<usize> {
         let path = format!("{}/doc_id_mapping", self.base_directory);
         let mut file = File::create(path)?;
         let mut writer = BufWriter::new(&mut file);
@@ -160,7 +164,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
         Ok(bytes_written)
     }
 
-    fn write_centroids(&self, ivf_builder: &IvfBuilder) -> Result<usize> {
+    fn write_centroids(&self, ivf_builder: &IvfBuilder<D>) -> Result<usize> {
         let path = format!("{}/centroids", self.base_directory);
         let mut file = File::create(path)?;
         let mut writer = BufWriter::new(&mut file);
@@ -169,7 +173,7 @@ impl<Q: Quantizer> IvfWriter<Q> {
         Ok(bytes_written)
     }
 
-    fn write_posting_lists_and_metadata(&self, ivf_builder: &mut IvfBuilder) -> Result<usize> {
+    fn write_posting_lists_and_metadata(&self, ivf_builder: &mut IvfBuilder<D>) -> Result<usize> {
         let path = format!("{}/posting_lists", self.base_directory);
         let mut file = File::create(path)?;
         let mut writer = BufWriter::new(&mut file);
@@ -283,8 +287,9 @@ mod tests {
 
         // Create an IvfWriter instance
         let num_features = 10;
-        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
-        let ivf_writer = IvfWriter::new(base_directory.clone(), quantizer);
+        let quantizer = NoQuantizer::new(num_features);
+        let ivf_writer: IvfWriter<_, L2DistanceCalculator> =
+            IvfWriter::new(base_directory.clone(), quantizer);
 
         // Create test files
         create_test_file(&base_directory, "centroids", &[5, 6, 7, 8])?;
@@ -376,7 +381,8 @@ mod tests {
 
         // Pad to 8-byte alignment
         let padding_written =
-            IvfWriter::<NoQuantizer<L2DistanceCalculator>>::write_pad(initial_size, &mut writer, 8).unwrap();
+            IvfWriter::<NoQuantizer, L2DistanceCalculator>::write_pad(initial_size, &mut writer, 8)
+                .unwrap();
 
         assert_eq!(padding_written, 5); // 3 bytes written, so 5 bytes of padding needed
 
@@ -409,7 +415,7 @@ mod tests {
                 .expect("Can't create product quantizer");
         let ivf_writer = IvfWriter::new(base_directory.clone(), quantizer);
 
-        let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut ivf_builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
@@ -497,7 +503,7 @@ mod tests {
         let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let writer = IvfWriter::new(base_directory.clone(), quantizer);
 
-        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,

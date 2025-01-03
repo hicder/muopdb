@@ -86,23 +86,10 @@ impl DistanceCalculator for L2DistanceCalculator {
                 *acc += diff.mul(diff);
             });
     }
-}
-
-/// Calculator where we know in advance that the dimension of vectors is a multiple of LANES.
-/// This skips a bunch of checks and allows for a more efficient implementation.
-pub struct LaneConformingL2DistanceCalculator<const LANES: usize>
-where
-    LaneCount<LANES>: SupportedLaneCount, {}
-
-impl<const LANES: usize> CalculateSquared for LaneConformingL2DistanceCalculator<LANES>
-where
-    LaneCount<LANES>: SupportedLaneCount,
-{
+    
     #[inline(always)]
-    fn calculate_squared(a: &[f32], b: &[f32]) -> f32 {
-        let mut simd = Simd::<f32, LANES>::splat(0.0);
-        L2DistanceCalculator::accumulate_lanes(a, b, &mut simd);
-        simd.reduce_sum()
+    fn outermost_op(x: f32) -> f32 {
+        x
     }
 }
 

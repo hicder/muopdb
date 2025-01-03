@@ -1,5 +1,6 @@
 use anyhow::Result;
 use quantization::quantization::Quantizer;
+use utils::DistanceCalculator;
 
 use crate::ivf::index::Ivf;
 use crate::posting_list::combined_file::FixedIndexFile;
@@ -14,7 +15,7 @@ impl IvfReader {
         Self { base_directory }
     }
 
-    pub fn read<Q: Quantizer>(&self) -> Result<Ivf<Q>> {
+    pub fn read<Q: Quantizer, D: DistanceCalculator>(&self) -> Result<Ivf<Q, D>> {
         let index_storage = FixedIndexFile::new(format!("{}/index", self.base_directory))?;
 
         let vector_storage_path = format!("{}/vectors", self.base_directory);
@@ -69,7 +70,7 @@ mod tests {
         let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let writer = IvfWriter::new(base_directory.clone(), quantizer);
 
-        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
@@ -104,7 +105,7 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer<L2DistanceCalculator>>()
+            .read::<NoQuantizer, L2DistanceCalculator>()
             .expect("Failed to read index file");
 
         // Check if files were created
@@ -211,7 +212,7 @@ mod tests {
 
         let writer = IvfWriter::new(base_directory.clone(), quantizer);
 
-        let mut builder = IvfBuilder::new(IvfBuilderConfig {
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
             batch_size: 4,
             num_clusters,
@@ -238,7 +239,7 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer<L2DistanceCalculator>>()
+            .read::<NoQuantizer, L2DistanceCalculator>()
             .expect("Failed to read index file");
 
         let num_centroids = index.num_clusters;
