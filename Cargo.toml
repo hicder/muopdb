@@ -1,15 +1,16 @@
 [workspace]
 members = [ 
-    "rs/demo",
     "rs/aggregator", 
     "rs/cli", 
     "rs/compression", 
+    "rs/config",
+    "rs/demo",
     "rs/index", 
     "rs/index_server", 
     "rs/index_writer",
     "rs/proto", 
     "rs/quantization", 
-    "rs/utils",
+    "rs/utils", 
 ]
 resolver = "2"
 
