@@ -162,7 +162,7 @@ impl IndexWriter {
         let noq = noq_builder.build()?;
 
         // Define the writer function for NoQuantizer
-        let noq_writer_fn = |directory: &String, noq: &NoQuantizer| {
+        let noq_writer_fn = |directory: &String, noq: &NoQuantizer<L2DistanceCalculator>| {
             let noq_writer = NoQuantizerWriter::new(directory.clone());
             noq_writer.write(noq)
         };
@@ -312,31 +312,42 @@ impl IndexWriter {
             dimension: index_builder_config.base_config.dimension,
         };
 
-        let mut noq_builder = NoQuantizerBuilder::new(noq_config);
-
-        let noq = noq_builder.build()?;
-
-        // Define the writer function for NoQuantizer
-        let noq_writer_fn = |directory: &String, noq: &NoQuantizer| {
-            let noq_writer = NoQuantizerWriter::new(directory.clone());
-            noq_writer.write(noq)
-        };
-
         match index_builder_config.base_config.index_distance_type {
-            DistanceType::DotProduct => self
-                .write_quantizer_and_build_ivf_index::<_, DotProductDistanceCalculator, _>(
+            DistanceType::DotProduct => {
+                let mut noq_builder: NoQuantizerBuilder<DotProductDistanceCalculator> = NoQuantizerBuilder::<DotProductDistanceCalculator>::new(noq_config);
+
+                let noq = noq_builder.build()?;
+
+                // Define the writer function for NoQuantizer
+                let noq_writer_fn = |directory: &String, noq: &NoQuantizer<DotProductDistanceCalculator>| {
+                    let noq_writer = NoQuantizerWriter::new(directory.clone());
+                    noq_writer.write(noq)
+                };
+
+                self.write_quantizer_and_build_ivf_index::<_, DotProductDistanceCalculator, _>(
                     input,
                     index_builder_config,
                     noq,
                     noq_writer_fn,
-                ),
-            DistanceType::L2 => self
-                .write_quantizer_and_build_ivf_index::<_, L2DistanceCalculator, _>(
+                )
+            },
+            DistanceType::L2 => {
+                let mut noq_builder: NoQuantizerBuilder<L2DistanceCalculator> = NoQuantizerBuilder::<L2DistanceCalculator>::new(noq_config);
+
+                let noq = noq_builder.build()?;
+
+                // Define the writer function for NoQuantizer
+                let noq_writer_fn = |directory: &String, noq: &NoQuantizer<L2DistanceCalculator>| {
+                    let noq_writer = NoQuantizerWriter::new(directory.clone());
+                    noq_writer.write(noq)
+                };
+                self.write_quantizer_and_build_ivf_index::<_, L2DistanceCalculator, _>(
                     input,
                     index_builder_config,
                     noq,
                     noq_writer_fn,
-                ),
+                )
+            },
         }
     }
 

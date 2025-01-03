@@ -66,7 +66,7 @@ impl Default for SpannBuilderConfig {
 pub struct SpannBuilder {
     pub config: SpannBuilderConfig,
     pub ivf_builder: IvfBuilder<L2DistanceCalculator>,
-    pub centroid_builder: HnswBuilder<NoQuantizer>,
+    pub centroid_builder: HnswBuilder<NoQuantizer<L2DistanceCalculator>>,
 }
 
 impl SpannBuilder {

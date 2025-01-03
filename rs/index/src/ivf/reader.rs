@@ -105,7 +105,7 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer, L2DistanceCalculator>()
+            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator>()
             .expect("Failed to read index file");
 
         // Check if files were created
@@ -239,7 +239,7 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer, L2DistanceCalculator>()
+            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator>()
             .expect("Failed to read index file");
 
         let num_centroids = index.num_clusters;
