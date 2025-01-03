@@ -7,7 +7,7 @@ MuopDB is a vector database for machine learning. Currently, it supports:
 * Quantization: product quantization
 
 Here are the plans for future MuopDB:
-### V0 (Done)
+### Phase 0 (Done)
 - [x] Query path
   - [x] Vector similarity search
   - [x] Hierarchical Navigable Small Worlds (HNSW)
@@ -17,12 +17,12 @@ Here are the plans for future MuopDB:
 - [x] Database Management
   - [x] Doc-sharding & query fan-out with aggregator-leaf architecture
   - [x] In-memory & disk-based storage with mmap
-### V1 (Done)
+### Phase 1 (Done)
 - [x] Query & Indexing
   - [x] Inverted File (IVF)
   - [x] Improve locality for HNSW
   - [x] SPANN
-### V2
+### Phase 2 (Ongoing)
 - [x] Query
   - [x] Multiple index segments
 - [x] Index
