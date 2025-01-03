@@ -1,9 +1,9 @@
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use log::{LevelFilter, info};
-use proto::muopdb::SearchRequest;
+use log::{info, LevelFilter};
 use proto::muopdb::index_server_client::IndexServerClient;
+use proto::muopdb::SearchRequest;
 use serde_json::{json, json_internal};
 
 #[tokio::main]

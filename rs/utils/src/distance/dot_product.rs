@@ -15,11 +15,11 @@ impl DotProductDistanceCalculator {
         Self::neg_score(ret)
     }
 
-    /* 
+    /*
      * In our code, the lower distance value, the greater similarity between two vectors.
-     * However, in dot product, two vector having the same direction 
+     * However, in dot product, two vector having the same direction
      * will yield the largest distance.
-     * Thus, we need to take negative value of the original dot product value. 
+     * Thus, we need to take negative value of the original dot product value.
      */
     #[inline(always)]
     pub fn neg_score(x: f32) -> f32 {
