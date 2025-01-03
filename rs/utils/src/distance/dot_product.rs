@@ -97,7 +97,6 @@ impl DistanceCalculator for DotProductDistanceCalculator {
 mod tests {
     use super::*;
     use crate::test_utils::generate_random_vector;
-
     #[test]
     fn test_dot_product_distance_calculator() {
         let a = generate_random_vector(128);

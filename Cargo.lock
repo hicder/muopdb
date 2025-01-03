@@ -1372,6 +1372,7 @@ dependencies = [
  "atomic_refcell",
  "bit-vec",
  "byteorder",
+ "compression",
  "dashmap",
  "env_logger",
  "kmeans",
@@ -1421,6 +1422,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap 4.5.20",
+ "compression",
  "env_logger",
  "hdf5-metno",
  "index",
