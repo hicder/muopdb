@@ -1,10 +1,8 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::ptr::NonNull;
 
 use anyhow::{anyhow, Result};
 use utils::io::wrap_write;
-use utils::mem::get_ith_val_from_raw_ptr;
 
 use crate::compression::{IntSeqDecoder, IntSeqEncoder};
 
@@ -63,27 +61,23 @@ impl IntSeqEncoder for PlainEncoder {
 
 pub struct PlainDecoder {
     size: usize,
-    encoded_data_ptr: NonNull<u64>,
 }
 
 impl IntSeqDecoder for PlainDecoder {
-    type IteratorType = PlainDecodingIterator;
+    type IteratorType<'a> = PlainDecodingIterator<'a>;
     type Item = u64;
 
     fn new_decoder(encoded_data: &[u8]) -> Self {
-        let encoded_data_ptr = NonNull::new(encoded_data.as_ptr() as *mut u64)
-            .expect("Encoded data pointer should not be null");
         Self {
             size: encoded_data.len(),
-            encoded_data_ptr,
         }
     }
 
-    fn get_iterator(&self) -> Self::IteratorType {
+    fn get_iterator<'a>(&self, encoded_data: &'a [u8]) -> PlainDecodingIterator<'a> {
         PlainDecodingIterator {
             num_elem: self.num_elem(),
             cur_index: 0,
-            encoded_data_ptr: self.encoded_data_ptr,
+            encoded_data_ptr: utils::mem::transmute_u8_to_slice(encoded_data),
         }
     }
 
@@ -92,20 +86,19 @@ impl IntSeqDecoder for PlainDecoder {
     }
 }
 
-pub struct PlainDecodingIterator {
+pub struct PlainDecodingIterator<'a> {
     num_elem: usize,
     cur_index: usize,
-    encoded_data_ptr: NonNull<u64>,
+    encoded_data_ptr: &'a [u64],
 }
 
-impl Iterator for PlainDecodingIterator {
+impl<'a> Iterator for PlainDecodingIterator<'a> {
     type Item = u64;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.cur_index < self.num_elem {
-            let value = get_ith_val_from_raw_ptr(self.encoded_data_ptr.as_ptr(), self.cur_index);
             self.cur_index += 1;
-            Some(value)
+            Some(self.encoded_data_ptr[self.cur_index - 1])
         } else {
             None
         }

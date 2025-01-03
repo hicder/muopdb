@@ -6,7 +6,6 @@ use compression::compression::IntSeqDecoder;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
-use utils::mem::transmute_u8_to_slice;
 use utils::DistanceCalculator;
 
 use crate::index::Searchable;
@@ -81,8 +80,8 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         if let Ok(byte_slice) = self.index_storage.get_posting_list(centroid) {
             let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
             let mut results: Vec<IdWithScore> = Vec::new();
-            let decoder = D::new_decoder(&byte_slice);
-            for idx in decoder.get_iterator() {
+            let decoder = D::new_decoder(byte_slice);
+            for idx in decoder.get_iterator(byte_slice) {
                 match self.vector_storage.get(idx as usize, context) {
                     Some(vector) => {
                         let distance =
