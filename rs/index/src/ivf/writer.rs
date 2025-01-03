@@ -183,19 +183,15 @@ impl<Q: Quantizer, C: IntSeqEncoder + 'static> IvfWriter<Q, C> {
         metadata_bytes_written +=
             wrap_write(&mut metadata_writer, &num_posting_lists.to_le_bytes())?;
         for i in 0..num_posting_lists {
-            // TODO(tyb): we need to materialize the posting list here since we are
-            // not sure the whole list is on the same page. Optimize this in a separate PR
-            let posting_list = ivf_builder
-                .posting_lists()
-                .get(i as u32)?
-                .iter()
-                .collect::<Vec<_>>();
+            let posting_list = ivf_builder.posting_lists().get(i as u32)?;
             let mut encoder = C::new_encoder(
-                *posting_list.last().unwrap_or(&0) as usize,
-                posting_list.len(),
+                posting_list.last().unwrap_or(0) as usize,
+                posting_list.elem_count,
             );
             // Encode to get the length of the encoded data
-            encoder.encode_batch(&posting_list)?;
+            for val in posting_list.iter() {
+                encoder.encode_value(&val)?;
+            }
             // Write the length of the encoded posting list
             metadata_bytes_written +=
                 wrap_write(&mut metadata_writer, &encoder.len().to_le_bytes())?;
