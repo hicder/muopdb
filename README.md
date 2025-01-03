@@ -25,6 +25,7 @@ Here are the plans for future MuopDB:
 ### Phase 2 (Ongoing)
 - [x] Query
   - [x] Multiple index segments
+  - [x] L2 distance
 - [x] Index
   - [x] Optimizing index build time
   - [ ] Elias-Fano encoding for IVF
