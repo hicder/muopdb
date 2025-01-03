@@ -20,9 +20,9 @@ pub trait IntSeqEncoder {
     fn write(&self, writer: &mut BufWriter<&mut File>) -> Result<usize>;
 }
 
-pub trait IntSeqDecoderIterator: Iterator<Item = u64> {
+pub trait IntSeqDecoderIterator<'a>: Iterator<Item = u64> {
     /// Creates a decoder
-    fn new_decoder(encoded_data: &[u8]) -> Self
+    fn new_decoder(encoded_data: &'a [u8]) -> Self
     where
         Self: Sized;
 

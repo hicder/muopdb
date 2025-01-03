@@ -6,17 +6,17 @@ use crate::index::Searchable;
 use crate::spann::index::Spann;
 
 /// This is an immutable segment. This usually contains a single index.
-pub struct ImmutableSegment {
-    index: Spann,
+pub struct ImmutableSegment<'a> {
+    index: Spann<'a>,
 }
 
-impl ImmutableSegment {
-    pub fn new(index: Spann) -> Self {
+impl<'a> ImmutableSegment<'a> {
+    pub fn new(index: Spann<'a>) -> Self {
         Self { index }
     }
 }
 
-impl Segment for ImmutableSegment {
+impl<'a> Segment for ImmutableSegment<'a> {
     fn insert(&mut self, _doc_id: u64, _data: &[f32]) -> Result<()> {
         Err(anyhow!("ImmutableSegment does not support insertion"))
     }
@@ -32,7 +32,7 @@ impl Segment for ImmutableSegment {
     }
 }
 
-impl Searchable for ImmutableSegment {
+impl Searchable for ImmutableSegment<'_> {
     fn search(
         &self,
         query: &[f32],
@@ -44,6 +44,4 @@ impl Searchable for ImmutableSegment {
     }
 }
 
-impl SegmentSearchable for ImmutableSegment {}
-unsafe impl Send for ImmutableSegment {}
-unsafe impl Sync for ImmutableSegment {}
+impl SegmentSearchable for ImmutableSegment<'_> {}

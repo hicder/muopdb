@@ -15,7 +15,7 @@ use crate::posting_list::combined_file::FixedIndexFile;
 use crate::utils::{IdWithScore, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
 
-pub struct Ivf<Q: Quantizer, D: IntSeqDecoderIterator> {
+pub struct Ivf<'a, Q: Quantizer, D: IntSeqDecoderIterator<'a>> {
     // The dataset.
     pub vector_storage: FixedFileVectorStorage<Q::QuantizedT>,
 
@@ -32,9 +32,10 @@ pub struct Ivf<Q: Quantizer, D: IntSeqDecoderIterator> {
 
     pub quantizer: Q,
     _marker: PhantomData<D>,
+    _lifetime_marker: PhantomData<&'a ()>,
 }
 
-impl<Q: Quantizer, D: IntSeqDecoderIterator> Ivf<Q, D> {
+impl<'a, Q: Quantizer, D: IntSeqDecoderIterator<'a>> Ivf<'a, Q, D> {
     pub fn new(
         vector_storage: FixedFileVectorStorage<Q::QuantizedT>,
         index_storage: FixedIndexFile,
@@ -47,6 +48,7 @@ impl<Q: Quantizer, D: IntSeqDecoderIterator> Ivf<Q, D> {
             num_clusters,
             quantizer,
             _marker: PhantomData,
+            _lifetime_marker: PhantomData,
         }
     }
 
@@ -70,12 +72,15 @@ impl<Q: Quantizer, D: IntSeqDecoderIterator> Ivf<Q, D> {
         Ok(nearest_centroids.into_iter().map(|(idx, _)| idx).collect())
     }
 
-    pub fn scan_posting_list(
-        &self,
+    pub fn scan_posting_list<'b>(
+        &'b self,
         centroid: usize,
         query: &[f32],
         context: &mut SearchContext,
-    ) -> Vec<IdWithScore> {
+    ) -> Vec<IdWithScore>
+    where
+        'b: 'a,
+    {
         if let Ok(byte_slice) = self.index_storage.get_posting_list(centroid) {
             let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
             let mut results: Vec<IdWithScore> = Vec::new();
@@ -100,13 +105,16 @@ impl<Q: Quantizer, D: IntSeqDecoderIterator> Ivf<Q, D> {
         }
     }
 
-    pub fn search_with_centroids(
-        &self,
+    pub fn search_with_centroids<'b>(
+        &'b self,
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
         k: usize,
         context: &mut SearchContext,
-    ) -> Vec<IdWithScore> {
+    ) -> Vec<IdWithScore>
+    where
+        'b: 'a,
+    {
         let mut heap = BinaryHeap::with_capacity(k);
         for &centroid in &nearest_centroid_ids {
             let results = self.scan_posting_list(centroid, query, context);
@@ -138,27 +146,33 @@ impl<Q: Quantizer, D: IntSeqDecoderIterator> Ivf<Q, D> {
             .collect()
     }
 
-    pub fn search_with_centroids_and_remap(
-        &self,
+    pub fn search_with_centroids_and_remap<'b>(
+        &'b self,
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
         k: usize,
         context: &mut SearchContext,
-    ) -> Vec<IdWithScore> {
+    ) -> Vec<IdWithScore>
+    where
+        'b: 'a,
+    {
         let point_ids = self.search_with_centroids(query, nearest_centroid_ids, k, context);
         let doc_ids = self.map_point_id_to_doc_id(&point_ids);
         doc_ids
     }
 }
 
-impl<Q: Quantizer, D: IntSeqDecoderIterator> Searchable for Ivf<Q, D> {
-    fn search(
-        &self,
+impl<'a, Q: Quantizer, D: IntSeqDecoderIterator<'a>> Searchable for Ivf<'a, Q, D> {
+    fn search<'b>(
+        &'b self,
         query: &[f32],
         k: usize,
         ef_construction: u32, // Number of probed centroids
         context: &mut SearchContext,
-    ) -> Option<Vec<IdWithScore>> {
+    ) -> Option<Vec<IdWithScore>>
+    where
+        'b: 'a,
+    {
         // Find the nearest centroids to the query.
         if let Ok(nearest_centroids) = Self::find_nearest_centroids(
             &query.to_vec(),

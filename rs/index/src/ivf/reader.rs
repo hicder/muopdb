@@ -15,7 +15,7 @@ impl IvfReader {
         Self { base_directory }
     }
 
-    pub fn read<Q: Quantizer, D: IntSeqDecoderIterator>(&self) -> Result<Ivf<Q, D>> {
+    pub fn read<'a, Q: Quantizer, D: IntSeqDecoderIterator<'a>>(&self) -> Result<Ivf<'a, Q, D>> {
         let index_storage = FixedIndexFile::new(format!("{}/index", self.base_directory))?;
 
         let vector_storage_path = format!("{}/vectors", self.base_directory);
@@ -30,7 +30,7 @@ impl IvfReader {
         let quantizer_directory = format!("{}/quantizer", self.base_directory);
         let quantizer = Q::read(quantizer_directory).unwrap();
 
-        Ok(Ivf::<_, D>::new(
+        Ok(Ivf::<'_, _, D>::new(
             vector_storage,
             index_storage,
             num_clusters,

@@ -8,15 +8,15 @@ use crate::hnsw::index::Hnsw;
 use crate::index::Searchable;
 use crate::ivf::index::Ivf;
 
-pub struct Spann {
+pub struct Spann<'a> {
     centroids: Hnsw<NoQuantizer>,
-    posting_lists: Ivf<NoQuantizer, PlainDecoderIterator>,
+    posting_lists: Ivf<'a, NoQuantizer, PlainDecoderIterator<'a>>,
 }
 
-impl Spann {
+impl<'a> Spann<'a> {
     pub fn new(
         centroids: Hnsw<NoQuantizer>,
-        posting_lists: Ivf<NoQuantizer, PlainDecoderIterator>,
+        posting_lists: Ivf<'a, NoQuantizer, PlainDecoderIterator<'a>>,
     ) -> Self {
         Self {
             centroids,
@@ -28,12 +28,12 @@ impl Spann {
         &self.centroids
     }
 
-    pub fn get_posting_lists(&self) -> &Ivf<NoQuantizer, PlainDecoderIterator> {
+    pub fn get_posting_lists(&self) -> &Ivf<'a, NoQuantizer, PlainDecoderIterator<'a>> {
         &self.posting_lists
     }
 }
 
-impl Searchable for Spann {
+impl Searchable for Spann<'_> {
     fn search(
         &self,
         query: &[f32],

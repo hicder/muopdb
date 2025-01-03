@@ -3,8 +3,8 @@ use crate::utils::{IdWithScore, SearchContext};
 /// Main trait for index
 pub trait Searchable {
     /// Search for the nearest neighbors of a query vector
-    fn search(
-        &self,
+    fn search<'b>(
+        &'b self,
         query: &[f32],
         k: usize,
         ef_construction: u32,
