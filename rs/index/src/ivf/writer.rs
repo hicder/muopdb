@@ -299,6 +299,7 @@ mod tests {
     use std::path::Path;
 
     use byteorder::{LittleEndian, ReadBytesExt};
+    use compression::elias_fano::ef::EliasFano;
     use compression::noc::noc::PlainEncoder;
     use quantization::noq::noq::NoQuantizer;
     use quantization::pq::pq::ProductQuantizer;
@@ -534,6 +535,90 @@ mod tests {
                 i
             );
         }
+    }
+
+    #[test]
+    fn test_write_posting_lists_and_metadata() {
+        let temp_dir = TempDir::new("test_write_posting_lists_and_metadata").unwrap();
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 1;
+        let num_vectors = 2;
+        let num_features = 3;
+        let file_size = 4096;
+
+        let quantizer = NoQuantizer::new(num_features);
+        let ivf_writer = IvfWriter::<_, EliasFano>::new(base_directory.clone(), quantizer);
+
+        let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points_for_clustering: num_vectors,
+            max_clusters_per_vector: 1,
+            distance_threshold: 0.1,
+            base_directory: base_directory.clone(),
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: 0.0,
+            max_posting_list_size: usize::MAX,
+        })
+        .expect("Failed to create builder");
+
+        ivf_builder
+            .add_posting_list(&vec![5, 8, 8, 15, 32])
+            .expect("Posting list should be added");
+
+        let bytes_written = ivf_writer
+            .write_posting_lists_and_metadata(&mut ivf_builder)
+            .expect("Failed to write posting lists and metadata");
+
+        // Verify the metadata file
+        let metadata_path = format!("{}/posting_list_metadata", base_directory);
+        let mut metadata_file = File::open(metadata_path).expect("Failed to open metadata file");
+        let mut metadata_content = Vec::new();
+        metadata_file
+            .read_to_end(&mut metadata_content)
+            .expect("Failed to read metadata file");
+
+        // Verify the posting lists file
+        let posting_lists_path = format!("{}/posting_lists", base_directory);
+        let mut posting_lists_file =
+            File::open(posting_lists_path).expect("Failed to open posting lists file");
+        let mut posting_lists_content = Vec::new();
+        posting_lists_file
+            .read_to_end(&mut posting_lists_content)
+            .expect("Failed to read posting lists file");
+
+        // Check the total bytes written
+        assert_eq!(
+            bytes_written,
+            metadata_content.len() + posting_lists_content.len()
+        );
+
+        // Check metadata file
+        let expected_metadata = vec![
+            1, 0, 0, 0, 0, 0, 0, 0, // num_posting_lists
+            5, 0, 0, 0, 0, 0, 0, 0, // posting_list0_len
+            0, 0, 0, 0, 0, 0, 0, 0, // posting_list0_offset
+        ];
+        assert_eq!(metadata_content, expected_metadata);
+        assert_eq!(metadata_content.len(), 8 * 3);
+
+        // Check posting list file
+        let expected_posting_lists = vec![
+            2, 0, 0, 0, 0, 0, 0, 0, // lower_bit_length
+            1, 0, 0, 0, 0, 0, 0, 0, // number of u64 for encoding lower_bits
+            1, 0, 0, 0, 0, 0, 0, 0, // number of u64 for encoding upper_bits
+            0b11000001, 0, 0, 0, 0, 0, 0, 0, // lower_bits + padding
+            0b01011010, 0b00010000, 0, 0, 0, 0, 0, 0, // upper_bits + padding
+        ];
+        assert_eq!(posting_lists_content, expected_posting_lists);
+        assert_eq!(posting_lists_content.len(), 8 * 5);
     }
 
     #[test]
