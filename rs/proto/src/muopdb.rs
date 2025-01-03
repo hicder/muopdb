@@ -274,19 +274,14 @@ pub mod index_server_client {
             &mut self,
             request: impl tonic::IntoRequest<super::InsertBinaryRequest>,
         ) -> Result<tonic::Response<super::InsertBinaryResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/muopdb.IndexServer/InsertBinary",
-            );
+            let path = http::uri::PathAndQuery::from_static("/muopdb.IndexServer/InsertBinary");
             self.inner.unary(request.into_request(), path, codec).await
         }
         pub async fn flush(
@@ -578,23 +573,17 @@ pub mod index_server_server {
                 "/muopdb.IndexServer/InsertBinary" => {
                     #[allow(non_camel_case_types)]
                     struct InsertBinarySvc<T: IndexServer>(pub Arc<T>);
-                    impl<
-                        T: IndexServer,
-                    > tonic::server::UnaryService<super::InsertBinaryRequest>
-                    for InsertBinarySvc<T> {
+                    impl<T: IndexServer> tonic::server::UnaryService<super::InsertBinaryRequest>
+                        for InsertBinarySvc<T>
+                    {
                         type Response = super::InsertBinaryResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::InsertBinaryRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).insert_binary(request).await
-                            };
+                            let fut = async move { (*inner).insert_binary(request).await };
                             Box::pin(fut)
                         }
                     }
@@ -605,11 +594,10 @@ pub mod index_server_server {
                         let inner = inner.0;
                         let method = InsertBinarySvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
