@@ -29,6 +29,9 @@ Here are the plans for future MuopDB:
 - [x] Index
   - [x] Optimizing index build time
   - [ ] Elias-Fano encoding for IVF
+  - [ ] RabitQ quantization
+- [ ] Misc
+  - [ ] Configs and documentations
 
 ## Why MuopDB?
 This is an educational project for me to learn Rust & vector database.
