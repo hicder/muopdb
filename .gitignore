@@ -6,5 +6,6 @@
 flamegraph.svg
 perf.data*
 .idea
+.DS_store
 .venv
 */__pycache__/
