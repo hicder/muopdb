@@ -624,9 +624,9 @@ mod tests {
         // Check metadata file
         let expected_metadata = vec![
             1, 0, 0, 0, 0, 0, 0, 0, // num_posting_lists
-            24, 0, 0, 0, 0, 0, 0,
-            0, // posting_list0_len: 3 * u64: lower_bit_length + 1 lower_bit
-            // + 1 upper_bit
+            48, 0, 0, 0, 0, 0, 0, 0, // posting_list0_len: 6 * u64:
+            // num_elem + lower_bit_length + lower_bits size
+            // + upper_bits size + 1 lower_bit + 1 upper_bit
             0, 0, 0, 0, 0, 0, 0, 0, // posting_list0_offset
         ];
         assert_eq!(metadata_content, expected_metadata);
@@ -634,6 +634,7 @@ mod tests {
 
         // Check posting list file
         let expected_posting_lists = vec![
+            5, 0, 0, 0, 0, 0, 0, 0, // num_elem
             2, 0, 0, 0, 0, 0, 0, 0, // lower_bit_length
             1, 0, 0, 0, 0, 0, 0, 0, // number of u64 for encoding lower_bits
             1, 0, 0, 0, 0, 0, 0, 0, // number of u64 for encoding upper_bits
@@ -641,7 +642,7 @@ mod tests {
             0b01011010, 0b00010000, 0, 0, 0, 0, 0, 0, // upper_bits + padding
         ];
         assert_eq!(posting_lists_content, expected_posting_lists);
-        assert_eq!(posting_lists_content.len(), 8 * 5);
+        assert_eq!(posting_lists_content.len(), 8 * 6);
     }
 
     #[test]
