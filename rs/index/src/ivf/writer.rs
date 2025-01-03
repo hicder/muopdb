@@ -15,30 +15,30 @@ use utils::{CalculateSquared, DistanceCalculator};
 use crate::ivf::builder::IvfBuilder;
 use crate::posting_list::combined_file::{Header, Version};
 
-pub struct IvfWriter<Q, C, D> 
-where 
+pub struct IvfWriter<Q, E, D>
+where
     Q: Quantizer,
-    C: IntSeqEncoder,
-    D: DistanceCalculator + CalculateSquared + Send + Sync
+    E: IntSeqEncoder,
+    D: DistanceCalculator + CalculateSquared + Send + Sync,
 {
     base_directory: String,
     quantizer: Q,
-    _marker_1: PhantomData<C>,
-    _marker_2: PhantomData<D>,
+    _encoder_marker: PhantomData<E>,
+    _distance_calculator_marker: PhantomData<D>,
 }
 
-impl<Q, C, D> IvfWriter<Q, C, D>
+impl<Q, E, D> IvfWriter<Q, E, D>
 where
     Q: Quantizer,
-    C: IntSeqEncoder + 'static,
+    E: IntSeqEncoder + 'static,
     D: DistanceCalculator + CalculateSquared + Send + Sync,
 {
     pub fn new(base_directory: String, quantizer: Q) -> Self {
         Self {
             base_directory,
             quantizer,
-            _marker_1: PhantomData,
-            _marker_2: PhantomData,
+            _encoder_marker: PhantomData,
+            _distance_calculator_marker: PhantomData,
         }
     }
 
@@ -197,7 +197,7 @@ where
             wrap_write(&mut metadata_writer, &num_posting_lists.to_le_bytes())?;
         for i in 0..num_posting_lists {
             let posting_list = ivf_builder.posting_lists().get(i as u32)?;
-            let mut encoder = C::new_encoder(
+            let mut encoder = E::new_encoder(
                 posting_list.last().unwrap_or(0) as usize,
                 posting_list.elem_count,
             );
@@ -340,7 +340,10 @@ mod tests {
         // Create an IvfWriter instance
         let num_features = 10;
         let quantizer = NoQuantizer::new(num_features);
-        let ivf_writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(base_directory.clone(), quantizer);
+        let ivf_writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
+            base_directory.clone(),
+            quantizer,
+        );
 
         // Create test files
         create_test_file(&base_directory, "centroids", &[5, 6, 7, 8])?;
@@ -441,8 +444,12 @@ mod tests {
 
         // Pad to 8-byte alignment
         let padding_written =
-            IvfWriter::<NoQuantizer, PlainEncoder, L2DistanceCalculator>::write_pad(initial_size, &mut writer, 8)
-                .unwrap();
+            IvfWriter::<NoQuantizer, PlainEncoder, L2DistanceCalculator>::write_pad(
+                initial_size,
+                &mut writer,
+                8,
+            )
+            .unwrap();
 
         assert_eq!(padding_written, 5); // 3 bytes written, so 5 bytes of padding needed
 
@@ -473,7 +480,10 @@ mod tests {
         let quantizer =
             ProductQuantizer::new(3, 1, subvector_dimension, codebook, base_directory.clone())
                 .expect("Can't create product quantizer");
-        let ivf_writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(base_directory.clone(), quantizer);
+        let ivf_writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
+            base_directory.clone(),
+            quantizer,
+        );
 
         let mut ivf_builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
@@ -561,7 +571,8 @@ mod tests {
         let file_size = 4096;
 
         let quantizer = NoQuantizer::new(num_features);
-        let ivf_writer = IvfWriter::<_, EliasFano, L2DistanceCalculator>::new(base_directory.clone(), quantizer);
+        let ivf_writer =
+            IvfWriter::<_, EliasFano, L2DistanceCalculator>::new(base_directory.clone(), quantizer);
 
         let mut ivf_builder = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
@@ -647,7 +658,10 @@ mod tests {
         let num_features = 4;
         let file_size = 4096;
         let quantizer = NoQuantizer::new(num_features);
-        let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(base_directory.clone(), quantizer);
+        let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
+            base_directory.clone(),
+            quantizer,
+        );
 
         let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
