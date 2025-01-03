@@ -2,6 +2,7 @@ use anyhow::{Ok, Result};
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
 use serde::{Deserialize, Serialize};
+use utils::distance::l2::L2DistanceCalculator;
 
 use crate::hnsw::builder::HnswBuilder;
 use crate::ivf::builder::{IvfBuilder, IvfBuilderConfig};
@@ -65,7 +66,7 @@ impl Default for SpannBuilderConfig {
 pub struct SpannBuilder {
     pub config: SpannBuilderConfig,
     pub ivf_builder: IvfBuilder,
-    pub centroid_builder: HnswBuilder<NoQuantizer>,
+    pub centroid_builder: HnswBuilder<NoQuantizer<L2DistanceCalculator>>,
 }
 
 impl SpannBuilder {

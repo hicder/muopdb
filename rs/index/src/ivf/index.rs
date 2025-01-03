@@ -335,7 +335,7 @@ mod tests {
 
         let num_clusters = 2;
 
-        let quantizer = NoQuantizer::new(3);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(3);
         let ivf = Ivf::new(storage, index_storage, num_clusters, quantizer);
 
         assert_eq!(ivf.num_clusters, num_clusters);
@@ -375,7 +375,7 @@ mod tests {
         let num_probes = 2;
 
         let nearest =
-            Ivf::<NoQuantizer>::find_nearest_centroids(&vector, &index_storage, num_probes)
+            Ivf::<NoQuantizer<L2DistanceCalculator>>::find_nearest_centroids(&vector, &index_storage, num_probes)
                 .expect("Nearest centroids should be found");
 
         assert_eq!(nearest[0], 1);
@@ -421,7 +421,7 @@ mod tests {
         let num_clusters = 2;
         let num_probes = 2;
 
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let ivf = Ivf::new(storage, index_storage, num_clusters, quantizer);
 
         let query = vec![2.0, 3.0, 4.0];
@@ -547,7 +547,7 @@ mod tests {
         let num_clusters = 1;
         let num_probes = 1;
 
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let ivf = Ivf::new(storage, index_storage, num_clusters, quantizer);
 
         let query = vec![1.0, 2.0, 3.0];

@@ -2,29 +2,30 @@ use std::cmp::Ordering;
 
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
+use utils::distance::l2::L2DistanceCalculator;
 
 use crate::hnsw::index::Hnsw;
 use crate::index::Searchable;
 use crate::ivf::index::Ivf;
 
 pub struct Spann {
-    centroids: Hnsw<NoQuantizer>,
-    posting_lists: Ivf<NoQuantizer>,
+    centroids: Hnsw<NoQuantizer<L2DistanceCalculator>>,
+    posting_lists: Ivf<NoQuantizer<L2DistanceCalculator>>,
 }
 
 impl Spann {
-    pub fn new(centroids: Hnsw<NoQuantizer>, posting_lists: Ivf<NoQuantizer>) -> Self {
+    pub fn new(centroids: Hnsw<NoQuantizer<L2DistanceCalculator>>, posting_lists: Ivf<NoQuantizer<L2DistanceCalculator>>) -> Self {
         Self {
             centroids,
             posting_lists,
         }
     }
 
-    pub fn get_centroids(&self) -> &Hnsw<NoQuantizer> {
+    pub fn get_centroids(&self) -> &Hnsw<NoQuantizer<L2DistanceCalculator>> {
         &self.centroids
     }
 
-    pub fn get_posting_lists(&self) -> &Ivf<NoQuantizer> {
+    pub fn get_posting_lists(&self) -> &Ivf<NoQuantizer<L2DistanceCalculator>> {
         &self.posting_lists
     }
 }

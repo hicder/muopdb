@@ -257,6 +257,7 @@ mod tests {
     use quantization::noq::noq::NoQuantizer;
     use quantization::pq::pq::ProductQuantizer;
     use tempdir::TempDir;
+    use utils::distance::l2::L2DistanceCalculator;
     use utils::test_utils::generate_random_vector;
 
     use super::*;
@@ -282,7 +283,7 @@ mod tests {
 
         // Create an IvfWriter instance
         let num_features = 10;
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let ivf_writer = IvfWriter::new(base_directory.clone(), quantizer);
 
         // Create test files
@@ -375,7 +376,7 @@ mod tests {
 
         // Pad to 8-byte alignment
         let padding_written =
-            IvfWriter::<NoQuantizer>::write_pad(initial_size, &mut writer, 8).unwrap();
+            IvfWriter::<NoQuantizer<L2DistanceCalculator>>::write_pad(initial_size, &mut writer, 8).unwrap();
 
         assert_eq!(padding_written, 5); // 3 bytes written, so 5 bytes of padding needed
 
@@ -493,7 +494,7 @@ mod tests {
         let num_vectors = 1000;
         let num_features = 4;
         let file_size = 4096;
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let writer = IvfWriter::new(base_directory.clone(), quantizer);
 
         let mut builder = IvfBuilder::new(IvfBuilderConfig {

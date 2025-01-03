@@ -44,6 +44,7 @@ mod tests {
 
     use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
     use tempdir::TempDir;
+    use utils::distance::l2::L2DistanceCalculator;
     use utils::test_utils::generate_random_vector;
 
     use super::*;
@@ -65,7 +66,7 @@ mod tests {
         let num_vectors = 1000;
         let num_features = 4;
         let file_size = 4096;
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let writer = IvfWriter::new(base_directory.clone(), quantizer);
 
         let mut builder = IvfBuilder::new(IvfBuilderConfig {
@@ -94,7 +95,7 @@ mod tests {
 
         assert!(writer.write(&mut builder, false).is_ok());
 
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let quantizer_directory = format!("{}/quantizer", base_directory);
         std::fs::create_dir_all(&quantizer_directory)
             .expect("Failed to create quantizer directory");
@@ -103,7 +104,7 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer>()
+            .read::<NoQuantizer<L2DistanceCalculator>>()
             .expect("Failed to read index file");
 
         // Check if files were created
@@ -201,7 +202,7 @@ mod tests {
         let num_vectors = 1000;
         let num_features = 4;
         let file_size = 4096;
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let quantizer_directory = format!("{}/quantizer", base_directory);
         std::fs::create_dir_all(&quantizer_directory)
             .expect("Failed to create quantizer directory");
@@ -237,7 +238,7 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer>()
+            .read::<NoQuantizer<L2DistanceCalculator>>()
             .expect("Failed to read index file");
 
         let num_centroids = index.num_clusters;

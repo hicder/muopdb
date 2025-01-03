@@ -13,7 +13,7 @@ pub enum QuantizationType {
     ProductQuantizer,
     NoQuantization,
 }
-
+/*
 impl QuantizationReader {
     pub fn new(base_directory: String) -> Self {
         Self { base_directory }
@@ -39,4 +39,4 @@ impl QuantizationReader {
         let reader = NoQuantizerReader::new(self.base_directory.clone());
         reader.read()
     }
-}
+}*/

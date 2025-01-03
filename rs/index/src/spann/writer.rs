@@ -1,6 +1,7 @@
 use anyhow::Result;
 use log::debug;
 use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
+use utils::distance::l2::L2DistanceCalculator;
 
 use super::builder::SpannBuilder;
 use crate::hnsw::writer::HnswWriter;
@@ -45,7 +46,7 @@ impl SpannWriter {
         let ivf_quantizer_directory = format!("{}/quantizer", ivf_directory);
         std::fs::create_dir_all(&ivf_quantizer_directory)?;
 
-        let ivf_quantizer = NoQuantizer::new(index_writer_config.num_features);
+        let ivf_quantizer = NoQuantizer::<L2DistanceCalculator>::new(index_writer_config.num_features);
         let ivf_quantizer_writer = NoQuantizerWriter::new(ivf_quantizer_directory);
         ivf_quantizer_writer.write(&ivf_quantizer)?;
 
