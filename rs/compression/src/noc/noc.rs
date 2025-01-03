@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use utils::io::wrap_write;
 use utils::mem::get_ith_val_from_raw_ptr;
 
@@ -42,6 +42,13 @@ impl IntSeqEncoder for PlainEncoder {
             total_bytes_written += wrap_write(writer, &val.to_le_bytes())?;
         }
 
+        if total_bytes_written != self.len() {
+            return Err(anyhow!(
+                "Expected to write {} bytes but wrote {} bytes",
+                self.len(),
+                total_bytes_written
+            ));
+        }
         writer.flush()?;
 
         Ok(total_bytes_written)
