@@ -10,7 +10,10 @@ pub trait IntSeqEncoder {
         Self: Sized;
 
     /// Compresses a sorted slice of integers
-    fn encode(&mut self, values: &[u64]) -> Result<()>;
+    fn encode_batch(&mut self, slice: &[u64]) -> Result<()>;
+
+    /// Compresses an u64 integer
+    fn encode_value(&mut self, value: &u64) -> Result<()>;
 
     /// Returns the size of the encoded data (that would be written to disk)
     fn len(&self) -> usize;

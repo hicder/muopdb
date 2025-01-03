@@ -10,11 +10,14 @@ use crate::compression::IntSeqEncoder;
 pub struct EliasFano {
     #[cfg(any(debug_assertions, test))]
     universe: usize,
-    size: usize,
+    num_elem: usize,
     lower_bits: BitVec<u64>,
     upper_bits: BitVec<u64>,
     lower_bit_mask: u64,
     lower_bit_length: usize,
+    // Needed for multiple calls to `encode()`
+    cur_high: u64,
+    cur_index: usize,
 }
 
 // TODO(tyb): consider moving this to utils
@@ -29,18 +32,18 @@ fn msb(n: u64) -> u64 {
 
 impl EliasFano {
     /// Creates a new EliasFano structure
-    pub fn new(universe: usize, size: usize) -> Self {
-        // lower_bit_length = floor(log(universe / size))
+    pub fn new(universe: usize, num_elem: usize) -> Self {
+        // lower_bit_length = floor(log(universe / num_elem))
         // More efficient way to do it is with bit manipulation
-        let lower_bit_length = if universe > size {
-            msb((universe / size) as u64)
+        let lower_bit_length = if universe > num_elem {
+            msb((universe / num_elem) as u64)
         } else {
             0
         } as usize;
         let lower_bit_mask = (1 << lower_bit_length) - 1;
-        let mut lower_bits = BitVec::with_capacity(size * lower_bit_length);
+        let mut lower_bits = BitVec::with_capacity(num_elem * lower_bit_length);
         // Ensure lower_bits is filled with false initially
-        lower_bits.resize(size * lower_bit_length, false);
+        lower_bits.resize(num_elem * lower_bit_length, false);
 
         // The upper bits are encoded using unary coding for the gaps between consecutive values.
         // This part uses at most 2n bits:
@@ -51,18 +54,20 @@ impl EliasFano {
         Self {
             #[cfg(any(debug_assertions, test))]
             universe,
-            size,
+            num_elem,
             lower_bits,
-            upper_bits: BitVec::with_capacity(2 * size),
+            upper_bits: BitVec::with_capacity(2 * num_elem),
             lower_bit_mask,
             lower_bit_length,
+            cur_high: 0,
+            cur_index: 0,
         }
     }
 
     /// Returns the value at the given index
     #[allow(dead_code)]
     fn get(&self, index: usize) -> Result<u64> {
-        if index >= self.size {
+        if index >= self.num_elem {
             return Err(anyhow!("Index {} out of bound", index));
         }
 
@@ -94,50 +99,58 @@ impl EliasFano {
 }
 
 impl IntSeqEncoder for EliasFano {
-    fn new_encoder(universe: usize, size: usize) -> Self {
-        Self::new(universe, size)
+    fn new_encoder(universe: usize, num_elem: usize) -> Self {
+        Self::new(universe, num_elem)
     }
 
     // Algorithm described in https://vigna.di.unimi.it/ftp/papers/QuasiSuccinctIndices.pdf
-    fn encode(&mut self, values: &[u64]) -> Result<()> {
-        let mut prev_high = 0;
-        for (i, &val) in values.iter().enumerate() {
-            // Sanity check only in debug or test builds
-            #[cfg(any(debug_assertions, test))]
-            if val > self.universe as u64 {
-                return Err(anyhow!(
-                    "Element {}th ({}) is greater than universe",
-                    i,
-                    val
-                ));
-            }
-            // Encode lower bits efficiently
-            if self.lower_bit_length > 0 {
-                let low = val & self.lower_bit_mask;
-                let start = i * self.lower_bit_length;
-                self.lower_bits[start..start + self.lower_bit_length].store(low as u64);
-            }
-
-            // Encode upper bits using unary coding
-            let high = val >> self.lower_bit_length;
-            // Sanity check only in debug or test builds
-            #[cfg(any(debug_assertions, test))]
-            if high < prev_high {
-                return Err(anyhow!("Sequence is not sorted"));
-            }
-
-            let gap = high - prev_high;
-            self.upper_bits
-                .extend_from_bitslice(&BitVec::<u8>::repeat(false, gap as usize));
-            self.upper_bits.push(true);
-
-            prev_high = high;
+    fn encode_batch(&mut self, slice: &[u64]) -> Result<()> {
+        for &val in slice.iter() {
+            self.encode_value(&val)?;
         }
         Ok(())
     }
 
+    fn encode_value(&mut self, value: &u64) -> Result<()> {
+        let val = *value;
+        // Sanity check only in debug or test builds
+        #[cfg(any(debug_assertions, test))]
+        if val > self.universe as u64 {
+            return Err(anyhow!(
+                "Element {}th ({}) is greater than universe",
+                self.cur_index,
+                val
+            ));
+        }
+        // Encode lower bits efficiently
+        if self.lower_bit_length > 0 {
+            let low = val & self.lower_bit_mask;
+            let start = self.cur_index * self.lower_bit_length;
+            self.lower_bits[start..start + self.lower_bit_length].store(low as u64);
+        }
+
+        // Encode upper bits using unary coding
+        let high = val >> self.lower_bit_length;
+        // Sanity check only in debug or test builds
+        #[cfg(any(debug_assertions, test))]
+        if high < self.cur_high {
+            return Err(anyhow!("Sequence is not sorted"));
+        }
+
+        let gap = high - self.cur_high;
+        self.upper_bits
+            .extend_from_bitslice(&BitVec::<u8>::repeat(false, gap as usize));
+        self.upper_bits.push(true);
+
+        self.cur_high = high;
+        self.cur_index += 1;
+        Ok(())
+    }
+
     fn len(&self) -> usize {
-        self.size
+        let lower_vec: &[u64] = self.lower_bits.as_raw_slice();
+        let upper_vec: &[u64] = self.upper_bits.as_raw_slice();
+        (1 /* lower_bit_length */ + lower_vec.len() + upper_vec.len()) * std::mem::size_of::<u64>()
     }
 
     fn write(&self, writer: &mut BufWriter<&mut File>) -> Result<usize> {
@@ -174,7 +187,7 @@ mod tests {
         let values = vec![5, 8, 8, 15, 32];
         let upper_bound = 36;
         let mut ef = EliasFano::new_encoder(upper_bound, values.len());
-        assert!(ef.encode(&values).is_ok());
+        assert!(ef.encode_batch(&values).is_ok());
 
         // Calculate expected lower bits
         // L = floor(log2(36/5)) = 2
@@ -197,13 +210,13 @@ mod tests {
         let values = vec![5, 8, 7, 15, 32];
         let upper_bound = 36;
         let mut ef = EliasFano::new_encoder(upper_bound, values.len());
-        assert!(ef.encode(&values).is_err());
+        assert!(ef.encode_batch(&values).is_err());
 
         // Test sequence with element exceeding upper bound
         let values = vec![5, 8, 8, 15, 32];
         let upper_bound = 31;
         let mut ef = EliasFano::new_encoder(upper_bound, values.len());
-        assert!(ef.encode(&values).is_err());
+        assert!(ef.encode_batch(&values).is_err());
     }
 
     #[test]
@@ -218,7 +231,7 @@ mod tests {
 
         for (values, upper_bound) in test_cases {
             let mut ef = EliasFano::new_encoder(upper_bound, values.len());
-            assert!(ef.encode(&values).is_ok());
+            assert!(ef.encode_batch(&values).is_ok());
 
             for i in 0..values.len() {
                 let decoded_value = ef.get(i).expect("Failed to decode value");
@@ -231,7 +244,7 @@ mod tests {
         let upper_bound = 9999;
 
         let mut ef = EliasFano::new_encoder(upper_bound, values.len());
-        assert!(ef.encode(&values).is_ok());
+        assert!(ef.encode_batch(&values).is_ok());
 
         // Check random accesses
         assert_eq!(ef.get(0).expect("Failed to decode value"), 1);
@@ -247,11 +260,13 @@ mod tests {
         // Create a mock EliasFano instance
         let ef = EliasFano {
             universe: 100,
-            size: 5,
+            num_elem: 5,
             lower_bits: BitVec::from_slice(&[0b10101010_01010101]),
             upper_bits: BitVec::from_slice(&[0b11001100_00110011]),
             lower_bit_mask: 0b1111,
             lower_bit_length: 4,
+            cur_high: 0,
+            cur_index: 0,
         };
 
         let temp_dir =

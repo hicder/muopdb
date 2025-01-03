@@ -195,7 +195,7 @@ impl<Q: Quantizer, C: IntSeqEncoder + 'static> IvfWriter<Q, C> {
                 posting_list.len(),
             );
             // Encode to get the length of the encoded data
-            encoder.encode(&posting_list)?;
+            encoder.encode_batch(&posting_list)?;
             // Write the length of the encoded posting list
             metadata_bytes_written +=
                 wrap_write(&mut metadata_writer, &encoder.len().to_le_bytes())?;
@@ -603,7 +603,9 @@ mod tests {
         // Check metadata file
         let expected_metadata = vec![
             1, 0, 0, 0, 0, 0, 0, 0, // num_posting_lists
-            5, 0, 0, 0, 0, 0, 0, 0, // posting_list0_len
+            24, 0, 0, 0, 0, 0, 0,
+            0, // posting_list0_len: 3 * u64: lower_bit_length + 1 lower_bit
+            // + 1 upper_bit
             0, 0, 0, 0, 0, 0, 0, 0, // posting_list0_offset
         ];
         assert_eq!(metadata_content, expected_metadata);

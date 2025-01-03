@@ -26,8 +26,13 @@ impl IntSeqEncoder for PlainEncoder {
         Self::new(num_elem)
     }
 
-    fn encode(&mut self, values: &[u64]) -> Result<()> {
-        self.sequence = values.to_vec();
+    fn encode_value(&mut self, value: &u64) -> Result<()> {
+        self.sequence.push(*value);
+        Ok(())
+    }
+
+    fn encode_batch(&mut self, slice: &[u64]) -> Result<()> {
+        self.sequence.extend(slice);
         Ok(())
     }
 
