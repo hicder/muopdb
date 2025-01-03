@@ -14,7 +14,10 @@ pub struct NoQuantizer<D: DistanceCalculator> {
 
 impl<D: DistanceCalculator> NoQuantizer<D> {
     pub fn new(dimension: usize) -> Self {
-        Self { dimension, _marker: PhantomData }
+        Self {
+            dimension,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -56,15 +59,18 @@ pub struct NoQuantizerConfig {
     pub dimension: usize,
 }
 
-pub struct NoQuantizerReader<D:DistanceCalculator> {
+pub struct NoQuantizerReader<D: DistanceCalculator> {
     base_directory: String,
 
-    _marker: PhantomData<D>
+    _marker: PhantomData<D>,
 }
 
-impl<D:DistanceCalculator> NoQuantizerReader<D> {
+impl<D: DistanceCalculator> NoQuantizerReader<D> {
     pub fn new(base_directory: String) -> Self {
-        Self { base_directory, _marker: PhantomData }
+        Self {
+            base_directory,
+            _marker: PhantomData,
+        }
     }
 
     pub fn read(&self) -> Result<NoQuantizer<D>> {
@@ -78,15 +84,18 @@ impl<D:DistanceCalculator> NoQuantizerReader<D> {
 
 // Writer
 
-pub struct NoQuantizerWriter<D:DistanceCalculator> {
+pub struct NoQuantizerWriter<D: DistanceCalculator> {
     base_directory: String,
 
-    _marker: PhantomData<D>
+    _marker: PhantomData<D>,
 }
 
-impl <D:DistanceCalculator> NoQuantizerWriter<D> {
+impl<D: DistanceCalculator> NoQuantizerWriter<D> {
     pub fn new(base_directory: String) -> Self {
-        Self { base_directory, _marker: PhantomData }
+        Self {
+            base_directory,
+            _marker: PhantomData,
+        }
     }
 
     pub fn write(&self, quantizer: &NoQuantizer<D>) -> Result<()> {

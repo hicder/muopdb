@@ -19,9 +19,10 @@ impl SpannReader {
         let posting_list_path = format!("{}/ivf", self.base_directory);
         let centroid_path = format!("{}/centroids", self.base_directory);
 
-        let centroids = HnswReader::new(centroid_path).read::<NoQuantizer<L2DistanceCalculator>>()?;
-        let posting_lists =
-            IvfReader::new(posting_list_path).read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator>()?;
+        let centroids =
+            HnswReader::new(centroid_path).read::<NoQuantizer<L2DistanceCalculator>>()?;
+        let posting_lists = IvfReader::new(posting_list_path)
+            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator>()?;
 
         Ok(Spann::new(centroids, posting_lists))
     }

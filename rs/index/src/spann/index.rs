@@ -28,7 +28,9 @@ impl Spann {
         &self.centroids
     }
 
-    pub fn get_posting_lists(&self) -> &Ivf<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator> {
+    pub fn get_posting_lists(
+        &self,
+    ) -> &Ivf<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator> {
         &self.posting_lists
     }
 }

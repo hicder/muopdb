@@ -129,7 +129,9 @@ impl<Q: Quantizer, D: DistanceCalculator + CalculateSquared + Send + Sync> IvfWr
         // Write quantized vectors
         let path = format!("{}/vectors", self.base_directory);
         let mut file = File::create(path)?;
-        let capacity = full_vectors.borrow().len() * self.quantizer.quantized_dimension() * std::mem::size_of::<Q::QuantizedT>();
+        let capacity = full_vectors.borrow().len()
+            * self.quantizer.quantized_dimension()
+            * std::mem::size_of::<Q::QuantizedT>();
         let mut writer = BufWriter::with_capacity(min(1 << 30, capacity), &mut file);
 
         let mut bytes_written = 0;
@@ -141,7 +143,8 @@ impl<Q: Quantizer, D: DistanceCalculator + CalculateSquared + Send + Sync> IvfWr
                 &self.quantizer,
             );
             for j in 0..quantized_vector.len() {
-                bytes_written += wrap_write(&mut writer, quantized_vector[j].to_le_bytes().as_ref())?;
+                bytes_written +=
+                    wrap_write(&mut writer, quantized_vector[j].to_le_bytes().as_ref())?;
             }
         }
 
@@ -381,8 +384,12 @@ mod tests {
 
         // Pad to 8-byte alignment
         let padding_written =
-            IvfWriter::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator>::write_pad(initial_size, &mut writer, 8)
-                .unwrap();
+            IvfWriter::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator>::write_pad(
+                initial_size,
+                &mut writer,
+                8,
+            )
+            .unwrap();
 
         assert_eq!(padding_written, 5); // 3 bytes written, so 5 bytes of padding needed
 
