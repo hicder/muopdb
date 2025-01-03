@@ -514,7 +514,7 @@ mod tests {
         let num_clusters = 2;
         let num_probes = 2;
 
-        let ivf: Ivf<ProductQuantizer, L2DistanceCalculator> =
+        let ivf: Ivf<ProductQuantizer<L2DistanceCalculator>, L2DistanceCalculator> =
             Ivf::new(storage, index_storage, num_clusters, quantizer);
 
         let query = vec![2.0, 3.0, 4.0];

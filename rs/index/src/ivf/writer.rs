@@ -417,9 +417,14 @@ mod tests {
         let file_size = 4096;
 
         let codebook = vec![1.5, 4.5, 2.3, 5.3, 3.1, 6.1];
-        let quantizer =
-            ProductQuantizer::new(3, 1, subvector_dimension, codebook, base_directory.clone())
-                .expect("Can't create product quantizer");
+        let quantizer = ProductQuantizer::<L2DistanceCalculator>::new(
+            3,
+            1,
+            subvector_dimension,
+            codebook,
+            base_directory.clone(),
+        )
+        .expect("Can't create product quantizer");
         let ivf_writer = IvfWriter::new(base_directory.clone(), quantizer);
 
         let mut ivf_builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {

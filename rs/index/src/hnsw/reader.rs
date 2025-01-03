@@ -143,8 +143,9 @@ mod tests {
         // Create a HNSW Builder
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
-        let mut hnsw_builder =
-            HnswBuilder::<ProductQuantizer>::new(10, 128, 20, 1024, 4096, 16, pq, vector_dir);
+        let mut hnsw_builder = HnswBuilder::<ProductQuantizer<L2DistanceCalculator>>::new(
+            10, 128, 20, 1024, 4096, 16, pq, vector_dir,
+        );
         for i in 0..datapoints.len() {
             hnsw_builder.insert(i as u64, &datapoints[i]).unwrap();
         }
@@ -156,7 +157,9 @@ mod tests {
 
         // Read from file
         let reader = HnswReader::new(base_directory.clone());
-        let hnsw = reader.read::<ProductQuantizer>().unwrap();
+        let hnsw = reader
+            .read::<ProductQuantizer<L2DistanceCalculator>>()
+            .unwrap();
         assert_eq!(49, hnsw.get_data_offset());
         assert_eq!(16, hnsw.get_header().quantized_dimension);
     }
