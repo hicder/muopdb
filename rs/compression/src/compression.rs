@@ -34,5 +34,5 @@ pub trait IntSeqDecoder {
 
     /// Creates an iterator that iterates the encoded data and decodes one element at a time on the
     /// fly
-    fn get_iterator<'a>(&self, encoded_data: &'a [u8]) -> Self::IteratorType<'a>;
+    fn get_iterator<'a>(&self, byte_slice: &'a [u8]) -> Self::IteratorType<'a>;
 }
