@@ -3,7 +3,7 @@ use quantization::pq::pq::ProductQuantizerConfig;
 use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
 use quantization::quantization::Quantizer;
 use strum::IntoEnumIterator;
-use utils::distance::l2::L2DistanceCalculatorImpl;
+use utils::distance::l2::{L2DistanceCalculator, L2DistanceCalculatorImpl};
 use utils::test_utils::generate_random_vector;
 
 fn bench_pq_distance(c: &mut Criterion) {
@@ -14,7 +14,7 @@ fn bench_pq_distance(c: &mut Criterion) {
             for num_bits in [4, 8, 16].iter() {
                 let tmpdir = tempdir::TempDir::new("pq_bench")
                     .expect("Failed to create temporary directory");
-                let mut pqb = ProductQuantizerBuilder::new(
+                let mut pqb = ProductQuantizerBuilder::<L2DistanceCalculator>::new(
                     ProductQuantizerConfig {
                         dimension: *dimension,
                         subvector_dimension: *subvector_dimension,

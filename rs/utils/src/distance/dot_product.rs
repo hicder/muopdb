@@ -88,6 +88,11 @@ impl DistanceCalculator for DotProductDistanceCalculator {
     }
 
     #[inline(always)]
+    fn accumulate_scalar(a: &[f32], b: &[f32]) -> f32 {
+        a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum()
+    }
+
+    #[inline(always)]
     fn outermost_op(x: f32) -> f32 {
         Self::neg_score(x)
     }
@@ -105,5 +110,16 @@ mod tests {
         let result = DotProductDistanceCalculator::calculate(&a, &b);
         let expected = DotProductDistanceCalculator::calculate_scalar(&a, &b);
         assert!((result - expected).abs() < eps);
+    }
+
+    #[test]
+    fn test_accumulate_scalar() {
+        let a = generate_random_vector(30);
+        let b = generate_random_vector(30);
+
+        let epsilon = 1e-5;
+        let distance_scalar = DotProductDistanceCalculator::calculate_scalar(&a, &b);
+        let accumulate_scalar = DotProductDistanceCalculator::accumulate_scalar(&a, &b);
+        assert!((distance_scalar - accumulate_scalar.sqrt()) < epsilon)
     }
 }

@@ -19,6 +19,8 @@ pub trait DistanceCalculator {
     ) where
         LaneCount<LANES>: SupportedLaneCount;
 
+    fn accumulate_scalar(a: &[f32], b: &[f32]) -> f32;
+
     /*
      * The outermost operator of the distance function,
      * to be used with accumulate_lanes for lane conforming code.

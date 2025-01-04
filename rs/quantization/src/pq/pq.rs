@@ -264,7 +264,6 @@ impl<D: DistanceCalculator> Quantizer for ProductQuantizer<D> {
                     dist * dist
                 })
                 .sum::<f32>(),
-            //.sqrt(),
             L2DistanceCalculatorImpl::StreamingSIMD => {
                 // Similar to l2.rs. However, we have to inline here for performance reasons.
                 let mut sum_16 = f32x16::splat(0.0);
@@ -294,9 +293,7 @@ impl<D: DistanceCalculator> Quantizer for ProductQuantizer<D> {
                             b_vec = b_vec.chunks_exact(4).remainder()
                         }
                         if a_vec.len() > 0 {
-                            for i in 0..a_vec.len() {
-                                sum_1 += (a_vec[i] - b_vec[i]).powi(2); // TODO move this to distance
-                            }
+                            sum_1 = D::accumulate_scalar(a_vec, b_vec);
                         }
                     });
                 D::outermost_op(
@@ -313,7 +310,6 @@ impl<D: DistanceCalculator> Quantizer for ProductQuantizer<D> {
                     dist * dist
                 })
                 .sum::<f32>(),
-            //.sqrt(),
         }
     }
 

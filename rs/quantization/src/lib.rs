@@ -3,5 +3,4 @@ pub mod noq;
 pub mod pq;
 pub mod quantization;
 pub mod rabitq;
-pub mod reader;
 pub mod typing;
