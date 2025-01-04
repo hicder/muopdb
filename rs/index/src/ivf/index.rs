@@ -2,6 +2,7 @@ use std::collections::BinaryHeap;
 use std::marker::PhantomData;
 
 use anyhow::{Context, Result};
+use compression::compression::IntSeqDecoder;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
@@ -12,7 +13,7 @@ use crate::posting_list::combined_file::FixedIndexFile;
 use crate::utils::{IdWithScore, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
 
-pub struct Ivf<Q: Quantizer, D: DistanceCalculator> {
+pub struct Ivf<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> {
     // The dataset.
     pub vector_storage: FixedFileVectorStorage<Q::QuantizedT>,
 
@@ -29,10 +30,11 @@ pub struct Ivf<Q: Quantizer, D: DistanceCalculator> {
 
     pub quantizer: Q,
 
-    _marker: PhantomData<D>,
+    _distance_calculator_marker: PhantomData<DC>,
+    _decoder_marker: PhantomData<D>,
 }
 
-impl<Q: Quantizer, D: DistanceCalculator> Ivf<Q, D> {
+impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, DC, D> {
     pub fn new(
         vector_storage: FixedFileVectorStorage<Q::QuantizedT>,
         index_storage: FixedIndexFile,
@@ -44,7 +46,8 @@ impl<Q: Quantizer, D: DistanceCalculator> Ivf<Q, D> {
             index_storage,
             num_clusters,
             quantizer,
-            _marker: PhantomData,
+            _distance_calculator_marker: PhantomData,
+            _decoder_marker: PhantomData,
         }
     }
 
@@ -58,7 +61,7 @@ impl<Q: Quantizer, D: DistanceCalculator> Ivf<Q, D> {
             let centroid = index_storage
                 .get_centroid(i as usize)
                 .with_context(|| format!("Failed to get centroid at index {}", i))?;
-            let dist = D::calculate(&vector, &centroid);
+            let dist = DC::calculate(&vector, &centroid);
             distances.push((i as usize, dist));
         }
         distances.select_nth_unstable_by(num_probes - 1, |a, b| a.1.total_cmp(&b.1));
@@ -74,10 +77,11 @@ impl<Q: Quantizer, D: DistanceCalculator> Ivf<Q, D> {
         query: &[f32],
         context: &mut SearchContext,
     ) -> Vec<IdWithScore> {
-        if let Ok(list) = self.index_storage.get_posting_list(centroid) {
+        if let Ok(byte_slice) = self.index_storage.get_posting_list(centroid) {
             let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
             let mut results: Vec<IdWithScore> = Vec::new();
-            for &idx in list {
+            let decoder = D::new_decoder(byte_slice);
+            for idx in decoder.get_iterator(byte_slice) {
                 match self.vector_storage.get(idx as usize, context) {
                     Some(vector) => {
                         let distance =
@@ -148,7 +152,9 @@ impl<Q: Quantizer, D: DistanceCalculator> Ivf<Q, D> {
     }
 }
 
-impl<Q: Quantizer, D: DistanceCalculator> Searchable for Ivf<Q, D> {
+impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Searchable
+    for Ivf<Q, DC, D>
+{
     fn search(
         &self,
         query: &[f32],
@@ -179,11 +185,12 @@ mod tests {
     use std::io::Write;
 
     use anyhow::anyhow;
+    use compression::noc::noc::PlainDecoder;
     use num_traits::ops::bytes::ToBytes;
     use quantization::noq::noq::NoQuantizer;
     use quantization::pq::pq::ProductQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
-    use utils::mem::transmute_slice_to_u8;
+    use utils::mem::{transmute_slice_to_u8, transmute_u8_to_slice};
 
     use super::*;
 
@@ -289,10 +296,10 @@ mod tests {
         // Posting list offset starts at 0 (see FileBackedAppendablePostingListStorage)
         let mut pl_offset = 0;
         for posting_list in posting_lists.iter() {
-            let pl_len = posting_list.len();
+            let pl_len = posting_list.len() * size_of::<u64>();
             assert!(file.write_all(&(pl_len as u64).to_le_bytes()).is_ok());
             assert!(file.write_all(&(pl_offset as u64).to_le_bytes()).is_ok());
-            pl_offset += pl_len * size_of::<u64>();
+            pl_offset += pl_len;
             offset += 2 * size_of::<u64>();
         }
         for posting_list in posting_lists.iter() {
@@ -339,8 +346,8 @@ mod tests {
 
         let num_clusters = 2;
 
-        let quantizer = NoQuantizer::new(3);
-        let ivf = Ivf::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator>::new(
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(3);
+        let ivf = Ivf::<_, L2DistanceCalculator, PlainDecoder>::new(
             storage,
             index_storage,
             num_clusters,
@@ -348,10 +355,18 @@ mod tests {
         );
 
         assert_eq!(ivf.num_clusters, num_clusters);
-        let cluster_0 = ivf.index_storage.get_posting_list(0);
-        let cluster_1 = ivf.index_storage.get_posting_list(1);
-        assert!(cluster_0.map_or(false, |list| list.contains(&0)));
-        assert!(cluster_1.map_or(false, |list| list.contains(&2)));
+        let cluster_0 = transmute_u8_to_slice::<u64>(
+            ivf.index_storage
+                .get_posting_list(0)
+                .expect("Failed to get posting list"),
+        );
+        let cluster_1 = transmute_u8_to_slice::<u64>(
+            ivf.index_storage
+                .get_posting_list(1)
+                .expect("Failed to get posting list"),
+        );
+        assert!(cluster_0.contains(&0));
+        assert!(cluster_1.contains(&2));
     }
 
     #[test]
@@ -384,7 +399,7 @@ mod tests {
         let num_probes = 2;
 
         let nearest =
-            Ivf::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator>::find_nearest_centroids(
+            Ivf::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>::find_nearest_centroids(
                 &vector,
                 &index_storage,
                 num_probes,
@@ -435,12 +450,8 @@ mod tests {
         let num_probes = 2;
 
         let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
-        let ivf = Ivf::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator>::new(
-            storage,
-            index_storage,
-            num_clusters,
-            quantizer,
-        );
+        let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> =
+            Ivf::new(storage, index_storage, num_clusters, quantizer);
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
@@ -477,7 +488,7 @@ mod tests {
         let subvector_dimension = 1;
 
         let codebook = vec![1.5, 5.5, 2.5, 6.5, 3.5, 7.5];
-        let quantizer = ProductQuantizer::new(
+        let quantizer = ProductQuantizer::<L2DistanceCalculator>::new(
             num_features,
             1,
             subvector_dimension,
@@ -514,7 +525,7 @@ mod tests {
         let num_clusters = 2;
         let num_probes = 2;
 
-        let ivf: Ivf<ProductQuantizer<L2DistanceCalculator>, L2DistanceCalculator> =
+        let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> =
             Ivf::new(storage, index_storage, num_clusters, quantizer);
 
         let query = vec![2.0, 3.0, 4.0];
@@ -567,12 +578,8 @@ mod tests {
         let num_probes = 1;
 
         let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
-        let ivf = Ivf::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator>::new(
-            storage,
-            index_storage,
-            num_clusters,
-            quantizer,
-        );
+        let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> =
+            Ivf::new(storage, index_storage, num_clusters, quantizer);
 
         let query = vec![1.0, 2.0, 3.0];
         let k = 5; // More than available results

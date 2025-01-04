@@ -40,10 +40,7 @@ impl<D: DistanceCalculator> ProductQuantizerBuilder<D> {
     }
 
     /// Train kmeans on the dataset, and returns the product quantizer
-    pub fn build(
-        &mut self,
-        base_directory: String,
-    ) -> Result<ProductQuantizer<D>> {
+    pub fn build(&mut self, base_directory: String) -> Result<ProductQuantizer<D>> {
         let num_subvector = self.pq_config.dimension / self.pq_config.subvector_dimension;
         let mut codebook = Vec::<f32>::with_capacity(
             num_subvector * self.pq_config.subvector_dimension * (1 << self.pq_config.num_bits),

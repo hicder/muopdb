@@ -488,6 +488,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "config"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1373,6 +1381,7 @@ dependencies = [
  "atomic_refcell",
  "bit-vec",
  "byteorder",
+ "compression",
  "dashmap",
  "env_logger",
  "kmeans",
@@ -1422,6 +1431,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap 4.5.20",
+ "compression",
  "env_logger",
  "hdf5-metno",
  "index",

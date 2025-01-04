@@ -86,7 +86,6 @@ impl DistanceCalculator for L2DistanceCalculator {
                 *acc += diff.mul(diff);
             });
     }
-
     #[inline(always)]
     fn outermost_op(x: f32) -> f32 {
         x

@@ -1,5 +1,6 @@
 use std::env;
 use std::path::PathBuf;
+use std::process::Command;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proto_file = "./proto/muopdb.proto";
@@ -12,6 +13,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .file_descriptor_set_path(out_dir.join("aggregator_descriptor.bin"))
         .out_dir("./src")
         .compile(&[proto_file], &["proto"])?;
+
+    let output = Command::new("cargo")
+        .args(&["fmt"])
+        .output()
+        .expect("Failed to execute cargo fmt");
+
+    if !output.status.success() {
+        panic!(
+            "cargo fmt failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 
     Ok(())
 }

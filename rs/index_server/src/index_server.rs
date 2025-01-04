@@ -10,6 +10,7 @@ use proto::muopdb::{
     InsertResponse, SearchRequest, SearchResponse,
 };
 use tokio::sync::Mutex;
+use utils::mem::transmute_u8_to_slice;
 
 use crate::collection_catalog::CollectionCatalog;
 
@@ -190,18 +191,8 @@ impl IndexServer for IndexServerImpl {
         match collection_opt {
             Some(collection) => {
                 let dimensions = collection.dimensions();
-                let vectors = unsafe {
-                    std::slice::from_raw_parts(
-                        vectors_buffer.as_ptr() as *const f32,
-                        vectors_buffer.len() / 4,
-                    )
-                };
-                let ids = unsafe {
-                    std::slice::from_raw_parts(
-                        ids_buffer.as_ptr() as *const u64,
-                        ids_buffer.len() / 8,
-                    )
-                };
+                let vectors = transmute_u8_to_slice(&vectors_buffer);
+                let ids = transmute_u8_to_slice(&ids_buffer);
 
                 if vectors.len() % dimensions != 0 {
                     return Err(tonic::Status::new(

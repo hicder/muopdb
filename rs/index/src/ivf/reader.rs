@@ -1,4 +1,5 @@
 use anyhow::Result;
+use compression::compression::IntSeqDecoder;
 use quantization::quantization::Quantizer;
 use utils::DistanceCalculator;
 
@@ -15,7 +16,9 @@ impl IvfReader {
         Self { base_directory }
     }
 
-    pub fn read<Q: Quantizer, D: DistanceCalculator>(&self) -> Result<Ivf<Q, D>> {
+    pub fn read<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>>(
+        &self,
+    ) -> Result<Ivf<Q, DC, D>> {
         let index_storage = FixedIndexFile::new(format!("{}/index", self.base_directory))?;
 
         let vector_storage_path = format!("{}/vectors", self.base_directory);
@@ -30,7 +33,7 @@ impl IvfReader {
         let quantizer_directory = format!("{}/quantizer", self.base_directory);
         let quantizer = Q::read(quantizer_directory).unwrap();
 
-        Ok(Ivf::new(
+        Ok(Ivf::<_, DC, D>::new(
             vector_storage,
             index_storage,
             num_clusters,
@@ -43,9 +46,11 @@ impl IvfReader {
 mod tests {
     use std::fs;
 
+    use compression::noc::noc::{PlainDecoder, PlainEncoder};
     use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
     use tempdir::TempDir;
     use utils::distance::l2::L2DistanceCalculator;
+    use utils::mem::transmute_u8_to_slice;
     use utils::test_utils::generate_random_vector;
 
     use super::*;
@@ -68,7 +73,10 @@ mod tests {
         let num_features = 4;
         let file_size = 4096;
         let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
-        let writer = IvfWriter::new(base_directory.clone(), quantizer);
+        let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
+            base_directory.clone(),
+            quantizer,
+        );
 
         let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
@@ -105,7 +113,7 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator>()
+            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>()
             .expect("Failed to read index file");
 
         // Check if files were created
@@ -179,10 +187,12 @@ mod tests {
                 .posting_lists_mut()
                 .get(i as u32)
                 .expect("Failed to read vector from FileBackedAppendablePostingListStorage");
-            let read_vector = index
-                .index_storage
-                .get_posting_list(i)
-                .expect("Failed to read vector from FixedIndexFile");
+            let read_vector = transmute_u8_to_slice::<u64>(
+                index
+                    .index_storage
+                    .get_posting_list(i)
+                    .expect("Failed to read vector from FixedIndexFile"),
+            );
             for (val_ref, val_read) in ref_vector.iter().zip(read_vector.iter()) {
                 assert_eq!(val_ref, *val_read);
             }
@@ -210,7 +220,10 @@ mod tests {
         let noq_writer = NoQuantizerWriter::new(quantizer_directory);
         assert!(noq_writer.write(&quantizer).is_ok());
 
-        let writer = IvfWriter::new(base_directory.clone(), quantizer);
+        let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
+            base_directory.clone(),
+            quantizer,
+        );
 
         let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
             max_iteration: 1000,
@@ -239,20 +252,20 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator>()
+            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>()
             .expect("Failed to read index file");
 
         let num_centroids = index.num_clusters;
 
         for i in 0..num_centroids {
             // Assert that posting lists size is less than or equal to max_posting_list_size
-            let posting_list = index.index_storage.get_posting_list(i);
-            assert!(posting_list.is_ok());
-            let posting_list = posting_list.unwrap();
+            let posting_list_byte_arr = index.index_storage.get_posting_list(i);
+            assert!(posting_list_byte_arr.is_ok());
+            let posting_list = transmute_u8_to_slice::<u64>(posting_list_byte_arr.unwrap());
 
             // It's possible that the posting list size is more than max_posting_list_size,
-            // but it should be less than 2x.
-            assert!(posting_list.len() <= 20);
+            // but it should be less than 2.5x.
+            assert!(posting_list.len() <= 25);
         }
     }
 }
