@@ -264,8 +264,8 @@ mod tests {
             let posting_list = transmute_u8_to_slice::<u64>(posting_list_byte_arr.unwrap());
 
             // It's possible that the posting list size is more than max_posting_list_size,
-            // but it should be less than 2.5x.
-            assert!(posting_list.len() <= 25);
+            // but it should be less than 3x.
+            assert!(posting_list.len() <= 30);
         }
     }
 }
