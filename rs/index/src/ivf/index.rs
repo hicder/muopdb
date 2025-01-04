@@ -80,7 +80,8 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         if let Ok(byte_slice) = self.index_storage.get_posting_list(centroid) {
             let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
             let mut results: Vec<IdWithScore> = Vec::new();
-            let decoder = D::new_decoder(byte_slice);
+            let decoder =
+                D::new_decoder(byte_slice).expect("Failed to create posting list decoder");
             for idx in decoder.get_iterator(byte_slice) {
                 match self.vector_storage.get(idx as usize, context) {
                     Some(vector) => {
