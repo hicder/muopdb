@@ -19,8 +19,8 @@ pub trait DistanceCalculator {
     ) where
         LaneCount<LANES>: SupportedLaneCount;
 
-    /* 
-     * The outermost operator of the distance function, 
+    /*
+     * The outermost operator of the distance function,
      * to be used with accumulate_lanes for lane conforming code.
      */
     fn outermost_op(x: f32) -> f32;

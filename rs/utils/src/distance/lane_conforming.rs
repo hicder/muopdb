@@ -1,5 +1,6 @@
+use std::marker::PhantomData;
 use std::simd::num::SimdFloat;
-use std::{marker::PhantomData, simd::{LaneCount, Simd, SupportedLaneCount}};
+use std::simd::{LaneCount, Simd, SupportedLaneCount};
 
 use crate::{CalculateSquared, DistanceCalculator};
 
@@ -26,15 +27,18 @@ where
 }
 #[cfg(test)]
 mod tests {
-    use crate::{distance::{dot_product::DotProductDistanceCalculator, l2::L2DistanceCalculator}, test_utils::generate_random_vector};
     use super::*;
+    use crate::distance::dot_product::DotProductDistanceCalculator;
+    use crate::distance::l2::L2DistanceCalculator;
+    use crate::test_utils::generate_random_vector;
 
     #[test]
     fn test_calculate_l2_distance() {
         let a = generate_random_vector(16);
         let b = generate_random_vector(16);
         let eps = 1e-5;
-        let conforming_result = LaneConformingDistanceCalculator::<4, L2DistanceCalculator>::calculate_squared(&a, &b);
+        let conforming_result =
+            LaneConformingDistanceCalculator::<4, L2DistanceCalculator>::calculate_squared(&a, &b);
         let l2_result = L2DistanceCalculator::calculate_squared(&a, &b);
         assert!((conforming_result - l2_result).abs() < eps)
     }
@@ -44,8 +48,11 @@ mod tests {
         let a = generate_random_vector(16);
         let b = generate_random_vector(16);
         let eps = 1e-5;
-        let conforming_result = LaneConformingDistanceCalculator::<4, DotProductDistanceCalculator>::calculate_squared(&a, &b);
+        let conforming_result =
+            LaneConformingDistanceCalculator::<4, DotProductDistanceCalculator>::calculate_squared(
+                &a, &b,
+            );
         let dot_product_result = DotProductDistanceCalculator::calculate_squared(&a, &b);
-        assert!((conforming_result - dot_product_result).abs() < eps)    
+        assert!((conforming_result - dot_product_result).abs() < eps)
     }
 }

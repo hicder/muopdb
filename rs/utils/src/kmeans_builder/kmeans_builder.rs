@@ -1,5 +1,5 @@
-use std::marker::PhantomData;
 use std::cmp::min;
+use std::marker::PhantomData;
 use std::simd::{LaneCount, Simd, SupportedLaneCount};
 
 use anyhow::{anyhow, Ok, Result};
@@ -290,8 +290,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
                                     .chunks_exact(self.dimension)
                                     .nth(cluster_id)
                                     .unwrap();
-                                let distance =
-                                    T::calculate_squared(point, cluster);
+                                let distance = T::calculate_squared(point, cluster);
                                 if distance > max_distance {
                                     max_distance = distance;
                                     chosen_point_id = i;
@@ -371,9 +370,8 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
 #[cfg(test)]
 mod tests {
 
-    use crate::distance::l2::L2DistanceCalculator;
-
     use super::*;
+    use crate::distance::l2::L2DistanceCalculator;
 
     #[test]
     fn test_kmeans_lloyd() {
