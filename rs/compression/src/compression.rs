@@ -28,14 +28,11 @@ pub trait IntSeqDecoder {
     type Item;
 
     /// Creates a decoder
-    fn new_decoder(byte_slice: &[u8]) -> Self
+    fn new_decoder(byte_slice: &[u8]) -> Result<Self>
     where
         Self: Sized;
 
     /// Creates an iterator that iterates the encoded data and decodes one element at a time on the
     /// fly
-    fn get_iterator<'a>(&self, encoded_data: &'a [u8]) -> Self::IteratorType<'a>;
-
-    /// Returns the number of elements in the sequence
-    fn num_elem(&self) -> usize;
+    fn get_iterator<'a>(&self, byte_slice: &'a [u8]) -> Self::IteratorType<'a>;
 }

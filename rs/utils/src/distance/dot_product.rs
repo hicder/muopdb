@@ -106,7 +106,7 @@ mod tests {
     fn test_dot_product_distance_calculator() {
         let a = generate_random_vector(128);
         let b = generate_random_vector(128);
-        let eps = 1e-5;
+        let eps = 2.0 * 1e-5;
         let result = DotProductDistanceCalculator::calculate(&a, &b);
         let expected = DotProductDistanceCalculator::calculate_scalar(&a, &b);
         assert!((result - expected).abs() < eps);

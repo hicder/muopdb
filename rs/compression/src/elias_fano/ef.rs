@@ -4,8 +4,9 @@ use std::io::{BufWriter, Write};
 use anyhow::{anyhow, Result};
 use bitvec::prelude::*;
 use utils::io::wrap_write;
+use utils::mem::transmute_u8_to_slice;
 
-use crate::compression::IntSeqEncoder;
+use crate::compression::{IntSeqDecoder, IntSeqEncoder};
 
 pub struct EliasFano {
     #[cfg(any(debug_assertions, test))]
@@ -150,12 +151,18 @@ impl IntSeqEncoder for EliasFano {
     fn len(&self) -> usize {
         let lower_vec: &[u64] = self.lower_bits.as_raw_slice();
         let upper_vec: &[u64] = self.upper_bits.as_raw_slice();
-        (1 /* lower_bit_length */ + lower_vec.len() + upper_vec.len()) * std::mem::size_of::<u64>()
+        (1 /* self.num_elem */ +
+         1 /* self.lower_bit_length */ +
+         1 /* lower_vec.len() */ +
+         1 /* upper_vec.len() */ +
+         lower_vec.len() +
+         upper_vec.len())
+            * std::mem::size_of::<u64>()
     }
 
     fn write(&self, writer: &mut BufWriter<&mut File>) -> Result<usize> {
-        let mut total_bytes_written =
-            wrap_write(writer, &((self.lower_bit_length as u64).to_le_bytes()))?;
+        let mut total_bytes_written = wrap_write(writer, &((self.num_elem as u64).to_le_bytes()))?;
+        total_bytes_written += wrap_write(writer, &((self.lower_bit_length as u64).to_le_bytes()))?;
         let lower_vec: &[u64] = self.lower_bits.as_raw_slice();
         let upper_vec: &[u64] = self.upper_bits.as_raw_slice();
         total_bytes_written += wrap_write(writer, &((lower_vec.len() as u64).to_le_bytes()))?;
@@ -173,9 +180,120 @@ impl IntSeqEncoder for EliasFano {
         Ok(total_bytes_written)
     }
 }
+
+pub struct EliasFanoDecoder {
+    num_elem: usize,
+    lower_vec_len: usize,
+    upper_vec_len: usize,
+    lower_bit_length: usize,
+}
+
+impl EliasFanoDecoder {
+    const METADATA_SIZE: usize = 4;
+}
+
+impl IntSeqDecoder for EliasFanoDecoder {
+    type IteratorType<'a> = EliasFanoDecodingIterator<'a>;
+    type Item = u64;
+
+    fn new_decoder(byte_slice: &[u8]) -> Result<Self> {
+        let encoded_data = transmute_u8_to_slice::<u64>(byte_slice);
+        if encoded_data.len() < Self::METADATA_SIZE {
+            return Err(anyhow!("Not enough metadata for EliasFano encoded data"));
+        }
+        let [num_elem, lower_bit_length, lower_vec_len, upper_vec_len, ..] =
+            encoded_data[..Self::METADATA_SIZE]
+        else {
+            return Err(anyhow!("Invalid metadata for EliasFano encoded data"));
+        };
+
+        Ok(Self {
+            num_elem: num_elem as usize,
+            lower_vec_len: lower_vec_len as usize,
+            upper_vec_len: upper_vec_len as usize,
+            lower_bit_length: lower_bit_length as usize,
+        })
+    }
+
+    fn get_iterator<'a>(&self, byte_slice: &'a [u8]) -> Self::IteratorType<'a> {
+        let encoded_data = transmute_u8_to_slice::<u64>(byte_slice);
+        let lower_bits_start = Self::METADATA_SIZE;
+        let upper_bits_start = Self::METADATA_SIZE + self.lower_vec_len;
+        let lower_bits_slice =
+            BitSlice::<u64>::from_slice(&encoded_data[lower_bits_start..upper_bits_start]);
+        let upper_bits_slice = BitSlice::<u64>::from_slice(
+            &encoded_data[upper_bits_start..upper_bits_start + self.upper_vec_len],
+        );
+        EliasFanoDecodingIterator {
+            num_elem: self.num_elem,
+            cur_elem_index: 0,
+            cur_upper_bit_index: 0,
+            cumulative_gap_sum: 0,
+
+            lower_bits_slice,
+            upper_bits_slice,
+            lower_bit_mask: (1 << self.lower_bit_length) - 1,
+            lower_bit_length: self.lower_bit_length,
+        }
+    }
+}
+
+pub struct EliasFanoDecodingIterator<'a> {
+    num_elem: usize,
+    cur_elem_index: usize,
+    cur_upper_bit_index: usize,
+    cumulative_gap_sum: usize,
+
+    lower_bits_slice: &'a BitSlice<u64>,
+    upper_bits_slice: &'a BitSlice<u64>,
+    lower_bit_mask: u64,
+    lower_bit_length: usize,
+}
+
+impl<'a> EliasFanoDecodingIterator<'a> {
+    fn decode_upper_part(&mut self) {
+        while self.cur_upper_bit_index < self.upper_bits_slice.len()
+            && !self.upper_bits_slice[self.cur_upper_bit_index]
+        {
+            // Add the gap to cumulative sum
+            self.cumulative_gap_sum += 1;
+            self.cur_upper_bit_index += 1;
+        }
+        // Skip the '1' that terminates the unary code
+        self.cur_upper_bit_index += 1;
+    }
+
+    fn get_lower_part(&self) -> usize {
+        let mut low = 0;
+        if self.lower_bit_length > 0 {
+            let offset = self.cur_elem_index * self.lower_bit_length;
+            low = (self.lower_bits_slice[offset..offset + self.lower_bit_length].load::<u64>()
+                & self.lower_bit_mask) as usize;
+        }
+        low
+    }
+}
+
+impl<'a> Iterator for EliasFanoDecodingIterator<'a> {
+    type Item = u64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.cur_elem_index < self.num_elem {
+            self.decode_upper_part();
+            let upper = self.cumulative_gap_sum;
+            let lower = self.get_lower_part();
+            self.cur_elem_index += 1;
+
+            Some((upper << self.lower_bit_length | lower) as u64)
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
+    use std::fs::{remove_dir_all, File};
     use std::io::{BufReader, BufWriter, Read};
 
     use tempdir::TempDir;
@@ -289,6 +407,7 @@ mod tests {
 
         // Expected data
         let expected_data = vec![
+            5, 0, 0, 0, 0, 0, 0, 0, // num_elem (5 as u64)
             4, 0, 0, 0, 0, 0, 0, 0, // lower_bit_length (4 as u64)
             1, 0, 0, 0, 0, 0, 0, 0, // lower_vec.len() (1 as u64)
             1, 0, 0, 0, 0, 0, 0, 0, // upper_vec.len() (1 as u64)
@@ -298,5 +417,47 @@ mod tests {
 
         assert_eq!(written_data, expected_data);
         assert_eq!(bytes_written, expected_data.len());
+    }
+
+    #[test]
+    fn test_elias_fano_decoding_iterator() {
+        let test_cases = vec![
+            (vec![5, 8, 8, 15, 32], 36),                // Basic case
+            (vec![0, 1, 2, 3, 4], 5),                   // Start with 0
+            (vec![10], 20),                             // Single element
+            (vec![1000, 2000, 3000, 4000, 5000], 6000), // Large numbers
+            (vec![2, 4, 6, 8, 10], 10),                 // Non-consecutive integers
+        ];
+
+        for (values, upper_bound) in test_cases {
+            let mut ef = EliasFano::new_encoder(upper_bound, values.len());
+            assert!(ef.encode_batch(&values).is_ok());
+
+            let temp_dir = TempDir::new("test_elias_fano_decoding_iterator")
+                .expect("Failed to create temporary directory");
+            let file_path = temp_dir.path().join("test_file");
+            let mut file = File::create(&file_path).expect("Failed to create test file");
+            let mut writer = BufWriter::new(&mut file);
+
+            // Call the write method
+            assert!(ef.write(&mut writer).is_ok());
+
+            drop(writer);
+
+            // Read the file contents into a byte vector
+            let mut file = File::open(&file_path).expect("Failed to open file for read");
+            let mut byte_slice = Vec::new();
+            assert!(file.read_to_end(&mut byte_slice).is_ok());
+
+            let decoder = EliasFanoDecoder::new_decoder(&byte_slice)
+                .expect("Failed to create posting list decoder");
+            let mut i = 0;
+            for idx in decoder.get_iterator(&byte_slice) {
+                assert_eq!(values[i], idx);
+                i += 1;
+            }
+
+            let _ = remove_dir_all(&file_path);
+        }
     }
 }

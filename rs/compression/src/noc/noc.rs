@@ -63,33 +63,35 @@ pub struct PlainDecoder {
     size: usize,
 }
 
+impl PlainDecoder {
+    pub fn num_elem(&self) -> usize {
+        self.size / std::mem::size_of::<<PlainDecoder as IntSeqDecoder>::Item>()
+    }
+}
+
 impl IntSeqDecoder for PlainDecoder {
     type IteratorType<'a> = PlainDecodingIterator<'a>;
     type Item = u64;
 
-    fn new_decoder(encoded_data: &[u8]) -> Self {
-        Self {
-            size: encoded_data.len(),
-        }
+    fn new_decoder(byte_slice: &[u8]) -> Result<Self> {
+        Ok(Self {
+            size: byte_slice.len(),
+        })
     }
 
-    fn get_iterator<'a>(&self, encoded_data: &'a [u8]) -> PlainDecodingIterator<'a> {
+    fn get_iterator<'a>(&self, byte_slice: &'a [u8]) -> Self::IteratorType<'a> {
         PlainDecodingIterator {
             num_elem: self.num_elem(),
             cur_index: 0,
-            encoded_data_ptr: utils::mem::transmute_u8_to_slice(encoded_data),
+            encoded_data: utils::mem::transmute_u8_to_slice(byte_slice),
         }
-    }
-
-    fn num_elem(&self) -> usize {
-        self.size / std::mem::size_of::<Self::Item>()
     }
 }
 
 pub struct PlainDecodingIterator<'a> {
     num_elem: usize,
     cur_index: usize,
-    encoded_data_ptr: &'a [u64],
+    encoded_data: &'a [u64],
 }
 
 impl<'a> Iterator for PlainDecodingIterator<'a> {
@@ -98,7 +100,7 @@ impl<'a> Iterator for PlainDecodingIterator<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.cur_index < self.num_elem {
             self.cur_index += 1;
-            Some(self.encoded_data_ptr[self.cur_index - 1])
+            Some(self.encoded_data[self.cur_index - 1])
         } else {
             None
         }
