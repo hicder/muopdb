@@ -46,6 +46,7 @@ impl IvfReader {
 mod tests {
     use std::fs;
 
+    use compression::elias_fano::ef::{EliasFano, EliasFanoDecoder};
     use compression::noc::noc::{PlainDecoder, PlainEncoder};
     use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
     use tempdir::TempDir;
@@ -58,6 +59,142 @@ mod tests {
     use crate::ivf::writer::IvfWriter;
     use crate::posting_list::combined_file::Version;
     use crate::utils::SearchContext;
+
+    #[test]
+    fn test_ivf_reader_elias_fano() {
+        let temp_dir = TempDir::new("test_ivf_reader_elias_fano")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 10;
+        let num_vectors = 1000;
+        let num_features = 4;
+        let file_size = 4096;
+        let quantizer = NoQuantizer::new(num_features);
+        let quantizer_directory = format!("{}/quantizer", base_directory);
+        std::fs::create_dir_all(&quantizer_directory)
+            .expect("Failed to create quantizer directory");
+        let noq_writer = NoQuantizerWriter::new(quantizer_directory);
+        assert!(noq_writer.write(&quantizer).is_ok());
+        let writer =
+            IvfWriter::<_, EliasFano, L2DistanceCalculator>::new(base_directory.clone(), quantizer);
+
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points_for_clustering: num_vectors,
+            max_clusters_per_vector: 1,
+            distance_threshold: 0.1,
+            base_directory: base_directory.clone(),
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: 0.0,
+            max_posting_list_size: usize::MAX,
+        })
+        .expect("Failed to create builder");
+        // Generate 1000 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            builder
+                .add_vector((i + 100) as u64, &generate_random_vector(num_features))
+                .expect("Vector should be added");
+        }
+
+        assert!(builder.build().is_ok());
+
+        assert!(writer.write(&mut builder, false).is_ok());
+
+        let reader = IvfReader::new(base_directory.clone());
+        let index = reader
+            .read::<NoQuantizer, L2DistanceCalculator, EliasFanoDecoder>()
+            .expect("Failed to read index file");
+
+        // Check if files were created
+        assert!(fs::metadata(format!("{}/vectors", base_directory)).is_ok());
+        assert!(fs::metadata(format!("{}/index", base_directory)).is_ok());
+
+        // Verify vectors file content
+        let mut context = SearchContext::new(true);
+        for i in 0..num_vectors {
+            let ref_vector = builder
+                .vectors()
+                .borrow()
+                .get(i as u32)
+                .expect("Failed to read vector from FileBackedAppendableVectorStorage")
+                .to_vec();
+            let read_vector = index
+                .vector_storage
+                .get(i, &mut context)
+                .expect("Failed to read vector from FixedFileVectorStorage");
+            assert_eq!(ref_vector.len(), read_vector.len());
+            for (val_ref, val_read) in ref_vector.iter().zip(read_vector.iter()) {
+                assert!((*val_ref - *val_read).abs() < f32::EPSILON);
+            }
+        }
+
+        // Verify index file content
+        // Verify header
+        assert_eq!(index.index_storage.header().version, Version::V0);
+        assert_eq!(
+            index.index_storage.header().num_features,
+            num_features as u32
+        );
+        assert_eq!(
+            index.index_storage.header().num_clusters,
+            num_clusters as u32
+        );
+        assert_eq!(index.index_storage.header().num_vectors, num_vectors as u64);
+        assert_eq!(
+            index.index_storage.header().centroids_len,
+            (num_clusters * num_features * size_of::<f32>() + size_of::<u64>()) as u64
+        );
+        // Verify doc_id_mapping content
+        for i in 0..num_vectors {
+            let ref_id = builder.doc_id_mapping()[i];
+            let read_id = index
+                .index_storage
+                .get_doc_id(i)
+                .expect("Failed to read doc_id from FixedFileVectorStorage");
+            assert_eq!(ref_id, read_id);
+        }
+        // Verify centroid content
+        for i in 0..num_clusters {
+            let ref_vector = builder
+                .centroids()
+                .borrow()
+                .get(i as u32)
+                .expect("Failed to read centroid from FileBackedAppendableVectorStorage")
+                .to_vec();
+            let read_vector = index
+                .index_storage
+                .get_centroid(i)
+                .expect("Failed to read centroid from FixedFileVectorStorage");
+            assert_eq!(ref_vector.len(), read_vector.len());
+            for (val_ref, val_read) in ref_vector.iter().zip(read_vector.iter()) {
+                assert!((*val_ref - *val_read).abs() < f32::EPSILON);
+            }
+        }
+        // Verify posting list content
+        for i in 0..num_clusters {
+            let ref_vector = builder
+                .posting_lists_mut()
+                .get(i as u32)
+                .expect("Failed to read vector from FileBackedAppendablePostingListStorage");
+            let byte_slice = index
+                .index_storage
+                .get_posting_list(i)
+                .expect("Failed to read vector from FixedIndexFile");
+            let decoder = EliasFanoDecoder::new_decoder(byte_slice)
+                .expect("Failed to create posting list decoder");
+            for (val_ref, val_read) in ref_vector.iter().zip(decoder.get_iterator(byte_slice)) {
+                assert_eq!(val_ref, val_read);
+            }
+        }
+    }
 
     #[test]
     fn test_ivf_reader_read() {
@@ -73,6 +210,11 @@ mod tests {
         let num_features = 4;
         let file_size = 4096;
         let quantizer = NoQuantizer::new(num_features);
+        let quantizer_directory = format!("{}/quantizer", base_directory);
+        std::fs::create_dir_all(&quantizer_directory)
+            .expect("Failed to create quantizer directory");
+        let noq_writer = NoQuantizerWriter::new(quantizer_directory);
+        assert!(noq_writer.write(&quantizer).is_ok());
         let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
             base_directory.clone(),
             quantizer,
@@ -103,13 +245,6 @@ mod tests {
         assert!(builder.build().is_ok());
 
         assert!(writer.write(&mut builder, false).is_ok());
-
-        let quantizer = NoQuantizer::new(num_features);
-        let quantizer_directory = format!("{}/quantizer", base_directory);
-        std::fs::create_dir_all(&quantizer_directory)
-            .expect("Failed to create quantizer directory");
-        let noq_writer = NoQuantizerWriter::new(quantizer_directory);
-        assert!(noq_writer.write(&quantizer).is_ok());
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
