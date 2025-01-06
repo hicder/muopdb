@@ -55,6 +55,7 @@ mod tests {
     use utils::test_utils::generate_random_vector;
 
     use super::*;
+    use crate::index::Searchable;
     use crate::ivf::builder::{IvfBuilder, IvfBuilderConfig};
     use crate::ivf::writer::IvfWriter;
     use crate::posting_list::combined_file::Version;
@@ -193,6 +194,103 @@ mod tests {
             for (val_ref, val_read) in ref_vector.iter().zip(decoder.get_iterator(byte_slice)) {
                 assert_eq!(val_ref, val_read);
             }
+        }
+    }
+
+    #[test]
+    fn test_ivf_reader_read_elias_fano_encoding() {
+        // Create reference index (using PlainEncoder/Decoder)
+        let temp_dir_ref = TempDir::new("test_ivf_reader_read_elias_fano_encoding_ref")
+            .expect("Failed to create ref temporary directory");
+        let base_directory_ref = temp_dir_ref
+            .path()
+            .to_str()
+            .expect("Failed to convert ref temporary directory path to string")
+            .to_string();
+        // Create index using EliasFano
+        let temp_dir = TempDir::new("test_ivf_reader_read_elias_fano_encoding")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_clusters = 10;
+        let num_vectors = 1000;
+        let num_features = 4;
+        let file_size = 4096;
+
+        let quantizer = NoQuantizer::new(num_features);
+        let quantizer_directory_ref = format!("{}/quantizer", base_directory_ref);
+        std::fs::create_dir_all(&quantizer_directory_ref)
+            .expect("Failed to create quantizer directory");
+        let noq_writer_ref = NoQuantizerWriter::new(quantizer_directory_ref);
+        assert!(noq_writer_ref.write(&quantizer).is_ok());
+        let writer_ref = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
+            base_directory_ref.clone(),
+            quantizer,
+        );
+        let quantizer = NoQuantizer::new(num_features);
+        let quantizer_directory = format!("{}/quantizer", base_directory);
+        std::fs::create_dir_all(&quantizer_directory)
+            .expect("Failed to create quantizer directory");
+        let noq_writer = NoQuantizerWriter::new(quantizer_directory);
+        assert!(noq_writer.write(&quantizer).is_ok());
+        let writer =
+            IvfWriter::<_, EliasFano, L2DistanceCalculator>::new(base_directory.clone(), quantizer);
+
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points_for_clustering: num_vectors,
+            max_clusters_per_vector: 1,
+            distance_threshold: 0.1,
+            base_directory: base_directory_ref.clone(),
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: 0.0,
+            max_posting_list_size: usize::MAX,
+        })
+        .expect("Failed to create builder");
+
+        // Generate 1000 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            let vector = generate_random_vector(num_features);
+            builder
+                .add_vector((i + 100) as u64, &vector)
+                .expect("Vector should be added");
+        }
+
+        assert!(builder.build().is_ok());
+
+        assert!(writer_ref.write(&mut builder, false).is_ok());
+        assert!(writer.write(&mut builder, false).is_ok());
+
+        let reader_ref = IvfReader::new(base_directory_ref.clone());
+        let index_ref = reader_ref
+            .read::<NoQuantizer, L2DistanceCalculator, PlainDecoder>()
+            .expect("Failed to read ref index file");
+        let reader = IvfReader::new(base_directory.clone());
+        let index = reader
+            .read::<NoQuantizer, L2DistanceCalculator, EliasFanoDecoder>()
+            .expect("Failed to read index file");
+
+        let k = 3;
+        let num_probes = 2;
+        let mut context = SearchContext::new(false);
+        // Generate 1000 queries
+        for _ in 0..1000 {
+            let query = generate_random_vector(num_features);
+            let results_ref = index_ref
+                .search(&query, k, num_probes, &mut context)
+                .expect("IVF search ref should return a result");
+            let results = index
+                .search(&query, k, num_probes, &mut context)
+                .expect("IVF search should return a result");
+            assert_eq!(results_ref, results);
         }
     }
 
