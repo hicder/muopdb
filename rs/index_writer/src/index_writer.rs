@@ -2,6 +2,7 @@ use anyhow::{Ok, Result};
 use compression::noc::noc::PlainEncoder;
 use index::hnsw::builder::HnswBuilder;
 use index::hnsw::writer::HnswWriter;
+use index::ivf;
 use index::ivf::builder::{IvfBuilder, IvfBuilderConfig};
 use index::ivf::writer::IvfWriter;
 use index::spann::builder::{SpannBuilder, SpannBuilderConfig};
@@ -18,8 +19,8 @@ use utils::distance::l2::L2DistanceCalculator;
 use utils::{CalculateSquared, DistanceCalculator};
 
 use crate::config::{
-    DistanceType, HnswConfigWithBase, IndexWriterConfig, IvfConfigWithBase, QuantizerType,
-    SpannConfigWithBase,
+    BaseConfig, DistanceType, HnswConfigWithBase, IndexWriterConfig, IvfConfigWithBase,
+    QuantizerConfig, QuantizerType, SpannConfigWithBase,
 };
 use crate::input::Input;
 
@@ -171,37 +172,17 @@ impl IndexWriter {
         self.write_quantizer_and_build_hnsw_index(input, index_builder_config, noq, noq_writer_fn)
     }
 
-    fn do_build_hnsw_index(
+    fn do_build_hnsw_index<D: DistanceCalculator>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &HnswConfigWithBase,
     ) -> Result<()> {
         match index_builder_config.quantizer_config.quantizer_type {
             QuantizerType::ProductQuantizer => {
-                match index_builder_config.base_config.index_distance_type {
-                    DistanceType::DotProduct => {
-                        self.build_hnsw_pq::<DotProductDistanceCalculator>(
-                            input,
-                            index_builder_config,
-                        )?;
-                    }
-                    DistanceType::L2 => {
-                        self.build_hnsw_pq::<L2DistanceCalculator>(input, index_builder_config)?;
-                    }
-                }
+                self.build_hnsw_pq::<D>(input, index_builder_config)?;
             }
             QuantizerType::NoQuantizer => {
-                match index_builder_config.base_config.index_distance_type {
-                    DistanceType::DotProduct => {
-                        self.build_hnsw_noq::<DotProductDistanceCalculator>(
-                            input,
-                            index_builder_config,
-                        )?;
-                    }
-                    DistanceType::L2 => {
-                        self.build_hnsw_noq::<L2DistanceCalculator>(input, index_builder_config)?;
-                    }
-                }
+                self.build_hnsw_noq::<D>(input, index_builder_config)?;
             }
         };
         Ok(())
@@ -267,7 +248,7 @@ impl IndexWriter {
         Ok(())
     }
 
-    fn build_ivf_pq<D: DistanceCalculator>(
+    fn build_ivf_pq<D: DistanceCalculator + CalculateSquared + Send + Sync>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &IvfConfigWithBase,
@@ -305,22 +286,12 @@ impl IndexWriter {
             pq_writer.write(pq)
         };
 
-        match index_builder_config.base_config.index_distance_type {
-            DistanceType::DotProduct => self
-                .write_quantizer_and_build_ivf_index::<_, DotProductDistanceCalculator, _>(
-                    input,
-                    index_builder_config,
-                    pq,
-                    pq_writer_fn,
-                ),
-            DistanceType::L2 => self
-                .write_quantizer_and_build_ivf_index::<_, L2DistanceCalculator, _>(
-                    input,
-                    index_builder_config,
-                    pq,
-                    pq_writer_fn,
-                ),
-        }
+        self.write_quantizer_and_build_ivf_index::<_, D, _>(
+            input,
+            index_builder_config,
+            pq,
+            pq_writer_fn,
+        )
     }
 
     fn build_ivf_noq<D: DistanceCalculator + CalculateSquared + Send + Sync>(
@@ -351,7 +322,7 @@ impl IndexWriter {
         )
     }
 
-    fn do_build_ivf_index(
+    fn do_build_ivf_index<D: DistanceCalculator + CalculateSquared + Send + Sync>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &IvfConfigWithBase,
@@ -366,30 +337,10 @@ impl IndexWriter {
         //     └── vectors
         match index_builder_config.quantizer_config.quantizer_type {
             QuantizerType::ProductQuantizer => {
-                match index_builder_config.base_config.index_distance_type {
-                    DistanceType::DotProduct => {
-                        self.build_ivf_pq::<DotProductDistanceCalculator>(
-                            input,
-                            index_builder_config,
-                        )?;
-                    }
-                    DistanceType::L2 => {
-                        self.build_ivf_pq::<L2DistanceCalculator>(input, index_builder_config)?;
-                    }
-                }
+                self.build_ivf_pq::<D>(input, index_builder_config)?;
             }
             QuantizerType::NoQuantizer => {
-                match index_builder_config.base_config.index_distance_type {
-                    DistanceType::DotProduct => {
-                        self.build_ivf_noq::<DotProductDistanceCalculator>(
-                            input,
-                            index_builder_config,
-                        )?;
-                    }
-                    DistanceType::L2 => {
-                        self.build_ivf_noq::<L2DistanceCalculator>(input, index_builder_config)?;
-                    }
-                }
+                self.build_ivf_noq::<D>(input, index_builder_config)?;
             }
         };
 
@@ -460,11 +411,28 @@ impl IndexWriter {
         let cfg = self.config.clone();
         let (base_config, quantizer_config) = match cfg {
             IndexWriterConfig::Hnsw(hnsw_config) => {
-                self.do_build_hnsw_index(input, &hnsw_config)?;
+                match hnsw_config.base_config.index_distance_type {
+                    DistanceType::DotProduct => {
+                        self.do_build_hnsw_index::<DotProductDistanceCalculator>(
+                            input,
+                            &hnsw_config,
+                        )?;
+                    }
+                    DistanceType::L2 => {
+                        self.do_build_hnsw_index::<L2DistanceCalculator>(input, &hnsw_config)?;
+                    }
+                }
                 (hnsw_config.base_config, hnsw_config.quantizer_config)
             }
             IndexWriterConfig::Ivf(ivf_config) => {
-                self.do_build_ivf_index(input, &ivf_config)?;
+                match ivf_config.base_config.index_distance_type {
+                    DistanceType::DotProduct => {
+                        self.do_build_ivf_index::<DotProductDistanceCalculator>(input, &ivf_config)?
+                    }
+                    DistanceType::L2 => {
+                        self.do_build_ivf_index::<L2DistanceCalculator>(input, &ivf_config)?
+                    }
+                }
                 (ivf_config.base_config, ivf_config.quantizer_config)
             }
             IndexWriterConfig::Spann(hnsw_ivf_config) => {
