@@ -19,8 +19,8 @@ use utils::distance::l2::L2DistanceCalculator;
 use utils::{CalculateSquared, DistanceCalculator};
 
 use crate::config::{
-    BaseConfig, DistanceType, HnswConfigWithBase, IndexWriterConfig, IvfConfigWithBase,
-    QuantizerConfig, QuantizerType, SpannConfigWithBase,
+    DistanceType, HnswConfigWithBase, IndexWriterConfig, IvfConfigWithBase, QuantizerType,
+    SpannConfigWithBase,
 };
 use crate::input::Input;
 
