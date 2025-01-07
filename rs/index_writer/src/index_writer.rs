@@ -54,11 +54,11 @@ impl IndexWriter {
         ret
     }
 
-    fn write_quantizer_and_build_hnsw_index<T: Quantizer, F: Fn(&String, &T) -> Result<()>>(
+    fn write_quantizer_and_build_hnsw_index<Q: Quantizer, F: Fn(&String, &Q) -> Result<()>>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &HnswConfigWithBase,
-        quantizer: T,
+        quantizer: Q,
         writer_fn: F,
     ) -> Result<()> {
         info!("Start writing product quantizer");
@@ -74,7 +74,7 @@ impl IndexWriter {
         let vector_directory = format!("{}/vectors", path);
         std::fs::create_dir_all(&vector_directory)?;
 
-        let mut hnsw_builder = HnswBuilder::<T>::new(
+        let mut hnsw_builder = HnswBuilder::<Q>::new(
             index_builder_config.hnsw_config.max_num_neighbors,
             index_builder_config.hnsw_config.num_layers,
             index_builder_config.hnsw_config.ef_construction,
@@ -187,17 +187,17 @@ impl IndexWriter {
         Ok(())
     }
 
-    fn write_quantizer_and_build_ivf_index<T, D, F>(
+    fn write_quantizer_and_build_ivf_index<Q, D, F>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &IvfConfigWithBase,
-        quantizer: T,
+        quantizer: Q,
         writer_fn: F,
     ) -> Result<()>
     where
-        T: Quantizer,
+        Q: Quantizer,
         D: DistanceCalculator + CalculateSquared + Send + Sync,
-        F: Fn(&String, &T) -> Result<()>,
+        F: Fn(&String, &Q) -> Result<()>,
     {
         info!("Start writing product quantizer");
         let path = &self.output_root;
