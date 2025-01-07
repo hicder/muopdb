@@ -2,7 +2,6 @@ use anyhow::{Ok, Result};
 use compression::noc::noc::PlainEncoder;
 use index::hnsw::builder::HnswBuilder;
 use index::hnsw::writer::HnswWriter;
-use index::ivf;
 use index::ivf::builder::{IvfBuilder, IvfBuilderConfig};
 use index::ivf::writer::IvfWriter;
 use index::spann::builder::{SpannBuilder, SpannBuilderConfig};

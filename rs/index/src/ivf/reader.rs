@@ -74,7 +74,7 @@ mod tests {
         let num_vectors = 1000;
         let num_features = 4;
         let file_size = 4096;
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let quantizer_directory = format!("{}/quantizer", base_directory);
         std::fs::create_dir_all(&quantizer_directory)
             .expect("Failed to create quantizer directory");
@@ -221,7 +221,7 @@ mod tests {
         let num_features = 4;
         let file_size = 4096;
 
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let quantizer_directory_ref = format!("{}/quantizer", base_directory_ref);
         std::fs::create_dir_all(&quantizer_directory_ref)
             .expect("Failed to create quantizer directory");
@@ -231,7 +231,7 @@ mod tests {
             base_directory_ref.clone(),
             quantizer,
         );
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let quantizer_directory = format!("{}/quantizer", base_directory);
         std::fs::create_dir_all(&quantizer_directory)
             .expect("Failed to create quantizer directory");
