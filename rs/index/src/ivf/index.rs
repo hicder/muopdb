@@ -347,7 +347,7 @@ mod tests {
 
         let num_clusters = 2;
 
-        let quantizer = NoQuantizer::new(3);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(3);
         let ivf = Ivf::<_, L2DistanceCalculator, PlainDecoder>::new(
             storage,
             index_storage,
@@ -400,7 +400,7 @@ mod tests {
         let num_probes = 2;
 
         let nearest =
-            Ivf::<NoQuantizer, L2DistanceCalculator, PlainDecoder>::find_nearest_centroids(
+            Ivf::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>::find_nearest_centroids(
                 &vector,
                 &index_storage,
                 num_probes,
@@ -450,7 +450,7 @@ mod tests {
         let num_clusters = 2;
         let num_probes = 2;
 
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> =
             Ivf::new(storage, index_storage, num_clusters, quantizer);
 
@@ -489,7 +489,7 @@ mod tests {
         let subvector_dimension = 1;
 
         let codebook = vec![1.5, 5.5, 2.5, 6.5, 3.5, 7.5];
-        let quantizer = ProductQuantizer::new(
+        let quantizer = ProductQuantizer::<L2DistanceCalculator>::new(
             num_features,
             1,
             subvector_dimension,
@@ -578,7 +578,7 @@ mod tests {
         let num_clusters = 1;
         let num_probes = 1;
 
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> =
             Ivf::new(storage, index_storage, num_clusters, quantizer);
 

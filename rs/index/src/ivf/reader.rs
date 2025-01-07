@@ -74,7 +74,7 @@ mod tests {
         let num_vectors = 1000;
         let num_features = 4;
         let file_size = 4096;
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let quantizer_directory = format!("{}/quantizer", base_directory);
         std::fs::create_dir_all(&quantizer_directory)
             .expect("Failed to create quantizer directory");
@@ -111,7 +111,7 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer, L2DistanceCalculator, EliasFanoDecoder>()
+            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, EliasFanoDecoder>()
             .expect("Failed to read index file");
 
         // Check if files were created
@@ -221,7 +221,7 @@ mod tests {
         let num_features = 4;
         let file_size = 4096;
 
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let quantizer_directory_ref = format!("{}/quantizer", base_directory_ref);
         std::fs::create_dir_all(&quantizer_directory_ref)
             .expect("Failed to create quantizer directory");
@@ -231,7 +231,7 @@ mod tests {
             base_directory_ref.clone(),
             quantizer,
         );
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let quantizer_directory = format!("{}/quantizer", base_directory);
         std::fs::create_dir_all(&quantizer_directory)
             .expect("Failed to create quantizer directory");
@@ -271,11 +271,11 @@ mod tests {
 
         let reader_ref = IvfReader::new(base_directory_ref.clone());
         let index_ref = reader_ref
-            .read::<NoQuantizer, L2DistanceCalculator, PlainDecoder>()
+            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>()
             .expect("Failed to read ref index file");
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer, L2DistanceCalculator, EliasFanoDecoder>()
+            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, EliasFanoDecoder>()
             .expect("Failed to read index file");
 
         let k = 3;
@@ -307,7 +307,7 @@ mod tests {
         let num_vectors = 1000;
         let num_features = 4;
         let file_size = 4096;
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let quantizer_directory = format!("{}/quantizer", base_directory);
         std::fs::create_dir_all(&quantizer_directory)
             .expect("Failed to create quantizer directory");
@@ -344,9 +344,16 @@ mod tests {
 
         assert!(writer.write(&mut builder, false).is_ok());
 
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
+        let quantizer_directory = format!("{}/quantizer", base_directory);
+        std::fs::create_dir_all(&quantizer_directory)
+            .expect("Failed to create quantizer directory");
+        let noq_writer = NoQuantizerWriter::new(quantizer_directory);
+        assert!(noq_writer.write(&quantizer).is_ok());
+
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer, L2DistanceCalculator, PlainDecoder>()
+            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>()
             .expect("Failed to read index file");
 
         // Check if files were created
@@ -446,7 +453,7 @@ mod tests {
         let num_vectors = 1000;
         let num_features = 4;
         let file_size = 4096;
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let quantizer_directory = format!("{}/quantizer", base_directory);
         std::fs::create_dir_all(&quantizer_directory)
             .expect("Failed to create quantizer directory");
@@ -485,7 +492,7 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer, L2DistanceCalculator, PlainDecoder>()
+            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>()
             .expect("Failed to read index file");
 
         let num_centroids = index.num_clusters;

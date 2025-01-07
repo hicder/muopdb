@@ -2,6 +2,7 @@ use clap::Parser;
 use index::hnsw::reader::HnswReader;
 use index::hnsw::utils::GraphTraversal;
 use quantization::pq::pq::ProductQuantizer;
+use utils::distance::l2::L2DistanceCalculator;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -32,7 +33,9 @@ pub fn main() {
     let points_per_layer_0 = arg.points_per_layer_0;
 
     let reader = HnswReader::new(arg.index_path);
-    let hnsw = reader.read::<ProductQuantizer>().unwrap();
+    let hnsw = reader
+        .read::<ProductQuantizer<L2DistanceCalculator>>()
+        .unwrap();
 
     let header = hnsw.get_header();
     println!("Header: {:?}", header);

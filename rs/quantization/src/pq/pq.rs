@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::Write;
+use std::marker::PhantomData;
 use std::path::Path;
 use std::simd::num::SimdFloat;
 use std::simd::{f32x16, f32x4, f32x8};
@@ -14,12 +15,15 @@ use crate::quantization::Quantizer;
 
 const CODEBOOK_NAME: &str = "codebook";
 
-pub struct ProductQuantizer {
+// (TODO): support inner PQ distance template
+pub struct ProductQuantizer<D: DistanceCalculator> {
     pub dimension: usize,
     pub subvector_dimension: usize,
     pub num_bits: u8,
     pub codebook: Vec<f32>,
     pub base_directory: String,
+
+    _marker: PhantomData<D>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -46,7 +50,7 @@ impl ProductQuantizerReader {
         Self { base_directory }
     }
 
-    pub fn read(&self) -> Result<ProductQuantizer> {
+    pub fn read<D: DistanceCalculator>(&self) -> Result<ProductQuantizer<D>> {
         let config_path = Path::new(&self.base_directory).join("product_quantizer_config.yaml");
         if !config_path.exists() {
             return Err(Error::msg("Config file does not exist"));
@@ -79,7 +83,7 @@ impl ProductQuantizerWriter {
         Self { base_directory }
     }
 
-    pub fn write(&self, quantizer: &ProductQuantizer) -> Result<()> {
+    pub fn write<D: DistanceCalculator>(&self, quantizer: &ProductQuantizer<D>) -> Result<()> {
         let config_path = Path::new(&self.base_directory).join("product_quantizer_config.yaml");
         if config_path.exists() {
             // Delete the file if exists
@@ -106,7 +110,7 @@ impl ProductQuantizerWriter {
     }
 }
 
-impl ProductQuantizer {
+impl<D: DistanceCalculator> ProductQuantizer<D> {
     pub fn new(
         dimension: usize,
         subvector_dimension: usize,
@@ -126,6 +130,7 @@ impl ProductQuantizer {
             num_bits,
             codebook,
             base_directory,
+            _marker: PhantomData,
         })
     }
 
@@ -177,7 +182,7 @@ impl ProductQuantizer {
 
 /// TODO(hicder): Make this faster
 /// TODO(hicder): Support multiple distance type
-impl Quantizer for ProductQuantizer {
+impl<D: DistanceCalculator> Quantizer for ProductQuantizer<D> {
     type QuantizedT = u8;
 
     fn quantize(&self, value: &[f32]) -> Vec<u8> {
@@ -258,8 +263,7 @@ impl Quantizer for ProductQuantizer {
                     let dist = L2DistanceCalculator::calculate_scalar(a_vec, b_vec);
                     dist * dist
                 })
-                .sum::<f32>()
-                .sqrt(),
+                .sum::<f32>(),
             L2DistanceCalculatorImpl::StreamingSIMD => {
                 // Similar to l2.rs. However, we have to inline here for performance reasons.
                 let mut sum_16 = f32x16::splat(0.0);
@@ -273,28 +277,28 @@ impl Quantizer for ProductQuantizer {
                     .for_each(|(idx, (a_val, b_val))| {
                         let (mut a_vec, mut b_vec) = get_subvectors(idx, (a_val, b_val));
                         if a_vec.len() / 16 > 0 {
-                            L2DistanceCalculator::accumulate_lanes::<16>(a_vec, b_vec, &mut sum_16);
+                            D::accumulate_lanes::<16>(a_vec, b_vec, &mut sum_16);
                             a_vec = a_vec.chunks_exact(16).remainder();
                             b_vec = b_vec.chunks_exact(16).remainder()
                         }
 
                         if a_vec.len() / 8 > 0 {
-                            L2DistanceCalculator::accumulate_lanes::<8>(a_vec, b_vec, &mut sum_8);
+                            D::accumulate_lanes::<8>(a_vec, b_vec, &mut sum_8);
                             a_vec = a_vec.chunks_exact(8).remainder();
                             b_vec = b_vec.chunks_exact(8).remainder()
                         }
                         if a_vec.len() / 4 > 0 {
-                            L2DistanceCalculator::accumulate_lanes::<4>(a_vec, b_vec, &mut sum_4);
+                            D::accumulate_lanes::<4>(a_vec, b_vec, &mut sum_4);
                             a_vec = a_vec.chunks_exact(4).remainder();
                             b_vec = b_vec.chunks_exact(4).remainder()
                         }
                         if a_vec.len() > 0 {
-                            for i in 0..a_vec.len() {
-                                sum_1 += (a_vec[i] - b_vec[i]).powi(2);
-                            }
+                            sum_1 = D::accumulate_scalar(a_vec, b_vec);
                         }
                     });
-                (sum_16.reduce_sum() + sum_8.reduce_sum() + sum_4.reduce_sum() + sum_1).sqrt()
+                D::outermost_op(
+                    sum_16.reduce_sum() + sum_8.reduce_sum() + sum_4.reduce_sum() + sum_1,
+                )
             }
             L2DistanceCalculatorImpl::SIMD => a
                 .iter()
@@ -302,11 +306,10 @@ impl Quantizer for ProductQuantizer {
                 .enumerate()
                 .map(|(idx, (a_val, b_val))| {
                     let (a_vec, b_vec) = get_subvectors(idx, (a_val, b_val));
-                    let dist = L2DistanceCalculator::calculate(a_vec, b_vec);
+                    let dist = D::calculate(a_vec, b_vec);
                     dist * dist
                 })
-                .sum::<f32>()
-                .sqrt(),
+                .sum::<f32>(),
         }
     }
 
@@ -342,8 +345,14 @@ mod tests {
             .expect("Failed to convert temporary directory path to string")
             .to_string();
 
-        let pq = ProductQuantizer::new(10, 2, 1, codebook, base_directory.clone())
-            .expect("ProductQuantizer should be created.");
+        let pq = ProductQuantizer::<L2DistanceCalculator>::new(
+            10,
+            2,
+            1,
+            codebook,
+            base_directory.clone(),
+        )
+        .expect("ProductQuantizer should be created.");
         let value = vec![1.0, 1.0, 3.0, 3.0, 5.0, 5.0, 7.0, 7.0, 9.0, 9.0];
         let quantized_value = pq.quantize(&value);
         assert_eq!(quantized_value, vec![1, 1, 1, 1, 1]);
@@ -359,7 +368,7 @@ mod tests {
             base_directory: base_directory.clone(),
         };
 
-        let new_pq = match reader.read() {
+        let new_pq = match reader.read::<L2DistanceCalculator>() {
             Ok(x) => x,
             Err(msg) => {
                 panic!("{}", msg);

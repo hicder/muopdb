@@ -107,7 +107,7 @@ impl IndexWriter {
         Ok(())
     }
 
-    fn build_hnsw_pq(
+    fn build_hnsw_pq<D: DistanceCalculator>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &HnswConfigWithBase,
@@ -124,7 +124,7 @@ impl IndexWriter {
             batch_size: index_builder_config.quantizer_config.batch_size,
         };
 
-        let mut pq_builder = ProductQuantizerBuilder::new(pq_config, pq_builder_config);
+        let mut pq_builder = ProductQuantizerBuilder::<D>::new(pq_config, pq_builder_config);
 
         info!("Start training product quantizer");
         let sorted_random_rows = Self::get_sorted_random_rows(
@@ -140,7 +140,7 @@ impl IndexWriter {
         let pq = pq_builder.build(format!("{}/pq_tmp", &self.output_root))?;
 
         // Define the writer function for ProductQuantizer
-        let pq_writer_fn = |directory: &String, pq: &ProductQuantizer| {
+        let pq_writer_fn = |directory: &String, pq: &ProductQuantizer<D>| {
             let pq_writer = ProductQuantizerWriter::new(directory.clone());
             pq_writer.write(pq)
         };
@@ -148,7 +148,7 @@ impl IndexWriter {
         self.write_quantizer_and_build_hnsw_index(input, index_builder_config, pq, pq_writer_fn)
     }
 
-    fn build_hnsw_noq(
+    fn build_hnsw_noq<D: DistanceCalculator>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &HnswConfigWithBase,
@@ -158,12 +158,12 @@ impl IndexWriter {
             dimension: index_builder_config.base_config.dimension,
         };
 
-        let mut noq_builder = NoQuantizerBuilder::new(noq_config);
+        let mut noq_builder = NoQuantizerBuilder::<D>::new(noq_config);
 
         let noq = noq_builder.build()?;
 
         // Define the writer function for NoQuantizer
-        let noq_writer_fn = |directory: &String, noq: &NoQuantizer| {
+        let noq_writer_fn = |directory: &String, noq: &NoQuantizer<D>| {
             let noq_writer = NoQuantizerWriter::new(directory.clone());
             noq_writer.write(noq)
         };
@@ -171,17 +171,17 @@ impl IndexWriter {
         self.write_quantizer_and_build_hnsw_index(input, index_builder_config, noq, noq_writer_fn)
     }
 
-    fn do_build_hnsw_index(
+    fn do_build_hnsw_index<D: DistanceCalculator>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &HnswConfigWithBase,
     ) -> Result<()> {
         match index_builder_config.quantizer_config.quantizer_type {
             QuantizerType::ProductQuantizer => {
-                self.build_hnsw_pq(input, index_builder_config)?;
+                self.build_hnsw_pq::<D>(input, index_builder_config)?;
             }
             QuantizerType::NoQuantizer => {
-                self.build_hnsw_noq(input, index_builder_config)?;
+                self.build_hnsw_noq::<D>(input, index_builder_config)?;
             }
         };
         Ok(())
@@ -247,7 +247,7 @@ impl IndexWriter {
         Ok(())
     }
 
-    fn build_ivf_pq(
+    fn build_ivf_pq<D: DistanceCalculator + CalculateSquared + Send + Sync>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &IvfConfigWithBase,
@@ -264,7 +264,7 @@ impl IndexWriter {
             batch_size: index_builder_config.quantizer_config.batch_size,
         };
 
-        let mut pq_builder = ProductQuantizerBuilder::new(pq_config, pq_builder_config);
+        let mut pq_builder = ProductQuantizerBuilder::<D>::new(pq_config, pq_builder_config);
 
         info!("Start training product quantizer");
         let sorted_random_rows = Self::get_sorted_random_rows(
@@ -280,30 +280,20 @@ impl IndexWriter {
         let pq = pq_builder.build(format!("{}/pq_tmp", &self.output_root))?;
 
         // Define the writer function for ProductQuantizer
-        let pq_writer_fn = |directory: &String, pq: &ProductQuantizer| {
+        let pq_writer_fn = |directory: &String, pq: &ProductQuantizer<D>| {
             let pq_writer = ProductQuantizerWriter::new(directory.clone());
             pq_writer.write(pq)
         };
 
-        match index_builder_config.base_config.index_distance_type {
-            DistanceType::DotProduct => self
-                .write_quantizer_and_build_ivf_index::<_, DotProductDistanceCalculator, _>(
-                    input,
-                    index_builder_config,
-                    pq,
-                    pq_writer_fn,
-                ),
-            DistanceType::L2 => self
-                .write_quantizer_and_build_ivf_index::<_, L2DistanceCalculator, _>(
-                    input,
-                    index_builder_config,
-                    pq,
-                    pq_writer_fn,
-                ),
-        }
+        self.write_quantizer_and_build_ivf_index::<_, D, _>(
+            input,
+            index_builder_config,
+            pq,
+            pq_writer_fn,
+        )
     }
 
-    fn build_ivf_noq(
+    fn build_ivf_noq<D: DistanceCalculator + CalculateSquared + Send + Sync>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &IvfConfigWithBase,
@@ -313,35 +303,25 @@ impl IndexWriter {
             dimension: index_builder_config.base_config.dimension,
         };
 
-        let mut noq_builder = NoQuantizerBuilder::new(noq_config);
+        let mut noq_builder = NoQuantizerBuilder::<D>::new(noq_config);
 
         let noq = noq_builder.build()?;
 
         // Define the writer function for NoQuantizer
-        let noq_writer_fn = |directory: &String, noq: &NoQuantizer| {
+        let noq_writer_fn = |directory: &String, noq: &NoQuantizer<D>| {
             let noq_writer = NoQuantizerWriter::new(directory.clone());
             noq_writer.write(noq)
         };
 
-        match index_builder_config.base_config.index_distance_type {
-            DistanceType::DotProduct => self
-                .write_quantizer_and_build_ivf_index::<_, DotProductDistanceCalculator, _>(
-                    input,
-                    index_builder_config,
-                    noq,
-                    noq_writer_fn,
-                ),
-            DistanceType::L2 => self
-                .write_quantizer_and_build_ivf_index::<_, L2DistanceCalculator, _>(
-                    input,
-                    index_builder_config,
-                    noq,
-                    noq_writer_fn,
-                ),
-        }
+        self.write_quantizer_and_build_ivf_index::<_, D, _>(
+            input,
+            index_builder_config,
+            noq,
+            noq_writer_fn,
+        )
     }
 
-    fn do_build_ivf_index(
+    fn do_build_ivf_index<D: DistanceCalculator + CalculateSquared + Send + Sync>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &IvfConfigWithBase,
@@ -356,10 +336,10 @@ impl IndexWriter {
         //     └── vectors
         match index_builder_config.quantizer_config.quantizer_type {
             QuantizerType::ProductQuantizer => {
-                self.build_ivf_pq(input, index_builder_config)?;
+                self.build_ivf_pq::<D>(input, index_builder_config)?;
             }
             QuantizerType::NoQuantizer => {
-                self.build_ivf_noq(input, index_builder_config)?;
+                self.build_ivf_noq::<D>(input, index_builder_config)?;
             }
         };
 
@@ -430,11 +410,28 @@ impl IndexWriter {
         let cfg = self.config.clone();
         let (base_config, quantizer_config) = match cfg {
             IndexWriterConfig::Hnsw(hnsw_config) => {
-                self.do_build_hnsw_index(input, &hnsw_config)?;
+                match hnsw_config.base_config.index_distance_type {
+                    DistanceType::DotProduct => {
+                        self.do_build_hnsw_index::<DotProductDistanceCalculator>(
+                            input,
+                            &hnsw_config,
+                        )?;
+                    }
+                    DistanceType::L2 => {
+                        self.do_build_hnsw_index::<L2DistanceCalculator>(input, &hnsw_config)?;
+                    }
+                }
                 (hnsw_config.base_config, hnsw_config.quantizer_config)
             }
             IndexWriterConfig::Ivf(ivf_config) => {
-                self.do_build_ivf_index(input, &ivf_config)?;
+                match ivf_config.base_config.index_distance_type {
+                    DistanceType::DotProduct => {
+                        self.do_build_ivf_index::<DotProductDistanceCalculator>(input, &ivf_config)?
+                    }
+                    DistanceType::L2 => {
+                        self.do_build_ivf_index::<L2DistanceCalculator>(input, &ivf_config)?
+                    }
+                }
                 (ivf_config.base_config, ivf_config.quantizer_config)
             }
             IndexWriterConfig::Spann(hnsw_ivf_config) => {

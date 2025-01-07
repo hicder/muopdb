@@ -88,6 +88,11 @@ impl DistanceCalculator for L2DistanceCalculator {
     }
 
     #[inline(always)]
+    fn accumulate_scalar(a: &[f32], b: &[f32]) -> f32 {
+        a.iter().zip(b.iter()).map(|(&x, &y)| (x - y).powi(2)).sum()
+    }
+
+    #[inline(always)]
     fn outermost_op(x: f32) -> f32 {
         x
     }
@@ -108,5 +113,17 @@ mod tests {
         let distance_simd = L2DistanceCalculator::calculate(&a, &b);
         let distance_scalar = L2DistanceCalculator::calculate_scalar(&a, &b);
         assert!((distance_simd - distance_scalar).abs() < epsilon);
+    }
+
+    #[test]
+    fn test_accumulate_scalar() {
+        // Create 2 random vectors of size 128
+        let a = generate_random_vector(128);
+        let b = generate_random_vector(128);
+
+        let epsilon = 1e-5;
+        let distance_scalar = L2DistanceCalculator::calculate_scalar(&a, &b);
+        let accumulate_scalar = L2DistanceCalculator::accumulate_scalar(&a, &b);
+        assert!((distance_scalar - accumulate_scalar.sqrt()) < epsilon)
     }
 }

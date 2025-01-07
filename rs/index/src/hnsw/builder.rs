@@ -533,6 +533,7 @@ mod tests {
     use std::fs;
 
     use quantization::pq::pq::ProductQuantizer;
+    use utils::distance::l2::L2DistanceCalculator;
     use utils::test_utils::generate_random_vector;
 
     use super::*;
@@ -599,8 +600,14 @@ mod tests {
             max_neighbors: 1,
             layers: vec![layer],
             current_top_layer: 0,
-            quantizer: ProductQuantizer::new(10, 2, 1, codebook, base_directory.clone())
-                .expect("Can't create product quantizer"),
+            quantizer: ProductQuantizer::<L2DistanceCalculator>::new(
+                10,
+                2,
+                1,
+                codebook,
+                base_directory.clone(),
+            )
+            .expect("Can't create product quantizer"),
             ef_contruction: 0,
             entry_point: vec![0, 1],
             max_layer: 0,
@@ -725,8 +732,9 @@ mod tests {
 
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
-        let mut builder =
-            HnswBuilder::<ProductQuantizer>::new(5, 10, 20, 1024, 4096, 5, pq, vector_dir);
+        let mut builder = HnswBuilder::<ProductQuantizer<L2DistanceCalculator>>::new(
+            5, 10, 20, 1024, 4096, 5, pq, vector_dir,
+        );
 
         for i in 0..100 {
             builder

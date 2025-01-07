@@ -10,14 +10,14 @@ use crate::index::Searchable;
 use crate::ivf::index::Ivf;
 
 pub struct Spann {
-    centroids: Hnsw<NoQuantizer>,
-    posting_lists: Ivf<NoQuantizer, L2DistanceCalculator, PlainDecoder>,
+    centroids: Hnsw<NoQuantizer<L2DistanceCalculator>>,
+    posting_lists: Ivf<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>,
 }
 
 impl Spann {
     pub fn new(
-        centroids: Hnsw<NoQuantizer>,
-        posting_lists: Ivf<NoQuantizer, L2DistanceCalculator, PlainDecoder>,
+        centroids: Hnsw<NoQuantizer<L2DistanceCalculator>>,
+        posting_lists: Ivf<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>,
     ) -> Self {
         Self {
             centroids,
@@ -25,11 +25,13 @@ impl Spann {
         }
     }
 
-    pub fn get_centroids(&self) -> &Hnsw<NoQuantizer> {
+    pub fn get_centroids(&self) -> &Hnsw<NoQuantizer<L2DistanceCalculator>> {
         &self.centroids
     }
 
-    pub fn get_posting_lists(&self) -> &Ivf<NoQuantizer, L2DistanceCalculator, PlainDecoder> {
+    pub fn get_posting_lists(
+        &self,
+    ) -> &Ivf<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder> {
         &self.posting_lists
     }
 }

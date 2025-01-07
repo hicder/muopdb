@@ -5,6 +5,7 @@ use index::hnsw::writer::HnswWriter;
 use index::vector::VectorStorageConfig;
 use log::error;
 use quantization::pq::pq::ProductQuantizer;
+use utils::distance::l2::L2DistanceCalculator;
 
 #[derive(Parser)]
 struct Args {
@@ -20,7 +21,9 @@ pub fn main() {
 
     let args = Args::parse();
     let reader = HnswReader::new(args.input_path);
-    let index = reader.read::<ProductQuantizer>().unwrap();
+    let index = reader
+        .read::<ProductQuantizer<L2DistanceCalculator>>()
+        .unwrap();
 
     let vector_storage_config = VectorStorageConfig {
         memory_threshold: 1024 * 1024 * 1024,

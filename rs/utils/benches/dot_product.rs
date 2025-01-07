@@ -1,7 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use utils::distance::dot_product::DotProductDistanceCalculator;
 use utils::test_utils::generate_random_vector;
-use utils::DistanceCalculator;
 
 fn benches_dot_product(c: &mut Criterion) {
     let mut group = c.benchmark_group("dot_product");

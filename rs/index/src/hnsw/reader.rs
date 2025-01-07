@@ -102,6 +102,7 @@ mod tests {
     use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
     use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuantizerWriter};
     use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
+    use utils::distance::l2::L2DistanceCalculator;
     use utils::test_utils::generate_random_vector;
 
     use super::*;
@@ -142,8 +143,9 @@ mod tests {
         // Create a HNSW Builder
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
-        let mut hnsw_builder =
-            HnswBuilder::<ProductQuantizer>::new(10, 128, 20, 1024, 4096, 16, pq, vector_dir);
+        let mut hnsw_builder = HnswBuilder::<ProductQuantizer<L2DistanceCalculator>>::new(
+            10, 128, 20, 1024, 4096, 16, pq, vector_dir,
+        );
         for i in 0..datapoints.len() {
             hnsw_builder.insert(i as u64, &datapoints[i]).unwrap();
         }
@@ -155,7 +157,9 @@ mod tests {
 
         // Read from file
         let reader = HnswReader::new(base_directory.clone());
-        let hnsw = reader.read::<ProductQuantizer>().unwrap();
+        let hnsw = reader
+            .read::<ProductQuantizer<L2DistanceCalculator>>()
+            .unwrap();
         assert_eq!(49, hnsw.get_data_offset());
         assert_eq!(16, hnsw.get_header().quantized_dimension);
     }
@@ -169,14 +173,14 @@ mod tests {
         let datapoints: Vec<Vec<f32>> = (0..10000).map(|_| generate_random_vector(128)).collect();
 
         // quantizer
-        let quantizer = NoQuantizer::new(128);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(128);
         let quantizer_dir = format!("{}/quantizer", base_directory);
         fs::create_dir_all(quantizer_dir.clone()).unwrap();
         let quantizer_writer = NoQuantizerWriter::new(quantizer_dir);
         quantizer_writer.write(&quantizer).unwrap();
 
         let mut hnsw_builder =
-            HnswBuilder::<NoQuantizer>::new(10, 128, 20, 1024, 4096, 128, quantizer, vector_dir);
+            HnswBuilder::new(10, 128, 20, 1024, 4096, 128, quantizer, vector_dir);
         for i in 0..datapoints.len() {
             hnsw_builder.insert(i as u64, &datapoints[i]).unwrap();
         }
@@ -188,7 +192,7 @@ mod tests {
 
         // Read from file
         let reader = HnswReader::new(base_directory.clone());
-        let hnsw = reader.read::<NoQuantizer>().unwrap();
+        let hnsw = reader.read::<NoQuantizer<L2DistanceCalculator>>().unwrap();
         assert_eq!(49, hnsw.get_data_offset());
         assert_eq!(128, hnsw.get_header().quantized_dimension);
     }

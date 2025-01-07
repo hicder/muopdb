@@ -339,7 +339,7 @@ mod tests {
 
         // Create an IvfWriter instance
         let num_features = 10;
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let ivf_writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
             base_directory.clone(),
             quantizer,
@@ -443,13 +443,12 @@ mod tests {
         let initial_size = writer.write(&[1, 2, 3]).unwrap() as usize;
 
         // Pad to 8-byte alignment
-        let padding_written =
-            IvfWriter::<NoQuantizer, PlainEncoder, L2DistanceCalculator>::write_pad(
-                initial_size,
-                &mut writer,
-                8,
-            )
-            .unwrap();
+        let padding_written = IvfWriter::<
+            NoQuantizer<L2DistanceCalculator>,
+            PlainEncoder,
+            L2DistanceCalculator,
+        >::write_pad(initial_size, &mut writer, 8)
+        .unwrap();
 
         assert_eq!(padding_written, 5); // 3 bytes written, so 5 bytes of padding needed
 
@@ -477,9 +476,14 @@ mod tests {
         let file_size = 4096;
 
         let codebook = vec![1.5, 4.5, 2.3, 5.3, 3.1, 6.1];
-        let quantizer =
-            ProductQuantizer::new(3, 1, subvector_dimension, codebook, base_directory.clone())
-                .expect("Can't create product quantizer");
+        let quantizer = ProductQuantizer::<L2DistanceCalculator>::new(
+            3,
+            1,
+            subvector_dimension,
+            codebook,
+            base_directory.clone(),
+        )
+        .expect("Can't create product quantizer");
         let ivf_writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
             base_directory.clone(),
             quantizer,
@@ -570,7 +574,7 @@ mod tests {
         let num_features = 3;
         let file_size = 4096;
 
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let ivf_writer =
             IvfWriter::<_, EliasFano, L2DistanceCalculator>::new(base_directory.clone(), quantizer);
 
@@ -658,7 +662,7 @@ mod tests {
         let num_vectors = 1000;
         let num_features = 4;
         let file_size = 4096;
-        let quantizer = NoQuantizer::new(num_features);
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
         let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
             base_directory.clone(),
             quantizer,

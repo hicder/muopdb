@@ -22,3 +22,4 @@ quantization.workspace = true
 rand.workspace = true
 tokio.workspace = true
 tonic.workspace = true
+utils.workspace =  true

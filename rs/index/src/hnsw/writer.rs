@@ -268,6 +268,7 @@ mod tests {
     use ordered_float::NotNan;
     use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuantizerWriter};
     use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
+    use utils::distance::l2::L2DistanceCalculator;
     use utils::test_utils::generate_random_vector;
 
     use super::*;
@@ -275,7 +276,7 @@ mod tests {
     use crate::hnsw::reader::HnswReader;
     use crate::hnsw::utils::{GraphTraversal, PointAndDistance};
 
-    fn construct_layers(hnsw_builder: &mut HnswBuilder<ProductQuantizer>) {
+    fn construct_layers(hnsw_builder: &mut HnswBuilder<ProductQuantizer<L2DistanceCalculator>>) {
         // Prepare all layers
         for _ in 0..3 {
             hnsw_builder.layers.push(Layer {
@@ -419,7 +420,7 @@ mod tests {
     fn test_write_header() {
         let temp_dir = tempdir::TempDir::new("write_header_test").unwrap();
         let base_dir = temp_dir.path().to_str().unwrap().to_string();
-        let writer = HnswWriter::<ProductQuantizer>::new(base_dir.clone());
+        let writer = HnswWriter::<ProductQuantizer<L2DistanceCalculator>>::new(base_dir.clone());
 
         let header = Header {
             version: Version::V0,
@@ -450,7 +451,8 @@ mod tests {
     fn test_combine_files() -> Result<()> {
         let temp_dir = tempdir::TempDir::new("combine_files_test")?;
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
-        let writer = HnswWriter::<ProductQuantizer>::new(base_directory.clone());
+        let writer =
+            HnswWriter::<ProductQuantizer<L2DistanceCalculator>>::new(base_directory.clone());
 
         // Create mock files
         fs::write(format!("{}/edges", base_directory), b"edges content")?;
@@ -567,7 +569,9 @@ mod tests {
         writer.write(&mut hnsw_builder, false).unwrap();
 
         let reader = HnswReader::new(base_directory.clone());
-        let hnsw = reader.read::<ProductQuantizer>().unwrap();
+        let hnsw = reader
+            .read::<ProductQuantizer<L2DistanceCalculator>>()
+            .unwrap();
         {
             let egdes = hnsw.get_edges_for_point(1, 2);
             assert!(egdes.is_none());

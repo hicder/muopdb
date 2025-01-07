@@ -1,6 +1,9 @@
+use std::marker::PhantomData;
+
 use anyhow::Result;
 use kmeans::*;
 use log::debug;
+use utils::DistanceCalculator;
 
 use crate::pq::pq::{ProductQuantizer, ProductQuantizerConfig};
 
@@ -9,13 +12,15 @@ pub struct ProductQuantizerBuilderConfig {
     pub batch_size: usize,
 }
 
-pub struct ProductQuantizerBuilder {
+pub struct ProductQuantizerBuilder<D: DistanceCalculator> {
     pq_config: ProductQuantizerConfig,
     builder_config: ProductQuantizerBuilderConfig,
     dataset: Vec<Vec<f32>>,
+
+    _marker: PhantomData<D>,
 }
 
-impl ProductQuantizerBuilder {
+impl<D: DistanceCalculator> ProductQuantizerBuilder<D> {
     /// Create a new ProductQuantizerBuilder
     pub fn new(
         config: ProductQuantizerConfig,
@@ -25,6 +30,7 @@ impl ProductQuantizerBuilder {
             pq_config: config,
             builder_config,
             dataset: Vec::new(),
+            _marker: PhantomData,
         }
     }
 
@@ -34,7 +40,7 @@ impl ProductQuantizerBuilder {
     }
 
     /// Train kmeans on the dataset, and returns the product quantizer
-    pub fn build(&mut self, base_directory: String) -> Result<ProductQuantizer> {
+    pub fn build(&mut self, base_directory: String) -> Result<ProductQuantizer<D>> {
         let num_subvector = self.pq_config.dimension / self.pq_config.subvector_dimension;
         let mut codebook = Vec::<f32>::with_capacity(
             num_subvector * self.pq_config.subvector_dimension * (1 << self.pq_config.num_bits),
@@ -91,6 +97,7 @@ impl ProductQuantizerBuilder {
 // Test
 #[cfg(test)]
 mod tests {
+    use utils::distance::l2::L2DistanceCalculator;
     use utils::distance::l2::L2DistanceCalculatorImpl::{Scalar, StreamingSIMD, SIMD};
     use utils::test_utils::generate_random_vector;
 
@@ -104,7 +111,7 @@ mod tests {
             .expect("Failed to create temporary directory");
 
         const DIMENSION: usize = 128;
-        let mut pqb = ProductQuantizerBuilder::new(
+        let mut pqb = ProductQuantizerBuilder::<L2DistanceCalculator>::new(
             ProductQuantizerConfig {
                 dimension: DIMENSION,
                 subvector_dimension: 8,
@@ -139,7 +146,7 @@ mod tests {
     #[test]
     fn test_product_quantizer_distance() {
         const DIMENSION: usize = 128;
-        let mut pqb = ProductQuantizerBuilder::new(
+        let mut pqb = ProductQuantizerBuilder::<L2DistanceCalculator>::new(
             ProductQuantizerConfig {
                 dimension: DIMENSION,
                 subvector_dimension: 8,
