@@ -1,4 +1,6 @@
 use anyhow::{Ok, Result};
+use compression::compression::IntSeqEncoder;
+use compression::elias_fano::ef::EliasFano;
 use compression::noc::noc::PlainEncoder;
 use index::hnsw::builder::HnswBuilder;
 use index::hnsw::writer::HnswWriter;
@@ -18,8 +20,8 @@ use utils::distance::l2::L2DistanceCalculator;
 use utils::{CalculateSquared, DistanceCalculator};
 
 use crate::config::{
-    DistanceType, HnswConfigWithBase, IndexWriterConfig, IvfConfigWithBase, QuantizerType,
-    SpannConfigWithBase,
+    DistanceType, HnswConfigWithBase, IndexWriterConfig, IntSeqEncodingType, IvfConfigWithBase,
+    QuantizerType, SpannConfigWithBase,
 };
 use crate::input::Input;
 
@@ -187,7 +189,7 @@ impl IndexWriter {
         Ok(())
     }
 
-    fn write_quantizer_and_build_ivf_index<Q, D, F>(
+    fn write_quantizer_and_build_ivf_index<Q, E, D, F>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &IvfConfigWithBase,
@@ -196,6 +198,7 @@ impl IndexWriter {
     ) -> Result<()>
     where
         Q: Quantizer,
+        E: IntSeqEncoder + 'static,
         D: DistanceCalculator + CalculateSquared + Send + Sync,
         F: Fn(&String, &Q) -> Result<()>,
     {
@@ -238,7 +241,7 @@ impl IndexWriter {
         std::fs::create_dir_all(&path)?;
 
         info!("Start writing index");
-        let ivf_writer = IvfWriter::<_, PlainEncoder, D>::new(path.to_string(), quantizer);
+        let ivf_writer = IvfWriter::<_, E, D>::new(path.to_string(), quantizer);
         ivf_writer.write(&mut ivf_builder, index_builder_config.base_config.reindex)?;
 
         // Cleanup tmp directory. It's ok to fail
@@ -247,7 +250,10 @@ impl IndexWriter {
         Ok(())
     }
 
-    fn build_ivf_pq<D: DistanceCalculator + CalculateSquared + Send + Sync>(
+    fn build_ivf_pq<
+        E: IntSeqEncoder + 'static,
+        D: DistanceCalculator + CalculateSquared + Send + Sync,
+    >(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &IvfConfigWithBase,
@@ -285,7 +291,7 @@ impl IndexWriter {
             pq_writer.write(pq)
         };
 
-        self.write_quantizer_and_build_ivf_index::<_, D, _>(
+        self.write_quantizer_and_build_ivf_index::<_, E, D, _>(
             input,
             index_builder_config,
             pq,
@@ -293,7 +299,10 @@ impl IndexWriter {
         )
     }
 
-    fn build_ivf_noq<D: DistanceCalculator + CalculateSquared + Send + Sync>(
+    fn build_ivf_noq<
+        E: IntSeqEncoder + 'static,
+        D: DistanceCalculator + CalculateSquared + Send + Sync,
+    >(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &IvfConfigWithBase,
@@ -313,12 +322,32 @@ impl IndexWriter {
             noq_writer.write(noq)
         };
 
-        self.write_quantizer_and_build_ivf_index::<_, D, _>(
+        self.write_quantizer_and_build_ivf_index::<_, E, D, _>(
             input,
             index_builder_config,
             noq,
             noq_writer_fn,
         )
+    }
+
+    fn build_ivf_index_with_encoder<
+        E: IntSeqEncoder + 'static,
+        D: DistanceCalculator + CalculateSquared + Send + Sync,
+    >(
+        &mut self,
+        input: &mut impl Input,
+        index_builder_config: &IvfConfigWithBase,
+    ) -> Result<()> {
+        match index_builder_config.quantizer_config.quantizer_type {
+            QuantizerType::ProductQuantizer => {
+                self.build_ivf_pq::<E, D>(input, index_builder_config)?;
+            }
+            QuantizerType::NoQuantizer => {
+                self.build_ivf_noq::<E, D>(input, index_builder_config)?;
+            }
+        };
+
+        Ok(())
     }
 
     fn do_build_ivf_index<D: DistanceCalculator + CalculateSquared + Send + Sync>(
@@ -334,12 +363,12 @@ impl IndexWriter {
         //     │   ├── codebook
         //     │   └── product_quantizer_config.yaml
         //     └── vectors
-        match index_builder_config.quantizer_config.quantizer_type {
-            QuantizerType::ProductQuantizer => {
-                self.build_ivf_pq::<D>(input, index_builder_config)?;
+        match index_builder_config.ivf_config.posting_list_encoding_type {
+            IntSeqEncodingType::PlainEncoding => {
+                self.build_ivf_index_with_encoder::<PlainEncoder, D>(input, index_builder_config)?;
             }
-            QuantizerType::NoQuantizer => {
-                self.build_ivf_noq::<D>(input, index_builder_config)?;
+            IntSeqEncodingType::EliasFano => {
+                self.build_ivf_index_with_encoder::<EliasFano, D>(input, index_builder_config)?;
             }
         };
 
@@ -638,6 +667,7 @@ mod tests {
             batch_size: 10,
         };
         let ivf_config = IvfConfig {
+            posting_list_encoding_type: IntSeqEncodingType::PlainEncoding,
             num_clusters: 2,
             num_data_points: 100,
             max_clusters_per_vector: 1,
@@ -718,6 +748,7 @@ mod tests {
             ef_construction: 100,
         };
         let ivf_config = IvfConfig {
+            posting_list_encoding_type: IntSeqEncodingType::PlainEncoding,
             num_clusters: 2,
             num_data_points: 100,
             max_clusters_per_vector: 1,

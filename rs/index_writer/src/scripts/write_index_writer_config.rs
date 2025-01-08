@@ -5,8 +5,8 @@ use std::io::Write;
 use anyhow::Result;
 use clap::Parser;
 use index_writer::config::{
-    BaseConfig, HnswConfig, HnswConfigWithBase, IndexWriterConfig, IvfConfig, IvfConfigWithBase,
-    QuantizerConfig, QuantizerType, SpannConfigWithBase,
+    BaseConfig, HnswConfig, HnswConfigWithBase, IndexWriterConfig, IntSeqEncodingType, IvfConfig,
+    IvfConfigWithBase, QuantizerConfig, QuantizerType, SpannConfigWithBase,
 };
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
@@ -22,6 +22,12 @@ enum QuantizerTypeArgs {
     NoQuantizer,
 }
 
+#[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
+enum IntSeqEncodingTypeArgs {
+    EliasFano,
+    PlainEncoding,
+}
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -30,6 +36,9 @@ struct Args {
 
     #[arg(long = "quantizer-type", default_value_t = QuantizerTypeArgs::NoQuantizer, required = true, value_enum)]
     quantizer_type: QuantizerTypeArgs,
+
+    #[arg(long = "int-seq-encoding-type", default_value_t = IntSeqEncodingTypeArgs::PlainEncoding, required = false, value_enum)]
+    int_seq_encoding_type: IntSeqEncodingTypeArgs,
 
     #[arg(long = "index-type", default_value_t = IndexTypeArgs::Spann, required = false, value_enum)]
     index_type: IndexTypeArgs,
@@ -40,6 +49,7 @@ impl Default for Args {
         Self {
             reindex: false,
             quantizer_type: QuantizerTypeArgs::NoQuantizer,
+            int_seq_encoding_type: IntSeqEncodingTypeArgs::PlainEncoding,
             index_type: IndexTypeArgs::Spann,
         }
     }
@@ -47,7 +57,7 @@ impl Default for Args {
 
 fn generate_config(args: &Args) -> IndexWriterConfig {
     let output_path = format!(
-        "/tmp/{:?}_{}_{:?}",
+        "/tmp/{:?}_{}_{:?}_{:?}",
         args.index_type,
         if args.reindex {
             "reindex"
@@ -55,6 +65,7 @@ fn generate_config(args: &Args) -> IndexWriterConfig {
             "no_reindex"
         },
         args.quantizer_type,
+        args.int_seq_encoding_type,
     )
     .to_lowercase();
 
@@ -77,6 +88,9 @@ fn generate_config(args: &Args) -> IndexWriterConfig {
     }
 
     let mut ivf_config = IvfConfig::default();
+    if args.int_seq_encoding_type == IntSeqEncodingTypeArgs::EliasFano {
+        ivf_config.posting_list_encoding_type = IntSeqEncodingType::EliasFano;
+    }
     ivf_config.num_clusters = 10;
     ivf_config.num_data_points = 100000;
     ivf_config.max_clusters_per_vector = 1;
@@ -196,7 +210,6 @@ mod tests {
         args.quantizer_type = QuantizerTypeArgs::NoQuantizer;
         args.reindex = false;
 
-        println!("TYB {:?}", args);
         let config = generate_config(&args);
         match config {
             IndexWriterConfig::Hnsw(config) => {
@@ -204,7 +217,7 @@ mod tests {
                 assert_eq!(config.base_config.dimension, 128);
                 assert_eq!(
                     config.base_config.output_path,
-                    "/tmp/hnsw_no_reindex_noquantizer"
+                    "/tmp/hnsw_no_reindex_noquantizer_plainencoding"
                 );
                 assert_eq!(config.base_config.max_memory_size, 1024 * 1024 * 1024);
                 assert_eq!(config.base_config.file_size, 1024 * 1024 * 1024);
@@ -252,7 +265,7 @@ mod tests {
                 assert_eq!(config.base_config.dimension, 128);
                 assert_eq!(
                     config.base_config.output_path,
-                    "/tmp/ivf_no_reindex_productquantizer"
+                    "/tmp/ivf_no_reindex_productquantizer_plainencoding"
                 );
                 assert_eq!(config.base_config.max_memory_size, 1024 * 1024 * 1024);
                 assert_eq!(config.base_config.file_size, 1024 * 1024 * 1024);
@@ -285,7 +298,7 @@ mod tests {
                 assert_eq!(config.base_config.dimension, 128);
                 assert_eq!(
                     config.base_config.output_path,
-                    "/tmp/spann_no_reindex_productquantizer"
+                    "/tmp/spann_no_reindex_productquantizer_plainencoding"
                 );
                 assert_eq!(config.base_config.max_memory_size, 1024 * 1024 * 1024);
                 assert_eq!(config.base_config.file_size, 1024 * 1024 * 1024);
