@@ -1388,6 +1388,7 @@ dependencies = [
  "log",
  "memmap2",
  "num-traits 0.2.19",
+ "odht",
  "ordered-float",
  "quantization",
  "rand 0.8.5",
@@ -1836,6 +1837,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aedf0a2d09c573ed1d8d85b30c119153926a2b36dce0ab28322c09a117a4683e"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "odht"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a518809ac14b25b569624d0268eba1e88498f71615893dca57982bed7621abb"
+dependencies = [
+ "cfg-if",
 ]
 
 [[package]]
