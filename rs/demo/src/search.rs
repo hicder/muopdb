@@ -55,6 +55,7 @@ async fn main() -> Result<()> {
         top_k: 5,
         ef_construction: 100,
         record_metrics: false,
+        user_ids: vec![0],
     });
 
     let start = Instant::now();

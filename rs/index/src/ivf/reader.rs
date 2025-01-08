@@ -9,22 +9,40 @@ use crate::vector::fixed_file::FixedFileVectorStorage;
 
 pub struct IvfReader {
     base_directory: String,
+    index_offset: usize,
+    vector_offset: usize,
 }
 
 impl IvfReader {
     pub fn new(base_directory: String) -> Self {
-        Self { base_directory }
+        Self::new_with_offset(base_directory, 0, 0)
+    }
+
+    pub fn new_with_offset(
+        base_directory: String,
+        index_offset: usize,
+        vector_offset: usize,
+    ) -> Self {
+        Self {
+            base_directory,
+            index_offset,
+            vector_offset,
+        }
     }
 
     pub fn read<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>>(
         &self,
     ) -> Result<Ivf<Q, DC, D>> {
-        let index_storage = FixedIndexFile::new(format!("{}/index", self.base_directory))?;
+        let index_storage = FixedIndexFile::new_with_offset(
+            format!("{}/index", self.base_directory),
+            self.index_offset,
+        )?;
 
         let vector_storage_path = format!("{}/vectors", self.base_directory);
-        let vector_storage = FixedFileVectorStorage::<Q::QuantizedT>::new(
+        let vector_storage = FixedFileVectorStorage::<Q::QuantizedT>::new_with_offset(
             vector_storage_path,
             index_storage.header().quantized_dimension as usize,
+            self.vector_offset,
         )?;
 
         let num_clusters = index_storage.header().num_clusters as usize;

@@ -10,11 +10,11 @@ use serde::{Deserialize, Serialize};
 use snapshot::Snapshot;
 
 use crate::index::Searchable;
+use crate::multi_spann::reader::MultiSpannReader;
 use crate::segment::immutable_segment::ImmutableSegment;
 use crate::segment::mutable_segment::MutableSegment;
 use crate::segment::Segment;
 use crate::spann::builder::SpannBuilderConfig;
-use crate::spann::reader::SpannReader;
 
 pub trait SegmentSearchable: Searchable + Segment {}
 pub type BoxedSegmentSearchable = Box<dyn SegmentSearchable + Send + Sync>;
@@ -130,6 +130,13 @@ impl Collection {
         self.mutable_segment.write().unwrap().insert(doc_id, data)
     }
 
+    pub fn insert_for_users(&self, user_ids: &[u64], doc_id: u64, data: &[f32]) -> Result<()> {
+        for user_id in user_ids {
+            self.mutable_segment.write().unwrap().insert_for_user(*user_id, doc_id, data)?;
+        }
+        Ok(())
+    }
+
     pub fn dimensions(&self) -> usize {
         self.segment_config.num_features
     }
@@ -157,7 +164,7 @@ impl Collection {
 
                 // Read the segment
                 let spann_reader =
-                    SpannReader::new(format!("{}/{}", self.base_directory, name_for_new_segment));
+                    MultiSpannReader::new(format!("{}/{}", self.base_directory, name_for_new_segment));
                 let index = spann_reader.read()?;
                 let segment: Arc<Box<dyn SegmentSearchable + Send + Sync>> =
                     Arc::new(Box::new(ImmutableSegment::new(index)));

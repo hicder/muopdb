@@ -51,6 +51,7 @@ impl Aggregator for AggregatorServerImpl {
                 tonic::Status::internal(format!("No nodes found for index: {}", index_name))
             })?;
         let ef_construction = req.ef_construction;
+        let user_ids = req.user_ids;
 
         let node_infos = self
             .node_manager
@@ -94,6 +95,7 @@ impl Aggregator for AggregatorServerImpl {
                     top_k: req.top_k,
                     record_metrics: req.record_metrics,
                     ef_construction,
+                    user_ids: user_ids.clone(),
                 }))
                 .await
                 .map_err(|e| tonic::Status::internal(format!("Search request failed: {}", e)))?;

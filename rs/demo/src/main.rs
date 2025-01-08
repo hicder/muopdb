@@ -53,6 +53,7 @@ async fn main() -> Result<()> {
             collection_name: "test-collection-1".to_string(),
             ids: id_buffer.to_vec(),
             vectors: vector_buffer.to_vec(),
+            user_ids: vec![0],
         });
 
         client.insert_binary(request).await?;

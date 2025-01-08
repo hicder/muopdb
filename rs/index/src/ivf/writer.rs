@@ -9,7 +9,7 @@ use log::debug;
 use num_traits::ToBytes;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
-use utils::io::{append_file_to_writer, wrap_write};
+use utils::io::{append_file_to_writer, wrap_write, write_pad};
 use utils::{CalculateSquared, DistanceCalculator};
 
 use crate::ivf::builder::IvfBuilder;
@@ -261,14 +261,14 @@ where
             .context("Failed to write header")?;
 
         // Compute padding for alignment to 8 bytes
-        written += Self::write_pad(written, &mut combined_buffer_writer, 8)?;
+        written += write_pad(written, &mut combined_buffer_writer, 8)?;
         written += append_file_to_writer(&doc_id_mapping_path, &mut combined_buffer_writer)?;
 
         // No need for padding, doc_id_mapping is always 8-byte aligned
         written += append_file_to_writer(&centroids_path, &mut combined_buffer_writer)?;
 
         // Pad again in case num_features and num_clusters are both odd
-        written += Self::write_pad(written, &mut combined_buffer_writer, 8)?;
+        written += write_pad(written, &mut combined_buffer_writer, 8)?;
         written += append_file_to_writer(&posting_list_metadata_path, &mut combined_buffer_writer)?;
         written += append_file_to_writer(&posting_lists_path, &mut combined_buffer_writer)?;
 
@@ -282,21 +282,6 @@ where
         remove_file(format!("{}/posting_lists", self.base_directory))?;
 
         Ok(written)
-    }
-
-    // Write padding for alignment to `alignment` bytes.
-    fn write_pad(
-        written: usize,
-        writer: &mut BufWriter<&mut File>,
-        alignment: usize,
-    ) -> Result<usize> {
-        let mut padded = 0;
-        let padding = alignment - (written % alignment);
-        if padding != alignment {
-            let padding_buffer = vec![0; padding];
-            padded += wrap_write(writer, &padding_buffer)?;
-        }
-        Ok(padded)
     }
 }
 
@@ -443,12 +428,7 @@ mod tests {
         let initial_size = writer.write(&[1, 2, 3]).unwrap() as usize;
 
         // Pad to 8-byte alignment
-        let padding_written = IvfWriter::<
-            NoQuantizer<L2DistanceCalculator>,
-            PlainEncoder,
-            L2DistanceCalculator,
-        >::write_pad(initial_size, &mut writer, 8)
-        .unwrap();
+        let padding_written = write_pad(initial_size, &mut writer, 8).unwrap();
 
         assert_eq!(padding_written, 5); // 3 bytes written, so 5 bytes of padding needed
 

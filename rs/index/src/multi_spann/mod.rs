@@ -1,3 +1,5 @@
 pub mod builder;
-pub mod writer;
+pub mod index;
+pub mod reader;
 pub mod user_index_info;
+pub mod writer;

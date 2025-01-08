@@ -13,6 +13,7 @@ message GetRequest {
 
   // For metrics, don't set by default
   bool record_metrics = 4;
+  repeated uint64 user_ids = 6;
 }
 
 message GetResponse {
@@ -40,6 +41,7 @@ message SearchRequest {
 
   // For metrics, don't set by default
   bool record_metrics = 4;
+  repeated uint64 user_ids = 6;
 }
 
 message SearchResponse {
@@ -57,6 +59,8 @@ message InsertRequest {
 
   // flattened vector
   repeated float vectors = 3;
+
+  repeated uint64 user_ids = 4;
 }
 
 message InsertResponse {
@@ -75,6 +79,7 @@ message InsertBinaryRequest {
   string collection_name = 1;
   bytes ids = 2;
   bytes vectors = 3;
+  repeated uint64 user_ids = 4;
 }
 
 message InsertBinaryResponse {

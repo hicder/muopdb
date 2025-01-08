@@ -33,12 +33,12 @@ pub struct FixedIndexFile {
 }
 
 impl FixedIndexFile {
-    pub fn new(file_path: String) -> Result<Self> {
+    pub fn new_with_offset(file_path: String, offset: usize) -> Result<Self> {
         let file = std::fs::OpenOptions::new()
             .read(true)
             .open(file_path.clone())?;
         let mmap = unsafe { Mmap::map(&file) }?;
-        let (header, doc_id_mapping_offset) = Self::read_header(&mmap)?;
+        let (header, doc_id_mapping_offset) = Self::read_header(&mmap, offset)?;
 
         let centroid_offset = Self::align_to_next_boundary(
             doc_id_mapping_offset + header.doc_id_mapping_len as usize,
@@ -57,14 +57,19 @@ impl FixedIndexFile {
         })
     }
 
+    pub fn new(file_path: String) -> Result<Self> {
+        Self::new_with_offset(file_path, 0)
+    }
+
     /// Read the header from the mmap and return the header and the offset of data page
-    pub fn read_header(buffer: &[u8]) -> Result<(Header, usize)> {
-        let version = match buffer[0] {
+    pub fn read_header(buffer: &[u8], offset: usize) -> Result<(Header, usize)> {
+        let mut offset = offset;
+        let version = match buffer[offset] {
             0 => Version::V0,
             default => return Err(anyhow!("Unknown version: {}", default)),
         };
+        offset += 1;
 
-        let mut offset = 1;
         let num_features = LittleEndian::read_u32(&buffer[offset..]);
         offset += 4;
         let quantized_dimension = LittleEndian::read_u32(&buffer[offset..]);

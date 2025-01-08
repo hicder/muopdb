@@ -12,6 +12,8 @@ pub struct GetRequest {
     /// For metrics, don't set by default
     #[prost(bool, tag = "4")]
     pub record_metrics: bool,
+    #[prost(uint64, repeated, tag = "6")]
+    pub user_ids: ::prost::alloc::vec::Vec<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -36,6 +38,8 @@ pub struct SearchRequest {
     /// For metrics, don't set by default
     #[prost(bool, tag = "4")]
     pub record_metrics: bool,
+    #[prost(uint64, repeated, tag = "6")]
+    pub user_ids: ::prost::alloc::vec::Vec<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -58,6 +62,8 @@ pub struct InsertRequest {
     /// flattened vector
     #[prost(float, repeated, tag = "3")]
     pub vectors: ::prost::alloc::vec::Vec<f32>,
+    #[prost(uint64, repeated, tag = "4")]
+    pub user_ids: ::prost::alloc::vec::Vec<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -86,6 +92,8 @@ pub struct InsertBinaryRequest {
     pub ids: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "3")]
     pub vectors: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint64, repeated, tag = "4")]
+    pub user_ids: ::prost::alloc::vec::Vec<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

@@ -14,15 +14,20 @@ pub struct FixedFileVectorStorage<T> {
     pub num_vectors: usize,
     num_features: usize,
     file_path: String,
+    offset: usize,
 }
 
 impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
     pub fn new(file_path: String, num_features: usize) -> Result<Self> {
+        Self::new_with_offset(file_path, num_features, 0)
+    }
+
+    pub fn new_with_offset(file_path: String, num_features: usize, offset: usize) -> Result<Self> {
         let file = std::fs::OpenOptions::new()
             .read(true)
             .open(file_path.clone())?;
         let mmap = unsafe { Mmap::map(&file) }?;
-        let num_vectors = usize::from_le_bytes(mmap[0..8].try_into().unwrap());
+        let num_vectors = usize::from_le_bytes(mmap[offset..offset + 8].try_into().unwrap());
         if num_vectors * Self::vector_size_in_bytes(num_features) != mmap.len() - 8 {
             return Err(anyhow!("number of vectors mismatch"));
         }
@@ -32,6 +37,7 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
             num_vectors,
             num_features,
             file_path,
+            offset,
         })
     }
 
@@ -39,7 +45,7 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         if index >= self.num_vectors {
             return None;
         }
-        let start = 8 + index * Self::vector_size_in_bytes(self.num_features);
+        let start = self.offset + 8 + index * Self::vector_size_in_bytes(self.num_features);
 
         if context.should_record_pages() {
             let page_id = format!("{}::{}", self.file_path, self.get_page_id(start));

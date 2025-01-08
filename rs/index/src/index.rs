@@ -10,6 +10,17 @@ pub trait Searchable {
         ef_construction: u32,
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>>;
+
+    fn search_with_id(
+        &self,
+        _id: u64,
+        query: &[f32],
+        k: usize,
+        ef_construction: u32,
+        context: &mut SearchContext,
+    ) -> Option<Vec<IdWithScore>> {
+        self.search(query, k, ef_construction, context)
+    }
 }
 
 pub type BoxedSearchable = Box<dyn Searchable + Send + Sync>;

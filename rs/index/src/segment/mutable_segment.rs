@@ -3,12 +3,11 @@ use std::sync::RwLock;
 use anyhow::{Ok, Result};
 use dashmap::DashMap;
 
+use crate::multi_spann::builder::MultiSpannBuilder;
+use crate::multi_spann::writer::MultiSpannWriter;
 use crate::spann::builder::{SpannBuilder, SpannBuilderConfig};
-use crate::spann::writer::SpannWriter;
 
 pub struct MutableSegment {
-    spann_builder: SpannBuilder,
-
     spann_builder_per_user: DashMap<u64, RwLock<SpannBuilder>>,
     config: SpannBuilderConfig,
 
@@ -18,9 +17,7 @@ pub struct MutableSegment {
 
 impl MutableSegment {
     pub fn new(config: SpannBuilderConfig) -> Result<Self> {
-        let spann_builder = SpannBuilder::new(config.clone())?;
         Ok(Self {
-            spann_builder,
             spann_builder_per_user: DashMap::new(),
             config,
             finalized: false,
@@ -32,7 +29,7 @@ impl MutableSegment {
             return Err(anyhow::anyhow!("Cannot insert into a finalized segment"));
         }
 
-        self.spann_builder.add(doc_id, data)
+        self.insert_for_user(0, doc_id, data)
     }
 
     /// Insert a document for a user
@@ -41,9 +38,10 @@ impl MutableSegment {
             return Err(anyhow::anyhow!("Cannot insert into a finalized segment"));
         }
 
-        let spann_builder = self.spann_builder_per_user.entry(user_id).or_insert_with(|| {
-            RwLock::new(SpannBuilder::new(self.config.clone()).unwrap())
-        });
+        let spann_builder = self
+            .spann_builder_per_user
+            .entry(user_id)
+            .or_insert_with(|| RwLock::new(SpannBuilder::new(self.config.clone()).unwrap()));
         spann_builder.write().unwrap().add(doc_id, data)?;
         Ok(())
     }
@@ -56,9 +54,11 @@ impl MutableSegment {
         let segment_directory = format!("{}/{}", base_directory, name);
         std::fs::create_dir_all(&segment_directory)?;
 
-        self.spann_builder.build()?;
-        let spann_writer = SpannWriter::new(segment_directory);
-        spann_writer.write(&mut self.spann_builder)?;
+        let mut multi_spann_builder = MultiSpannBuilder::new(self.config.clone())?;
+        multi_spann_builder.build()?;
+
+        let multi_spann_writer = MultiSpannWriter::new(segment_directory);
+        multi_spann_writer.write(&mut multi_spann_builder)?;
         self.finalized = true;
         Ok(())
     }
