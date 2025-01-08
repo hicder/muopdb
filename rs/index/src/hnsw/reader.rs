@@ -11,11 +11,29 @@ use crate::vector::fixed_file::FixedFileVectorStorage;
 
 pub struct HnswReader {
     base_directory: String,
+    index_offset: usize,
+    vector_offset: usize,
 }
 
 impl HnswReader {
     pub fn new(base_directory: String) -> Self {
-        Self { base_directory }
+        Self {
+            base_directory,
+            index_offset: 0,
+            vector_offset: 0,
+        }
+    }
+
+    pub fn new_with_offset(
+        base_directory: String,
+        index_offset: usize,
+        vector_offset: usize,
+    ) -> Self {
+        Self {
+            base_directory,
+            index_offset,
+            vector_offset,
+        }
     }
 
     pub fn read<Q: Quantizer>(&self) -> Result<Hnsw<Q>> {
@@ -25,9 +43,10 @@ impl HnswReader {
         let (header, offset) = self.read_header(&mmap);
 
         let vector_storage_path = format!("{}/hnsw/vector_storage", self.base_directory);
-        let vector_storage = FixedFileVectorStorage::<Q::QuantizedT>::new(
+        let vector_storage = FixedFileVectorStorage::<Q::QuantizedT>::new_with_offset(
             vector_storage_path,
             header.quantized_dimension as usize,
+            self.vector_offset,
         )
         .unwrap();
         let edges_padding = (4 - (offset % 4)) % 4;
@@ -56,12 +75,13 @@ impl HnswReader {
 
     /// Read the header from the mmap and return the header and the offset of data page
     pub fn read_header(&self, buffer: &[u8]) -> (Header, usize) {
-        let version = match buffer[0] {
+        let mut offset = self.index_offset;
+        let version = match buffer[offset] {
             0 => Version::V0,
             default => panic!("Unknown version: {}", default),
         };
 
-        let mut offset = 1;
+        offset += 1;
         let quantized_dimension = LittleEndian::read_u32(&buffer[offset..]);
         offset += 4;
 

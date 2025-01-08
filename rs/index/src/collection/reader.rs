@@ -5,9 +5,9 @@ use utils::io::get_latest_version;
 
 use super::{Collection, TableOfContent};
 use crate::collection::BoxedSegmentSearchable;
+use crate::multi_spann::reader::MultiSpannReader;
 use crate::segment::immutable_segment::ImmutableSegment;
 use crate::spann::builder::SpannBuilderConfig;
-use crate::spann::reader::SpannReader;
 
 pub struct Reader {
     path: String,
@@ -33,7 +33,7 @@ impl Reader {
         let mut segments: Vec<Arc<BoxedSegmentSearchable>> = vec![];
         for name in &toc.toc {
             let spann_path = format!("{}/{}", self.path, name);
-            let spann_reader = SpannReader::new(spann_path);
+            let spann_reader = MultiSpannReader::new(spann_path);
             let index = spann_reader.read()?;
             segments.push(Arc::new(Box::new(ImmutableSegment::new(index))));
         }
@@ -57,8 +57,9 @@ mod tests {
     use utils::test_utils::generate_random_vector;
 
     use super::*;
-    use crate::spann::builder::{SpannBuilder, SpannBuilderConfig};
-    use crate::spann::writer::SpannWriter;
+    use crate::multi_spann::builder::MultiSpannBuilder;
+    use crate::multi_spann::writer::MultiSpannWriter;
+    use crate::spann::builder::SpannBuilderConfig;
 
     fn collection_config() -> SpannBuilderConfig {
         SpannBuilderConfig {
@@ -88,16 +89,20 @@ mod tests {
         let num_features = 4;
         let mut collection_config = collection_config();
         collection_config.base_directory = base_directory.clone();
-        let mut builder = SpannBuilder::new(collection_config).unwrap();
+        let mut builder = MultiSpannBuilder::new(collection_config).unwrap();
 
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add(i as u64, &generate_random_vector(num_features))
+                .insert(
+                    (i % 5) as u64,
+                    i as u64,
+                    &generate_random_vector(num_features),
+                )
                 .unwrap();
         }
         builder.build().unwrap();
-        let spann_writer = SpannWriter::new(base_directory.clone());
+        let spann_writer = MultiSpannWriter::new(base_directory.clone());
         spann_writer.write(&mut builder)?;
 
         Ok(())

@@ -24,7 +24,7 @@ impl UserIndexInfo {
         bytes[32..40].copy_from_slice(&self.centroid_index_len.to_le_bytes());
         bytes[40..48].copy_from_slice(&self.ivf_vectors_offset.to_le_bytes());
         bytes[48..56].copy_from_slice(&self.ivf_vectors_len.to_le_bytes());
-        bytes[56..64].copy_from_slice(&self.ivf_index_offset.to_le_bytes());        
+        bytes[56..64].copy_from_slice(&self.ivf_index_offset.to_le_bytes());
         bytes[64..72].copy_from_slice(&self.ivf_index_len.to_le_bytes());
         bytes
     }
@@ -62,9 +62,20 @@ impl Config for HashConfig {
     type EncodedValue = [u8; 72];
     type H = FxHashFn;
 
-    #[inline] fn encode_key(k: &Self::Key) -> Self::EncodedKey { k.to_le_bytes() }
-    #[inline] fn encode_value(v: &Self::Value) -> Self::EncodedValue { v.to_le_bytes() }
-    #[inline] fn decode_key(k: &Self::EncodedKey) -> Self::Key { u64::from_le_bytes(*k) }
-    #[inline] fn decode_value(v: &Self::EncodedValue) -> Self::Value { UserIndexInfo::from_le_bytes(v)}
+    #[inline]
+    fn encode_key(k: &Self::Key) -> Self::EncodedKey {
+        k.to_le_bytes()
+    }
+    #[inline]
+    fn encode_value(v: &Self::Value) -> Self::EncodedValue {
+        v.to_le_bytes()
+    }
+    #[inline]
+    fn decode_key(k: &Self::EncodedKey) -> Self::Key {
+        u64::from_le_bytes(*k)
+    }
+    #[inline]
+    fn decode_value(v: &Self::EncodedValue) -> Self::Value {
+        UserIndexInfo::from_le_bytes(v)
+    }
 }
-

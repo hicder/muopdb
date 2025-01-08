@@ -5,7 +5,7 @@ use anyhow::{Ok, Result};
 use odht::HashTableOwned;
 use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
 use utils::distance::l2::L2DistanceCalculator;
-use utils::io::append_file_to_writer;
+use utils::io::{append_file_to_writer, write_pad};
 
 use super::user_index_info::{HashConfig, UserIndexInfo};
 use crate::multi_spann::builder::MultiSpannBuilder;
@@ -73,10 +73,10 @@ impl MultiSpannWriter {
         let mut ivf_vectors_file = File::create(format!("{}/vectors", ivf_directory))?;
         let mut ivf_vectors_buffer_writer = BufWriter::new(&mut ivf_vectors_file);
 
-        let mut centroids_index_written = 0;
-        let mut centroids_vector_written = 0;
-        let mut ivf_index_written = 0;
-        let mut ivf_vectors_written = 0;
+        let mut centroids_index_written: u64 = 0;
+        let mut centroids_vector_written: u64 = 0;
+        let mut ivf_index_written: u64 = 0;
+        let mut ivf_vectors_written: u64 = 0;
 
         for (idx, user_id) in user_ids.iter().enumerate() {
             let user_id_base_directory = format!("{}/{}", base_directory, *user_id);
@@ -85,6 +85,11 @@ impl MultiSpannWriter {
             let user_index_info = &mut user_index_infos[idx];
 
             // Centroids index
+            centroids_index_written += write_pad(
+                centroids_index_written as usize,
+                &mut hnsw_index_buffer_writer,
+                8,
+            )? as u64;
             user_index_info.centroid_index_offset = centroids_index_written;
             centroids_index_written +=
                 append_file_to_writer(&user_id_index_file_path, &mut hnsw_index_buffer_writer)?
@@ -93,6 +98,11 @@ impl MultiSpannWriter {
                 centroids_index_written - user_index_info.centroid_index_offset;
 
             // Centroids vector
+            centroids_vector_written += write_pad(
+                centroids_vector_written as usize,
+                &mut centroids_vector_buffer_writer,
+                8,
+            )? as u64;
             user_index_info.centroid_vector_offset = centroids_vector_written;
             centroids_vector_written += append_file_to_writer(
                 &format!("{}/centroids/hnsw/vector_storage", user_id_base_directory),
@@ -102,6 +112,8 @@ impl MultiSpannWriter {
                 centroids_vector_written - user_index_info.centroid_vector_offset;
 
             // IVF index
+            ivf_index_written +=
+                write_pad(ivf_index_written as usize, &mut ivf_index_buffer_writer, 8)? as u64;
             user_index_info.ivf_index_offset = ivf_index_written;
             ivf_index_written += append_file_to_writer(
                 &format!("{}/ivf/index", user_id_base_directory),
@@ -109,6 +121,12 @@ impl MultiSpannWriter {
             )? as u64;
             user_index_info.ivf_index_len = ivf_index_written - user_index_info.ivf_index_offset;
 
+            // IVF vectors
+            ivf_vectors_written += write_pad(
+                ivf_vectors_written as usize,
+                &mut ivf_vectors_buffer_writer,
+                8,
+            )? as u64;
             user_index_info.ivf_vectors_offset = ivf_vectors_written;
             ivf_vectors_written += append_file_to_writer(
                 &format!("{}/ivf/vectors", user_id_base_directory),

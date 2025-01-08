@@ -9,21 +9,55 @@ use crate::ivf::reader::IvfReader;
 
 pub struct SpannReader {
     base_directory: String,
+    centroids_index_offset: usize,
+    centroids_vector_offset: usize,
+    ivf_index_offset: usize,
+    ivf_vector_offset: usize,
 }
 
 impl SpannReader {
     pub fn new(base_directory: String) -> Self {
-        Self { base_directory }
+        Self {
+            base_directory,
+            centroids_index_offset: 0,
+            centroids_vector_offset: 0,
+            ivf_index_offset: 0,
+            ivf_vector_offset: 0,
+        }
+    }
+
+    pub fn new_with_offsets(
+        base_directory: String,
+        centroids_index_offset: usize,
+        centroids_vector_offset: usize,
+        ivf_index_offset: usize,
+        ivf_vector_offset: usize,
+    ) -> Self {
+        Self {
+            base_directory,
+            centroids_index_offset,
+            centroids_vector_offset,
+            ivf_index_offset,
+            ivf_vector_offset,
+        }
     }
 
     pub fn read(&self) -> Result<Spann> {
         let posting_list_path = format!("{}/ivf", self.base_directory);
         let centroid_path = format!("{}/centroids", self.base_directory);
 
-        let centroids =
-            HnswReader::new(centroid_path).read::<NoQuantizer<L2DistanceCalculator>>()?;
-        let posting_lists = IvfReader::new(posting_list_path)
-            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>()?;
+        let centroids = HnswReader::new_with_offset(
+            centroid_path,
+            self.centroids_index_offset,
+            self.centroids_vector_offset,
+        )
+        .read::<NoQuantizer<L2DistanceCalculator>>()?;
+        let posting_lists = IvfReader::new_with_offset(
+            posting_list_path,
+            self.ivf_index_offset,
+            self.ivf_vector_offset,
+        )
+        .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>()?;
 
         Ok(Spann::new(centroids, posting_lists))
     }

@@ -45,6 +45,20 @@ pub fn get_latest_version(config_path: &str) -> Result<u64> {
     Ok(latest_version)
 }
 
+pub fn write_pad(
+    written: usize,
+    writer: &mut BufWriter<&mut File>,
+    alignment: usize,
+) -> Result<usize> {
+    let mut padded = 0;
+    let padding = alignment - (written % alignment);
+    if padding != alignment {
+        let padding_buffer = vec![0; padding];
+        padded += wrap_write(writer, &padding_buffer)?;
+    }
+    Ok(padded)
+}
+
 // Test
 #[cfg(test)]
 mod tests {

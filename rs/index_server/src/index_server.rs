@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::vec;
 
-use index::index::Searchable;
 use index::utils::SearchContext;
 use log::{debug, info};
 use proto::muopdb::index_server_server::IndexServer;
@@ -37,6 +36,7 @@ impl IndexServer for IndexServerImpl {
         let k = req.top_k;
         let record_metrics = req.record_metrics;
         let ef_construction = req.ef_construction;
+        let user_ids = req.user_ids;
 
         let collection_opt = self
             .index_catalog
@@ -48,7 +48,7 @@ impl IndexServer for IndexServerImpl {
             let mut search_context = SearchContext::new(record_metrics);
             if let Ok(snapshot) = collection.get_snapshot() {
                 let result =
-                    snapshot.search(&vec, k as usize, ef_construction, &mut search_context);
+                    snapshot.search_for_ids(&user_ids, &vec, k as usize, ef_construction, &mut search_context);
                 info!("Search result: {:?}", result);
 
                 match result {
@@ -98,6 +98,7 @@ impl IndexServer for IndexServerImpl {
         let collection_name = req.collection_name;
         let ids = req.ids;
         let vectors = req.vectors;
+        let user_ids = req.user_ids;
 
         let collection_opt = self
             .index_catalog
@@ -121,7 +122,7 @@ impl IndexServer for IndexServerImpl {
                     .zip(&ids)
                     .for_each(|(vector, id)| {
                         // TODO(hicder): Handle errors
-                        collection.insert(*id, vector).unwrap()
+                        collection.insert_for_users(&user_ids, *id, vector).unwrap()
                     });
 
                 // log the duration
@@ -180,6 +181,7 @@ impl IndexServer for IndexServerImpl {
         let collection_name = req.collection_name;
         let ids_buffer = req.ids;
         let vectors_buffer = req.vectors;
+        let user_ids = req.user_ids;
 
         let collection_opt = self
             .index_catalog
@@ -206,7 +208,7 @@ impl IndexServer for IndexServerImpl {
                     .zip(ids)
                     .for_each(|(vector, id)| {
                         // TODO(hicder): Handle errors
-                        collection.insert(*id, vector).unwrap()
+                        collection.insert_for_users(&user_ids, *id, vector).unwrap()
                     });
 
                 // log the duration
