@@ -22,16 +22,14 @@ Here are the plans for future MuopDB:
   - [x] Inverted File (IVF)
   - [x] Improve locality for HNSW
   - [x] SPANN
-### Phase 2 (Ongoing)
+### Phase 2 (Done)
 - [x] Query
   - [x] Multiple index segments
   - [x] L2 distance
 - [x] Index
   - [x] Optimizing index build time
-  - [ ] Elias-Fano encoding for IVF
-  - [ ] RabitQ quantization
-- [ ] Misc
-  - [ ] Configs and documentations
+  - [x] Elias-Fano encoding for IVF
+  - [x] Multi-user SPANN index
 
 ## Why MuopDB?
 This is an educational project for me to learn Rust & vector database.
