@@ -43,7 +43,7 @@ Install prerequisites:
 * Others
 ```
 # macos
-brew install hdf5 protobuf
+brew install hdf5 protobuf openblas
 
 export HDF5_DIR="$(brew --prefix hdf5)"
 ```
