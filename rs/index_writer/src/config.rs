@@ -15,11 +15,18 @@ pub enum DistanceType {
     L2,
 }
 
+// TODO(tyb): support more encoding
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub enum IntSeqEncodingType {
+    EliasFano,
+    #[default]
+    PlainEncoding,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub enum IndexType {
     Hnsw,
     Ivf,
-
     #[default]
     Spann,
 }
@@ -66,6 +73,7 @@ pub struct IvfConfig {
     pub num_data_points: usize,
     pub max_clusters_per_vector: usize,
     pub distance_threshold: f32,
+    pub posting_list_encoding_type: IntSeqEncodingType,
 
     // KMeans training parameters
     pub max_iteration: usize,
