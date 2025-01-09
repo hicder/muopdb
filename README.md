@@ -54,7 +54,6 @@ python3 py/prepare_muopdb.py --indices_path=/mnt/muopdb/indices --data_path=/mnt
 - [ ] Features
   - [ ] Delete vector from collection
   - [ ] Querying mutable segment
-  - [ ] Dot Product support 
   - [ ] RabitQ quantization
   - [ ] Embedded MuopDB
 - [ ] Database Management
