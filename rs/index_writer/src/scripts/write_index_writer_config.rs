@@ -34,7 +34,7 @@ struct Args {
     #[arg(long, default_value_t = false, required = false)]
     reindex: bool,
 
-    #[arg(long = "quantizer-type", default_value_t = QuantizerTypeArgs::NoQuantizer, required = true, value_enum)]
+    #[arg(long = "quantizer-type", default_value_t = QuantizerTypeArgs::ProductQuantizer, required = false, value_enum)]
     quantizer_type: QuantizerTypeArgs,
 
     #[arg(long = "int-seq-encoding-type", default_value_t = IntSeqEncodingTypeArgs::PlainEncoding, required = false, value_enum)]
