@@ -2,6 +2,7 @@ use std::sync::RwLock;
 
 use anyhow::Result;
 use dashmap::DashMap;
+use log::debug;
 
 use crate::spann::builder::{SpannBuilder, SpannBuilderConfig};
 
@@ -30,6 +31,7 @@ impl MultiSpannBuilder {
 
     pub fn build(&self) -> Result<()> {
         for entry in self.inner_builders.iter() {
+            debug!("Building segment for user {}", entry.key());
             entry.value().write().unwrap().build()?;
         }
         Ok(())

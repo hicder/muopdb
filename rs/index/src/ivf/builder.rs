@@ -440,7 +440,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         max_points_per_centroid: usize,
     ) -> usize {
         let num_centroids = num_clusters;
-        let num_points_per_centroid = total_data_points / num_centroids;
+        let num_points_per_centroid = ceil_div(total_data_points, num_centroids);
         ceil_div(
             total_data_points,
             min(num_points_per_centroid, max_points_per_centroid),

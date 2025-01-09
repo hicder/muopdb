@@ -11,14 +11,16 @@ pub trait Searchable {
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>>;
 
+    #[allow(unused_variables)]
     fn search_with_id(
         &self,
-        _id: u64,
+        id: u64,
         query: &[f32],
         k: usize,
         ef_construction: u32,
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>> {
+        // This is a default implementation. In MultiSpann, we will override this function.
         self.search(query, k, ef_construction, context)
     }
 }
