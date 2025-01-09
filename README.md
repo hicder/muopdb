@@ -1,16 +1,17 @@
 # MuopDB - A vector database for machine learning
 
 ## Introduction
-
 MuopDB is a vector database for machine learning. Currently, it supports:
 * Index type: HNSW, IVF, SPANN, MultiSPANN. All on-disk with mmap.
 * Quantization: product quantization
 
-## Why MuopDB
+## Why MuopDB?
 MuopDB supports multiple users by default. What that means is, each user will have its own vector index, within the same collection. The use-case for this is to build memory for LLMs.
 Think of it as:
 * Each user will have its own memory
 * Each user can still search a shared knowledge base.
+
+All users' indices will be stored in a few files, reducing operational complexity.
 
 ## Quick Start
 * Create an venv and activate. [Guide](https://docs.python.org/3/library/venv.html)
