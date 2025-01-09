@@ -5,7 +5,7 @@ use hdf5::File;
 use log::{info, LevelFilter};
 use ndarray::s;
 use proto::muopdb::index_server_client::IndexServerClient;
-use proto::muopdb::{FlushRequest, InsertBinaryRequest};
+use proto::muopdb::{FlushRequest, InsertPackedRequest};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -49,14 +49,14 @@ async fn main() -> Result<()> {
         let vector_buffer = utils::mem::transmute_slice_to_u8(&vectors);
 
         // Create and send insert request
-        let request = tonic::Request::new(InsertBinaryRequest {
+        let request = tonic::Request::new(InsertPackedRequest {
             collection_name: "test-collection-1".to_string(),
             ids: id_buffer.to_vec(),
             vectors: vector_buffer.to_vec(),
             user_ids: vec![0],
         });
 
-        client.insert_binary(request).await?;
+        client.insert_packed(request).await?;
         start_idx = end_idx;
     }
 

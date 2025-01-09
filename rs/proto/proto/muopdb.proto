@@ -28,7 +28,7 @@ service IndexServer {
 
   rpc Insert(InsertRequest) returns (InsertResponse) {}
 
-  rpc InsertBinary(InsertBinaryRequest) returns (InsertBinaryResponse) {}
+  rpc InsertPacked(InsertPackedRequest) returns (InsertPackedResponse) {}
 
   rpc Flush(FlushRequest) returns (FlushResponse) {}
 }
@@ -75,12 +75,12 @@ message FlushResponse {
   repeated string flushed_segments = 1;
 }
 
-message InsertBinaryRequest {
+message InsertPackedRequest {
   string collection_name = 1;
   bytes ids = 2;
   bytes vectors = 3;
   repeated uint64 user_ids = 4;
 }
 
-message InsertBinaryResponse {
+message InsertPackedResponse {
 }

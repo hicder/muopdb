@@ -85,7 +85,7 @@ pub struct FlushResponse {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct InsertBinaryRequest {
+pub struct InsertPackedRequest {
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(bytes = "vec", tag = "2")]
@@ -97,7 +97,7 @@ pub struct InsertBinaryRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct InsertBinaryResponse {}
+pub struct InsertPackedResponse {}
 /// Generated client implementations.
 pub mod aggregator_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -278,10 +278,10 @@ pub mod index_server_client {
             let path = http::uri::PathAndQuery::from_static("/muopdb.IndexServer/Insert");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        pub async fn insert_binary(
+        pub async fn insert_packed(
             &mut self,
-            request: impl tonic::IntoRequest<super::InsertBinaryRequest>,
-        ) -> Result<tonic::Response<super::InsertBinaryResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::InsertPackedRequest>,
+        ) -> Result<tonic::Response<super::InsertPackedResponse>, tonic::Status> {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
                     tonic::Code::Unknown,
@@ -289,7 +289,7 @@ pub mod index_server_client {
                 )
             })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/muopdb.IndexServer/InsertBinary");
+            let path = http::uri::PathAndQuery::from_static("/muopdb.IndexServer/InsertPacked");
             self.inner.unary(request.into_request(), path, codec).await
         }
         pub async fn flush(
@@ -454,10 +454,10 @@ pub mod index_server_server {
             &self,
             request: tonic::Request<super::InsertRequest>,
         ) -> Result<tonic::Response<super::InsertResponse>, tonic::Status>;
-        async fn insert_binary(
+        async fn insert_packed(
             &self,
-            request: tonic::Request<super::InsertBinaryRequest>,
-        ) -> Result<tonic::Response<super::InsertBinaryResponse>, tonic::Status>;
+            request: tonic::Request<super::InsertPackedRequest>,
+        ) -> Result<tonic::Response<super::InsertPackedResponse>, tonic::Status>;
         async fn flush(
             &self,
             request: tonic::Request<super::FlushRequest>,
@@ -578,20 +578,20 @@ pub mod index_server_server {
                     };
                     Box::pin(fut)
                 }
-                "/muopdb.IndexServer/InsertBinary" => {
+                "/muopdb.IndexServer/InsertPacked" => {
                     #[allow(non_camel_case_types)]
-                    struct InsertBinarySvc<T: IndexServer>(pub Arc<T>);
-                    impl<T: IndexServer> tonic::server::UnaryService<super::InsertBinaryRequest>
-                        for InsertBinarySvc<T>
+                    struct InsertPackedSvc<T: IndexServer>(pub Arc<T>);
+                    impl<T: IndexServer> tonic::server::UnaryService<super::InsertPackedRequest>
+                        for InsertPackedSvc<T>
                     {
-                        type Response = super::InsertBinaryResponse;
+                        type Response = super::InsertPackedResponse;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::InsertBinaryRequest>,
+                            request: tonic::Request<super::InsertPackedRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move { (*inner).insert_binary(request).await };
+                            let fut = async move { (*inner).insert_packed(request).await };
                             Box::pin(fut)
                         }
                     }
@@ -600,7 +600,7 @@ pub mod index_server_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = InsertBinarySvc(inner);
+                        let method = InsertPackedSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,

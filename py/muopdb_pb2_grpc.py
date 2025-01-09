@@ -116,6 +116,11 @@ class IndexServerStub(object):
                 request_serializer=muopdb__pb2.InsertRequest.SerializeToString,
                 response_deserializer=muopdb__pb2.InsertResponse.FromString,
                 _registered_method=True)
+        self.InsertPacked = channel.unary_unary(
+                '/muopdb.IndexServer/InsertPacked',
+                request_serializer=muopdb__pb2.InsertPackedRequest.SerializeToString,
+                response_deserializer=muopdb__pb2.InsertPackedResponse.FromString,
+                _registered_method=True)
         self.Flush = channel.unary_unary(
                 '/muopdb.IndexServer/Flush',
                 request_serializer=muopdb__pb2.FlushRequest.SerializeToString,
@@ -133,6 +138,12 @@ class IndexServerServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def Insert(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def InsertPacked(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -156,6 +167,11 @@ def add_IndexServerServicer_to_server(servicer, server):
                     servicer.Insert,
                     request_deserializer=muopdb__pb2.InsertRequest.FromString,
                     response_serializer=muopdb__pb2.InsertResponse.SerializeToString,
+            ),
+            'InsertPacked': grpc.unary_unary_rpc_method_handler(
+                    servicer.InsertPacked,
+                    request_deserializer=muopdb__pb2.InsertPackedRequest.FromString,
+                    response_serializer=muopdb__pb2.InsertPackedResponse.SerializeToString,
             ),
             'Flush': grpc.unary_unary_rpc_method_handler(
                     servicer.Flush,
@@ -217,6 +233,33 @@ class IndexServer(object):
             '/muopdb.IndexServer/Insert',
             muopdb__pb2.InsertRequest.SerializeToString,
             muopdb__pb2.InsertResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def InsertPacked(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/muopdb.IndexServer/InsertPacked',
+            muopdb__pb2.InsertPackedRequest.SerializeToString,
+            muopdb__pb2.InsertPackedResponse.FromString,
             options,
             channel_credentials,
             insecure,

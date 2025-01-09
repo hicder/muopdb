@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0cmuopdb.proto\x12\x06muopdb\"k\n\nGetRequest\x12\r\n\x05index\x18\x01 \x01(\t\x12\x0e\n\x06vector\x18\x02 \x03(\x02\x12\r\n\x05top_k\x18\x03 \x01(\r\x12\x17\n\x0f\x65\x66_construction\x18\x05 \x01(\r\x12\x16\n\x0erecord_metrics\x18\x04 \x01(\x08\"6\n\x0bGetResponse\x12\x0b\n\x03ids\x18\x01 \x03(\x04\x12\x1a\n\x12num_pages_accessed\x18\x02 \x01(\x04\"s\n\rSearchRequest\x12\x12\n\nindex_name\x18\x01 \x01(\t\x12\x0e\n\x06vector\x18\x02 \x03(\x02\x12\r\n\x05top_k\x18\x03 \x01(\r\x12\x17\n\x0f\x65\x66_construction\x18\x05 \x01(\r\x12\x16\n\x0erecord_metrics\x18\x04 \x01(\x08\"I\n\x0eSearchResponse\x12\x0b\n\x03ids\x18\x01 \x03(\x04\x12\x0e\n\x06scores\x18\x02 \x03(\x02\x12\x1a\n\x12num_pages_accessed\x18\x03 \x01(\x04\"F\n\rInsertRequest\x12\x17\n\x0f\x63ollection_name\x18\x01 \x01(\t\x12\x0b\n\x03ids\x18\x02 \x03(\x04\x12\x0f\n\x07vectors\x18\x03 \x03(\x02\"&\n\x0eInsertResponse\x12\x14\n\x0cinserted_ids\x18\x01 \x03(\x04\"\'\n\x0c\x46lushRequest\x12\x17\n\x0f\x63ollection_name\x18\x01 \x01(\t\")\n\rFlushResponse\x12\x18\n\x10\x66lushed_segments\x18\x01 \x03(\t2>\n\nAggregator\x12\x30\n\x03Get\x12\x12.muopdb.GetRequest\x1a\x13.muopdb.GetResponse\"\x00\x32\xbb\x01\n\x0bIndexServer\x12\x39\n\x06Search\x12\x15.muopdb.SearchRequest\x1a\x16.muopdb.SearchResponse\"\x00\x12\x39\n\x06Insert\x12\x15.muopdb.InsertRequest\x1a\x16.muopdb.InsertResponse\"\x00\x12\x36\n\x05\x46lush\x12\x14.muopdb.FlushRequest\x1a\x15.muopdb.FlushResponse\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0cmuopdb.proto\x12\x06muopdb\"}\n\nGetRequest\x12\r\n\x05index\x18\x01 \x01(\t\x12\x0e\n\x06vector\x18\x02 \x03(\x02\x12\r\n\x05top_k\x18\x03 \x01(\r\x12\x17\n\x0f\x65\x66_construction\x18\x05 \x01(\r\x12\x16\n\x0erecord_metrics\x18\x04 \x01(\x08\x12\x10\n\x08user_ids\x18\x06 \x03(\x04\"6\n\x0bGetResponse\x12\x0b\n\x03ids\x18\x01 \x03(\x04\x12\x1a\n\x12num_pages_accessed\x18\x02 \x01(\x04\"\x85\x01\n\rSearchRequest\x12\x12\n\nindex_name\x18\x01 \x01(\t\x12\x0e\n\x06vector\x18\x02 \x03(\x02\x12\r\n\x05top_k\x18\x03 \x01(\r\x12\x17\n\x0f\x65\x66_construction\x18\x05 \x01(\r\x12\x16\n\x0erecord_metrics\x18\x04 \x01(\x08\x12\x10\n\x08user_ids\x18\x06 \x03(\x04\"I\n\x0eSearchResponse\x12\x0b\n\x03ids\x18\x01 \x03(\x04\x12\x0e\n\x06scores\x18\x02 \x03(\x02\x12\x1a\n\x12num_pages_accessed\x18\x03 \x01(\x04\"X\n\rInsertRequest\x12\x17\n\x0f\x63ollection_name\x18\x01 \x01(\t\x12\x0b\n\x03ids\x18\x02 \x03(\x04\x12\x0f\n\x07vectors\x18\x03 \x03(\x02\x12\x10\n\x08user_ids\x18\x04 \x03(\x04\"&\n\x0eInsertResponse\x12\x14\n\x0cinserted_ids\x18\x01 \x03(\x04\"\'\n\x0c\x46lushRequest\x12\x17\n\x0f\x63ollection_name\x18\x01 \x01(\t\")\n\rFlushResponse\x12\x18\n\x10\x66lushed_segments\x18\x01 \x03(\t\"^\n\x13InsertPackedRequest\x12\x17\n\x0f\x63ollection_name\x18\x01 \x01(\t\x12\x0b\n\x03ids\x18\x02 \x01(\x0c\x12\x0f\n\x07vectors\x18\x03 \x01(\x0c\x12\x10\n\x08user_ids\x18\x04 \x03(\x04\"\x16\n\x14InsertPackedResponse2>\n\nAggregator\x12\x30\n\x03Get\x12\x12.muopdb.GetRequest\x1a\x13.muopdb.GetResponse\"\x00\x32\x88\x02\n\x0bIndexServer\x12\x39\n\x06Search\x12\x15.muopdb.SearchRequest\x1a\x16.muopdb.SearchResponse\"\x00\x12\x39\n\x06Insert\x12\x15.muopdb.InsertRequest\x1a\x16.muopdb.InsertResponse\"\x00\x12K\n\x0cInsertPacked\x12\x1b.muopdb.InsertPackedRequest\x1a\x1c.muopdb.InsertPackedResponse\"\x00\x12\x36\n\x05\x46lush\x12\x14.muopdb.FlushRequest\x1a\x15.muopdb.FlushResponse\"\x00\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,23 +32,27 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'muopdb_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
   _globals['_GETREQUEST']._serialized_start=24
-  _globals['_GETREQUEST']._serialized_end=131
-  _globals['_GETRESPONSE']._serialized_start=133
-  _globals['_GETRESPONSE']._serialized_end=187
-  _globals['_SEARCHREQUEST']._serialized_start=189
-  _globals['_SEARCHREQUEST']._serialized_end=304
-  _globals['_SEARCHRESPONSE']._serialized_start=306
-  _globals['_SEARCHRESPONSE']._serialized_end=379
-  _globals['_INSERTREQUEST']._serialized_start=381
-  _globals['_INSERTREQUEST']._serialized_end=451
-  _globals['_INSERTRESPONSE']._serialized_start=453
-  _globals['_INSERTRESPONSE']._serialized_end=491
-  _globals['_FLUSHREQUEST']._serialized_start=493
-  _globals['_FLUSHREQUEST']._serialized_end=532
-  _globals['_FLUSHRESPONSE']._serialized_start=534
-  _globals['_FLUSHRESPONSE']._serialized_end=575
-  _globals['_AGGREGATOR']._serialized_start=577
-  _globals['_AGGREGATOR']._serialized_end=639
-  _globals['_INDEXSERVER']._serialized_start=642
-  _globals['_INDEXSERVER']._serialized_end=829
+  _globals['_GETREQUEST']._serialized_end=149
+  _globals['_GETRESPONSE']._serialized_start=151
+  _globals['_GETRESPONSE']._serialized_end=205
+  _globals['_SEARCHREQUEST']._serialized_start=208
+  _globals['_SEARCHREQUEST']._serialized_end=341
+  _globals['_SEARCHRESPONSE']._serialized_start=343
+  _globals['_SEARCHRESPONSE']._serialized_end=416
+  _globals['_INSERTREQUEST']._serialized_start=418
+  _globals['_INSERTREQUEST']._serialized_end=506
+  _globals['_INSERTRESPONSE']._serialized_start=508
+  _globals['_INSERTRESPONSE']._serialized_end=546
+  _globals['_FLUSHREQUEST']._serialized_start=548
+  _globals['_FLUSHREQUEST']._serialized_end=587
+  _globals['_FLUSHRESPONSE']._serialized_start=589
+  _globals['_FLUSHRESPONSE']._serialized_end=630
+  _globals['_INSERTPACKEDREQUEST']._serialized_start=632
+  _globals['_INSERTPACKEDREQUEST']._serialized_end=726
+  _globals['_INSERTPACKEDRESPONSE']._serialized_start=728
+  _globals['_INSERTPACKEDRESPONSE']._serialized_end=750
+  _globals['_AGGREGATOR']._serialized_start=752
+  _globals['_AGGREGATOR']._serialized_end=814
+  _globals['_INDEXSERVER']._serialized_start=817
+  _globals['_INDEXSERVER']._serialized_end=1081
 # @@protoc_insertion_point(module_scope)
