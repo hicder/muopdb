@@ -1,0 +1,20 @@
+{
+    "max_neighbors": 10,
+    "max_layers": 2,
+    "ef_construction": 100,
+    "vector_storage_memory_size": 1024000,
+    "vector_storage_file_size": 1024000,
+    "num_features": 768,
+    "max_iteration": 1000,
+    "batch_size": 4,
+    "num_clusters": 1500,
+    "num_data_points_for_clustering": 20000,
+    "max_clusters_per_vector": 1,
+    "distance_threshold": 0.1,
+    "base_directory": "./",
+    "memory_size": 1024000,
+    "file_size": 1024000,
+    "tolerance": 0.0,
+    "max_posting_list_size": 5000,
+    "reindex": true
+}
