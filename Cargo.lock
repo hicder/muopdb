@@ -1433,6 +1433,7 @@ dependencies = [
  "anyhow",
  "clap 4.5.20",
  "compression",
+ "config",
  "env_logger",
  "hdf5-metno",
  "index",

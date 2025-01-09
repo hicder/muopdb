@@ -2,6 +2,7 @@ use anyhow::{Ok, Result};
 use compression::compression::IntSeqEncoder;
 use compression::elias_fano::ef::EliasFano;
 use compression::noc::noc::PlainEncoder;
+use config::enums::{DistanceType, IntSeqEncodingType, QuantizerType};
 use index::hnsw::builder::HnswBuilder;
 use index::hnsw::writer::HnswWriter;
 use index::ivf::builder::{IvfBuilder, IvfBuilderConfig};
@@ -20,8 +21,7 @@ use utils::distance::l2::L2DistanceCalculator;
 use utils::{CalculateSquared, DistanceCalculator};
 
 use crate::config::{
-    DistanceType, HnswConfigWithBase, IndexWriterConfig, IntSeqEncodingType, IvfConfigWithBase,
-    QuantizerType, SpannConfigWithBase,
+    HnswConfigWithBase, IndexWriterConfig, IvfConfigWithBase, SpannConfigWithBase,
 };
 use crate::input::Input;
 
@@ -491,13 +491,12 @@ impl IndexWriter {
 mod tests {
     use std::path::Path;
 
+    use config::enums::IndexType;
     use rand::Rng;
     use tempdir::TempDir;
 
     use super::*;
-    use crate::config::{
-        BaseConfig, DistanceType, HnswConfig, IndexType, IvfConfig, QuantizerConfig,
-    };
+    use crate::config::{BaseConfig, HnswConfig, IvfConfig, QuantizerConfig};
     use crate::input::Row;
     // Mock Input implementation for testing
     struct MockInput {

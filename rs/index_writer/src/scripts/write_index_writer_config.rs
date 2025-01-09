@@ -4,9 +4,10 @@ use std::io::Write;
 
 use anyhow::Result;
 use clap::Parser;
+use config::enums::{IndexType, IntSeqEncodingType, QuantizerType};
 use index_writer::config::{
-    BaseConfig, HnswConfig, HnswConfigWithBase, IndexWriterConfig, IntSeqEncodingType, IvfConfig,
-    IvfConfigWithBase, QuantizerConfig, QuantizerType, SpannConfigWithBase,
+    BaseConfig, HnswConfig, HnswConfigWithBase, IndexWriterConfig, IvfConfig, IvfConfigWithBase,
+    QuantizerConfig, SpannConfigWithBase,
 };
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
@@ -75,7 +76,7 @@ fn generate_config(args: &Args) -> IndexWriterConfig {
     base_config.output_path = output_path;
     base_config.max_memory_size = 1024 * 1024 * 1024; // 1 GB
     base_config.file_size = 1024 * 1024 * 1024; // 1 GB
-    base_config.index_type = index_writer::config::IndexType::Spann;
+    base_config.index_type = IndexType::Spann;
 
     let mut quantizer_config = QuantizerConfig::default();
     if args.quantizer_type == QuantizerTypeArgs::ProductQuantizer {
@@ -221,10 +222,7 @@ mod tests {
                 );
                 assert_eq!(config.base_config.max_memory_size, 1024 * 1024 * 1024);
                 assert_eq!(config.base_config.file_size, 1024 * 1024 * 1024);
-                assert_eq!(
-                    config.base_config.index_type,
-                    index_writer::config::IndexType::Spann
-                );
+                assert_eq!(config.base_config.index_type, IndexType::Spann);
 
                 assert_eq!(
                     config.quantizer_config.quantizer_type,
@@ -269,10 +267,7 @@ mod tests {
                 );
                 assert_eq!(config.base_config.max_memory_size, 1024 * 1024 * 1024);
                 assert_eq!(config.base_config.file_size, 1024 * 1024 * 1024);
-                assert_eq!(
-                    config.base_config.index_type,
-                    index_writer::config::IndexType::Spann
-                );
+                assert_eq!(config.base_config.index_type, IndexType::Spann);
 
                 assert_eq!(
                     config.quantizer_config.quantizer_type,
@@ -302,10 +297,7 @@ mod tests {
                 );
                 assert_eq!(config.base_config.max_memory_size, 1024 * 1024 * 1024);
                 assert_eq!(config.base_config.file_size, 1024 * 1024 * 1024);
-                assert_eq!(
-                    config.base_config.index_type,
-                    index_writer::config::IndexType::Spann
-                );
+                assert_eq!(config.base_config.index_type, IndexType::Spann);
 
                 assert_eq!(
                     config.quantizer_config.quantizer_type,

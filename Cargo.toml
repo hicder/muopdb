@@ -22,6 +22,7 @@ approx = "0.5"
 anyhow = "1.0.90"
 aggregator = {path='./rs/aggregator'}
 compression = {path='./rs/compression'}
+config = {path='./rs/config'}
 criterion = "0.4"
 proto = {path='./rs/proto'}
 quantization = {path='./rs/quantization'}
