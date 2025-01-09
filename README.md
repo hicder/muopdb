@@ -50,8 +50,15 @@ python3 py/prepare_muopdb.py --indices_path=/mnt/muopdb/indices --data_path=/mnt
   - [x] Optimizing index build time
   - [x] Elias-Fano encoding for IVF
   - [x] Multi-user SPANN index
-
-
+### Phase 3 (Ongoing)
+- [ ] Features
+  - [ ] Delete vector from collection
+  - [ ] Querying mutable segment
+  - [ ] Dot Product support 
+  - [ ] RabitQ quantization
+  - [ ] Embedded MuopDB
+- [ ] Database Management
+  - [ ] Segment optimizers (vacumn, merge)
 
 ## Building
 Install prerequisites:
