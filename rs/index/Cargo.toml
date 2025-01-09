@@ -8,6 +8,7 @@ anyhow = "1.0.90"
 bit-vec.workspace = true
 byteorder.workspace = true
 compression.workspace = true
+config.workspace = true
 dashmap.workspace = true
 env_logger.workspace = true
 kmeans.workspace = true

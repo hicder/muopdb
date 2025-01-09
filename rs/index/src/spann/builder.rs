@@ -1,4 +1,5 @@
 use anyhow::{Ok, Result};
+use config::enums::{IntSeqEncodingType, QuantizerType};
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
 use serde::{Deserialize, Serialize};
@@ -17,24 +18,30 @@ pub struct SpannBuilderConfig {
     pub vector_storage_file_size: usize,
     pub num_features: usize,
 
-    // For posting lists
+    // For quantization
+    pub subvector_dimension: usize,
+    pub num_bits: usize,
     pub max_iteration: usize,
     pub batch_size: usize,
+    pub quantizer_type: QuantizerType,
+
+    // For posting lists
     pub num_clusters: usize,
     pub num_data_points_for_clustering: usize,
     pub max_clusters_per_vector: usize,
-    // Threshold to add a vector to more than one cluster
-    pub distance_threshold: f32,
+    pub distance_threshold: f32, // Threshold to add a vector to more than one cluster
+    pub posting_list_encoding_type: IntSeqEncodingType,
 
     // Parameters for storages
     pub base_directory: String,
     pub memory_size: usize,
     pub file_size: usize,
 
-    // Parameters for clustering.
+    // Parameters for clustering
     pub tolerance: f32,
     pub max_posting_list_size: usize,
 
+    // Optimization parameters
     pub reindex: bool,
 }
 
@@ -47,17 +54,26 @@ impl Default for SpannBuilderConfig {
             vector_storage_memory_size: 1024,
             vector_storage_file_size: 1024,
             num_features: 768,
+
+            subvector_dimension: 8,
+            num_bits: 8,
             max_iteration: 1000,
             batch_size: 4,
+            quantizer_type: QuantizerType::NoQuantizer,
+
             num_clusters: 10,
             num_data_points_for_clustering: 1000,
             max_clusters_per_vector: 1,
             distance_threshold: 0.1,
+            posting_list_encoding_type: IntSeqEncodingType::PlainEncoding,
+
             base_directory: "./".to_string(),
             memory_size: 1024,
             file_size: 1024,
+
             tolerance: 0.1,
             max_posting_list_size: usize::MAX,
+
             reindex: true,
         }
     }

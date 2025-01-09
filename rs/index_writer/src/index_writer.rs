@@ -401,12 +401,19 @@ impl IndexWriter {
             vector_storage_memory_size: index_writer_config.base_config.max_memory_size,
             vector_storage_file_size: index_writer_config.base_config.file_size,
             num_features: index_writer_config.base_config.dimension,
+            subvector_dimension: index_writer_config.quantizer_config.subvector_dimension,
+            num_bits: index_writer_config.quantizer_config.num_bits as usize,
+            quantizer_type: index_writer_config.quantizer_config.quantizer_type.clone(),
             max_iteration: index_writer_config.ivf_config.max_iteration,
             batch_size: index_writer_config.ivf_config.batch_size,
             num_clusters: index_writer_config.ivf_config.num_clusters,
             num_data_points_for_clustering: index_writer_config.ivf_config.num_data_points,
             max_clusters_per_vector: index_writer_config.ivf_config.max_clusters_per_vector,
             distance_threshold: index_writer_config.ivf_config.distance_threshold,
+            posting_list_encoding_type: index_writer_config
+                .ivf_config
+                .posting_list_encoding_type
+                .clone(),
             base_directory: root_path.to_string(),
             memory_size: index_writer_config.base_config.max_memory_size,
             file_size: index_writer_config.base_config.file_size,
