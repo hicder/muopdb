@@ -1,4 +1,4 @@
-# MuopDB - A vector database for machine learning
+# MuopDB - A vector database for AI memories
 
 ## Introduction
 MuopDB is a vector database for machine learning. Currently, it supports:
