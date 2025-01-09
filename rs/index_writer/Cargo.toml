@@ -15,6 +15,7 @@ path = "src/scripts/write_index_writer_config.rs"
 anyhow.workspace = true
 clap.workspace = true
 compression.workspace = true
+config.workspace = true
 env_logger.workspace = true
 log.workspace = true
 hdf5.workspace = true
