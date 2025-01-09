@@ -5,7 +5,7 @@ use index::utils::SearchContext;
 use log::{debug, info};
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
-    FlushRequest, FlushResponse, InsertBinaryRequest, InsertBinaryResponse, InsertRequest,
+    FlushRequest, FlushResponse, InsertPackedRequest, InsertPackedResponse, InsertRequest,
     InsertResponse, SearchRequest, SearchResponse,
 };
 use tokio::sync::Mutex;
@@ -47,8 +47,13 @@ impl IndexServer for IndexServerImpl {
         if let Some(collection) = collection_opt {
             let mut search_context = SearchContext::new(record_metrics);
             if let Ok(snapshot) = collection.get_snapshot() {
-                let result =
-                    snapshot.search_for_ids(&user_ids, &vec, k as usize, ef_construction, &mut search_context);
+                let result = snapshot.search_for_ids(
+                    &user_ids,
+                    &vec,
+                    k as usize,
+                    ef_construction,
+                    &mut search_context,
+                );
                 info!("Search result: {:?}", result);
 
                 match result {
@@ -172,10 +177,10 @@ impl IndexServer for IndexServerImpl {
         }
     }
 
-    async fn insert_binary(
+    async fn insert_packed(
         &self,
-        request: tonic::Request<InsertBinaryRequest>,
-    ) -> Result<tonic::Response<InsertBinaryResponse>, tonic::Status> {
+        request: tonic::Request<InsertPackedRequest>,
+    ) -> Result<tonic::Response<InsertPackedResponse>, tonic::Status> {
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
@@ -215,7 +220,7 @@ impl IndexServer for IndexServerImpl {
                 let end = std::time::Instant::now();
                 let duration = end.duration_since(start);
                 debug!("Inserted {} vectors in {:?}", ids.len(), duration);
-                Ok(tonic::Response::new(InsertBinaryResponse {}))
+                Ok(tonic::Response::new(InsertPackedResponse {}))
             }
             None => Err(tonic::Status::new(
                 tonic::Code::NotFound,

@@ -132,7 +132,10 @@ impl Collection {
 
     pub fn insert_for_users(&self, user_ids: &[u64], doc_id: u64, data: &[f32]) -> Result<()> {
         for user_id in user_ids {
-            self.mutable_segment.write().unwrap().insert_for_user(*user_id, doc_id, data)?;
+            self.mutable_segment
+                .write()
+                .unwrap()
+                .insert_for_user(*user_id, doc_id, data)?;
         }
         Ok(())
     }
@@ -163,8 +166,10 @@ impl Collection {
                     .build(self.base_directory.clone(), name_for_new_segment.clone())?;
 
                 // Read the segment
-                let spann_reader =
-                    MultiSpannReader::new(format!("{}/{}", self.base_directory, name_for_new_segment));
+                let spann_reader = MultiSpannReader::new(format!(
+                    "{}/{}",
+                    self.base_directory, name_for_new_segment
+                ));
                 let index = spann_reader.read()?;
                 let segment: Arc<Box<dyn SegmentSearchable + Send + Sync>> =
                     Arc::new(Box::new(ImmutableSegment::new(index)));
