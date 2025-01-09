@@ -20,7 +20,8 @@ if __name__ == "__main__":
             vector=query_vector,
             top_k=5,
             ef_construction=50,
-            record_metrics=True
+            record_metrics=True,
+            user_ids=[0]
         )
         end = time.time()
         print(f"Time taken for search: {end - start} seconds")

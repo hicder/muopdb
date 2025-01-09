@@ -61,7 +61,7 @@ impl Searchable for Spann {
                 let nearest_centroid_ids: Vec<usize> = nearest_centroids
                     .iter()
                     .filter(|centroid_and_distance| {
-                        centroid_and_distance.score - nearest_distance < nearest_distance * 0.1
+                        centroid_and_distance.score - nearest_distance <= nearest_distance * 0.1
                     })
                     .map(|x| x.id as usize)
                     .collect();
