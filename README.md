@@ -6,22 +6,23 @@ MuopDB is a vector database for machine learning. Currently, it supports:
 * Index type: HNSW, IVF, SPANN, MultiSPANN. All on-disk with mmap.
 * Quantization: product quantization
 
-MuopDB supports multiple users by default. What that means is, each user will have its own vector index, within the same collection. The usecase for this is to build memory for LLMs.
+## Why MuopDB
+MuopDB supports multiple users by default. What that means is, each user will have its own vector index, within the same collection. The use-case for this is to build memory for LLMs.
 Think of it as:
 * Each user will have its own memory
 * Each user can still search a shared knowledge base.
 
 ## Quick Start
-* Create an venv and activate. [Guilde](https://docs.python.org/3/library/venv.html)
+* Create an venv and activate. [Guide](https://docs.python.org/3/library/venv.html)
 * Prepare necessary directories
 ```
 python3 py/prepare_muopdb.py --indices_path=/mnt/muopdb/indices --data_path=/mnt/muopdb/data --collection_name=test-collection-4 --config_path=py/collection_config.json
 ```
-* Run MuopDB index server. (Refer to build instruction down below)
+* Run MuopDB `index_server`. (Refer to build instruction down below)
 ```
 ./target/release/index_server --node-id 0 --index-config-path /mnt/muopdb/indices --index-data-path /mnt/muopdb/data --port 9002
 ```
-* Now you have an up and running MuopDB index_server.
+* Now you have an up and running MuopDB `index_server`.
   * You can send gRPC requests to this server (possibly with [Postman](https://www.postman.com/)).
   * Refer to [muopdb.proto](https://github.com/hicder/muopdb/blob/master/rs/proto/proto/muopdb.proto) for the APIs
 ## Plans
@@ -49,30 +50,28 @@ python3 py/prepare_muopdb.py --indices_path=/mnt/muopdb/indices --data_path=/mnt
   - [x] Elias-Fano encoding for IVF
   - [x] Multi-user SPANN index
 
-## Why MuopDB?
-This is an educational project for me to learn Rust & vector database.
+
 
 ## Building
 Install prerequisites:
 * Rust: https://www.rust-lang.org/tools/install
-* Others
+* Libraries
 ```
-# macos
+# MacOS: Use Homebrew
 brew install hdf5 protobuf openblas
 
-export HDF5_DIR="$(brew --prefix hdf5)"
+# Linux: Use your package manager.
+# On Arch Linux (and its derivatives, such as EndeavourOS, CachyOS):
+sudo pacman -Syu hdf5 protobuf openblas
 ```
-
 Build:
 ```
 # from top-level workspace
 cargo build --release
 ```
-
 Test:
 ```
 cargo test --release
 ```
-
 ## Contributions
 This project is done with [TechCare Coaching](https://techcarecoaching.com/). I am mentoring mentees who made contributions to this project.
