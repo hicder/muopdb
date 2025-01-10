@@ -11,7 +11,7 @@ use utils::distance::l2::L2DistanceCalculatorImpl::Scalar;
 use utils::distance::l2::{L2DistanceCalculator, L2DistanceCalculatorImpl};
 use utils::{CalculateSquared, DistanceCalculator};
 
-use crate::quantization::Quantizer;
+use crate::quantization::{Quantizer, WritableQuantizer};
 
 const CODEBOOK_NAME: &str = "codebook";
 
@@ -71,42 +71,6 @@ impl ProductQuantizerReader {
                 return Err(e);
             }
         }
-    }
-}
-
-pub struct ProductQuantizerWriter {
-    base_directory: String,
-}
-
-impl ProductQuantizerWriter {
-    pub fn new(base_directory: String) -> Self {
-        Self { base_directory }
-    }
-
-    pub fn write<D: DistanceCalculator>(&self, quantizer: &ProductQuantizer<D>) -> Result<()> {
-        let config_path = Path::new(&self.base_directory).join("product_quantizer_config.yaml");
-        if config_path.exists() {
-            // Delete the file if exists
-            std::fs::remove_file(config_path)?;
-        }
-
-        // Write the codebook to a file
-        let codebook_path = Path::new(&self.base_directory).join(&CODEBOOK_NAME);
-        if codebook_path.exists() {
-            // Delete the file if exists
-            std::fs::remove_file(codebook_path)?;
-        }
-
-        // Write codebook
-        let codebook_buffer = quantizer.codebook_to_buffer();
-        let mut codebook_file = File::create(Path::new(&self.base_directory).join(&CODEBOOK_NAME))?;
-        codebook_file.write(&codebook_buffer)?;
-
-        // Write config
-        let mut config_file =
-            File::create(Path::new(&self.base_directory).join("product_quantizer_config.yaml"))?;
-        config_file.write(serde_yaml::to_string(&quantizer.config())?.as_bytes())?;
-        Ok(())
     }
 }
 
@@ -321,6 +285,34 @@ impl<D: DistanceCalculator> Quantizer for ProductQuantizer<D> {
     }
 }
 
+impl<D: DistanceCalculator> WritableQuantizer for ProductQuantizer<D> {
+    fn write_to_directory(&self, base_directory: &str) -> Result<()> {
+        let config_path = Path::new(&base_directory).join("product_quantizer_config.yaml");
+        if config_path.exists() {
+            // Delete the file if exists
+            std::fs::remove_file(config_path)?;
+        }
+
+        // Write the codebook to a file
+        let codebook_path = Path::new(&base_directory).join(&CODEBOOK_NAME);
+        if codebook_path.exists() {
+            // Delete the file if exists
+            std::fs::remove_file(codebook_path)?;
+        }
+
+        // Write codebook
+        let codebook_buffer = self.codebook_to_buffer();
+        let mut codebook_file = File::create(Path::new(&base_directory).join(&CODEBOOK_NAME))?;
+        codebook_file.write(&codebook_buffer)?;
+
+        // Write config
+        let mut config_file =
+            File::create(Path::new(&base_directory).join("product_quantizer_config.yaml"))?;
+        config_file.write(serde_yaml::to_string(&self.config())?.as_bytes())?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -358,10 +350,8 @@ mod tests {
         assert_eq!(quantized_value, vec![1, 1, 1, 1, 1]);
 
         // Write the codebook
-        let writer = ProductQuantizerWriter {
-            base_directory: base_directory.clone(),
-        };
-        writer.write(&pq).expect("Failed to write the codebook");
+        pq.write_to_directory(&base_directory)
+            .expect("Failed to write the codebook");
 
         // Read the quantizer
         let reader = ProductQuantizerReader {

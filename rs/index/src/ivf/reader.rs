@@ -66,7 +66,8 @@ mod tests {
 
     use compression::elias_fano::ef::{EliasFano, EliasFanoDecoder};
     use compression::noc::noc::{PlainDecoder, PlainEncoder};
-    use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
+    use quantization::noq::noq::NoQuantizer;
+    use quantization::quantization::WritableQuantizer;
     use tempdir::TempDir;
     use utils::distance::l2::L2DistanceCalculator;
     use utils::mem::transmute_u8_to_slice;
@@ -96,8 +97,7 @@ mod tests {
         let quantizer_directory = format!("{}/quantizer", base_directory);
         std::fs::create_dir_all(&quantizer_directory)
             .expect("Failed to create quantizer directory");
-        let noq_writer = NoQuantizerWriter::new(quantizer_directory);
-        assert!(noq_writer.write(&quantizer).is_ok());
+        assert!(quantizer.write_to_directory(&quantizer_directory).is_ok());
         let writer =
             IvfWriter::<_, EliasFano, L2DistanceCalculator>::new(base_directory.clone(), quantizer);
 
@@ -243,8 +243,9 @@ mod tests {
         let quantizer_directory_ref = format!("{}/quantizer", base_directory_ref);
         std::fs::create_dir_all(&quantizer_directory_ref)
             .expect("Failed to create quantizer directory");
-        let noq_writer_ref = NoQuantizerWriter::new(quantizer_directory_ref);
-        assert!(noq_writer_ref.write(&quantizer).is_ok());
+        assert!(quantizer
+            .write_to_directory(&quantizer_directory_ref)
+            .is_ok());
         let writer_ref = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
             base_directory_ref.clone(),
             quantizer,
@@ -253,8 +254,7 @@ mod tests {
         let quantizer_directory = format!("{}/quantizer", base_directory);
         std::fs::create_dir_all(&quantizer_directory)
             .expect("Failed to create quantizer directory");
-        let noq_writer = NoQuantizerWriter::new(quantizer_directory);
-        assert!(noq_writer.write(&quantizer).is_ok());
+        assert!(quantizer.write_to_directory(&quantizer_directory).is_ok());
         let writer =
             IvfWriter::<_, EliasFano, L2DistanceCalculator>::new(base_directory.clone(), quantizer);
 
@@ -329,8 +329,7 @@ mod tests {
         let quantizer_directory = format!("{}/quantizer", base_directory);
         std::fs::create_dir_all(&quantizer_directory)
             .expect("Failed to create quantizer directory");
-        let noq_writer = NoQuantizerWriter::new(quantizer_directory);
-        assert!(noq_writer.write(&quantizer).is_ok());
+        assert!(quantizer.write_to_directory(&quantizer_directory).is_ok());
         let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
             base_directory.clone(),
             quantizer,
@@ -366,8 +365,7 @@ mod tests {
         let quantizer_directory = format!("{}/quantizer", base_directory);
         std::fs::create_dir_all(&quantizer_directory)
             .expect("Failed to create quantizer directory");
-        let noq_writer = NoQuantizerWriter::new(quantizer_directory);
-        assert!(noq_writer.write(&quantizer).is_ok());
+        assert!(quantizer.write_to_directory(&quantizer_directory).is_ok());
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
@@ -475,8 +473,7 @@ mod tests {
         let quantizer_directory = format!("{}/quantizer", base_directory);
         std::fs::create_dir_all(&quantizer_directory)
             .expect("Failed to create quantizer directory");
-        let noq_writer = NoQuantizerWriter::new(quantizer_directory);
-        assert!(noq_writer.write(&quantizer).is_ok());
+        assert!(quantizer.write_to_directory(&quantizer_directory).is_ok());
 
         let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
             base_directory.clone(),

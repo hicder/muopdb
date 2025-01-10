@@ -3,7 +3,8 @@ use std::io::BufWriter;
 
 use anyhow::{Ok, Result};
 use odht::HashTableOwned;
-use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
+use quantization::noq::noq::NoQuantizer;
+use quantization::quantization::WritableQuantizer;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::io::{append_file_to_writer, write_pad};
 
@@ -141,15 +142,13 @@ impl MultiSpannWriter {
         fs::create_dir_all(&centroid_quantizer_directory)?;
         let num_features = multi_spann.config().num_features;
         let no_quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
-        let quantizer_writer = NoQuantizerWriter::new(centroid_quantizer_directory);
-        quantizer_writer.write(&no_quantizer)?;
+        no_quantizer.write_to_directory(&centroid_quantizer_directory)?;
 
         // IVF quantizer
         let ivf_quantizer_directory = format!("{}/quantizer", ivf_directory);
         fs::create_dir_all(&ivf_quantizer_directory)?;
         let ivf_quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
-        let ivf_quantizer_writer = NoQuantizerWriter::new(ivf_quantizer_directory);
-        ivf_quantizer_writer.write(&ivf_quantizer)?;
+        ivf_quantizer.write_to_directory(&ivf_quantizer_directory)?;
 
         // Write user index infos
         let mut hash_table = HashTableOwned::<HashConfig>::with_capacity(user_ids.len(), 90);

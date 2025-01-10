@@ -119,9 +119,10 @@ impl HnswReader {
 mod tests {
     use std::fs;
 
-    use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
-    use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuantizerWriter};
+    use quantization::noq::noq::NoQuantizer;
+    use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig};
     use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
+    use quantization::quantization::WritableQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
     use utils::test_utils::generate_random_vector;
 
@@ -151,14 +152,13 @@ mod tests {
         };
 
         // Train a product quantizer
-        let pq_writer = ProductQuantizerWriter::new(pq_dir);
         let mut pq_builder = ProductQuantizerBuilder::new(pq_config, pq_builder_config);
 
         for i in 0..1000 {
             pq_builder.add(datapoints[i].clone());
         }
         let pq = pq_builder.build(base_directory.clone()).unwrap();
-        pq_writer.write(&pq).unwrap();
+        assert!(pq.write_to_directory(&pq_dir).is_ok());
 
         // Create a HNSW Builder
         let vector_dir = format!("{}/vectors", base_directory);
@@ -196,8 +196,7 @@ mod tests {
         let quantizer = NoQuantizer::<L2DistanceCalculator>::new(128);
         let quantizer_dir = format!("{}/quantizer", base_directory);
         fs::create_dir_all(quantizer_dir.clone()).unwrap();
-        let quantizer_writer = NoQuantizerWriter::new(quantizer_dir);
-        quantizer_writer.write(&quantizer).unwrap();
+        assert!(quantizer.write_to_directory(&quantizer_dir).is_ok());
 
         let mut hnsw_builder =
             HnswBuilder::new(10, 128, 20, 1024, 4096, 128, quantizer, vector_dir);

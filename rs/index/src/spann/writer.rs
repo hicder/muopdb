@@ -1,7 +1,8 @@
 use anyhow::Result;
 use compression::noc::noc::PlainEncoder;
 use log::debug;
-use quantization::noq::noq::{NoQuantizer, NoQuantizerWriter};
+use quantization::noq::noq::NoQuantizer;
+use quantization::quantization::WritableQuantizer;
 use utils::distance::l2::L2DistanceCalculator;
 
 use super::builder::SpannBuilder;
@@ -38,8 +39,10 @@ impl SpannWriter {
         debug!("Finish writing centroids");
 
         // Write the quantizer to disk, even though it's no quantizer
-        let quantizer_writer = NoQuantizerWriter::new(centroid_quantizer_directory);
-        quantizer_writer.write(&spann_builder.centroid_builder.quantizer)?;
+        spann_builder
+            .centroid_builder
+            .quantizer
+            .write_to_directory(&centroid_quantizer_directory)?;
 
         // Write posting lists
         let ivf_directory = format!("{}/ivf", self.base_directory);
@@ -49,8 +52,7 @@ impl SpannWriter {
 
         let ivf_quantizer =
             NoQuantizer::<L2DistanceCalculator>::new(index_writer_config.num_features);
-        let ivf_quantizer_writer = NoQuantizerWriter::new(ivf_quantizer_directory);
-        ivf_quantizer_writer.write(&ivf_quantizer)?;
+        ivf_quantizer.write_to_directory(&ivf_quantizer_directory)?;
 
         debug!("Writing IVF index");
         let ivf_writer =
