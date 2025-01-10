@@ -56,12 +56,11 @@ impl IndexWriter {
         ret
     }
 
-    fn write_quantizer_and_build_hnsw_index<Q: Quantizer, F: Fn(&String, &Q) -> Result<()>>(
+    fn write_quantizer_and_build_hnsw_index<Q: Quantizer + WritableQuantizer>(
         &mut self,
         input: &mut impl Input,
         index_builder_config: &HnswConfigWithBase,
         quantizer: Q,
-        writer_fn: F,
     ) -> Result<()> {
         info!("Start writing product quantizer");
         let path = &self.output_root;
@@ -70,7 +69,7 @@ impl IndexWriter {
         std::fs::create_dir_all(&quantizer_directory)?;
 
         // Use the provided writer function to write the quantizer
-        writer_fn(&quantizer_directory, &quantizer)?;
+        quantizer.write_to_directory(&quantizer_directory)?;
 
         info!("Start building index");
         let vector_directory = format!("{}/vectors", path);
@@ -141,11 +140,7 @@ impl IndexWriter {
 
         let pq = pq_builder.build(format!("{}/pq_tmp", &self.output_root))?;
 
-        // Define the writer function for ProductQuantizer
-        let pq_writer_fn =
-            |directory: &String, pq: &ProductQuantizer<D>| pq.write_to_directory(&directory);
-
-        self.write_quantizer_and_build_hnsw_index(input, index_builder_config, pq, pq_writer_fn)
+        self.write_quantizer_and_build_hnsw_index(input, index_builder_config, pq)
     }
 
     fn build_hnsw_noq<D: DistanceCalculator>(
@@ -162,11 +157,7 @@ impl IndexWriter {
 
         let noq = noq_builder.build()?;
 
-        // Define the writer function for NoQuantizer
-        let noq_writer_fn =
-            |directory: &String, noq: &NoQuantizer<D>| noq.write_to_directory(&directory);
-
-        self.write_quantizer_and_build_hnsw_index(input, index_builder_config, noq, noq_writer_fn)
+        self.write_quantizer_and_build_hnsw_index(input, index_builder_config, noq)
     }
 
     fn do_build_hnsw_index<D: DistanceCalculator>(
