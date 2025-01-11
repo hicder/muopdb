@@ -176,6 +176,7 @@ impl MultiSpannWriter {
 mod tests {
     use std::path::PathBuf;
 
+    use config::enums::{IntSeqEncodingType, QuantizerType};
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
 
@@ -200,12 +201,16 @@ mod tests {
             vector_storage_memory_size: 1024,
             vector_storage_file_size: file_size,
             num_features,
+            subvector_dimension: 8,
+            num_bits: 8,
             max_iteration: 1000,
             batch_size: 4,
+            quantizer_type: QuantizerType::NoQuantizer,
             num_clusters,
             num_data_points_for_clustering: num_vectors,
             max_clusters_per_vector: 1,
             distance_threshold: 0.1,
+            posting_list_encoding_type: IntSeqEncodingType::PlainEncoding,
             base_directory: base_directory.clone(),
             memory_size: 1024,
             file_size,

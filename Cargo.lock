@@ -1382,6 +1382,7 @@ dependencies = [
  "bit-vec",
  "byteorder",
  "compression",
+ "config",
  "dashmap",
  "env_logger",
  "kmeans",
