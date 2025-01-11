@@ -1,13 +1,19 @@
 use anyhow::Result;
 use compression::noc::noc::PlainEncoder;
+use config::enums::QuantizerType;
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
+use quantization::pq::pq::ProductQuantizerConfig;
+use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
 use quantization::quantization::WritableQuantizer;
+use rand::prelude::SliceRandom;
 use utils::distance::l2::L2DistanceCalculator;
 
 use super::builder::SpannBuilder;
 use crate::hnsw::writer::HnswWriter;
+use crate::ivf::builder::IvfBuilder;
 use crate::ivf::writer::IvfWriter;
+use crate::spann::builder::SpannBuilderConfig;
 
 pub struct SpannWriter {
     base_directory: String,
@@ -16,6 +22,82 @@ pub struct SpannWriter {
 impl SpannWriter {
     pub fn new(base_directory: String) -> Self {
         Self { base_directory }
+    }
+
+    fn get_sorted_random_rows(num_rows: usize, num_random_rows: usize) -> Vec<u64> {
+        let mut v = (0..num_rows).map(|x| x as u64).collect::<Vec<_>>();
+        v.shuffle(&mut rand::thread_rng());
+        let mut ret = v.into_iter().take(num_random_rows).collect::<Vec<u64>>();
+        ret.sort();
+        ret
+    }
+
+    pub fn write_ivf_pq(
+        ivf_directory: &str,
+        index_writer_config: &SpannBuilderConfig,
+        ivf_builder: &mut IvfBuilder<L2DistanceCalculator>,
+    ) -> Result<()> {
+        // Create and train product quantizer
+        let pq_config = ProductQuantizerConfig {
+            dimension: index_writer_config.num_features,
+            subvector_dimension: index_writer_config.subvector_dimension,
+            num_bits: index_writer_config.num_bits as u8,
+        };
+
+        let pq_builder_config = ProductQuantizerBuilderConfig {
+            max_iteration: index_writer_config.max_iteration,
+            batch_size: index_writer_config.batch_size,
+        };
+
+        let mut pq_builder =
+            ProductQuantizerBuilder::<L2DistanceCalculator>::new(pq_config, pq_builder_config);
+
+        debug!("Start training product quantizer");
+        let sorted_random_rows = Self::get_sorted_random_rows(
+            ivf_builder.vectors().borrow().len(),
+            index_writer_config.num_training_rows,
+        );
+
+        for row_idx in sorted_random_rows {
+            let vector = ivf_builder.vectors().borrow().get(row_idx as u32)?.to_vec();
+            pq_builder.add(vector);
+        }
+
+        let pq = pq_builder.build(format!("{}/pq_tmp", ivf_directory))?;
+
+        let ivf_quantizer_directory = format!("{}/quantizer", ivf_directory);
+        std::fs::create_dir_all(&ivf_quantizer_directory)?;
+        pq.write_to_directory(&ivf_quantizer_directory)?;
+
+        debug!("Writing IVF index");
+        let ivf_writer =
+            IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(ivf_directory.to_string(), pq);
+        ivf_writer.write(ivf_builder, index_writer_config.reindex)?;
+        ivf_builder.cleanup()?;
+        debug!("Finish writing IVF index");
+        Ok(())
+    }
+
+    pub fn write_ivf_noq(
+        ivf_directory: &str,
+        index_writer_config: &SpannBuilderConfig,
+        ivf_builder: &mut IvfBuilder<L2DistanceCalculator>,
+    ) -> Result<()> {
+        let ivf_quantizer_directory = format!("{}/quantizer", ivf_directory);
+        std::fs::create_dir_all(&ivf_quantizer_directory)?;
+        let ivf_quantizer =
+            NoQuantizer::<L2DistanceCalculator>::new(index_writer_config.num_features);
+        ivf_quantizer.write_to_directory(&ivf_quantizer_directory)?;
+
+        debug!("Writing IVF index");
+        let ivf_writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
+            ivf_directory.to_string(),
+            ivf_quantizer,
+        );
+        ivf_writer.write(ivf_builder, index_writer_config.reindex)?;
+        ivf_builder.cleanup()?;
+        debug!("Finish writing IVF index");
+        Ok(())
     }
 
     pub fn write(&self, spann_builder: &mut SpannBuilder) -> Result<()> {
@@ -47,19 +129,23 @@ impl SpannWriter {
         // Write posting lists
         let ivf_directory = format!("{}/ivf", self.base_directory);
         std::fs::create_dir_all(&ivf_directory)?;
-        let ivf_quantizer_directory = format!("{}/quantizer", ivf_directory);
-        std::fs::create_dir_all(&ivf_quantizer_directory)?;
 
-        let ivf_quantizer =
-            NoQuantizer::<L2DistanceCalculator>::new(index_writer_config.num_features);
-        ivf_quantizer.write_to_directory(&ivf_quantizer_directory)?;
-
-        debug!("Writing IVF index");
-        let ivf_writer =
-            IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(ivf_directory, ivf_quantizer);
-        ivf_writer.write(&mut spann_builder.ivf_builder, index_writer_config.reindex)?;
-        spann_builder.ivf_builder.cleanup()?;
-        debug!("Finish writing IVF index");
+        match index_writer_config.quantizer_type {
+            QuantizerType::ProductQuantizer => {
+                Self::write_ivf_pq(
+                    &ivf_directory,
+                    &index_writer_config,
+                    &mut spann_builder.ivf_builder,
+                )?;
+            }
+            QuantizerType::NoQuantizer => {
+                Self::write_ivf_noq(
+                    &ivf_directory,
+                    &index_writer_config,
+                    &mut spann_builder.ivf_builder,
+                )?;
+            }
+        };
 
         Ok(())
     }
