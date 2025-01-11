@@ -93,6 +93,7 @@ mod tests {
             num_features,
             subvector_dimension: 8,
             num_bits: 8,
+            num_training_rows: 50,
             quantizer_type: QuantizerType::NoQuantizer,
             max_iteration: 1000,
             batch_size: 4,

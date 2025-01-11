@@ -386,6 +386,7 @@ impl IndexWriter {
             num_features: index_writer_config.base_config.dimension,
             subvector_dimension: index_writer_config.quantizer_config.subvector_dimension,
             num_bits: index_writer_config.quantizer_config.num_bits as usize,
+            num_training_rows: index_writer_config.quantizer_config.num_training_rows as usize,
             quantizer_type: index_writer_config.quantizer_config.quantizer_type.clone(),
             max_iteration: index_writer_config.ivf_config.max_iteration,
             batch_size: index_writer_config.ivf_config.batch_size,
