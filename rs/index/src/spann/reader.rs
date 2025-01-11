@@ -1,6 +1,7 @@
 use anyhow::Result;
 use compression::noc::noc::PlainDecoder;
 use quantization::noq::noq::NoQuantizer;
+use quantization::quantization::Quantizer;
 use utils::distance::l2::L2DistanceCalculator;
 
 use super::index::Spann;
@@ -42,7 +43,7 @@ impl SpannReader {
         }
     }
 
-    pub fn read(&self) -> Result<Spann> {
+    pub fn read<Q: Quantizer>(&self) -> Result<Spann<Q>> {
         let posting_list_path = format!("{}/ivf", self.base_directory);
         let centroid_path = format!("{}/centroids", self.base_directory);
 
@@ -57,9 +58,9 @@ impl SpannReader {
             self.ivf_index_offset,
             self.ivf_vector_offset,
         )
-        .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>()?;
+        .read::<Q, L2DistanceCalculator, PlainDecoder>()?;
 
-        Ok(Spann::new(centroids, posting_lists))
+        Ok(Spann::<_>::new(centroids, posting_lists))
     }
 }
 
@@ -122,7 +123,9 @@ mod tests {
         spann_writer.write(&mut builder).unwrap();
 
         let spann_reader = SpannReader::new(base_directory.clone());
-        let spann = spann_reader.read().unwrap();
+        let spann = spann_reader
+            .read::<NoQuantizer<L2DistanceCalculator>>()
+            .unwrap();
 
         let centroids = spann.get_centroids();
         let posting_lists = spann.get_posting_lists();

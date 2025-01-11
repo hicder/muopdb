@@ -1,4 +1,6 @@
 use anyhow::{anyhow, Ok, Result};
+use quantization::noq::noq::NoQuantizer;
+use utils::distance::l2::L2DistanceCalculator;
 
 use super::Segment;
 use crate::collection::SegmentSearchable;
@@ -7,11 +9,11 @@ use crate::multi_spann::index::MultiSpannIndex;
 
 /// This is an immutable segment. This usually contains a single index.
 pub struct ImmutableSegment {
-    index: MultiSpannIndex,
+    index: MultiSpannIndex<NoQuantizer<L2DistanceCalculator>>,
 }
 
 impl ImmutableSegment {
-    pub fn new(index: MultiSpannIndex) -> Self {
+    pub fn new(index: MultiSpannIndex<NoQuantizer<L2DistanceCalculator>>) -> Self {
         Self { index }
     }
 }

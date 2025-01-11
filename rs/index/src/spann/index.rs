@@ -3,21 +3,22 @@ use std::cmp::Ordering;
 use compression::noc::noc::PlainDecoder;
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
+use quantization::quantization::Quantizer;
 use utils::distance::l2::L2DistanceCalculator;
 
 use crate::hnsw::index::Hnsw;
 use crate::index::Searchable;
 use crate::ivf::index::Ivf;
 
-pub struct Spann {
+pub struct Spann<Q: Quantizer> {
     centroids: Hnsw<NoQuantizer<L2DistanceCalculator>>,
-    posting_lists: Ivf<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>,
+    posting_lists: Ivf<Q, L2DistanceCalculator, PlainDecoder>,
 }
 
-impl Spann {
+impl<Q: Quantizer> Spann<Q> {
     pub fn new(
         centroids: Hnsw<NoQuantizer<L2DistanceCalculator>>,
-        posting_lists: Ivf<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>,
+        posting_lists: Ivf<Q, L2DistanceCalculator, PlainDecoder>,
     ) -> Self {
         Self {
             centroids,
@@ -29,14 +30,12 @@ impl Spann {
         &self.centroids
     }
 
-    pub fn get_posting_lists(
-        &self,
-    ) -> &Ivf<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder> {
+    pub fn get_posting_lists(&self) -> &Ivf<Q, L2DistanceCalculator, PlainDecoder> {
         &self.posting_lists
     }
 }
 
-impl Searchable for Spann {
+impl<Q: Quantizer> Searchable for Spann<Q> {
     fn search(
         &self,
         query: &[f32],
