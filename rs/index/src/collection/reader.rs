@@ -74,6 +74,7 @@ mod tests {
             num_bits: 2,
             max_iteration: 1000,
             batch_size: 4,
+            num_training_rows: 50,
             quantizer_type: QuantizerType::NoQuantizer,
             num_clusters: 10,
             num_data_points_for_clustering: 1000,

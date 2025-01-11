@@ -23,6 +23,7 @@ pub struct SpannBuilderConfig {
     pub num_bits: usize,
     pub max_iteration: usize,
     pub batch_size: usize,
+    pub num_training_rows: usize,
     pub quantizer_type: QuantizerType,
 
     // For posting lists
@@ -59,6 +60,7 @@ impl Default for SpannBuilderConfig {
             num_bits: 8,
             max_iteration: 1000,
             batch_size: 4,
+            num_training_rows: 10000,
             quantizer_type: QuantizerType::NoQuantizer,
 
             num_clusters: 10,
