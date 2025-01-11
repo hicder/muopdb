@@ -36,3 +36,7 @@ pub trait Quantizer {
     where
         Self: Sized;
 }
+
+pub trait WritableQuantizer: Quantizer {
+    fn write_to_directory(&self, base_directory: &str) -> Result<()>;
+}

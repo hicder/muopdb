@@ -10,11 +10,11 @@ use index::ivf::writer::IvfWriter;
 use index::spann::builder::{SpannBuilder, SpannBuilderConfig};
 use index::spann::writer::SpannWriter;
 use log::{debug, info};
-use quantization::noq::noq::{NoQuantizer, NoQuantizerConfig, NoQuantizerWriter};
+use quantization::noq::noq::{NoQuantizer, NoQuantizerConfig};
 use quantization::noq::noq_builder::NoQuantizerBuilder;
-use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig, ProductQuantizerWriter};
+use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig};
 use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
-use quantization::quantization::Quantizer;
+use quantization::quantization::{Quantizer, WritableQuantizer};
 use rand::seq::SliceRandom;
 use utils::distance::dot_product::DotProductDistanceCalculator;
 use utils::distance::l2::L2DistanceCalculator;
@@ -142,10 +142,8 @@ impl IndexWriter {
         let pq = pq_builder.build(format!("{}/pq_tmp", &self.output_root))?;
 
         // Define the writer function for ProductQuantizer
-        let pq_writer_fn = |directory: &String, pq: &ProductQuantizer<D>| {
-            let pq_writer = ProductQuantizerWriter::new(directory.clone());
-            pq_writer.write(pq)
-        };
+        let pq_writer_fn =
+            |directory: &String, pq: &ProductQuantizer<D>| pq.write_to_directory(&directory);
 
         self.write_quantizer_and_build_hnsw_index(input, index_builder_config, pq, pq_writer_fn)
     }
@@ -165,10 +163,8 @@ impl IndexWriter {
         let noq = noq_builder.build()?;
 
         // Define the writer function for NoQuantizer
-        let noq_writer_fn = |directory: &String, noq: &NoQuantizer<D>| {
-            let noq_writer = NoQuantizerWriter::new(directory.clone());
-            noq_writer.write(noq)
-        };
+        let noq_writer_fn =
+            |directory: &String, noq: &NoQuantizer<D>| noq.write_to_directory(&directory);
 
         self.write_quantizer_and_build_hnsw_index(input, index_builder_config, noq, noq_writer_fn)
     }
@@ -286,10 +282,8 @@ impl IndexWriter {
         let pq = pq_builder.build(format!("{}/pq_tmp", &self.output_root))?;
 
         // Define the writer function for ProductQuantizer
-        let pq_writer_fn = |directory: &String, pq: &ProductQuantizer<D>| {
-            let pq_writer = ProductQuantizerWriter::new(directory.clone());
-            pq_writer.write(pq)
-        };
+        let pq_writer_fn =
+            |directory: &String, pq: &ProductQuantizer<D>| pq.write_to_directory(&directory);
 
         self.write_quantizer_and_build_ivf_index::<_, E, D, _>(
             input,
@@ -317,10 +311,8 @@ impl IndexWriter {
         let noq = noq_builder.build()?;
 
         // Define the writer function for NoQuantizer
-        let noq_writer_fn = |directory: &String, noq: &NoQuantizer<D>| {
-            let noq_writer = NoQuantizerWriter::new(directory.clone());
-            noq_writer.write(noq)
-        };
+        let noq_writer_fn =
+            |directory: &String, noq: &NoQuantizer<D>| noq.write_to_directory(&directory);
 
         self.write_quantizer_and_build_ivf_index::<_, E, D, _>(
             input,
