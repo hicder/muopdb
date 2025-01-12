@@ -1,5 +1,6 @@
 use anyhow::Result;
 use memmap2::Mmap;
+use quantization::quantization::Quantizer;
 
 use crate::multi_spann::index::MultiSpannIndex;
 
@@ -12,19 +13,22 @@ impl MultiSpannReader {
         Self { base_directory }
     }
 
-    pub fn read(&self) -> Result<MultiSpannIndex> {
+    pub fn read<Q: Quantizer>(&self) -> Result<MultiSpannIndex<Q>> {
         let user_index_info_file_path = format!("{}/user_index_info", self.base_directory);
         let user_index_info_file = std::fs::OpenOptions::new()
             .read(true)
             .open(user_index_info_file_path)?;
 
         let user_index_info_mmap = unsafe { Mmap::map(&user_index_info_file)? };
-        MultiSpannIndex::new(self.base_directory.clone(), user_index_info_mmap)
+        MultiSpannIndex::<Q>::new(self.base_directory.clone(), user_index_info_mmap)
     }
 }
 
 #[cfg(test)]
 mod tests {
+
+    use quantization::noq::noq::NoQuantizer;
+    use utils::distance::l2::L2DistanceCalculator;
 
     use super::*;
     use crate::index::Searchable;
@@ -50,7 +54,8 @@ mod tests {
         multi_spann_writer.write(&mut multi_spann_builder)?;
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
-        let multi_spann_index = multi_spann_reader.read()?;
+        // TODO(tyb): use config instead of hardcoding
+        let multi_spann_index = multi_spann_reader.read::<NoQuantizer<L2DistanceCalculator>>()?;
 
         let result = multi_spann_index
             .search_with_id(

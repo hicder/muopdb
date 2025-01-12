@@ -4,6 +4,7 @@ use anyhow::Result;
 use dashmap::DashMap;
 use memmap2::Mmap;
 use odht::HashTableOwned;
+use quantization::quantization::Quantizer;
 
 use super::user_index_info::HashConfig;
 use crate::index::Searchable;
@@ -11,15 +12,15 @@ use crate::spann::index::Spann;
 use crate::spann::reader::SpannReader;
 use crate::utils::{IdWithScore, SearchContext};
 
-pub struct MultiSpannIndex {
+pub struct MultiSpannIndex<Q: Quantizer> {
     base_directory: String,
-    user_to_spann: DashMap<u64, Arc<Spann>>,
+    user_to_spann: DashMap<u64, Arc<Spann<Q>>>,
     #[allow(dead_code)]
     user_index_info_mmap: Mmap,
     user_index_infos: HashTableOwned<HashConfig>,
 }
 
-impl MultiSpannIndex {
+impl<Q: Quantizer> MultiSpannIndex<Q> {
     pub fn new(base_directory: String, user_index_info_mmap: Mmap) -> Result<Self> {
         let user_index_infos = HashTableOwned::from_raw_bytes(&user_index_info_mmap).unwrap();
         Ok(Self {
@@ -31,7 +32,7 @@ impl MultiSpannIndex {
     }
 }
 
-impl Searchable for MultiSpannIndex {
+impl<Q: Quantizer> Searchable for MultiSpannIndex<Q> {
     fn search(
         &self,
         query: &[f32],
@@ -66,7 +67,7 @@ impl Searchable for MultiSpannIndex {
                 index_info.ivf_index_offset as usize,
                 index_info.ivf_vectors_offset as usize,
             );
-            match reader.read() {
+            match reader.read::<Q>() {
                 Ok(index) => {
                     let index = Arc::new(index);
                     self.user_to_spann.insert(id, index.clone());
