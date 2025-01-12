@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Ok, Result};
-use quantization::noq::noq::NoQuantizer;
-use utils::distance::l2::L2DistanceCalculator;
+use quantization::quantization::Quantizer;
 
 use super::Segment;
 use crate::collection::SegmentSearchable;
@@ -8,17 +7,17 @@ use crate::index::Searchable;
 use crate::multi_spann::index::MultiSpannIndex;
 
 /// This is an immutable segment. This usually contains a single index.
-pub struct ImmutableSegment {
-    index: MultiSpannIndex<NoQuantizer<L2DistanceCalculator>>,
+pub struct ImmutableSegment<Q: Quantizer> {
+    index: MultiSpannIndex<Q>,
 }
 
-impl ImmutableSegment {
-    pub fn new(index: MultiSpannIndex<NoQuantizer<L2DistanceCalculator>>) -> Self {
+impl<Q: Quantizer> ImmutableSegment<Q> {
+    pub fn new(index: MultiSpannIndex<Q>) -> Self {
         Self { index }
     }
 }
 
-impl Segment for ImmutableSegment {
+impl<Q: Quantizer> Segment for ImmutableSegment<Q> {
     fn insert(&mut self, _doc_id: u64, _data: &[f32]) -> Result<()> {
         Err(anyhow!("ImmutableSegment does not support insertion"))
     }
@@ -34,7 +33,7 @@ impl Segment for ImmutableSegment {
     }
 }
 
-impl Searchable for ImmutableSegment {
+impl<Q: Quantizer> Searchable for ImmutableSegment<Q> {
     fn search(
         &self,
         query: &[f32],
@@ -58,6 +57,6 @@ impl Searchable for ImmutableSegment {
     }
 }
 
-impl SegmentSearchable for ImmutableSegment {}
-unsafe impl Send for ImmutableSegment {}
-unsafe impl Sync for ImmutableSegment {}
+impl<Q: Quantizer> SegmentSearchable for ImmutableSegment<Q> {}
+unsafe impl<Q: Quantizer> Send for ImmutableSegment<Q> {}
+unsafe impl<Q: Quantizer> Sync for ImmutableSegment<Q> {}
