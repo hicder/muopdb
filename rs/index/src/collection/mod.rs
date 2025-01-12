@@ -144,6 +144,8 @@ impl Collection {
         self.segment_config.num_features
     }
 
+    /// Turns mutable segment into immutable one, which is the only queryable segment type
+    /// currently.
     pub fn flush(&self) -> Result<()> {
         // Try to acquire the flushing lock. If it fails, then another thread is already flushing.
         // This is a best effort approach, and we don't want to block the main thread.
