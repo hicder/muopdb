@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
 use anyhow::{Ok, Result};
+use config::enums::QuantizerType;
+use quantization::noq::noq::NoQuantizer;
+use quantization::pq::pq::ProductQuantizer;
+use utils::distance::l2::L2DistanceCalculator;
 use utils::io::get_latest_version;
 
 use super::{Collection, TableOfContent};
@@ -34,8 +38,16 @@ impl Reader {
         for name in &toc.toc {
             let spann_path = format!("{}/{}", self.path, name);
             let spann_reader = MultiSpannReader::new(spann_path);
-            let index = spann_reader.read()?;
-            segments.push(Arc::new(Box::new(ImmutableSegment::new(index))));
+            match spann_builder_config.quantizer_type {
+                QuantizerType::ProductQuantizer => {
+                    let index = spann_reader.read::<ProductQuantizer<L2DistanceCalculator>>()?;
+                    segments.push(Arc::new(Box::new(ImmutableSegment::new(index))));
+                }
+                QuantizerType::NoQuantizer => {
+                    let index = spann_reader.read::<NoQuantizer<L2DistanceCalculator>>()?;
+                    segments.push(Arc::new(Box::new(ImmutableSegment::new(index))));
+                }
+            };
         }
 
         let collection = Arc::new(Collection::init_from(

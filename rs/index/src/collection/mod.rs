@@ -5,9 +5,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::{Ok, Result};
+use config::enums::QuantizerType;
 use dashmap::DashMap;
+use quantization::noq::noq::NoQuantizer;
+use quantization::pq::pq::ProductQuantizer;
 use serde::{Deserialize, Serialize};
 use snapshot::Snapshot;
+use utils::distance::l2::L2DistanceCalculator;
 
 use crate::index::Searchable;
 use crate::multi_spann::reader::MultiSpannReader;
@@ -172,11 +176,23 @@ impl Collection {
                     "{}/{}",
                     self.base_directory, name_for_new_segment
                 ));
-                let index = spann_reader.read()?;
-                let segment: Arc<Box<dyn SegmentSearchable + Send + Sync>> =
-                    Arc::new(Box::new(ImmutableSegment::new(index)));
+                match self.segment_config.quantizer_type {
+                    QuantizerType::ProductQuantizer => {
+                        let index =
+                            spann_reader.read::<ProductQuantizer<L2DistanceCalculator>>()?;
+                        let segment: Arc<Box<dyn SegmentSearchable + Send + Sync>> =
+                            Arc::new(Box::new(ImmutableSegment::new(index)));
 
-                self.add_segments(vec![name_for_new_segment], vec![segment])
+                        self.add_segments(vec![name_for_new_segment], vec![segment])
+                    }
+                    QuantizerType::NoQuantizer => {
+                        let index = spann_reader.read::<NoQuantizer<L2DistanceCalculator>>()?;
+                        let segment: Arc<Box<dyn SegmentSearchable + Send + Sync>> =
+                            Arc::new(Box::new(ImmutableSegment::new(index)));
+
+                        self.add_segments(vec![name_for_new_segment], vec![segment])
+                    }
+                }
             }
             Err(_) => {
                 return Err(anyhow::anyhow!("Another thread is already flushing"));
