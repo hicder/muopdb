@@ -197,8 +197,8 @@ mod tests {
         collection_config.max_posting_list_size = max_posting_list_size;
         collection_config.initial_num_centroids = num_clusters;
         collection_config.posting_list_builder_vector_storage_file_size = file_size;
-        collection_config.centroids_vector_storage_file_size = file_size;
-        collection_config.posting_list_kmeans_tolerance = balance_factor;
+        collection_config.centroids_builder_vector_storage_file_size = file_size;
+        collection_config.posting_list_kmeans_unbalanced_penalty = balance_factor;
         let mut builder =
             MultiSpannBuilder::new(collection_config, base_directory.clone()).unwrap();
 
