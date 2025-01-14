@@ -469,7 +469,7 @@ mod tests {
 
     #[test]
     fn test_kmeans_with_empty_cluster() {
-         let data = vec![
+        let data = vec![
             vec![0.0, 0.0],
             vec![40.0, 40.0],
             vec![90.0, 90.0],
@@ -501,9 +501,10 @@ mod tests {
             .expect("KMeans run should succeed");
 
         assert_eq!(result.centroids.len(), 9 * 2);
-        let asigned_clusters: HashSet<usize> = result.assignments.iter().map(|x| *x as usize).collect();
+        let asigned_clusters: HashSet<usize> =
+            result.assignments.iter().map(|x| *x as usize).collect();
         let expected_clusters: HashSet<usize> = HashSet::from([0, 1, 2, 3, 4, 5, 6, 7, 8]);
 
         assert_eq!(asigned_clusters, expected_clusters);
-    }      
+    }
 }

@@ -1,4 +1,5 @@
 use anyhow::{Ok, Result};
+use config::collection::CollectionConfig;
 use config::enums::{IntSeqEncodingType, QuantizerType};
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
@@ -44,6 +45,44 @@ pub struct SpannBuilderConfig {
 
     // Optimization parameters
     pub reindex: bool,
+}
+
+impl SpannBuilderConfig {
+    pub fn from_collection_config(
+        collection_config: CollectionConfig,
+        base_directory: String,
+    ) -> Self {
+        Self {
+            max_neighbors: collection_config.centroids_max_neighbors,
+            max_layers: collection_config.centroids_max_layers,
+            ef_construction: collection_config.centroids_ef_construction,
+            vector_storage_memory_size: collection_config.centroids_vector_storage_memory_size,
+            vector_storage_file_size: collection_config.centroids_vector_storage_file_size,
+            num_features: collection_config.num_features,
+
+            subvector_dimension: collection_config.product_quantization_subvector_dimension,
+            num_bits: collection_config.product_quantization_num_bits,
+            max_iteration: collection_config.product_quantization_max_iteration,
+            batch_size: collection_config.product_quantization_batch_size,
+            num_training_rows: collection_config.product_quantization_num_training_rows,
+            quantizer_type: collection_config.quantization_type,
+
+            num_clusters: collection_config.initial_num_centroids,
+            num_data_points_for_clustering: collection_config.num_data_points_for_clustering,
+            max_clusters_per_vector: collection_config.max_clusters_per_vector,
+            distance_threshold: collection_config.clustering_distance_threshold_pct,
+            posting_list_encoding_type: collection_config.posting_list_encoding_type,
+
+            base_directory,
+            memory_size: collection_config.posting_list_builder_vector_storage_memory_size,
+            file_size: collection_config.posting_list_builder_vector_storage_file_size,
+
+            tolerance: collection_config.posting_list_kmeans_tolerance,
+            max_posting_list_size: collection_config.max_posting_list_size,
+
+            reindex: collection_config.reindex,
+        }
+    }
 }
 
 impl Default for SpannBuilderConfig {
