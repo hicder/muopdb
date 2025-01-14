@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::{Ok, Result};
+use config::collection::CollectionConfig;
 use config::enums::QuantizerType;
 use dashmap::DashMap;
 use quantization::noq::noq::NoQuantizer;
@@ -18,7 +19,6 @@ use crate::multi_spann::reader::MultiSpannReader;
 use crate::segment::immutable_segment::ImmutableSegment;
 use crate::segment::mutable_segment::MutableSegment;
 use crate::segment::Segment;
-use crate::spann::builder::SpannBuilderConfig;
 
 pub trait SegmentSearchable: Searchable + Segment {}
 pub type BoxedSegmentSearchable = Box<dyn SegmentSearchable + Send + Sync>;
@@ -58,23 +58,25 @@ pub struct Collection {
     versions_info: RwLock<VersionsInfo>,
     base_directory: String,
     mutable_segment: RwLock<MutableSegment>,
-    segment_config: SpannBuilderConfig,
+    segment_config: CollectionConfig,
 
     // A mutex for flushing
     flushing: Mutex<()>,
 }
 
 impl Collection {
-    pub fn new(base_directory: String, segment_config: SpannBuilderConfig) -> Result<Self> {
+    pub fn new(base_directory: String, segment_config: CollectionConfig) -> Result<Self> {
         let versions: DashMap<u64, TableOfContent> = DashMap::new();
         versions.insert(0, TableOfContent::new(vec![]));
 
         // Create a new segment_config with a random name
         let random_name = format!("tmp_segment_{}", rand::random::<u64>());
-        let mut segment_config_clone = segment_config.clone();
-        segment_config_clone.base_directory = format!("{}/{}", base_directory, random_name);
+        let segment_base_directory = format!("{}/{}", base_directory, random_name);
 
-        let mutable_segment = RwLock::new(MutableSegment::new(segment_config_clone)?);
+        let mutable_segment = RwLock::new(MutableSegment::new(
+            segment_config.clone(),
+            segment_base_directory,
+        )?);
 
         Ok(Self {
             versions,
@@ -92,7 +94,7 @@ impl Collection {
         version: u64,
         toc: TableOfContent,
         segments: Vec<Arc<BoxedSegmentSearchable>>,
-        segment_config: SpannBuilderConfig,
+        segment_config: CollectionConfig,
     ) -> Result<Self> {
         let versions_info = RwLock::new(VersionsInfo::new());
         versions_info.write().unwrap().current_version = version;
@@ -115,9 +117,11 @@ impl Collection {
 
         // Create a new segment_config with a random name
         let random_name = format!("tmp_segment_{}", rand::random::<u64>());
-        let mut segment_config_clone = segment_config.clone();
-        segment_config_clone.base_directory = format!("{}/{}", base_directory, random_name);
-        let mutable_segment = RwLock::new(MutableSegment::new(segment_config_clone)?);
+        let random_base_directory = format!("{}/{}", base_directory, random_name);
+        let mutable_segment = RwLock::new(MutableSegment::new(
+            segment_config.clone(),
+            random_base_directory,
+        )?);
 
         Ok(Self {
             versions,
@@ -156,10 +160,9 @@ impl Collection {
         match self.flushing.try_lock() {
             std::result::Result::Ok(_) => {
                 let tmp_name = format!("tmp_segment_{}", rand::random::<u64>());
-                let mut new_writable_segment_config = self.segment_config.clone();
-                new_writable_segment_config.base_directory =
-                    format!("{}/{}", self.base_directory, tmp_name);
-                let mut new_writable_segment = MutableSegment::new(new_writable_segment_config)?;
+                let writable_base_directory = format!("{}/{}", self.base_directory, tmp_name);
+                let mut new_writable_segment =
+                    MutableSegment::new(self.segment_config.clone(), writable_base_directory)?;
 
                 {
                     // Grab the write lock and swap tmp_segment with mutable_segment
@@ -176,7 +179,7 @@ impl Collection {
                     "{}/{}",
                     self.base_directory, name_for_new_segment
                 ));
-                match self.segment_config.quantizer_type {
+                match self.segment_config.quantization_type {
                     QuantizerType::ProductQuantizer => {
                         let index =
                             spann_reader.read::<ProductQuantizer<L2DistanceCalculator>>()?;
@@ -303,13 +306,13 @@ mod tests {
     use std::sync::Arc;
 
     use anyhow::{Ok, Result};
+    use config::collection::CollectionConfig;
     use tempdir::TempDir;
 
     use super::SegmentSearchable;
     use crate::collection::{BoxedSegmentSearchable, Collection};
     use crate::index::Searchable;
     use crate::segment::Segment;
-    use crate::spann::builder::SpannBuilderConfig;
 
     struct MockSearchable {}
 
@@ -351,8 +354,7 @@ mod tests {
     fn test_collection() -> Result<()> {
         let temp_dir = TempDir::new("test_collection")?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
-        let mut segment_config = SpannBuilderConfig::default();
-        segment_config.base_directory = base_directory.clone();
+        let segment_config = CollectionConfig::default_test_config();
         let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
 
         {
@@ -419,8 +421,7 @@ mod tests {
     fn test_collection_multi_thread() -> Result<()> {
         let temp_dir = TempDir::new("test_collection")?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
-        let mut segment_config = SpannBuilderConfig::default();
-        segment_config.base_directory = base_directory.clone();
+        let segment_config = CollectionConfig::default_test_config();
 
         let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
         let stopped = Arc::new(AtomicBool::new(false));

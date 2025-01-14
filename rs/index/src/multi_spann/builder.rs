@@ -1,29 +1,37 @@
 use std::sync::RwLock;
 
 use anyhow::Result;
+use config::collection::CollectionConfig;
 use dashmap::DashMap;
 use log::debug;
 
 use crate::spann::builder::{SpannBuilder, SpannBuilderConfig};
 
 pub struct MultiSpannBuilder {
-    config: SpannBuilderConfig,
+    config: CollectionConfig,
     inner_builders: DashMap<u64, RwLock<SpannBuilder>>,
+    base_directory: String,
 }
 
 impl MultiSpannBuilder {
-    pub fn new(config: SpannBuilderConfig) -> Result<Self> {
+    pub fn new(config: CollectionConfig, base_directory: String) -> Result<Self> {
         Ok(Self {
             config,
             inner_builders: DashMap::new(),
+            base_directory,
         })
     }
 
     pub fn insert(&self, user_id: u64, doc_id: u64, data: &[f32]) -> Result<()> {
         let spann_builder = self.inner_builders.entry(user_id).or_insert_with(|| {
-            let mut config = self.config.clone();
-            config.base_directory = format!("{}/{}", config.base_directory, user_id);
-            RwLock::new(SpannBuilder::new(config).unwrap())
+            let user_directory = format!("{}/{}", self.base_directory, user_id);
+            RwLock::new(
+                SpannBuilder::new(SpannBuilderConfig::from_collection_config(
+                    &self.config,
+                    user_directory,
+                ))
+                .unwrap(),
+            )
         });
         spann_builder.write().unwrap().add(doc_id, data)?;
         Ok(())
@@ -45,7 +53,7 @@ impl MultiSpannBuilder {
     }
 
     pub fn base_directory(&self) -> &str {
-        &self.config.base_directory
+        &self.base_directory
     }
 
     /// This function will remove the builder for the given user id.
@@ -57,7 +65,7 @@ impl MultiSpannBuilder {
             .or(None)
     }
 
-    pub fn config(&self) -> &SpannBuilderConfig {
+    pub fn config(&self) -> &CollectionConfig {
         &self.config
     }
 }

@@ -27,6 +27,7 @@ impl MultiSpannReader {
 #[cfg(test)]
 mod tests {
 
+    use config::collection::CollectionConfig;
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
 
@@ -34,17 +35,16 @@ mod tests {
     use crate::index::Searchable;
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::writer::MultiSpannWriter;
-    use crate::spann::builder::SpannBuilderConfig;
     use crate::utils::SearchContext;
 
     #[test]
     fn test_multi_spann_reader() -> Result<()> {
         let temp_dir = tempdir::TempDir::new("test_multi_spann_reader")?;
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
-        let mut spann_builder_config = SpannBuilderConfig::default();
+        let mut spann_builder_config = CollectionConfig::default_test_config();
         spann_builder_config.num_features = 4;
-        spann_builder_config.base_directory = base_directory.clone();
-        let mut multi_spann_builder = MultiSpannBuilder::new(spann_builder_config)?;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())?;
         multi_spann_builder.insert(0, 1, &[1.0, 2.0, 3.0, 4.0])?;
         multi_spann_builder.insert(0, 2, &[5.0, 6.0, 7.0, 8.0])?;
         multi_spann_builder.insert(1, 3, &[9.0, 10.0, 11.0, 12.0])?;

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{Ok, Result};
+use config::collection::CollectionConfig;
 use config::enums::QuantizerType;
 use quantization::noq::noq::NoQuantizer;
 use quantization::pq::pq::ProductQuantizer;
@@ -11,7 +12,6 @@ use super::{Collection, TableOfContent};
 use crate::collection::BoxedSegmentSearchable;
 use crate::multi_spann::reader::MultiSpannReader;
 use crate::segment::immutable_segment::ImmutableSegment;
-use crate::spann::builder::SpannBuilderConfig;
 
 pub struct Reader {
     path: String,
@@ -25,7 +25,7 @@ impl Reader {
     pub fn read(&self) -> Result<Arc<Collection>> {
         // Read the SpannBuilderConfig
         let spann_builder_config_path = format!("{}/collection_config.json", self.path);
-        let spann_builder_config: SpannBuilderConfig =
+        let collection_config: CollectionConfig =
             serde_json::from_reader(std::fs::File::open(spann_builder_config_path)?)?;
 
         // Get the latest TOC
@@ -38,7 +38,7 @@ impl Reader {
         for name in &toc.toc {
             let spann_path = format!("{}/{}", self.path, name);
             let spann_reader = MultiSpannReader::new(spann_path);
-            match spann_builder_config.quantizer_type {
+            match collection_config.quantization_type {
                 QuantizerType::ProductQuantizer => {
                     let index = spann_reader.read::<ProductQuantizer<L2DistanceCalculator>>()?;
                     segments.push(Arc::new(Box::new(ImmutableSegment::new(index))));
@@ -55,7 +55,7 @@ impl Reader {
             latest_version,
             toc,
             segments,
-            spann_builder_config,
+            collection_config,
         )?);
         Ok(collection)
     }
@@ -65,49 +65,24 @@ impl Reader {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use config::enums::{IntSeqEncodingType, QuantizerType};
+    use config::collection::CollectionConfig;
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
 
     use super::*;
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::writer::MultiSpannWriter;
-    use crate::spann::builder::SpannBuilderConfig;
 
-    fn collection_config() -> SpannBuilderConfig {
-        SpannBuilderConfig {
-            max_neighbors: 10,
-            max_layers: 2,
-            ef_construction: 100,
-            vector_storage_memory_size: 1024,
-            vector_storage_file_size: 1024,
-            num_features: 4,
-            subvector_dimension: 2,
-            num_bits: 2,
-            max_iteration: 1000,
-            batch_size: 4,
-            num_training_rows: 50,
-            quantizer_type: QuantizerType::NoQuantizer,
-            num_clusters: 10,
-            num_data_points_for_clustering: 1000,
-            max_clusters_per_vector: 1,
-            distance_threshold: 0.1,
-            posting_list_encoding_type: IntSeqEncodingType::PlainEncoding,
-            base_directory: "./".to_string(),
-            memory_size: 1024,
-            file_size: 1024,
-            tolerance: 0.1,
-            max_posting_list_size: usize::MAX,
-            reindex: true,
-        }
+    fn collection_config() -> CollectionConfig {
+        CollectionConfig::default_test_config()
     }
 
     fn create_segment(base_directory: String) -> Result<()> {
         let num_vectors = 1000;
         let num_features = 4;
-        let mut collection_config = collection_config();
-        collection_config.base_directory = base_directory.clone();
-        let mut builder = MultiSpannBuilder::new(collection_config).unwrap();
+        let collection_config = collection_config();
+        let mut builder =
+            MultiSpannBuilder::new(collection_config, base_directory.clone()).unwrap();
 
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {

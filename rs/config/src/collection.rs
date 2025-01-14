@@ -141,3 +141,32 @@ impl Default for CollectionConfig {
         }
     }
 }
+
+impl CollectionConfig {
+    pub fn default_test_config() -> Self {
+        Self {
+            num_features: 4,
+            centroids_max_neighbors: 10,
+            centroids_max_layers: 2,
+            centroids_ef_construction: 100,
+            centroids_vector_storage_memory_size: 1024,
+            centroids_vector_storage_file_size: 1024,
+            product_quantization_max_iteration: 1000,
+            product_quantization_batch_size: 1000,
+            product_quantization_subvector_dimension: 8,
+            product_quantization_num_bits: 8,
+            product_quantization_num_training_rows: 10000,
+            initial_num_centroids: 10,
+            num_data_points_for_clustering: 1000,
+            max_clusters_per_vector: 1,
+            clustering_distance_threshold_pct: 0.1,
+            posting_list_encoding_type: IntSeqEncodingType::PlainEncoding,
+            posting_list_builder_vector_storage_memory_size: 1024,
+            posting_list_builder_vector_storage_file_size: 1024,
+            max_posting_list_size: usize::MAX,
+            posting_list_kmeans_tolerance: 0.1,
+            reindex: true,
+            quantization_type: QuantizerType::NoQuantizer,
+        }
+    }
+}

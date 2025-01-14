@@ -175,12 +175,11 @@ impl MultiSpannWriter {
 mod tests {
     use std::path::PathBuf;
 
-    use config::enums::{IntSeqEncodingType, QuantizerType};
+    use config::collection::CollectionConfig;
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
 
     use super::*;
-    use crate::spann::builder::SpannBuilderConfig;
 
     #[test]
     fn test_write() {
@@ -193,32 +192,15 @@ mod tests {
         let file_size = 4096;
         let balance_factor = 0.0;
         let max_posting_list_size = usize::MAX;
-        let mut builder = MultiSpannBuilder::new(SpannBuilderConfig {
-            max_neighbors: 10,
-            max_layers: 2,
-            ef_construction: 100,
-            vector_storage_memory_size: 1024,
-            vector_storage_file_size: file_size,
-            num_features,
-            subvector_dimension: 8,
-            num_bits: 8,
-            max_iteration: 1000,
-            batch_size: 4,
-            num_training_rows: 50,
-            quantizer_type: QuantizerType::NoQuantizer,
-            num_clusters,
-            num_data_points_for_clustering: num_vectors,
-            max_clusters_per_vector: 1,
-            distance_threshold: 0.1,
-            posting_list_encoding_type: IntSeqEncodingType::PlainEncoding,
-            base_directory: base_directory.clone(),
-            memory_size: 1024,
-            file_size,
-            tolerance: balance_factor,
-            max_posting_list_size,
-            reindex: false,
-        })
-        .unwrap();
+        let mut collection_config = CollectionConfig::default_test_config();
+        collection_config.num_features = num_features;
+        collection_config.max_posting_list_size = max_posting_list_size;
+        collection_config.initial_num_centroids = num_clusters;
+        collection_config.posting_list_builder_vector_storage_file_size = file_size;
+        collection_config.centroids_vector_storage_file_size = file_size;
+        collection_config.posting_list_kmeans_tolerance = balance_factor;
+        let mut builder =
+            MultiSpannBuilder::new(collection_config, base_directory.clone()).unwrap();
 
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
