@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::enums::{IntSeqEncodingType, QuantizerType};
+
 /// Config for a collection.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CollectionConfig {
@@ -32,6 +34,10 @@ pub struct CollectionConfig {
     /// Default: 1024 * 1024 * 1024 (1MB)
     pub centroids_vector_storage_file_size: usize,
 
+    /// Quantization type
+    /// Default: QuantizerType::NoQuantizer
+    pub quantization_type: QuantizerType,
+
     /// Maximum number of iterations to run for product quantization.
     /// Don't change unless you know what you're doing.
     /// Default: 1000
@@ -41,6 +47,18 @@ pub struct CollectionConfig {
     /// Don't change unless you know what you're doing.
     /// Default: 1000
     pub product_quantization_batch_size: usize,
+
+    // Product quantization parameters - dimension of each subvector
+    // Default: 8
+    pub product_quantization_subvector_dimension: usize,
+
+    // Product quantization parameters - number of bits for each subvector
+    // Default: 8
+    pub product_quantization_num_bits: usize,
+
+    // Product quantization parameters - number of training rows to build the product quantizer
+    // Default: 10000
+    pub product_quantization_num_training_rows: usize,
 
     /// Number of centroids to build. However, the final number of clusters may be more than this
     /// depending on the `max_posting_list_size`, since if a posting list exceeds this size, it
@@ -64,21 +82,29 @@ pub struct CollectionConfig {
     /// Default: 0.1
     pub clustering_distance_threshold_pct: f32,
 
+    /// Encoding type for posting lists
+    /// Default: IntSeqEncodingType::PlainEncoding
+    pub posting_list_encoding_type: IntSeqEncodingType,
+
     /// Specify the size of the memory in bytes for the temporary vector storage
     /// in the builder. If the size exceeds this value, data will be spilled to disk.
     /// Default: 1024 * 1024 * 1024 (1MB)
-    pub builder_vector_storage_memory_size: usize,
+    pub posting_list_builder_vector_storage_memory_size: usize,
 
     /// Specify the size of the file in bytes for the temporary vector storage file.
     /// in the builder. If the size exceeds this value, a new temporary file will be created.
     /// Default: 1024 * 1024 * 1024 (1MB)
-    pub builder_vector_storage_file_size: usize,
+    pub posting_list_builder_vector_storage_file_size: usize,
 
     /// Specify max posting list size for clustering centroids.
     /// If the size of a posting list exceeds this value, the posting list will be split into
     /// multiple posting lists.
     /// Default: usize::MAX
     pub max_posting_list_size: usize,
+
+    /// The penalty for large posting list size in KMeans clustering for posting lists.
+    /// Default: 0.0
+    pub posting_list_kmeans_tolerance: f32,
 
     /// Whether to reindex the collection after building.
     /// This will significantly improve the I/O performance, with the trade-off of
@@ -96,15 +122,21 @@ impl Default for CollectionConfig {
             centroids_vector_storage_memory_size: 1024 * 1024 * 1024,
             centroids_vector_storage_file_size: 1024 * 1024 * 1024,
             num_features: 768,
+            quantization_type: QuantizerType::NoQuantizer,
             product_quantization_max_iteration: 1000,
             product_quantization_batch_size: 1000,
+            product_quantization_subvector_dimension: 8,
+            product_quantization_num_bits: 8,
+            product_quantization_num_training_rows: 10000,
             initial_num_centroids: 10,
             num_data_points_for_clustering: 20000,
             max_clusters_per_vector: 1,
             clustering_distance_threshold_pct: 0.1,
-            builder_vector_storage_memory_size: 1024 * 1024 * 1024,
-            builder_vector_storage_file_size: 1024 * 1024 * 1024,
+            posting_list_encoding_type: IntSeqEncodingType::PlainEncoding,
+            posting_list_builder_vector_storage_memory_size: 1024 * 1024 * 1024,
+            posting_list_builder_vector_storage_file_size: 1024 * 1024 * 1024,
             max_posting_list_size: usize::MAX,
+            posting_list_kmeans_tolerance: 0.0,
             reindex: true,
         }
     }

@@ -30,4 +30,3 @@ pub enum IndexType {
     #[default]
     Spann,
 }
-
