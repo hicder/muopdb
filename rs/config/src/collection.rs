@@ -27,14 +27,15 @@ pub struct CollectionConfig {
     /// Specify the size of the memory in bytes for the HNSW temporary vector storage
     /// in the builder. If the size exceeds this value, data will be spilled to disk.
     /// Default: 1024 * 1024 * 1024 (1MB)
-    pub centroids_vector_storage_memory_size: usize,
+    pub centroids_builder_vector_storage_memory_size: usize,
 
     /// Specify the size of the file in bytes for the HNSW temporary vector storage file.
     /// in the builder. If the size exceeds this value, a new temporary file will be created.
     /// Default: 1024 * 1024 * 1024 (1MB)
-    pub centroids_vector_storage_file_size: usize,
+    pub centroids_builder_vector_storage_file_size: usize,
 
-    /// Quantization type
+    /// Quantization type. Use as a lossy vector storage compression.
+    /// Product Quantization will reduce memory usage, at the cost of recall.
     /// Default: QuantizerType::NoQuantizer
     pub quantization_type: QuantizerType,
 
@@ -102,9 +103,9 @@ pub struct CollectionConfig {
     /// Default: usize::MAX
     pub max_posting_list_size: usize,
 
-    /// The penalty for large posting list size in KMeans clustering for posting lists.
-    /// Default: 0.0
-    pub posting_list_kmeans_tolerance: f32,
+    /// The penalty for unbalanced posting list size in KMeans clustering.
+    /// Default: 0.0 (No penalty)
+    pub posting_list_kmeans_unbalanced_penalty: f32,
 
     /// Whether to reindex the collection after building.
     /// This will significantly improve the I/O performance, with the trade-off of
@@ -119,8 +120,8 @@ impl Default for CollectionConfig {
             centroids_max_neighbors: 10,
             centroids_max_layers: 10,
             centroids_ef_construction: 100,
-            centroids_vector_storage_memory_size: 1024 * 1024 * 1024,
-            centroids_vector_storage_file_size: 1024 * 1024 * 1024,
+            centroids_builder_vector_storage_memory_size: 1024 * 1024 * 1024,
+            centroids_builder_vector_storage_file_size: 1024 * 1024 * 1024,
             num_features: 768,
             quantization_type: QuantizerType::NoQuantizer,
             product_quantization_max_iteration: 1000,
@@ -136,7 +137,7 @@ impl Default for CollectionConfig {
             posting_list_builder_vector_storage_memory_size: 1024 * 1024 * 1024,
             posting_list_builder_vector_storage_file_size: 1024 * 1024 * 1024,
             max_posting_list_size: usize::MAX,
-            posting_list_kmeans_tolerance: 0.0,
+            posting_list_kmeans_unbalanced_penalty: 0.0,
             reindex: true,
         }
     }
@@ -149,8 +150,8 @@ impl CollectionConfig {
             centroids_max_neighbors: 10,
             centroids_max_layers: 2,
             centroids_ef_construction: 100,
-            centroids_vector_storage_memory_size: 1024,
-            centroids_vector_storage_file_size: 1024,
+            centroids_builder_vector_storage_memory_size: 1024,
+            centroids_builder_vector_storage_file_size: 1024,
             product_quantization_max_iteration: 1000,
             product_quantization_batch_size: 1000,
             product_quantization_subvector_dimension: 8,
@@ -164,7 +165,7 @@ impl CollectionConfig {
             posting_list_builder_vector_storage_memory_size: 1024,
             posting_list_builder_vector_storage_file_size: 1024,
             max_posting_list_size: usize::MAX,
-            posting_list_kmeans_tolerance: 0.1,
+            posting_list_kmeans_unbalanced_penalty: 0.1,
             reindex: true,
             quantization_type: QuantizerType::NoQuantizer,
         }

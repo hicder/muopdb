@@ -56,8 +56,9 @@ impl SpannBuilderConfig {
             max_neighbors: collection_config.centroids_max_neighbors,
             max_layers: collection_config.centroids_max_layers,
             ef_construction: collection_config.centroids_ef_construction,
-            vector_storage_memory_size: collection_config.centroids_vector_storage_memory_size,
-            vector_storage_file_size: collection_config.centroids_vector_storage_file_size,
+            vector_storage_memory_size: collection_config
+                .centroids_builder_vector_storage_memory_size,
+            vector_storage_file_size: collection_config.centroids_builder_vector_storage_file_size,
             num_features: collection_config.num_features,
 
             subvector_dimension: collection_config.product_quantization_subvector_dimension,
@@ -77,7 +78,7 @@ impl SpannBuilderConfig {
             memory_size: collection_config.posting_list_builder_vector_storage_memory_size,
             file_size: collection_config.posting_list_builder_vector_storage_file_size,
 
-            tolerance: collection_config.posting_list_kmeans_tolerance,
+            tolerance: collection_config.posting_list_kmeans_unbalanced_penalty,
             max_posting_list_size: collection_config.max_posting_list_size,
 
             reindex: collection_config.reindex,
