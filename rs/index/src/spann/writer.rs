@@ -67,7 +67,7 @@ impl SpannWriter {
 
         let ivf_quantizer_directory = format!("{}/quantizer", ivf_directory);
         std::fs::create_dir_all(&ivf_quantizer_directory)?;
-        pq.write_to_directory(&ivf_quantizer_directory)?;
+        pq.write_to_directory(&ivf_quantizer_directory, /*config_only*/ false)?;
 
         debug!("Writing IVF index");
         let ivf_writer =
@@ -87,7 +87,7 @@ impl SpannWriter {
         std::fs::create_dir_all(&ivf_quantizer_directory)?;
         let ivf_quantizer =
             NoQuantizer::<L2DistanceCalculator>::new(index_writer_config.num_features);
-        ivf_quantizer.write_to_directory(&ivf_quantizer_directory)?;
+        ivf_quantizer.write_to_directory(&ivf_quantizer_directory, /*config_only*/ false)?;
 
         debug!("Writing IVF index");
         let ivf_writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
@@ -124,7 +124,7 @@ impl SpannWriter {
         spann_builder
             .centroid_builder
             .quantizer
-            .write_to_directory(&centroid_quantizer_directory)?;
+            .write_to_directory(&centroid_quantizer_directory, /*config_only*/ false)?;
 
         // Write posting lists
         let ivf_directory = format!("{}/ivf", self.base_directory);

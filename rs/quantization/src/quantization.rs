@@ -38,5 +38,5 @@ pub trait Quantizer {
 }
 
 pub trait WritableQuantizer: Quantizer {
-    fn write_to_directory(&self, base_directory: &str) -> Result<()>;
+    fn write_to_directory(&self, base_directory: &str, config_only: bool) -> Result<()>;
 }

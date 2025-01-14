@@ -69,7 +69,7 @@ impl IndexWriter {
         std::fs::create_dir_all(&quantizer_directory)?;
 
         // Use the provided writer function to write the quantizer
-        quantizer.write_to_directory(&quantizer_directory)?;
+        quantizer.write_to_directory(&quantizer_directory, /*config_only*/ false)?;
 
         info!("Start building index");
         let vector_directory = format!("{}/vectors", path);
@@ -273,8 +273,9 @@ impl IndexWriter {
         let pq = pq_builder.build(format!("{}/pq_tmp", &self.output_root))?;
 
         // Define the writer function for ProductQuantizer
-        let pq_writer_fn =
-            |directory: &String, pq: &ProductQuantizer<D>| pq.write_to_directory(&directory);
+        let pq_writer_fn = |directory: &String, pq: &ProductQuantizer<D>| {
+            pq.write_to_directory(&directory, /*config_only*/ false)
+        };
 
         self.write_quantizer_and_build_ivf_index::<_, E, D, _>(
             input,
@@ -302,8 +303,9 @@ impl IndexWriter {
         let noq = noq_builder.build()?;
 
         // Define the writer function for NoQuantizer
-        let noq_writer_fn =
-            |directory: &String, noq: &NoQuantizer<D>| noq.write_to_directory(&directory);
+        let noq_writer_fn = |directory: &String, noq: &NoQuantizer<D>| {
+            noq.write_to_directory(&directory, /*config_only*/ false)
+        };
 
         self.write_quantizer_and_build_ivf_index::<_, E, D, _>(
             input,

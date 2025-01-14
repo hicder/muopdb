@@ -55,7 +55,7 @@ impl<D: DistanceCalculator> Quantizer for NoQuantizer<D> {
 }
 
 impl<D: DistanceCalculator> WritableQuantizer for NoQuantizer<D> {
-    fn write_to_directory(&self, base_directory: &str) -> Result<()> {
+    fn write_to_directory(&self, base_directory: &str, _config_only: bool) -> Result<()> {
         let config = NoQuantizerConfig {
             dimension: self.dimension,
         };

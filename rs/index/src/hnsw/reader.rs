@@ -158,7 +158,9 @@ mod tests {
             pq_builder.add(datapoints[i].clone());
         }
         let pq = pq_builder.build(base_directory.clone()).unwrap();
-        assert!(pq.write_to_directory(&pq_dir).is_ok());
+        assert!(pq
+            .write_to_directory(&pq_dir, /*config_only*/ false)
+            .is_ok());
 
         // Create a HNSW Builder
         let vector_dir = format!("{}/vectors", base_directory);
@@ -196,7 +198,9 @@ mod tests {
         let quantizer = NoQuantizer::<L2DistanceCalculator>::new(128);
         let quantizer_dir = format!("{}/quantizer", base_directory);
         fs::create_dir_all(quantizer_dir.clone()).unwrap();
-        assert!(quantizer.write_to_directory(&quantizer_dir).is_ok());
+        assert!(quantizer
+            .write_to_directory(&quantizer_dir, /*config_only*/ false)
+            .is_ok());
 
         let mut hnsw_builder =
             HnswBuilder::new(10, 128, 20, 1024, 4096, 128, quantizer, vector_dir);

@@ -286,28 +286,28 @@ impl<D: DistanceCalculator> Quantizer for ProductQuantizer<D> {
 }
 
 impl<D: DistanceCalculator> WritableQuantizer for ProductQuantizer<D> {
-    fn write_to_directory(&self, base_directory: &str) -> Result<()> {
+    fn write_to_directory(&self, base_directory: &str, config_only: bool) -> Result<()> {
+        if !config_only {
+            // Write codebook
+            let codebook_path = Path::new(&base_directory).join(&CODEBOOK_NAME);
+            if codebook_path.exists() {
+                // Delete the file if exists
+                std::fs::remove_file(&codebook_path)?;
+            }
+
+            let codebook_buffer = self.codebook_to_buffer();
+            let mut codebook_file = File::create(codebook_path)?;
+            codebook_file.write(&codebook_buffer)?;
+        }
+
+        // Write config
         let config_path = Path::new(&base_directory).join("product_quantizer_config.yaml");
         if config_path.exists() {
             // Delete the file if exists
-            std::fs::remove_file(config_path)?;
+            std::fs::remove_file(&config_path)?;
         }
 
-        // Write the codebook to a file
-        let codebook_path = Path::new(&base_directory).join(&CODEBOOK_NAME);
-        if codebook_path.exists() {
-            // Delete the file if exists
-            std::fs::remove_file(codebook_path)?;
-        }
-
-        // Write codebook
-        let codebook_buffer = self.codebook_to_buffer();
-        let mut codebook_file = File::create(Path::new(&base_directory).join(&CODEBOOK_NAME))?;
-        codebook_file.write(&codebook_buffer)?;
-
-        // Write config
-        let mut config_file =
-            File::create(Path::new(&base_directory).join("product_quantizer_config.yaml"))?;
+        let mut config_file = File::create(config_path)?;
         config_file.write(serde_yaml::to_string(&self.config())?.as_bytes())?;
         Ok(())
     }
@@ -350,7 +350,7 @@ mod tests {
         assert_eq!(quantized_value, vec![1, 1, 1, 1, 1]);
 
         // Write the codebook
-        pq.write_to_directory(&base_directory)
+        pq.write_to_directory(&base_directory, /*config_only*/ false)
             .expect("Failed to write the codebook");
 
         // Read the quantizer

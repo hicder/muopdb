@@ -142,13 +142,14 @@ impl MultiSpannWriter {
         fs::create_dir_all(&centroid_quantizer_directory)?;
         let num_features = multi_spann.config().num_features;
         let no_quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
-        no_quantizer.write_to_directory(&centroid_quantizer_directory)?;
+        no_quantizer
+            .write_to_directory(&centroid_quantizer_directory, /*config_only*/ false)?;
 
         // IVF quantizer
         let ivf_quantizer_directory = format!("{}/quantizer", ivf_directory);
         fs::create_dir_all(&ivf_quantizer_directory)?;
         let ivf_quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
-        ivf_quantizer.write_to_directory(&ivf_quantizer_directory)?;
+        ivf_quantizer.write_to_directory(&ivf_quantizer_directory, /*config_only*/ false)?;
 
         // Write user index infos
         let mut hash_table = HashTableOwned::<HashConfig>::with_capacity(user_ids.len(), 90);
