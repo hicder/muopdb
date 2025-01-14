@@ -49,7 +49,7 @@ pub struct SpannBuilderConfig {
 
 impl SpannBuilderConfig {
     pub fn from_collection_config(
-        collection_config: CollectionConfig,
+        collection_config: &CollectionConfig,
         base_directory: String,
     ) -> Self {
         Self {
@@ -65,13 +65,13 @@ impl SpannBuilderConfig {
             max_iteration: collection_config.product_quantization_max_iteration,
             batch_size: collection_config.product_quantization_batch_size,
             num_training_rows: collection_config.product_quantization_num_training_rows,
-            quantizer_type: collection_config.quantization_type,
+            quantizer_type: collection_config.quantization_type.clone(),
 
             num_clusters: collection_config.initial_num_centroids,
             num_data_points_for_clustering: collection_config.num_data_points_for_clustering,
             max_clusters_per_vector: collection_config.max_clusters_per_vector,
             distance_threshold: collection_config.clustering_distance_threshold_pct,
-            posting_list_encoding_type: collection_config.posting_list_encoding_type,
+            posting_list_encoding_type: collection_config.posting_list_encoding_type.clone(),
 
             base_directory,
             memory_size: collection_config.posting_list_builder_vector_storage_memory_size,
@@ -191,6 +191,8 @@ impl SpannBuilder {
 
 #[cfg(test)]
 mod tests {
+    use config::collection::CollectionConfig;
+
     use crate::spann::builder::SpannBuilderConfig;
 
     #[test]
@@ -202,7 +204,10 @@ mod tests {
 
         // Write the collection config
         let collection_config_path = format!("{}/collection_config.json", base_directory);
-        let collection_config = SpannBuilderConfig::default();
+        let collection_config = SpannBuilderConfig::from_collection_config(
+            &CollectionConfig::default_test_config(),
+            base_directory.clone(),
+        );
         std::fs::create_dir_all(&base_directory).unwrap();
         let mut file = File::create(collection_config_path.clone()).unwrap();
         serde_json::to_writer(&mut file, &collection_config).unwrap();

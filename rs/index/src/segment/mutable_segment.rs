@@ -1,8 +1,8 @@
 use anyhow::{Ok, Result};
+use config::collection::CollectionConfig;
 
 use crate::multi_spann::builder::MultiSpannBuilder;
 use crate::multi_spann::writer::MultiSpannWriter;
-use crate::spann::builder::SpannBuilderConfig;
 
 pub struct MutableSegment {
     multi_spann_builder: MultiSpannBuilder,
@@ -12,9 +12,9 @@ pub struct MutableSegment {
 }
 
 impl MutableSegment {
-    pub fn new(config: SpannBuilderConfig) -> Result<Self> {
+    pub fn new(config: CollectionConfig, base_directory: String) -> Result<Self> {
         Ok(Self {
-            multi_spann_builder: MultiSpannBuilder::new(config)?,
+            multi_spann_builder: MultiSpannBuilder::new(config, base_directory)?,
             finalized: false,
         })
     }
