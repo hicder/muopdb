@@ -537,7 +537,7 @@ mod tests {
             .search(&query, k, num_probes, &mut context)
             .expect("IVF search should return a result");
 
-        assert_eq!(results.len(), 2);
+        assert_eq!(results.len(), k);
         // This demonstrates the accuracy loss due to quantization
         assert!(results[0].score == results[1].score);
         assert_eq!(results[0].id + results[1].id, 203);
