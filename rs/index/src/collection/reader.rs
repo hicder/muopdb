@@ -13,11 +13,11 @@ use crate::collection::BoxedSegmentSearchable;
 use crate::multi_spann::reader::MultiSpannReader;
 use crate::segment::immutable_segment::ImmutableSegment;
 
-pub struct Reader {
+pub struct CollectionReader {
     path: String,
 }
 
-impl Reader {
+impl CollectionReader {
     pub fn new(path: String) -> Self {
         Self { path }
     }
@@ -134,7 +134,7 @@ mod tests {
         let toc = TableOfContent::new(vec!["segment1".to_string(), "segment2".to_string()]);
         serde_json::to_writer(std::fs::File::create(toc_path).unwrap(), &toc).unwrap();
 
-        let reader = Reader::new(base_directory.clone());
+        let reader = CollectionReader::new(base_directory.clone());
         let collection = reader.read().unwrap();
 
         // Check current version
