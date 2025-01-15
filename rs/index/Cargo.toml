@@ -24,6 +24,7 @@ tempdir.workspace = true
 utils.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_yaml.workspace = true
 rayon.workspace = true
 atomic_refcell.workspace = true
 odht.workspace = true

@@ -11,12 +11,14 @@ pub struct UserIndexInfo {
     pub ivf_vectors_len: u64,
     pub ivf_index_offset: u64,
     pub ivf_index_len: u64,
+    pub ivf_pq_codebook_offset: u64,
+    pub ivf_pq_codebook_len: u64,
 }
 
 impl UserIndexInfo {
     #[inline]
-    pub fn to_le_bytes(&self) -> [u8; 72] {
-        let mut bytes = [0u8; 72];
+    pub fn to_le_bytes(&self) -> [u8; 88] {
+        let mut bytes = [0u8; 88];
         bytes[0..8].copy_from_slice(&self.user_id.to_le_bytes());
         bytes[8..16].copy_from_slice(&self.centroid_vector_offset.to_le_bytes());
         bytes[16..24].copy_from_slice(&self.centroid_vector_len.to_le_bytes());
@@ -26,6 +28,8 @@ impl UserIndexInfo {
         bytes[48..56].copy_from_slice(&self.ivf_vectors_len.to_le_bytes());
         bytes[56..64].copy_from_slice(&self.ivf_index_offset.to_le_bytes());
         bytes[64..72].copy_from_slice(&self.ivf_index_len.to_le_bytes());
+        bytes[72..80].copy_from_slice(&self.ivf_pq_codebook_offset.to_le_bytes());
+        bytes[80..88].copy_from_slice(&self.ivf_pq_codebook_len.to_le_bytes());
         bytes
     }
 
@@ -40,6 +44,8 @@ impl UserIndexInfo {
         let ivf_vectors_len = u64::from_le_bytes(bytes[48..56].try_into().unwrap());
         let ivf_index_offset = u64::from_le_bytes(bytes[56..64].try_into().unwrap());
         let ivf_index_len = u64::from_le_bytes(bytes[64..72].try_into().unwrap());
+        let ivf_pq_codebook_offset = u64::from_le_bytes(bytes[72..80].try_into().unwrap());
+        let ivf_pq_codebook_len = u64::from_le_bytes(bytes[80..88].try_into().unwrap());
         Self {
             user_id,
             centroid_vector_offset,
@@ -50,6 +56,8 @@ impl UserIndexInfo {
             ivf_vectors_len,
             ivf_index_offset,
             ivf_index_len,
+            ivf_pq_codebook_offset,
+            ivf_pq_codebook_len,
         }
     }
 }
@@ -59,7 +67,7 @@ impl Config for HashConfig {
     type Key = u64;
     type Value = UserIndexInfo;
     type EncodedKey = [u8; 8];
-    type EncodedValue = [u8; 72];
+    type EncodedValue = [u8; 88];
     type H = FxHashFn;
 
     #[inline]

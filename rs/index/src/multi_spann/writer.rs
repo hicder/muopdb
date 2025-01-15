@@ -1,9 +1,13 @@
 use std::fs::{self, File};
-use std::io::BufWriter;
+use std::io::{BufWriter, Write};
+use std::path::Path;
 
 use anyhow::{Ok, Result};
+use config::collection::CollectionConfig;
+use config::enums::QuantizerType;
 use odht::HashTableOwned;
 use quantization::noq::noq::NoQuantizer;
+use quantization::pq::pq::{ProductQuantizerConfig, CODEBOOK_NAME};
 use quantization::quantization::WritableQuantizer;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::io::{append_file_to_writer, write_pad};
@@ -19,6 +23,36 @@ pub struct MultiSpannWriter {
 impl MultiSpannWriter {
     pub fn new(base_directory: String) -> Self {
         Self { base_directory }
+    }
+
+    fn write_common_ivf_quantizer(ivf_directory: &str, config: &CollectionConfig) -> Result<()> {
+        let ivf_quantizer_directory = format!("{}/quantizer", ivf_directory);
+        fs::create_dir_all(&ivf_quantizer_directory)?;
+        match config.quantization_type {
+            QuantizerType::ProductQuantizer => {
+                // Write the config only, since it's common to all SPANNs
+                let pq_config = ProductQuantizerConfig {
+                    dimension: config.num_features,
+                    subvector_dimension: config.product_quantization_subvector_dimension,
+                    num_bits: config.product_quantization_num_bits as u8,
+                };
+
+                let config_path =
+                    Path::new(&ivf_quantizer_directory).join("product_quantizer_config.yaml");
+                if config_path.exists() {
+                    // Delete the file if exists
+                    std::fs::remove_file(&config_path)?;
+                }
+
+                let mut config_file = File::create(config_path)?;
+                config_file.write(serde_yaml::to_string(&pq_config)?.as_bytes())?;
+            }
+            QuantizerType::NoQuantizer => {
+                let ivf_quantizer = NoQuantizer::<L2DistanceCalculator>::new(config.num_features);
+                ivf_quantizer.write_to_directory(&ivf_quantizer_directory)?;
+            }
+        };
+        Ok(())
     }
 
     pub fn write(&self, multi_spann: &mut MultiSpannBuilder) -> Result<Vec<UserIndexInfo>> {
@@ -46,6 +80,8 @@ impl MultiSpannWriter {
                 ivf_vectors_len: 0,
                 ivf_index_offset: 0,
                 ivf_index_len: 0,
+                ivf_pq_codebook_offset: 0,
+                ivf_pq_codebook_len: 0,
             });
         }
 
@@ -57,6 +93,16 @@ impl MultiSpannWriter {
 
         let ivf_directory = format!("{}/ivf", base_directory);
         fs::create_dir_all(&ivf_directory)?;
+
+        // Centroid quantizer
+        let centroid_quantizer_directory = format!("{}/quantizer", centroids_directory);
+        fs::create_dir_all(&centroid_quantizer_directory)?;
+        let num_features = multi_spann.config().num_features;
+        let no_quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
+        no_quantizer.write_to_directory(&centroid_quantizer_directory)?;
+
+        // IVF quantizer
+        Self::write_common_ivf_quantizer(&ivf_directory, &multi_spann.config())?;
 
         // Centroids index
         let mut hnsw_index_file = File::create(format!("{}/index", hnsw_directory))?;
@@ -74,10 +120,16 @@ impl MultiSpannWriter {
         let mut ivf_vectors_file = File::create(format!("{}/vectors", ivf_directory))?;
         let mut ivf_vectors_buffer_writer = BufWriter::new(&mut ivf_vectors_file);
 
+        // IVF product quantizer codebook file
+        let ivf_pq_codebook_path = format!("{}/quantizer/{}", ivf_directory, CODEBOOK_NAME);
+        let mut ivf_pq_codebook_file = File::create(&ivf_pq_codebook_path)?;
+        let mut ivf_pq_codebook_buffer_writer = BufWriter::new(&mut ivf_pq_codebook_file);
+
         let mut centroids_index_written: u64 = 0;
         let mut centroids_vector_written: u64 = 0;
         let mut ivf_index_written: u64 = 0;
         let mut ivf_vectors_written: u64 = 0;
+        let mut ivf_pq_codebook_written: u64 = 0;
 
         for (idx, user_id) in user_ids.iter().enumerate() {
             let user_id_base_directory = format!("{}/{}", base_directory, *user_id);
@@ -135,20 +187,23 @@ impl MultiSpannWriter {
             )? as u64;
             user_index_info.ivf_vectors_len =
                 ivf_vectors_written - user_index_info.ivf_vectors_offset;
+
+            // IVF product quantizer codebooks
+            if multi_spann.config().quantization_type == QuantizerType::ProductQuantizer {
+                ivf_pq_codebook_written += write_pad(
+                    ivf_pq_codebook_written as usize,
+                    &mut ivf_pq_codebook_buffer_writer,
+                    8,
+                )? as u64;
+                user_index_info.ivf_pq_codebook_offset = ivf_pq_codebook_written;
+                ivf_pq_codebook_written += append_file_to_writer(
+                    &format!("{}/ivf/quantizer/codebook", user_id_base_directory),
+                    &mut ivf_pq_codebook_buffer_writer,
+                )? as u64;
+                user_index_info.ivf_pq_codebook_len =
+                    ivf_pq_codebook_written - user_index_info.ivf_pq_codebook_offset;
+            }
         }
-
-        // Centroid quantizer
-        let centroid_quantizer_directory = format!("{}/quantizer", centroids_directory);
-        fs::create_dir_all(&centroid_quantizer_directory)?;
-        let num_features = multi_spann.config().num_features;
-        let no_quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
-        no_quantizer.write_to_directory(&centroid_quantizer_directory)?;
-
-        // IVF quantizer
-        let ivf_quantizer_directory = format!("{}/quantizer", ivf_directory);
-        fs::create_dir_all(&ivf_quantizer_directory)?;
-        let ivf_quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
-        ivf_quantizer.write_to_directory(&ivf_quantizer_directory)?;
 
         // Write user index infos
         let mut hash_table = HashTableOwned::<HashConfig>::with_capacity(user_ids.len(), 90);
@@ -167,6 +222,10 @@ impl MultiSpannWriter {
             std::fs::remove_dir_all(user_id_base_directory).unwrap_or_default();
         }
 
+        // Cleanup the codebook if no quantization for IVF
+        if multi_spann.config().quantization_type != QuantizerType::ProductQuantizer {
+            std::fs::remove_file(ivf_pq_codebook_path).unwrap_or_default();
+        }
         Ok(user_index_infos)
     }
 }
