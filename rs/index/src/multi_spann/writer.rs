@@ -31,6 +31,7 @@ impl MultiSpannWriter {
         match config.quantization_type {
             QuantizerType::ProductQuantizer => {
                 // Write the config only, since it's common to all SPANNs
+                // TODO(tyb) actually num_training_rows might be different across SPANNs
                 let pq_config = ProductQuantizerConfig {
                     dimension: config.num_features,
                     subvector_dimension: config.product_quantization_subvector_dimension,

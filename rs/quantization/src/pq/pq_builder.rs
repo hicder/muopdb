@@ -15,7 +15,7 @@ pub struct ProductQuantizerBuilderConfig {
 pub struct ProductQuantizerBuilder<D: DistanceCalculator> {
     pq_config: ProductQuantizerConfig,
     builder_config: ProductQuantizerBuilderConfig,
-    dataset: Vec<Vec<f32>>,
+    pub dataset: Vec<Vec<f32>>,
 
     _marker: PhantomData<D>,
 }
