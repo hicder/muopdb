@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use index::collection::reader::Reader;
+use index::collection::reader::CollectionReader;
 use index::collection::Collection;
 
 pub struct CollectionProvider {
@@ -14,7 +14,7 @@ impl CollectionProvider {
 
     pub fn read_collection(&self, name: &str) -> Option<Arc<Collection>> {
         let collection_path = format!("{}/{}", self.data_directory, name);
-        let reader = Reader::new(collection_path);
+        let reader = CollectionReader::new(collection_path);
         match reader.read() {
             Ok(collection) => Some(collection),
             Err(e) => {
