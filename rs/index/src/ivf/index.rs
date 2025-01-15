@@ -462,7 +462,7 @@ mod tests {
             .search(&query, k, num_probes, &mut context)
             .expect("IVF search should return a result");
 
-        assert_eq!(results.len(), 2);
+        assert_eq!(results.len(), k);
         assert_eq!(results[0].id, 103); // Closest to [2.0, 3.0, 4.0]
         assert_eq!(results[1].id, 100); // Second closest to [2.0, 3.0, 4.0]
         assert!(results[0].score < results[1].score);
