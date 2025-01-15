@@ -13,7 +13,7 @@ use utils::{CalculateSquared, DistanceCalculator};
 
 use crate::quantization::{Quantizer, WritableQuantizer};
 
-const CODEBOOK_NAME: &str = "codebook";
+pub const CODEBOOK_NAME: &str = "codebook";
 
 // (TODO): support inner PQ distance template
 pub struct ProductQuantizer<D: DistanceCalculator> {

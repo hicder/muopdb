@@ -1397,6 +1397,7 @@ dependencies = [
  "roaring",
  "serde",
  "serde_json",
+ "serde_yaml",
  "sorted-vec",
  "tempdir",
  "utils",
