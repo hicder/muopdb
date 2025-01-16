@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
 
             let vec = (0..128).map(|_| 0.1).collect::<Vec<_>>();
             let request = tonic::Request::new(SearchRequest {
-                index_name,
+                collection_name: index_name,
                 vector: vec,
                 top_k: 10,
                 record_metrics: true,

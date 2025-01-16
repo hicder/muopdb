@@ -28,8 +28,10 @@ pub struct GetResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateCollectionRequest {
     #[prost(string, tag = "1")]
-    pub index_name: ::prost::alloc::string::String,
-    /// Collection configuration parameters
+    pub collection_name: ::prost::alloc::string::String,
+    /// Collection configuration parameters. The default values for these are defined
+    /// in `rs/config/src/collection.rs`. You just need to override those that differ
+    /// from the default values.
     #[prost(uint32, optional, tag = "3")]
     pub num_features: ::core::option::Option<u32>,
     #[prost(uint32, optional, tag = "4")]
@@ -82,7 +84,7 @@ pub struct CreateCollectionResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchRequest {
     #[prost(string, tag = "1")]
-    pub index_name: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
     #[prost(float, repeated, tag = "2")]
     pub vector: ::prost::alloc::vec::Vec<f32>,
     #[prost(uint32, tag = "3")]
