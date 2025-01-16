@@ -13,6 +13,13 @@ class IndexServerClient:
         self.channel = grpc.insecure_channel(f"{host}:{port}")
         self.stub = muopdb_pb2_grpc.IndexServerStub(self.channel)
 
+    def create_collection(self, index_name: str):
+        request = muopdb_pb2.CreateCollectionRequest(
+            index_name=index_name,
+        )
+        response = self.stub.CreateCollection(request)
+        return response
+
     def search(self, index_name: str, vector: list[float], top_k: int, ef_construction: int, record_metrics: bool=False, user_ids: list[int]=[0]):
         request = muopdb_pb2.SearchRequest(
             index_name=index_name,
@@ -45,6 +52,7 @@ class IndexServerClient:
         self.channel.close()
 
 if __name__ == '__main__':
+
     # Example usage for IndexServer
     index_server_client = IndexServerClient()
     try:
