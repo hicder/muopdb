@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let arg = Args::parse();
 
-    let addr = format!("127.0.0.1:{}", arg.port)
+    let addr = format!("0.0.0.0:{}", arg.port)
         .parse()
         .map_err(|e| format!("Failed to parse address: {}", e))?;
     let shard_manager_config_directory = arg.shard_manager_config_directory;

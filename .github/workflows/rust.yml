@@ -11,12 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Install dependencies
-      run: sudo apt-get install -y libhdf5-dev protobuf-compiler libopenblas-dev
-    - name: Build
-      run: cargo build --release --verbose
-    - name: Run tests
-      run: cargo test --release --verbose
+    - name: Build & Test
+      run: docker build .
 
   build-macos:
     runs-on: macos-latest
