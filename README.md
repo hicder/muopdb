@@ -87,7 +87,6 @@ sudo pacman -Syu hdf5 protobuf openblas
 ```
 Build:
 ```
-# from top-level workspace
 cargo build --release
 ```
 Test:
