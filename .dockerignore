@@ -1,0 +1,11 @@
+/target
+.env
+.envrc
+.vscode
+*/target
+flamegraph.svg
+perf.data*
+.idea
+.DS_Store
+.venv
+*/__pycache__/

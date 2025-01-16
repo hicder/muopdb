@@ -38,7 +38,7 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let arg = Args::parse();
-    let addr: SocketAddr = format!("127.0.0.1:{}", arg.port).parse()?;
+    let addr: SocketAddr = format!("0.0.0.0:{}", arg.port).parse()?;
     let collection_config_path = arg.index_config_path;
     let collection_data_path = arg.index_data_path;
     let node_id = arg.node_id;
