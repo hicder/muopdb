@@ -24,43 +24,43 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0cmuopdb.proto\x12\x06muopdb\"}\n\nGetRequest\x12\r\n\x05index\x18\x01 \x01(\t\x12\x0e\n\x06vector\x18\x02 \x03(\x02\x12\r\n\x05top_k\x18\x03 \x01(\r\x12\x17\n\x0f\x65\x66_construction\x18\x05 \x01(\r\x12\x16\n\x0erecord_metrics\x18\x04 \x01(\x08\x12\x10\n\x08user_ids\x18\x06 \x03(\x04\"6\n\x0bGetResponse\x12\x0b\n\x03ids\x18\x01 \x03(\x04\x12\x1a\n\x12num_pages_accessed\x18\x02 \x01(\x04\"\xa4\x0e\n\x17\x43reateCollectionRequest\x12\x12\n\nindex_name\x18\x01 \x01(\t\x12\x19\n\x0cnum_features\x18\x03 \x01(\rH\x00\x88\x01\x01\x12$\n\x17\x63\x65ntroids_max_neighbors\x18\x04 \x01(\rH\x01\x88\x01\x01\x12!\n\x14\x63\x65ntroids_max_layers\x18\x05 \x01(\rH\x02\x88\x01\x01\x12&\n\x19\x63\x65ntroids_ef_construction\x18\x06 \x01(\rH\x03\x88\x01\x01\x12\x39\n,centroids_builder_vector_storage_memory_size\x18\x07 \x01(\x04H\x04\x88\x01\x01\x12\x37\n*centroids_builder_vector_storage_file_size\x18\x08 \x01(\x04H\x05\x88\x01\x01\x12\x35\n\x11quantization_type\x18\t \x01(\x0e\x32\x15.muopdb.QuantizerTypeH\x06\x88\x01\x01\x12/\n\"product_quantization_max_iteration\x18\n \x01(\rH\x07\x88\x01\x01\x12,\n\x1fproduct_quantization_batch_size\x18\x0b \x01(\rH\x08\x88\x01\x01\x12\x35\n(product_quantization_subvector_dimension\x18\x0c \x01(\rH\t\x88\x01\x01\x12*\n\x1dproduct_quantization_num_bits\x18\r \x01(\rH\n\x88\x01\x01\x12\x33\n&product_quantization_num_training_rows\x18\x0e \x01(\rH\x0b\x88\x01\x01\x12\"\n\x15initial_num_centroids\x18\x0f \x01(\rH\x0c\x88\x01\x01\x12+\n\x1enum_data_points_for_clustering\x18\x10 \x01(\rH\r\x88\x01\x01\x12$\n\x17max_clusters_per_vector\x18\x11 \x01(\rH\x0e\x88\x01\x01\x12.\n!clustering_distance_threshold_pct\x18\x12 \x01(\x02H\x0f\x88\x01\x01\x12\x43\n\x1aposting_list_encoding_type\x18\x13 \x01(\x0e\x32\x1a.muopdb.IntSeqEncodingTypeH\x10\x88\x01\x01\x12<\n/posting_list_builder_vector_storage_memory_size\x18\x14 \x01(\x04H\x11\x88\x01\x01\x12:\n-posting_list_builder_vector_storage_file_size\x18\x15 \x01(\x04H\x12\x88\x01\x01\x12\"\n\x15max_posting_list_size\x18\x16 \x01(\x04H\x13\x88\x01\x01\x12\x33\n&posting_list_kmeans_unbalanced_penalty\x18\x17 \x01(\x02H\x14\x88\x01\x01\x12\x14\n\x07reindex\x18\x18 \x01(\x08H\x15\x88\x01\x01\x42\x0f\n\r_num_featuresB\x1a\n\x18_centroids_max_neighborsB\x17\n\x15_centroids_max_layersB\x1c\n\x1a_centroids_ef_constructionB/\n-_centroids_builder_vector_storage_memory_sizeB-\n+_centroids_builder_vector_storage_file_sizeB\x14\n\x12_quantization_typeB%\n#_product_quantization_max_iterationB\"\n _product_quantization_batch_sizeB+\n)_product_quantization_subvector_dimensionB \n\x1e_product_quantization_num_bitsB)\n\'_product_quantization_num_training_rowsB\x18\n\x16_initial_num_centroidsB!\n\x1f_num_data_points_for_clusteringB\x1a\n\x18_max_clusters_per_vectorB$\n\"_clustering_distance_threshold_pctB\x1d\n\x1b_posting_list_encoding_typeB2\n0_posting_list_builder_vector_storage_memory_sizeB0\n._posting_list_builder_vector_storage_file_sizeB\x18\n\x16_max_posting_list_sizeB)\n\'_posting_list_kmeans_unbalanced_penaltyB\n\n\x08_reindex\"\x1a\n\x18\x43reateCollectionResponse\"\x85\x01\n\rSearchRequest\x12\x12\n\nindex_name\x18\x01 \x01(\t\x12\x0e\n\x06vector\x18\x02 \x03(\x02\x12\r\n\x05top_k\x18\x03 \x01(\r\x12\x17\n\x0f\x65\x66_construction\x18\x05 \x01(\r\x12\x16\n\x0erecord_metrics\x18\x04 \x01(\x08\x12\x10\n\x08user_ids\x18\x06 \x03(\x04\"I\n\x0eSearchResponse\x12\x0b\n\x03ids\x18\x01 \x03(\x04\x12\x0e\n\x06scores\x18\x02 \x03(\x02\x12\x1a\n\x12num_pages_accessed\x18\x03 \x01(\x04\"X\n\rInsertRequest\x12\x17\n\x0f\x63ollection_name\x18\x01 \x01(\t\x12\x0b\n\x03ids\x18\x02 \x03(\x04\x12\x0f\n\x07vectors\x18\x03 \x03(\x02\x12\x10\n\x08user_ids\x18\x04 \x03(\x04\"&\n\x0eInsertResponse\x12\x14\n\x0cinserted_ids\x18\x01 \x03(\x04\"\'\n\x0c\x46lushRequest\x12\x17\n\x0f\x63ollection_name\x18\x01 \x01(\t\")\n\rFlushResponse\x12\x18\n\x10\x66lushed_segments\x18\x01 \x03(\t\"^\n\x13InsertPackedRequest\x12\x17\n\x0f\x63ollection_name\x18\x01 \x01(\t\x12\x0b\n\x03ids\x18\x02 \x01(\x0c\x12\x0f\n\x07vectors\x18\x03 \x01(\x0c\x12\x10\n\x08user_ids\x18\x04 \x03(\x04\"\x16\n\x14InsertPackedResponse*8\n\rQuantizerType\x12\x10\n\x0cNO_QUANTIZER\x10\x00\x12\x15\n\x11PRODUCT_QUANTIZER\x10\x01*8\n\x12IntSeqEncodingType\x12\x12\n\x0ePLAIN_ENCODING\x10\x00\x12\x0e\n\nELIAS_FANO\x10\x01\x32>\n\nAggregator\x12\x30\n\x03Get\x12\x12.muopdb.GetRequest\x1a\x13.muopdb.GetResponse\"\x00\x32\xe1\x02\n\x0bIndexServer\x12W\n\x10\x43reateCollection\x12\x1f.muopdb.CreateCollectionRequest\x1a .muopdb.CreateCollectionResponse\"\x00\x12\x39\n\x06Search\x12\x15.muopdb.SearchRequest\x1a\x16.muopdb.SearchResponse\"\x00\x12\x39\n\x06Insert\x12\x15.muopdb.InsertRequest\x1a\x16.muopdb.InsertResponse\"\x00\x12K\n\x0cInsertPacked\x12\x1b.muopdb.InsertPackedRequest\x1a\x1c.muopdb.InsertPackedResponse\"\x00\x12\x36\n\x05\x46lush\x12\x14.muopdb.FlushRequest\x1a\x15.muopdb.FlushResponse\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0cmuopdb.proto\x12\x06muopdb\"}\n\nGetRequest\x12\r\n\x05index\x18\x01 \x01(\t\x12\x0e\n\x06vector\x18\x02 \x03(\x02\x12\r\n\x05top_k\x18\x03 \x01(\r\x12\x17\n\x0f\x65\x66_construction\x18\x05 \x01(\r\x12\x16\n\x0erecord_metrics\x18\x04 \x01(\x08\x12\x10\n\x08user_ids\x18\x06 \x03(\x04\"6\n\x0bGetResponse\x12\x0b\n\x03ids\x18\x01 \x03(\x04\x12\x1a\n\x12num_pages_accessed\x18\x02 \x01(\x04\"\xa9\x0e\n\x17\x43reateCollectionRequest\x12\x17\n\x0f\x63ollection_name\x18\x01 \x01(\t\x12\x19\n\x0cnum_features\x18\x03 \x01(\rH\x00\x88\x01\x01\x12$\n\x17\x63\x65ntroids_max_neighbors\x18\x04 \x01(\rH\x01\x88\x01\x01\x12!\n\x14\x63\x65ntroids_max_layers\x18\x05 \x01(\rH\x02\x88\x01\x01\x12&\n\x19\x63\x65ntroids_ef_construction\x18\x06 \x01(\rH\x03\x88\x01\x01\x12\x39\n,centroids_builder_vector_storage_memory_size\x18\x07 \x01(\x04H\x04\x88\x01\x01\x12\x37\n*centroids_builder_vector_storage_file_size\x18\x08 \x01(\x04H\x05\x88\x01\x01\x12\x35\n\x11quantization_type\x18\t \x01(\x0e\x32\x15.muopdb.QuantizerTypeH\x06\x88\x01\x01\x12/\n\"product_quantization_max_iteration\x18\n \x01(\rH\x07\x88\x01\x01\x12,\n\x1fproduct_quantization_batch_size\x18\x0b \x01(\rH\x08\x88\x01\x01\x12\x35\n(product_quantization_subvector_dimension\x18\x0c \x01(\rH\t\x88\x01\x01\x12*\n\x1dproduct_quantization_num_bits\x18\r \x01(\rH\n\x88\x01\x01\x12\x33\n&product_quantization_num_training_rows\x18\x0e \x01(\rH\x0b\x88\x01\x01\x12\"\n\x15initial_num_centroids\x18\x0f \x01(\rH\x0c\x88\x01\x01\x12+\n\x1enum_data_points_for_clustering\x18\x10 \x01(\rH\r\x88\x01\x01\x12$\n\x17max_clusters_per_vector\x18\x11 \x01(\rH\x0e\x88\x01\x01\x12.\n!clustering_distance_threshold_pct\x18\x12 \x01(\x02H\x0f\x88\x01\x01\x12\x43\n\x1aposting_list_encoding_type\x18\x13 \x01(\x0e\x32\x1a.muopdb.IntSeqEncodingTypeH\x10\x88\x01\x01\x12<\n/posting_list_builder_vector_storage_memory_size\x18\x14 \x01(\x04H\x11\x88\x01\x01\x12:\n-posting_list_builder_vector_storage_file_size\x18\x15 \x01(\x04H\x12\x88\x01\x01\x12\"\n\x15max_posting_list_size\x18\x16 \x01(\x04H\x13\x88\x01\x01\x12\x33\n&posting_list_kmeans_unbalanced_penalty\x18\x17 \x01(\x02H\x14\x88\x01\x01\x12\x14\n\x07reindex\x18\x18 \x01(\x08H\x15\x88\x01\x01\x42\x0f\n\r_num_featuresB\x1a\n\x18_centroids_max_neighborsB\x17\n\x15_centroids_max_layersB\x1c\n\x1a_centroids_ef_constructionB/\n-_centroids_builder_vector_storage_memory_sizeB-\n+_centroids_builder_vector_storage_file_sizeB\x14\n\x12_quantization_typeB%\n#_product_quantization_max_iterationB\"\n _product_quantization_batch_sizeB+\n)_product_quantization_subvector_dimensionB \n\x1e_product_quantization_num_bitsB)\n\'_product_quantization_num_training_rowsB\x18\n\x16_initial_num_centroidsB!\n\x1f_num_data_points_for_clusteringB\x1a\n\x18_max_clusters_per_vectorB$\n\"_clustering_distance_threshold_pctB\x1d\n\x1b_posting_list_encoding_typeB2\n0_posting_list_builder_vector_storage_memory_sizeB0\n._posting_list_builder_vector_storage_file_sizeB\x18\n\x16_max_posting_list_sizeB)\n\'_posting_list_kmeans_unbalanced_penaltyB\n\n\x08_reindex\"\x1a\n\x18\x43reateCollectionResponse\"\x8a\x01\n\rSearchRequest\x12\x17\n\x0f\x63ollection_name\x18\x01 \x01(\t\x12\x0e\n\x06vector\x18\x02 \x03(\x02\x12\r\n\x05top_k\x18\x03 \x01(\r\x12\x17\n\x0f\x65\x66_construction\x18\x05 \x01(\r\x12\x16\n\x0erecord_metrics\x18\x04 \x01(\x08\x12\x10\n\x08user_ids\x18\x06 \x03(\x04\"I\n\x0eSearchResponse\x12\x0b\n\x03ids\x18\x01 \x03(\x04\x12\x0e\n\x06scores\x18\x02 \x03(\x02\x12\x1a\n\x12num_pages_accessed\x18\x03 \x01(\x04\"X\n\rInsertRequest\x12\x17\n\x0f\x63ollection_name\x18\x01 \x01(\t\x12\x0b\n\x03ids\x18\x02 \x03(\x04\x12\x0f\n\x07vectors\x18\x03 \x03(\x02\x12\x10\n\x08user_ids\x18\x04 \x03(\x04\"&\n\x0eInsertResponse\x12\x14\n\x0cinserted_ids\x18\x01 \x03(\x04\"\'\n\x0c\x46lushRequest\x12\x17\n\x0f\x63ollection_name\x18\x01 \x01(\t\")\n\rFlushResponse\x12\x18\n\x10\x66lushed_segments\x18\x01 \x03(\t\"^\n\x13InsertPackedRequest\x12\x17\n\x0f\x63ollection_name\x18\x01 \x01(\t\x12\x0b\n\x03ids\x18\x02 \x01(\x0c\x12\x0f\n\x07vectors\x18\x03 \x01(\x0c\x12\x10\n\x08user_ids\x18\x04 \x03(\x04\"\x16\n\x14InsertPackedResponse*8\n\rQuantizerType\x12\x10\n\x0cNO_QUANTIZER\x10\x00\x12\x15\n\x11PRODUCT_QUANTIZER\x10\x01*8\n\x12IntSeqEncodingType\x12\x12\n\x0ePLAIN_ENCODING\x10\x00\x12\x0e\n\nELIAS_FANO\x10\x01\x32>\n\nAggregator\x12\x30\n\x03Get\x12\x12.muopdb.GetRequest\x1a\x13.muopdb.GetResponse\"\x00\x32\xe1\x02\n\x0bIndexServer\x12W\n\x10\x43reateCollection\x12\x1f.muopdb.CreateCollectionRequest\x1a .muopdb.CreateCollectionResponse\"\x00\x12\x39\n\x06Search\x12\x15.muopdb.SearchRequest\x1a\x16.muopdb.SearchResponse\"\x00\x12\x39\n\x06Insert\x12\x15.muopdb.InsertRequest\x1a\x16.muopdb.InsertResponse\"\x00\x12K\n\x0cInsertPacked\x12\x1b.muopdb.InsertPackedRequest\x1a\x1c.muopdb.InsertPackedResponse\"\x00\x12\x36\n\x05\x46lush\x12\x14.muopdb.FlushRequest\x1a\x15.muopdb.FlushResponse\"\x00\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'muopdb_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_QUANTIZERTYPE']._serialized_start=2611
-  _globals['_QUANTIZERTYPE']._serialized_end=2667
-  _globals['_INTSEQENCODINGTYPE']._serialized_start=2669
-  _globals['_INTSEQENCODINGTYPE']._serialized_end=2725
+  _globals['_QUANTIZERTYPE']._serialized_start=2621
+  _globals['_QUANTIZERTYPE']._serialized_end=2677
+  _globals['_INTSEQENCODINGTYPE']._serialized_start=2679
+  _globals['_INTSEQENCODINGTYPE']._serialized_end=2735
   _globals['_GETREQUEST']._serialized_start=24
   _globals['_GETREQUEST']._serialized_end=149
   _globals['_GETRESPONSE']._serialized_start=151
   _globals['_GETRESPONSE']._serialized_end=205
   _globals['_CREATECOLLECTIONREQUEST']._serialized_start=208
-  _globals['_CREATECOLLECTIONREQUEST']._serialized_end=2036
-  _globals['_CREATECOLLECTIONRESPONSE']._serialized_start=2038
-  _globals['_CREATECOLLECTIONRESPONSE']._serialized_end=2064
-  _globals['_SEARCHREQUEST']._serialized_start=2067
-  _globals['_SEARCHREQUEST']._serialized_end=2200
-  _globals['_SEARCHRESPONSE']._serialized_start=2202
-  _globals['_SEARCHRESPONSE']._serialized_end=2275
-  _globals['_INSERTREQUEST']._serialized_start=2277
-  _globals['_INSERTREQUEST']._serialized_end=2365
-  _globals['_INSERTRESPONSE']._serialized_start=2367
-  _globals['_INSERTRESPONSE']._serialized_end=2405
-  _globals['_FLUSHREQUEST']._serialized_start=2407
-  _globals['_FLUSHREQUEST']._serialized_end=2446
-  _globals['_FLUSHRESPONSE']._serialized_start=2448
-  _globals['_FLUSHRESPONSE']._serialized_end=2489
-  _globals['_INSERTPACKEDREQUEST']._serialized_start=2491
-  _globals['_INSERTPACKEDREQUEST']._serialized_end=2585
-  _globals['_INSERTPACKEDRESPONSE']._serialized_start=2587
-  _globals['_INSERTPACKEDRESPONSE']._serialized_end=2609
-  _globals['_AGGREGATOR']._serialized_start=2727
-  _globals['_AGGREGATOR']._serialized_end=2789
-  _globals['_INDEXSERVER']._serialized_start=2792
-  _globals['_INDEXSERVER']._serialized_end=3145
+  _globals['_CREATECOLLECTIONREQUEST']._serialized_end=2041
+  _globals['_CREATECOLLECTIONRESPONSE']._serialized_start=2043
+  _globals['_CREATECOLLECTIONRESPONSE']._serialized_end=2069
+  _globals['_SEARCHREQUEST']._serialized_start=2072
+  _globals['_SEARCHREQUEST']._serialized_end=2210
+  _globals['_SEARCHRESPONSE']._serialized_start=2212
+  _globals['_SEARCHRESPONSE']._serialized_end=2285
+  _globals['_INSERTREQUEST']._serialized_start=2287
+  _globals['_INSERTREQUEST']._serialized_end=2375
+  _globals['_INSERTRESPONSE']._serialized_start=2377
+  _globals['_INSERTRESPONSE']._serialized_end=2415
+  _globals['_FLUSHREQUEST']._serialized_start=2417
+  _globals['_FLUSHREQUEST']._serialized_end=2456
+  _globals['_FLUSHRESPONSE']._serialized_start=2458
+  _globals['_FLUSHRESPONSE']._serialized_end=2499
+  _globals['_INSERTPACKEDREQUEST']._serialized_start=2501
+  _globals['_INSERTPACKEDREQUEST']._serialized_end=2595
+  _globals['_INSERTPACKEDRESPONSE']._serialized_start=2597
+  _globals['_INSERTPACKEDRESPONSE']._serialized_end=2619
+  _globals['_AGGREGATOR']._serialized_start=2737
+  _globals['_AGGREGATOR']._serialized_end=2799
+  _globals['_INDEXSERVER']._serialized_start=2802
+  _globals['_INDEXSERVER']._serialized_end=3155
 # @@protoc_insertion_point(module_scope)

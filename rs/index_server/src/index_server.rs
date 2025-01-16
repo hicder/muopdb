@@ -17,7 +17,7 @@ use crate::collection_catalog::CollectionCatalog;
 use crate::collection_manager::CollectionManager;
 
 pub struct IndexServerImpl {
-    pub index_catalog: Arc<Mutex<CollectionCatalog>>,
+    pub collection_catalog: Arc<Mutex<CollectionCatalog>>,
     pub collection_manager: Arc<Mutex<CollectionManager>>,
 }
 
@@ -27,7 +27,7 @@ impl IndexServerImpl {
         collection_manager: Arc<Mutex<CollectionManager>>,
     ) -> Self {
         Self {
-            index_catalog,
+            collection_catalog: index_catalog,
             collection_manager,
         }
     }
@@ -41,7 +41,7 @@ impl IndexServer for IndexServerImpl {
     ) -> Result<tonic::Response<CreateCollectionResponse>, tonic::Status> {
         let mut collection_config = CollectionConfig::default();
         let req = request.into_inner();
-        let collection_name = req.index_name;
+        let collection_name = req.collection_name;
 
         if let Some(num_features) = req.num_features {
             collection_config.num_features = num_features as usize;
@@ -140,7 +140,7 @@ impl IndexServer for IndexServerImpl {
     ) -> Result<tonic::Response<SearchResponse>, tonic::Status> {
         let start = std::time::Instant::now();
         let req = request.into_inner();
-        let index_name = req.index_name;
+        let collection_name = req.collection_name;
         let vec = req.vector;
         let k = req.top_k;
         let record_metrics = req.record_metrics;
@@ -148,10 +148,10 @@ impl IndexServer for IndexServerImpl {
         let user_ids = req.user_ids;
 
         let collection_opt = self
-            .index_catalog
+            .collection_catalog
             .lock()
             .await
-            .get_collection(&index_name)
+            .get_collection(&collection_name)
             .await;
         if let Some(collection) = collection_opt {
             let mut search_context = SearchContext::new(record_metrics);
@@ -175,7 +175,7 @@ impl IndexServer for IndexServerImpl {
                         }
                         let end = std::time::Instant::now();
                         let duration = end.duration_since(start);
-                        debug!("Searched collection {} in {:?}", index_name, duration);
+                        debug!("Searched collection {} in {:?}", collection_name, duration);
                         return Ok(tonic::Response::new(SearchResponse {
                             ids: ids,
                             scores: scores,
@@ -215,7 +215,7 @@ impl IndexServer for IndexServerImpl {
         let user_ids = req.user_ids;
 
         let collection_opt = self
-            .index_catalog
+            .collection_catalog
             .lock()
             .await
             .get_collection(&collection_name)
@@ -261,7 +261,7 @@ impl IndexServer for IndexServerImpl {
         let collection_name = req.collection_name;
 
         let collection_opt = self
-            .index_catalog
+            .collection_catalog
             .lock()
             .await
             .get_collection(&collection_name)
@@ -298,7 +298,7 @@ impl IndexServer for IndexServerImpl {
         let user_ids = req.user_ids;
 
         let collection_opt = self
-            .index_catalog
+            .collection_catalog
             .lock()
             .await
             .get_collection(&collection_name)

@@ -90,7 +90,7 @@ impl Aggregator for AggregatorServerImpl {
             let index_name_for_shard = format!("{}--{}", index_name, shard_node.shard_id);
             let ret = client
                 .search(tonic::Request::new(SearchRequest {
-                    index_name: index_name_for_shard,
+                    collection_name: index_name_for_shard,
                     vector: req.vector.clone(),
                     top_k: req.top_k,
                     record_metrics: req.record_metrics,

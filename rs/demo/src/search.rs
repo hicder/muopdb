@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
 
     // Create search request
     let request = tonic::Request::new(SearchRequest {
-        index_name: "test-collection-1".to_string(),
+        collection_name: "test-collection-1".to_string(),
         vector: query_vector,
         top_k: 5,
         ef_construction: 100,
