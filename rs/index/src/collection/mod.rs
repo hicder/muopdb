@@ -89,20 +89,17 @@ impl Collection {
         })
     }
 
-    pub fn init_new_collection(
-        base_directory: String,
-        config: &CollectionConfig,
-    ) -> Result<()> {
+    pub fn init_new_collection(base_directory: String, config: &CollectionConfig) -> Result<()> {
         std::fs::create_dir_all(base_directory.clone())?;
 
         // Write version 0
         let toc_path = format!("{}/version_0", base_directory);
         let toc = TableOfContent { toc: vec![] };
-        serde_json::to_writer(std::fs::File::create(toc_path)?, &toc)?;
+        serde_json::to_writer_pretty(std::fs::File::create(toc_path)?, &toc)?;
 
         // Write the config file
         let config_path = format!("{}/collection_config.json", base_directory);
-        serde_json::to_writer(std::fs::File::create(config_path)?, config)?;
+        serde_json::to_writer_pretty(std::fs::File::create(config_path)?, config)?;
 
         Ok(())
     }

@@ -112,13 +112,19 @@ impl IndexServer for IndexServerImpl {
         }
 
         let mut collection_manager_locked = self.collection_manager.lock().await;
-        if collection_manager_locked.collection_exists(&collection_name).await {
+        if collection_manager_locked
+            .collection_exists(&collection_name)
+            .await
+        {
             return Err(tonic::Status::new(
                 tonic::Code::AlreadyExists,
                 format!("Collection {} already exists", collection_name),
             ));
         }
-        match collection_manager_locked.add_collection(collection_name.clone(), collection_config).await {
+        match collection_manager_locked
+            .add_collection(collection_name.clone(), collection_config)
+            .await
+        {
             Ok(_) => {
                 return Ok(tonic::Response::new(CreateCollectionResponse {}));
             }

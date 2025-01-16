@@ -70,7 +70,8 @@ impl CollectionManager {
                 self.collection_catalog
                     .lock()
                     .await
-                    .add_collection(collection_name.clone(), collection).await;
+                    .add_collection(collection_name.clone(), collection)
+                    .await;
             }
             None => {
                 return Err(anyhow::anyhow!("Failed to read collection"));
@@ -82,9 +83,19 @@ impl CollectionManager {
 
         // Write the collection manager config as latest version
         let toc_path = format!("{}/version_{}", self.config_path, self.latest_version);
-        let all_collection_names = self.collection_catalog.lock().await.get_all_collection_names_sorted().await;
-        let toc = CollectionManagerConfig { collections: all_collection_names.iter().map(|name| CollectionInfo { name: name.clone() }).collect() };
-        serde_json::to_writer(std::fs::File::create(toc_path)?, &toc)?;
+        let all_collection_names = self
+            .collection_catalog
+            .lock()
+            .await
+            .get_all_collection_names_sorted()
+            .await;
+        let toc = CollectionManagerConfig {
+            collections: all_collection_names
+                .iter()
+                .map(|name| CollectionInfo { name: name.clone() })
+                .collect(),
+        };
+        serde_json::to_writer_pretty(std::fs::File::create(toc_path)?, &toc)?;
 
         Ok(())
     }
