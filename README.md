@@ -30,6 +30,7 @@ mkdir -p /mnt/muopdb/data
 ### Examples using Postman
 1. Create collection
 <img width="603" alt="Screenshot 2025-01-16 at 11 14 23 AM" src="https://github.com/user-attachments/assets/cadf00c4-199f-4756-8446-7fb08de2b0c0" />
+
 ```
 {
     "collection_name": "test-collection-2",
@@ -39,6 +40,7 @@ mkdir -p /mnt/muopdb/data
 
 2. Insert some data
 <img width="603" alt="Screenshot 2025-01-16 at 10 51 32 AM" src="https://github.com/user-attachments/assets/8dfb622c-31ca-44c1-b174-8ca678a5c32c" />
+
 ```
 {
     "collection_name": "test-collection-2",
@@ -51,6 +53,7 @@ mkdir -p /mnt/muopdb/data
 
 3. Flush
 <img width="603" alt="Screenshot 2025-01-16 at 10 51 42 AM" src="https://github.com/user-attachments/assets/83f0d12c-afde-47f5-9238-eedf31a4dad5" />
+
 ```
 {
     "collection_name": "test-collection-2",
@@ -59,6 +62,7 @@ mkdir -p /mnt/muopdb/data
 
 4. Query
 <img width="603" alt="Screenshot 2025-01-16 at 11 14 37 AM" src="https://github.com/user-attachments/assets/fc0e0332-37e1-4923-962c-87efce5d7a56" />
+
 ```
 {
     "collection_name": "test-collection-2",
