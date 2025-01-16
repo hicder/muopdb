@@ -29,4 +29,8 @@ impl CollectionCatalog {
         v.sort();
         v
     }
+
+    pub async fn collection_exists(&self, name: &str) -> bool {
+        self.collections.contains_key(name)
+    }
 }

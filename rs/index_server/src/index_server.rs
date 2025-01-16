@@ -1,30 +1,133 @@
 use std::sync::Arc;
 use std::vec;
 
+use config::collection::CollectionConfig;
 use index::utils::SearchContext;
 use log::{debug, info};
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
-    FlushRequest, FlushResponse, InsertPackedRequest, InsertPackedResponse, InsertRequest,
-    InsertResponse, SearchRequest, SearchResponse,
+    CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse,
+    InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, SearchRequest,
+    SearchResponse,
 };
 use tokio::sync::Mutex;
 use utils::mem::transmute_u8_to_slice;
 
 use crate::collection_catalog::CollectionCatalog;
+use crate::collection_manager::CollectionManager;
 
 pub struct IndexServerImpl {
     pub index_catalog: Arc<Mutex<CollectionCatalog>>,
+    pub collection_manager: Arc<Mutex<CollectionManager>>,
 }
 
 impl IndexServerImpl {
-    pub fn new(index_catalog: Arc<Mutex<CollectionCatalog>>) -> Self {
-        Self { index_catalog }
+    pub fn new(
+        index_catalog: Arc<Mutex<CollectionCatalog>>,
+        collection_manager: Arc<Mutex<CollectionManager>>,
+    ) -> Self {
+        Self {
+            index_catalog,
+            collection_manager,
+        }
     }
 }
 
 #[tonic::async_trait]
 impl IndexServer for IndexServerImpl {
+    async fn create_collection(
+        &self,
+        request: tonic::Request<CreateCollectionRequest>,
+    ) -> Result<tonic::Response<CreateCollectionResponse>, tonic::Status> {
+        let mut collection_config = CollectionConfig::default();
+        let req = request.into_inner();
+        let collection_name = req.index_name;
+
+        if let Some(num_features) = req.num_features {
+            collection_config.num_features = num_features as usize;
+        }
+        if let Some(centroids_max_neighbors) = req.centroids_max_neighbors {
+            collection_config.centroids_max_neighbors = centroids_max_neighbors as usize;
+        }
+        if let Some(centroids_max_layers) = req.centroids_max_layers {
+            collection_config.centroids_max_layers = centroids_max_layers as u8;
+        }
+        if let Some(centroids_ef_construction) = req.centroids_ef_construction {
+            collection_config.centroids_ef_construction = centroids_ef_construction;
+        }
+        if let Some(memory_size) = req.centroids_builder_vector_storage_memory_size {
+            collection_config.centroids_builder_vector_storage_memory_size = memory_size as usize;
+        }
+        if let Some(file_size) = req.centroids_builder_vector_storage_file_size {
+            collection_config.centroids_builder_vector_storage_file_size = file_size as usize;
+        }
+        if let Some(quantization_type) = req.quantization_type {
+            collection_config.quantization_type = quantization_type.into();
+        }
+        if let Some(max_iter) = req.product_quantization_max_iteration {
+            collection_config.product_quantization_max_iteration = max_iter as usize;
+        }
+        if let Some(batch_size) = req.product_quantization_batch_size {
+            collection_config.product_quantization_batch_size = batch_size as usize;
+        }
+        if let Some(subvec_dim) = req.product_quantization_subvector_dimension {
+            collection_config.product_quantization_subvector_dimension = subvec_dim as usize;
+        }
+        if let Some(num_bits) = req.product_quantization_num_bits {
+            collection_config.product_quantization_num_bits = num_bits as usize;
+        }
+        if let Some(training_rows) = req.product_quantization_num_training_rows {
+            collection_config.product_quantization_num_training_rows = training_rows as usize;
+        }
+        if let Some(num_centroids) = req.initial_num_centroids {
+            collection_config.initial_num_centroids = num_centroids as usize;
+        }
+        if let Some(data_points) = req.num_data_points_for_clustering {
+            collection_config.num_data_points_for_clustering = data_points as usize;
+        }
+        if let Some(max_clusters) = req.max_clusters_per_vector {
+            collection_config.max_clusters_per_vector = max_clusters as usize;
+        }
+        if let Some(threshold_pct) = req.clustering_distance_threshold_pct {
+            collection_config.clustering_distance_threshold_pct = threshold_pct;
+        }
+        if let Some(encoding_type) = req.posting_list_encoding_type {
+            collection_config.posting_list_encoding_type = encoding_type.into();
+        }
+        if let Some(memory_size) = req.posting_list_builder_vector_storage_memory_size {
+            collection_config.posting_list_builder_vector_storage_memory_size =
+                memory_size as usize;
+        }
+        if let Some(file_size) = req.posting_list_builder_vector_storage_file_size {
+            collection_config.posting_list_builder_vector_storage_file_size = file_size as usize;
+        }
+        if let Some(max_size) = req.max_posting_list_size {
+            collection_config.max_posting_list_size = max_size as usize;
+        }
+        if let Some(penalty) = req.posting_list_kmeans_unbalanced_penalty {
+            collection_config.posting_list_kmeans_unbalanced_penalty = penalty;
+        }
+        if let Some(reindex) = req.reindex {
+            collection_config.reindex = reindex;
+        }
+
+        let mut collection_manager_locked = self.collection_manager.lock().await;
+        if collection_manager_locked.collection_exists(&collection_name).await {
+            return Err(tonic::Status::new(
+                tonic::Code::AlreadyExists,
+                format!("Collection {} already exists", collection_name),
+            ));
+        }
+        match collection_manager_locked.add_collection(collection_name.clone(), collection_config).await {
+            Ok(_) => {
+                return Ok(tonic::Response::new(CreateCollectionResponse {}));
+            }
+            Err(e) => {
+                return Err(tonic::Status::new(tonic::Code::Internal, e.to_string()));
+            }
+        }
+    }
+
     async fn search(
         &self,
         request: tonic::Request<SearchRequest>,

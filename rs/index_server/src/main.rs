@@ -49,19 +49,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Node: {}, listening on port {}", node_id, arg.port);
 
-    let index_manager_thread = spawn(async move {
-        let index_provider = CollectionProvider::new(index_data_path);
-        let mut index_manager =
-            CollectionManager::new(index_config_path, index_provider, index_catalog_for_manager);
+    let collection_provider = CollectionProvider::new(index_data_path);
+    let collection_manager = Arc::new(Mutex::new(CollectionManager::new(
+        index_config_path,
+        collection_provider,
+        index_catalog_for_manager,
+    )));
+
+    let collection_manager_clone = collection_manager.clone();
+    let collection_manager_thread = spawn(async move {
         loop {
-            if let Err(e) = index_manager.check_for_update().await {
+            if let Err(e) = collection_manager_clone
+                .lock()
+                .await
+                .check_for_update()
+                .await
+            {
                 error!("Error checking for index manager update: {}", e);
             }
             sleep(std::time::Duration::from_secs(60)).await;
         }
     });
 
-    let server_impl = IndexServerImpl::new(index_catalog_for_server);
+    let server_impl = IndexServerImpl::new(index_catalog_for_server, collection_manager);
     Server::builder()
         .add_service(IndexServerServer::new(server_impl))
         .serve(addr)
@@ -69,6 +79,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // TODO(hicder): Add graceful shutdown
     info!("Received signal, shutting down");
-    index_manager_thread.await?;
+    collection_manager_thread.await?;
     Ok(())
 }

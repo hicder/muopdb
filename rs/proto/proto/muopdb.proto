@@ -23,7 +23,19 @@ message GetResponse {
   uint64 num_pages_accessed = 2;
 }
 
+enum QuantizerType {
+  NO_QUANTIZER = 0;
+  PRODUCT_QUANTIZER = 1;
+}
+
+enum IntSeqEncodingType {
+  PLAIN_ENCODING = 0;
+  ELIAS_FANO = 1;
+}
+
 service IndexServer {
+  rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse) {}
+
   rpc Search(SearchRequest) returns (SearchResponse) {}
 
   rpc Insert(InsertRequest) returns (InsertResponse) {}
@@ -31,6 +43,37 @@ service IndexServer {
   rpc InsertPacked(InsertPackedRequest) returns (InsertPackedResponse) {}
 
   rpc Flush(FlushRequest) returns (FlushResponse) {}
+}
+
+message CreateCollectionRequest {
+  string index_name = 1;
+  
+  // Collection configuration parameters
+  optional uint32 num_features = 3;
+  optional uint32 centroids_max_neighbors = 4;
+  optional uint32 centroids_max_layers = 5;
+  optional uint32 centroids_ef_construction = 6;
+  optional uint64 centroids_builder_vector_storage_memory_size = 7;
+  optional uint64 centroids_builder_vector_storage_file_size = 8;
+  optional QuantizerType quantization_type = 9;
+  optional uint32 product_quantization_max_iteration = 10;
+  optional uint32 product_quantization_batch_size = 11;
+  optional uint32 product_quantization_subvector_dimension = 12;
+  optional uint32 product_quantization_num_bits = 13;
+  optional uint32 product_quantization_num_training_rows = 14;
+  optional uint32 initial_num_centroids = 15;
+  optional uint32 num_data_points_for_clustering = 16;
+  optional uint32 max_clusters_per_vector = 17;
+  optional float clustering_distance_threshold_pct = 18;
+  optional IntSeqEncodingType posting_list_encoding_type = 19;
+  optional uint64 posting_list_builder_vector_storage_memory_size = 20;
+  optional uint64 posting_list_builder_vector_storage_file_size = 21;
+  optional uint64 max_posting_list_size = 22;
+  optional float posting_list_kmeans_unbalanced_penalty = 23;
+  optional bool reindex = 24;
+}
+
+message CreateCollectionResponse {
 }
 
 message SearchRequest {

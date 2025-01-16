@@ -26,6 +26,60 @@ pub struct GetResponse {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateCollectionRequest {
+    #[prost(string, tag = "1")]
+    pub index_name: ::prost::alloc::string::String,
+    /// Collection configuration parameters
+    #[prost(uint32, optional, tag = "3")]
+    pub num_features: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "4")]
+    pub centroids_max_neighbors: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "5")]
+    pub centroids_max_layers: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "6")]
+    pub centroids_ef_construction: ::core::option::Option<u32>,
+    #[prost(uint64, optional, tag = "7")]
+    pub centroids_builder_vector_storage_memory_size: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "8")]
+    pub centroids_builder_vector_storage_file_size: ::core::option::Option<u64>,
+    #[prost(enumeration = "QuantizerType", optional, tag = "9")]
+    pub quantization_type: ::core::option::Option<i32>,
+    #[prost(uint32, optional, tag = "10")]
+    pub product_quantization_max_iteration: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "11")]
+    pub product_quantization_batch_size: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "12")]
+    pub product_quantization_subvector_dimension: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "13")]
+    pub product_quantization_num_bits: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "14")]
+    pub product_quantization_num_training_rows: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "15")]
+    pub initial_num_centroids: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "16")]
+    pub num_data_points_for_clustering: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "17")]
+    pub max_clusters_per_vector: ::core::option::Option<u32>,
+    #[prost(float, optional, tag = "18")]
+    pub clustering_distance_threshold_pct: ::core::option::Option<f32>,
+    #[prost(enumeration = "IntSeqEncodingType", optional, tag = "19")]
+    pub posting_list_encoding_type: ::core::option::Option<i32>,
+    #[prost(uint64, optional, tag = "20")]
+    pub posting_list_builder_vector_storage_memory_size: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "21")]
+    pub posting_list_builder_vector_storage_file_size: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "22")]
+    pub max_posting_list_size: ::core::option::Option<u64>,
+    #[prost(float, optional, tag = "23")]
+    pub posting_list_kmeans_unbalanced_penalty: ::core::option::Option<f32>,
+    #[prost(bool, optional, tag = "24")]
+    pub reindex: ::core::option::Option<bool>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateCollectionResponse {}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchRequest {
     #[prost(string, tag = "1")]
     pub index_name: ::prost::alloc::string::String,
@@ -98,6 +152,58 @@ pub struct InsertPackedRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InsertPackedResponse {}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum QuantizerType {
+    NoQuantizer = 0,
+    ProductQuantizer = 1,
+}
+impl QuantizerType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            QuantizerType::NoQuantizer => "NO_QUANTIZER",
+            QuantizerType::ProductQuantizer => "PRODUCT_QUANTIZER",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "NO_QUANTIZER" => Some(Self::NoQuantizer),
+            "PRODUCT_QUANTIZER" => Some(Self::ProductQuantizer),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IntSeqEncodingType {
+    PlainEncoding = 0,
+    EliasFano = 1,
+}
+impl IntSeqEncodingType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            IntSeqEncodingType::PlainEncoding => "PLAIN_ENCODING",
+            IntSeqEncodingType::EliasFano => "ELIAS_FANO",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "PLAIN_ENCODING" => Some(Self::PlainEncoding),
+            "ELIAS_FANO" => Some(Self::EliasFano),
+            _ => None,
+        }
+    }
+}
 /// Generated client implementations.
 pub mod aggregator_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -249,6 +355,20 @@ pub mod index_server_client {
         pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
             self.inner = self.inner.accept_compressed(encoding);
             self
+        }
+        pub async fn create_collection(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateCollectionRequest>,
+        ) -> Result<tonic::Response<super::CreateCollectionResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/muopdb.IndexServer/CreateCollection");
+            self.inner.unary(request.into_request(), path, codec).await
         }
         pub async fn search(
             &mut self,
@@ -446,6 +566,10 @@ pub mod index_server_server {
     /// Generated trait containing gRPC methods that should be implemented for use with IndexServerServer.
     #[async_trait]
     pub trait IndexServer: Send + Sync + 'static {
+        async fn create_collection(
+            &self,
+            request: tonic::Request<super::CreateCollectionRequest>,
+        ) -> Result<tonic::Response<super::CreateCollectionResponse>, tonic::Status>;
         async fn search(
             &self,
             request: tonic::Request<super::SearchRequest>,
@@ -516,6 +640,39 @@ pub mod index_server_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
+                "/muopdb.IndexServer/CreateCollection" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateCollectionSvc<T: IndexServer>(pub Arc<T>);
+                    impl<T: IndexServer> tonic::server::UnaryService<super::CreateCollectionRequest>
+                        for CreateCollectionSvc<T>
+                    {
+                        type Response = super::CreateCollectionResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateCollectionRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).create_collection(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CreateCollectionSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/muopdb.IndexServer/Search" => {
                     #[allow(non_camel_case_types)]
                     struct SearchSvc<T: IndexServer>(pub Arc<T>);
