@@ -14,12 +14,12 @@ Think of it as:
 All users' indices will be stored in a few files, reducing operational complexity.
 
 ## Quick Start
-* Prepare necessary `data` and `indices` directories
+* Prepare necessary `data` and `indices` directories. On Mac, you might want to change these directories since root directory is read-only.
 ```
 mkdir -p /mnt/muopdb/indices
 mkdir -p /mnt/muopdb/data
 ```
-* Run MuopDB `index_server`. (Refer to build instruction down below)
+* Run MuopDB `index_server` with the directories we just prepared.
 ```
 ./target/release/index_server --node-id 0 --index-config-path /mnt/muopdb/indices --index-data-path /mnt/muopdb/data --port 9002
 ```
