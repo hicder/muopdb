@@ -48,7 +48,9 @@ service IndexServer {
 message CreateCollectionRequest {
   string index_name = 1;
   
-  // Collection configuration parameters
+  // Collection configuration parameters. The default values for these are defined
+  // in `rs/config/src/collection.rs`. You just need to override those that differ
+  // from the default values.
   optional uint32 num_features = 3;
   optional uint32 centroids_max_neighbors = 4;
   optional uint32 centroids_max_layers = 5;
