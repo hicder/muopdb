@@ -106,6 +106,11 @@ class IndexServerStub(object):
         Args:
             channel: A grpc.Channel.
         """
+        self.CreateCollection = channel.unary_unary(
+                '/muopdb.IndexServer/CreateCollection',
+                request_serializer=muopdb__pb2.CreateCollectionRequest.SerializeToString,
+                response_deserializer=muopdb__pb2.CreateCollectionResponse.FromString,
+                _registered_method=True)
         self.Search = channel.unary_unary(
                 '/muopdb.IndexServer/Search',
                 request_serializer=muopdb__pb2.SearchRequest.SerializeToString,
@@ -130,6 +135,12 @@ class IndexServerStub(object):
 
 class IndexServerServicer(object):
     """Missing associated documentation comment in .proto file."""
+
+    def CreateCollection(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
 
     def Search(self, request, context):
         """Missing associated documentation comment in .proto file."""
@@ -158,6 +169,11 @@ class IndexServerServicer(object):
 
 def add_IndexServerServicer_to_server(servicer, server):
     rpc_method_handlers = {
+            'CreateCollection': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateCollection,
+                    request_deserializer=muopdb__pb2.CreateCollectionRequest.FromString,
+                    response_serializer=muopdb__pb2.CreateCollectionResponse.SerializeToString,
+            ),
             'Search': grpc.unary_unary_rpc_method_handler(
                     servicer.Search,
                     request_deserializer=muopdb__pb2.SearchRequest.FromString,
@@ -188,6 +204,33 @@ def add_IndexServerServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class IndexServer(object):
     """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def CreateCollection(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/muopdb.IndexServer/CreateCollection',
+            muopdb__pb2.CreateCollectionRequest.SerializeToString,
+            muopdb__pb2.CreateCollectionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
 
     @staticmethod
     def Search(request,

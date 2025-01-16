@@ -53,7 +53,7 @@ impl VersionsInfo {
 /// Collection is thread-safe. All pub fn are thread-safe.
 /// TODO(hicder): Add open segment to add documents.
 pub struct Collection {
-    versions: DashMap<u64, TableOfContent>,
+    pub versions: DashMap<u64, TableOfContent>,
     all_segments: DashMap<String, Arc<BoxedSegmentSearchable>>,
     versions_info: RwLock<VersionsInfo>,
     base_directory: String,
@@ -87,6 +87,21 @@ impl Collection {
             segment_config,
             flushing: Mutex::new(()),
         })
+    }
+
+    pub fn init_new_collection(base_directory: String, config: &CollectionConfig) -> Result<()> {
+        std::fs::create_dir_all(base_directory.clone())?;
+
+        // Write version 0
+        let toc_path = format!("{}/version_0", base_directory);
+        let toc = TableOfContent { toc: vec![] };
+        serde_json::to_writer_pretty(std::fs::File::create(toc_path)?, &toc)?;
+
+        // Write the config file
+        let config_path = format!("{}/collection_config.json", base_directory);
+        serde_json::to_writer_pretty(std::fs::File::create(config_path)?, config)?;
+
+        Ok(())
     }
 
     pub fn init_from(

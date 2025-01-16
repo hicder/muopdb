@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use index::collection::Collection;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -10,13 +11,13 @@ use crate::collection_catalog::CollectionCatalog;
 use crate::collection_provider::CollectionProvider;
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct CollectionConfig {
+pub struct CollectionInfo {
     pub name: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CollectionManagerConfig {
-    pub collections: Vec<CollectionConfig>,
+    pub collections: Vec<CollectionInfo>,
 }
 
 pub struct CollectionManager {
@@ -38,6 +39,65 @@ impl CollectionManager {
             collection_catalog,
             latest_version: 0,
         }
+    }
+
+    pub async fn collection_exists(&self, collection_name: &str) -> bool {
+        self.collection_catalog
+            .lock()
+            .await
+            .collection_exists(collection_name)
+            .await
+    }
+
+    pub async fn add_collection(
+        &mut self,
+        collection_name: String,
+        collection_config: config::collection::CollectionConfig,
+    ) -> Result<()> {
+        // Create new directory
+        Collection::init_new_collection(
+            format!(
+                "{}/{}",
+                self.collection_provider.data_directory(),
+                collection_name
+            ),
+            &collection_config,
+        )
+        .unwrap();
+
+        match self.collection_provider.read_collection(&collection_name) {
+            Some(collection) => {
+                self.collection_catalog
+                    .lock()
+                    .await
+                    .add_collection(collection_name.clone(), collection)
+                    .await;
+            }
+            None => {
+                return Err(anyhow::anyhow!("Failed to read collection"));
+            }
+        }
+
+        // Increment the latest version
+        self.latest_version += 1;
+
+        // Write the collection manager config as latest version
+        let toc_path = format!("{}/version_{}", self.config_path, self.latest_version);
+        let all_collection_names = self
+            .collection_catalog
+            .lock()
+            .await
+            .get_all_collection_names_sorted()
+            .await;
+        let toc = CollectionManagerConfig {
+            collections: all_collection_names
+                .iter()
+                .map(|name| CollectionInfo { name: name.clone() })
+                .collect(),
+        };
+        serde_json::to_writer_pretty(std::fs::File::create(toc_path)?, &toc)?;
+
+        Ok(())
     }
 
     fn get_collections_to_add(

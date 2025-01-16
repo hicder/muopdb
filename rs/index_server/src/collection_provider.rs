@@ -23,4 +23,8 @@ impl CollectionProvider {
             }
         }
     }
+
+    pub fn data_directory(&self) -> &str {
+        &self.data_directory
+    }
 }
