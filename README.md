@@ -14,7 +14,7 @@ Think of it as:
 All users' indices will be stored in a few files, reducing operational complexity.
 
 ## Quick Start
-* Build MuopDB. Refer to this [instruction](https://github.com/hicder/muopdb?tab=readme-ov-file#quick-start)
+* Build MuopDB. Refer to this [instruction](https://github.com/hicder/muopdb?tab=readme-ov-file#building)
 * Prepare necessary `data` and `indices` directories. On Mac, you might want to change these directories since root directory is read-only.
 ```
 mkdir -p /mnt/muopdb/indices
