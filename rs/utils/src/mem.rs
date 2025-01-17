@@ -48,3 +48,62 @@ pub fn lows_and_highs_to_u128s(lows: &[u64], highs: &[u64]) -> Vec<u128> {
 
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Test lows and highs
+    #[test]
+    fn test_lows_and_highs() {
+        let ids = vec![
+            0x4312123456789abcdef0,
+            0x4312123456789abcdef1,
+            0x4312123456789abcdef2,
+            0x4312123456789abcdef3,
+            0x4312123456789abcdef4,
+        ];
+
+        let lows_highs = u128s_to_lows_highs(&ids);
+
+        assert_eq!(
+            lows_highs.lows,
+            vec![
+                0x123456789abcdef0,
+                0x123456789abcdef1,
+                0x123456789abcdef2,
+                0x123456789abcdef3,
+                0x123456789abcdef4
+            ]
+        );
+        assert_eq!(
+            lows_highs.highs,
+            vec![0x4312, 0x4312, 0x4312, 0x4312, 0x4312]
+        );
+    }
+
+    #[test]
+    fn test_lows_and_highs_to_u128s() {
+        let lows = vec![
+            0x123456789abcdef0,
+            0x123456789abcdef1,
+            0x123456789abcdef2,
+            0x123456789abcdef3,
+            0x123456789abcdef4,
+        ];
+        let highs = vec![0x4312, 0x4312, 0x4312, 0x4312, 0x4312];
+
+        let ids = lows_and_highs_to_u128s(&lows, &highs);
+
+        assert_eq!(
+            ids,
+            vec![
+                0x4312123456789abcdef0,
+                0x4312123456789abcdef1,
+                0x4312123456789abcdef2,
+                0x4312123456789abcdef3,
+                0x4312123456789abcdef4
+            ]
+        );
+    }
+}

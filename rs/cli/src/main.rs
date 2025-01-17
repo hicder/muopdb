@@ -42,7 +42,8 @@ async fn main() -> Result<()> {
                 top_k: 10,
                 record_metrics: true,
                 ef_construction: 100,
-                user_ids: vec![0],
+                low_user_ids: vec![0],
+                high_user_ids: vec![0],
             });
 
             let response = client
@@ -64,7 +65,8 @@ async fn main() -> Result<()> {
                 top_k: 10,
                 record_metrics: true,
                 ef_construction: 100,
-                user_ids: vec![0],
+                low_user_ids: vec![0],
+                high_user_ids: vec![0],
             });
 
             info!("Request: {:?}", request);

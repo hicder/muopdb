@@ -55,7 +55,8 @@ async fn main() -> Result<()> {
         top_k: 5,
         ef_construction: 100,
         record_metrics: false,
-        user_ids: vec![0],
+        low_user_ids: vec![0],
+        high_user_ids: vec![0],
     });
 
     let start = Instant::now();
@@ -65,11 +66,13 @@ async fn main() -> Result<()> {
     let search_response = response.into_inner();
     info!("Search completed in {:?}", duration);
     info!("Search results:");
-    for (id, score) in search_response
-        .ids
+    let ids: Vec<u128> = search_response
+        .low_ids
         .iter()
-        .zip(search_response.scores.iter())
-    {
+        .zip(search_response.high_ids.iter())
+        .map(|x| *x.0 as u128 | (*x.1 as u128) << 64)
+        .collect();
+    for (id, score) in ids.iter().zip(search_response.scores.iter()) {
         info!("ID: {}, Score: {}", id, score);
     }
 
@@ -80,10 +83,10 @@ async fn main() -> Result<()> {
     let file = File::open("/mnt/muopdb/raw/1m_sentences.txt").unwrap();
     let reader = BufReader::new(file);
 
-    let mut id: u64 = 1;
+    let mut id: u128 = 1;
     for line in reader.lines() {
         let line = line.unwrap();
-        if search_response.ids.contains(&id) {
+        if ids.contains(&id) {
             println!("RESULT: {}", line);
         }
         id += 1;

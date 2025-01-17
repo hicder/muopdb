@@ -13,11 +13,13 @@ message GetRequest {
 
   // For metrics, don't set by default
   bool record_metrics = 4;
-  repeated uint64 user_ids = 6;
+  repeated uint64 low_user_ids = 6;
+  repeated uint64 high_user_ids = 7;
 }
 
 message GetResponse {
-  repeated uint64 ids = 1;
+  repeated uint64 low_ids = 1;
+  repeated uint64 high_ids = 3;
 
   // For metrics, not enabled by default
   uint64 num_pages_accessed = 2;
@@ -86,11 +88,15 @@ message SearchRequest {
 
   // For metrics, don't set by default
   bool record_metrics = 4;
-  repeated uint64 user_ids = 6;
+
+  repeated uint64 low_user_ids = 6;
+  repeated uint64 high_user_ids = 7;
 }
 
 message SearchResponse {
-  repeated uint64 ids = 1;
+  repeated uint64 low_ids = 1;
+  repeated uint64 high_ids = 4;
+
   repeated float scores = 2;
 
   // For metrics, not enabled by default
@@ -100,16 +106,19 @@ message SearchResponse {
 message InsertRequest {
   string collection_name = 1;
 
-  repeated uint64 ids = 2;
+  repeated uint64 low_ids = 2;
+  repeated uint64 high_ids = 5;
 
   // flattened vector
   repeated float vectors = 3;
 
-  repeated uint64 user_ids = 4;
+  repeated uint64 low_user_ids = 4;
+  repeated uint64 high_user_ids = 6;
 }
 
 message InsertResponse {
-  repeated uint64 inserted_ids = 1;
+  repeated uint64 inserted_low_ids = 1;
+  repeated uint64 inserted_high_ids = 2;
 }
 
 message FlushRequest {
@@ -122,9 +131,13 @@ message FlushResponse {
 
 message InsertPackedRequest {
   string collection_name = 1;
-  bytes ids = 2;
+  bytes low_ids = 2;
+  bytes high_ids = 5;
+
   bytes vectors = 3;
-  repeated uint64 user_ids = 4;
+
+  repeated uint64 low_user_ids = 4;
+  repeated uint64 high_user_ids = 6;
 }
 
 message InsertPackedResponse {

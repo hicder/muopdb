@@ -28,7 +28,8 @@ impl AggregatorServerImpl {
 }
 
 struct IdAndScore {
-    id: u64,
+    low_id: u64,
+    high_id: u64,
     score: f32,
 }
 
@@ -51,7 +52,8 @@ impl Aggregator for AggregatorServerImpl {
                 tonic::Status::internal(format!("No nodes found for index: {}", index_name))
             })?;
         let ef_construction = req.ef_construction;
-        let user_ids = req.user_ids;
+        let low_user_ids = req.low_user_ids;
+        let high_user_ids = req.high_user_ids;
 
         let node_infos = self
             .node_manager
@@ -95,19 +97,22 @@ impl Aggregator for AggregatorServerImpl {
                     top_k: req.top_k,
                     record_metrics: req.record_metrics,
                     ef_construction,
-                    user_ids: user_ids.clone(),
+                    low_user_ids: low_user_ids.clone(),
+                    high_user_ids: high_user_ids.clone(),
                 }))
                 .await
                 .map_err(|e| tonic::Status::internal(format!("Search request failed: {}", e)))?;
 
             let inner = ret.into_inner();
             inner
-                .ids
+                .low_ids
                 .iter()
+                .zip(inner.high_ids.iter())
                 .zip(inner.scores.iter())
                 .for_each(|(id, score)| {
                     vecs_and_scores.push(IdAndScore {
-                        id: *id,
+                        low_id: *id.0,
+                        high_id: *id.1,
                         score: *score,
                     });
                     num_pages_accessed += inner.num_pages_accessed as usize;
@@ -118,7 +123,8 @@ impl Aggregator for AggregatorServerImpl {
         vecs_and_scores.sort_by(|a, b| b.score.total_cmp(&a.score));
 
         Ok(tonic::Response::new(GetResponse {
-            ids: vecs_and_scores.iter().map(|x| x.id.clone()).collect(),
+            low_ids: vecs_and_scores.iter().map(|x| x.low_id).collect(),
+            high_ids: vecs_and_scores.iter().map(|x| x.high_id).collect(),
             num_pages_accessed: num_pages_accessed as u64,
         }))
     }
