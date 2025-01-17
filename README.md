@@ -39,7 +39,7 @@ mkdir -p /mnt/muopdb/data
 ```
 
 2. Insert some data
-<img width="603" alt="Screenshot 2025-01-16 at 10 51 32 AM" src="https://github.com/user-attachments/assets/8dfb622c-31ca-44c1-b174-8ca678a5c32c" />
+<img width="603" alt="Screenshot 2025-01-17 at 9 45 20 AM" src="https://github.com/user-attachments/assets/ec15a3b7-3a0a-44a3-a929-29ac9b7a47fc" />
 
 ```
 {
@@ -73,7 +73,7 @@ mkdir -p /mnt/muopdb/data
 ```
 
 4. Query
-<img width="603" alt="Screenshot 2025-01-16 at 11 14 37 AM" src="https://github.com/user-attachments/assets/fc0e0332-37e1-4923-962c-87efce5d7a56" />
+<img width="603" alt="Screenshot 2025-01-17 at 9 45 31 AM" src="https://github.com/user-attachments/assets/5859453b-5423-4321-a032-337a0a061ac1" />
 
 ```
 {
