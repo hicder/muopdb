@@ -95,19 +95,24 @@ pub struct SearchRequest {
     pub top_k: u32,
     #[prost(uint32, tag = "5")]
     pub ef_construction: u32,
-    /// For metrics, don't set by default
+    /// For metrics, don't set by default.
+    /// This has some performance impact on the query.
     #[prost(bool, tag = "4")]
     pub record_metrics: bool,
+    /// List of lower 64 bits of the user ids to search for.
     #[prost(uint64, repeated, tag = "6")]
     pub low_user_ids: ::prost::alloc::vec::Vec<u64>,
+    /// List of higher 64 bits of the user ids to search for.
     #[prost(uint64, repeated, tag = "7")]
     pub high_user_ids: ::prost::alloc::vec::Vec<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResponse {
+    /// List of lower 64 bits of the doc_ids
     #[prost(uint64, repeated, tag = "1")]
     pub low_ids: ::prost::alloc::vec::Vec<u64>,
+    /// List of higher 64 bits of the doc_ids
     #[prost(uint64, repeated, tag = "4")]
     pub high_ids: ::prost::alloc::vec::Vec<u64>,
     #[prost(float, repeated, tag = "2")]
@@ -121,23 +126,31 @@ pub struct SearchResponse {
 pub struct InsertRequest {
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
+    /// List of lower 64 bits of the doc_ids
     #[prost(uint64, repeated, tag = "2")]
     pub low_ids: ::prost::alloc::vec::Vec<u64>,
+    /// List of higher 64 bits of the doc_ids
     #[prost(uint64, repeated, tag = "5")]
     pub high_ids: ::prost::alloc::vec::Vec<u64>,
-    /// flattened vector
+    /// Flattened vector. If the dimension is 10,
+    /// and the number of vectors is 5,
+    /// then this list should have 50 elements.
     #[prost(float, repeated, tag = "3")]
     pub vectors: ::prost::alloc::vec::Vec<f32>,
+    /// List of lower 64 bits of the user ids.
     #[prost(uint64, repeated, tag = "4")]
     pub low_user_ids: ::prost::alloc::vec::Vec<u64>,
+    /// List of higher 64 bits of the user ids.
     #[prost(uint64, repeated, tag = "6")]
     pub high_user_ids: ::prost::alloc::vec::Vec<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InsertResponse {
+    /// List of lower 64 bits of the doc_ids
     #[prost(uint64, repeated, tag = "1")]
     pub inserted_low_ids: ::prost::alloc::vec::Vec<u64>,
+    /// List of higher 64 bits of the doc_ids
     #[prost(uint64, repeated, tag = "2")]
     pub inserted_high_ids: ::prost::alloc::vec::Vec<u64>,
 }
@@ -153,15 +166,24 @@ pub struct FlushResponse {
     #[prost(string, repeated, tag = "1")]
     pub flushed_segments: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+/// If you send a large number of vectors, you can use this method to
+/// save some time on serialization and deserialization.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InsertPackedRequest {
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
+    /// List of lower 64 bits of the doc_ids.
+    /// These ids should be packed with 8 bytes per number.
     #[prost(bytes = "vec", tag = "2")]
     pub low_ids: ::prost::alloc::vec::Vec<u8>,
+    /// List of lower 64 bits of the doc_ids.
+    /// These ids should be packed with 8 bytes per number.
     #[prost(bytes = "vec", tag = "5")]
     pub high_ids: ::prost::alloc::vec::Vec<u8>,
+    /// Packed flattened vector. If the dimension is 10,
+    /// and the number of vectors is 5, then this list should
+    /// have 50 elements, packed with 8 bytes per number.
     #[prost(bytes = "vec", tag = "3")]
     pub vectors: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint64, repeated, tag = "4")]
