@@ -22,7 +22,7 @@ mkdir -p /mnt/muopdb/data
 ```
 * Run MuopDB `index_server` with the directories we just prepared.
 ```
-./target/release/index_server --node-id 0 --index-config-path /mnt/muopdb/indices --index-data-path /mnt/muopdb/data --port 9002
+./index_server --node-id 0 --index-config-path /mnt/muopdb/indices --index-data-path /mnt/muopdb/data --port 9002
 ```
 * Now you have an up and running MuopDB `index_server`.
   * You can send gRPC requests to this server (possibly with [Postman](https://www.postman.com/)).
