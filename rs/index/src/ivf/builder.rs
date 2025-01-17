@@ -16,6 +16,7 @@ use utils::{ceil_div, CalculateSquared, DistanceCalculator};
 
 use crate::posting_list::file::FileBackedAppendablePostingListStorage;
 use crate::posting_list::PostingListStorage;
+use crate::utils::PointAndDistance;
 use crate::vector::file::FileBackedAppendableVectorStorage;
 use crate::vector::VectorStorage;
 
@@ -44,14 +45,8 @@ pub struct IvfBuilder<D: DistanceCalculator + CalculateSquared + Send + Sync> {
     vectors: AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>>,
     centroids: AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>>,
     posting_lists: Box<dyn for<'a> PostingListStorage<'a>>,
-    doc_id_mapping: Vec<u64>,
+    doc_id_mapping: Vec<u128>,
     _marker: PhantomData<D>,
-}
-
-// TODO(tyb): maybe merge with HNSW's one
-pub struct PointAndDistance {
-    pub point_id: usize,
-    pub distance: f32,
 }
 
 #[derive(Debug)]
@@ -198,7 +193,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         &self.vectors
     }
 
-    pub fn doc_id_mapping(&self) -> &[u64] {
+    pub fn doc_id_mapping(&self) -> &[u128] {
         &*self.doc_id_mapping
     }
 
@@ -215,7 +210,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
     }
 
     /// Add a new vector to the dataset for training
-    pub fn add_vector(&mut self, doc_id: u64, data: &[f32]) -> Result<()> {
+    pub fn add_vector(&mut self, doc_id: u128, data: &[f32]) -> Result<()> {
         self.vectors.borrow_mut().append(&data)?;
         self.generate_id(doc_id)?;
         Ok(())
@@ -233,7 +228,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         Ok(())
     }
 
-    fn generate_id(&mut self, doc_id: u64) -> Result<u32> {
+    fn generate_id(&mut self, doc_id: u128) -> Result<u32> {
         let generated_id = self.doc_id_mapping.len() as u32;
         self.doc_id_mapping.push(doc_id);
         Ok(generated_id)
@@ -270,10 +265,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             if dist.is_nan() {
                 println!("NAN found");
             }
-            distances.push(PointAndDistance {
-                point_id: i,
-                distance: dist,
-            });
+            distances.push(PointAndDistance::new(dist, i as u32));
         }
         distances.select_nth_unstable_by(num_probes - 1, |a, b| a.distance.total_cmp(&b.distance));
         distances.truncate(num_probes);
@@ -304,7 +296,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
                 // other value
                 let nearest_distance = nearest_centroids
                     .iter()
-                    .map(|pad| pad.distance)
+                    .map(|pad| pad.distance.into_inner())
                     .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Greater))
                     .expect("nearest_distance should not be None");
                 let mut accepted_centroid_ids = vec![];
@@ -810,7 +802,7 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add_vector(i as u64, &[(i + 1) as f32])
+                .add_vector(i as u128, &[(i + 1) as f32])
                 .expect("Vector should be added");
         }
 
@@ -1035,7 +1027,7 @@ mod tests {
 
         for i in 0..num_vectors {
             builder
-                .add_vector(i as u64, &generate_random_vector(num_features))
+                .add_vector(i as u128, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 
@@ -1108,7 +1100,7 @@ mod tests {
 
         for i in 0..num_vectors {
             builder
-                .add_vector(i as u64, &generate_random_vector(num_features))
+                .add_vector(i as u128, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 
@@ -1181,7 +1173,7 @@ mod tests {
 
         for i in 0..num_vectors {
             builder
-                .add_vector(i as u64, &generate_random_vector(num_features))
+                .add_vector(i as u128, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 
@@ -1276,7 +1268,7 @@ mod tests {
 
         for i in 0..num_vectors {
             builder
-                .add_vector(i as u64, &generate_random_vector(num_features))
+                .add_vector(i as u128, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 
@@ -1354,7 +1346,7 @@ mod tests {
 
         for i in 0..NUM_VECTORS {
             builder
-                .add_vector(i as u64 + 100, &[i as f32])
+                .add_vector(i as u128 + 100, &[i as f32])
                 .expect("Vector should be added");
         }
 
@@ -1384,7 +1376,7 @@ mod tests {
             );
         }
 
-        let expected_doc_ids: [u64; NUM_VECTORS] = [
+        let expected_doc_ids: [u128; NUM_VECTORS] = [
             10, 14, 15, 1, 3, 5, 7, 9, 16, 18, 0, 2, 4, 6, 8, 20, 11, 12, 13, 21, 17, 19,
         ];
 
@@ -1429,7 +1421,7 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add_vector(i as u64, &generate_random_vector(num_features))
+                .add_vector(i as u128, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 

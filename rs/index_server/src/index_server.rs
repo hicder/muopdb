@@ -11,7 +11,7 @@ use proto::muopdb::{
     SearchResponse,
 };
 use tokio::sync::Mutex;
-use utils::mem::transmute_u8_to_slice;
+use utils::mem::{lows_and_highs_to_u128s, transmute_u8_to_slice, u128s_to_lows_highs};
 
 use crate::collection_catalog::CollectionCatalog;
 use crate::collection_manager::CollectionManager;
@@ -145,7 +145,7 @@ impl IndexServer for IndexServerImpl {
         let k = req.top_k;
         let record_metrics = req.record_metrics;
         let ef_construction = req.ef_construction;
-        let user_ids = req.user_ids;
+        let user_ids: Vec<u128> = req.user_ids.iter().map(|id| *id as u128).collect();
 
         let collection_opt = self
             .collection_catalog
@@ -170,7 +170,8 @@ impl IndexServer for IndexServerImpl {
                         let mut ids = vec![];
                         let mut scores = vec![];
                         for id_with_score in result {
-                            ids.push(id_with_score.id);
+                            // TODO(hicder): Support u128
+                            ids.push(id_with_score.id as u64);
                             scores.push(id_with_score.score);
                         }
                         let end = std::time::Instant::now();
@@ -210,9 +211,13 @@ impl IndexServer for IndexServerImpl {
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
-        let ids = req.ids;
+        let ids = req.ids.iter().map(|x| *x as u128).collect::<Vec<u128>>();
         let vectors = req.vectors;
-        let user_ids = req.user_ids;
+        let user_ids = req
+            .user_ids
+            .iter()
+            .map(|x| *x as u128)
+            .collect::<Vec<u128>>();
 
         let collection_opt = self
             .collection_catalog
@@ -243,7 +248,12 @@ impl IndexServer for IndexServerImpl {
                 let end = std::time::Instant::now();
                 let duration = end.duration_since(start);
                 debug!("Inserted {} vectors in {:?}", ids.len(), duration);
-                Ok(tonic::Response::new(InsertResponse { inserted_ids: ids }))
+
+                let lows_and_highs = u128s_to_lows_highs(&ids);
+                // TODO(hicder): Support high values
+                Ok(tonic::Response::new(InsertResponse {
+                    inserted_ids: lows_and_highs.lows,
+                }))
             }
             None => Err(tonic::Status::new(
                 tonic::Code::NotFound,
@@ -295,7 +305,11 @@ impl IndexServer for IndexServerImpl {
         let collection_name = req.collection_name;
         let ids_buffer = req.ids;
         let vectors_buffer = req.vectors;
-        let user_ids = req.user_ids;
+        let user_ids = req
+            .user_ids
+            .iter()
+            .map(|id| *id as u128)
+            .collect::<Vec<u128>>();
 
         let collection_opt = self
             .collection_catalog
@@ -308,7 +322,9 @@ impl IndexServer for IndexServerImpl {
             Some(collection) => {
                 let dimensions = collection.dimensions();
                 let vectors = transmute_u8_to_slice(&vectors_buffer);
-                let ids = transmute_u8_to_slice(&ids_buffer);
+                let ids: &[u64] = transmute_u8_to_slice(&ids_buffer);
+                let high_ids = vec![0; ids.len()];
+                let doc_ids = lows_and_highs_to_u128s(&ids, &high_ids);
 
                 if vectors.len() % dimensions != 0 {
                     return Err(tonic::Status::new(
@@ -319,10 +335,10 @@ impl IndexServer for IndexServerImpl {
 
                 vectors
                     .chunks(dimensions)
-                    .zip(ids)
+                    .zip(doc_ids)
                     .for_each(|(vector, id)| {
                         // TODO(hicder): Handle errors
-                        collection.insert_for_users(&user_ids, *id, vector).unwrap()
+                        collection.insert_for_users(&user_ids, id, vector).unwrap()
                     });
 
                 // log the duration

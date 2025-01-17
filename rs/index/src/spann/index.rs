@@ -142,7 +142,7 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add(i as u64, &vec![i as f32, i as f32, i as f32, i as f32])
+                .add(i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
                 .unwrap();
         }
         assert!(builder.build().is_ok());
@@ -214,7 +214,7 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add(i as u64, &vec![i as f32, i as f32, i as f32, i as f32])
+                .add(i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
                 .unwrap();
         }
         assert!(builder.build().is_ok());

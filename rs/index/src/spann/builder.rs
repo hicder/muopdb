@@ -170,7 +170,7 @@ impl SpannBuilder {
     }
 
     #[allow(unused_variables)]
-    pub fn add(&mut self, doc_id: u64, data: &[f32]) -> Result<()> {
+    pub fn add(&mut self, doc_id: u128, data: &[f32]) -> Result<()> {
         self.ivf_builder.add_vector(doc_id, data)
     }
 
@@ -183,7 +183,7 @@ impl SpannBuilder {
 
         for i in 0..num_centroids {
             self.centroid_builder
-                .insert(i as u64, &centroid_storage.borrow().get(i as u32).unwrap())?;
+                .insert(i as u128, &centroid_storage.borrow().get(i as u32).unwrap())?;
         }
         debug!("Finish building centroids");
         Ok(())

@@ -10,7 +10,7 @@ use utils::DistanceCalculator;
 
 use crate::index::Searchable;
 use crate::posting_list::combined_file::FixedIndexFile;
-use crate::utils::{IdWithScore, SearchContext};
+use crate::utils::{IdWithScore, PointAndDistance, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
 
 pub struct Ivf<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> {
@@ -71,15 +71,15 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         Ok(nearest_centroids.into_iter().map(|(idx, _)| idx).collect())
     }
 
-    pub fn scan_posting_list(
+    fn scan_posting_list(
         &self,
         centroid: usize,
         query: &[f32],
         context: &mut SearchContext,
-    ) -> Vec<IdWithScore> {
+    ) -> Vec<PointAndDistance> {
         if let Ok(byte_slice) = self.index_storage.get_posting_list(centroid) {
             let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
-            let mut results: Vec<IdWithScore> = Vec::new();
+            let mut results: Vec<PointAndDistance> = Vec::new();
             let decoder =
                 D::new_decoder(byte_slice).expect("Failed to create posting list decoder");
             for idx in decoder.get_iterator(byte_slice) {
@@ -88,10 +88,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
                         let distance =
                             self.quantizer
                                 .distance(&quantized_query, vector, StreamingSIMD);
-                        results.push(IdWithScore {
-                            score: distance,
-                            id: idx,
-                        });
+                        results.push(PointAndDistance::new(distance, idx as u32));
                     }
                     None => {}
                 }
@@ -102,13 +99,13 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         }
     }
 
-    pub fn search_with_centroids(
+    fn search_with_centroids(
         &self,
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
         k: usize,
         context: &mut SearchContext,
-    ) -> Vec<IdWithScore> {
+    ) -> Vec<PointAndDistance> {
         let mut heap = BinaryHeap::with_capacity(k);
         for &centroid in &nearest_centroid_ids {
             let results = self.scan_posting_list(centroid, query, context);
@@ -125,17 +122,17 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         }
 
         // Convert heap to a sorted vector in ascending order.
-        let mut results: Vec<IdWithScore> = heap.into_vec();
+        let mut results: Vec<PointAndDistance> = heap.into_vec();
         results.sort();
         results
     }
 
-    fn map_point_id_to_doc_id(&self, point_ids: &[IdWithScore]) -> Vec<IdWithScore> {
+    fn map_point_id_to_doc_id(&self, point_ids: &[PointAndDistance]) -> Vec<IdWithScore> {
         point_ids
             .iter()
             .map(|x| IdWithScore {
-                id: self.index_storage.get_doc_id(x.id as usize).unwrap(),
-                score: x.score,
+                id: self.index_storage.get_doc_id(x.point_id as usize).unwrap(),
+                score: *x.distance,
             })
             .collect()
     }
@@ -217,7 +214,7 @@ mod tests {
 
     fn create_fixed_file_index_storage(
         file_path: &String,
-        doc_id_mapping: &Vec<u64>,
+        doc_id_mapping: &Vec<u128>,
         centroids: &Vec<Vec<f32>>,
         posting_lists: &Vec<Vec<u64>>,
     ) -> Result<usize> {
@@ -234,7 +231,7 @@ mod tests {
         }
 
         // Create a test header
-        let doc_id_mapping_len = size_of::<u64>() * (num_vectors + 1);
+        let doc_id_mapping_len = size_of::<u128>() * (num_vectors + 1);
         let num_features = centroids[0].len();
         let centroids_len = size_of::<u64>() + num_features * num_clusters * size_of::<f32>();
 
@@ -260,20 +257,20 @@ mod tests {
         assert!(file.write_all(&9u64.to_le_bytes()).is_ok());
         offset += size_of::<u64>();
 
-        // Add padding to align to 8 bytes
+        // Add padding to align to 16 bytes
         let mut pad: Vec<u8> = Vec::new();
-        while (offset + pad.len()) % 8 != 0 {
+        while (offset + pad.len()) % 16 != 0 {
             pad.push(0);
         }
         assert!(file.write_all(&pad).is_ok());
         offset += pad.len();
 
         // Write doc_id_mapping
-        assert!(file.write_all(&(num_vectors as u64).to_le_bytes()).is_ok());
-        offset += size_of::<u64>();
+        assert!(file.write_all(&(num_vectors as u128).to_le_bytes()).is_ok());
+        offset += size_of::<u128>();
         for doc_id in doc_id_mapping.iter() {
-            assert!(file.write_all(&(*doc_id as u64).to_le_bytes()).is_ok());
-            offset += size_of::<u64>();
+            assert!(file.write_all(&(*doc_id).to_le_bytes()).is_ok());
+            offset += size_of::<u128>();
         }
 
         // Write centroids
@@ -332,7 +329,7 @@ mod tests {
             .expect("FixedFileVectorStorage should be created");
 
         let file_path = format!("{}/index", base_dir);
-        let doc_id_mapping = vec![100, 101, 102];
+        let doc_id_mapping = vec![100u128, 101, 102];
         let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
         let posting_lists = vec![vec![0], vec![1, 2]];
         assert!(create_fixed_file_index_storage(
@@ -446,6 +443,9 @@ mod tests {
         .is_ok());
         let index_storage =
             FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
+
+        let doc_ids_mapping = index_storage.get_doc_id(0).unwrap();
+        println!("{:?}", doc_ids_mapping);
 
         let num_clusters = 2;
         let num_probes = 2;

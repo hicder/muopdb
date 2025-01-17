@@ -67,7 +67,7 @@ impl<Q: Quantizer> Hnsw<Q> {
         }
     }
 
-    fn map_point_id_to_doc_id(&self, point_ids: &[u32]) -> Vec<u64> {
+    fn map_point_id_to_doc_id(&self, point_ids: &[u32]) -> Vec<u128> {
         let doc_id_mapping = self.get_doc_id_mapping_slice();
         point_ids
             .iter()
@@ -157,7 +157,7 @@ impl<Q: Quantizer> Hnsw<Q> {
     }
 
     /// Returns the doc_id_mapping slice
-    pub fn get_doc_id_mapping_slice(&self) -> &[u64] {
+    pub fn get_doc_id_mapping_slice(&self) -> &[u128] {
         let start = self.doc_id_mapping_offset;
         let slice = &self.mmap[start..start + self.header.doc_id_mapping_len as usize];
         return utils::mem::transmute_u8_to_slice(slice);
@@ -215,7 +215,7 @@ impl<Q: Quantizer> Hnsw<Q> {
     }
 
     #[cfg(test)]
-    pub fn get_doc_id_test(&self, point_ids: &[u32]) -> Vec<u64> {
+    pub fn get_doc_id_test(&self, point_ids: &[u32]) -> Vec<u128> {
         let doc_id_mapping = self.get_doc_id_mapping_slice();
         point_ids
             .iter()

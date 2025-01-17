@@ -75,7 +75,7 @@ where
         let doc_id_mapping_len = self
             .write_doc_id_mapping(ivf_builder)
             .context("Failed to write doc_id_mapping")?;
-        let expected_bytes_written = std::mem::size_of::<u64>() * (num_vectors + 1);
+        let expected_bytes_written = std::mem::size_of::<u128>() * (num_vectors + 1);
         if doc_id_mapping_len != expected_bytes_written {
             return Err(anyhow!(
                 "Expected to write {} bytes in centroid storage, but wrote {}",
@@ -162,7 +162,7 @@ where
 
         let mut bytes_written = wrap_write(
             &mut writer,
-            &(ivf_builder.doc_id_mapping().len() as u64).to_le_bytes(),
+            &(ivf_builder.doc_id_mapping().len() as u128).to_le_bytes(),
         )?;
         for doc_id in ivf_builder.doc_id_mapping() {
             bytes_written += wrap_write(&mut writer, &doc_id.to_le_bytes())?;
@@ -261,7 +261,7 @@ where
             .context("Failed to write header")?;
 
         // Compute padding for alignment to 8 bytes
-        written += write_pad(written, &mut combined_buffer_writer, 8)?;
+        written += write_pad(written, &mut combined_buffer_writer, 16)?;
         written += append_file_to_writer(&doc_id_mapping_path, &mut combined_buffer_writer)?;
 
         // No need for padding, doc_id_mapping is always 8-byte aligned
@@ -669,7 +669,7 @@ mod tests {
             let vector = generate_random_vector(num_features);
             original_vectors.push(vector.clone());
             builder
-                .add_vector((i + 100) as u64, &vector)
+                .add_vector((i + 100) as u128, &vector)
                 .expect("Vector should be added");
         }
         assert_eq!(builder.doc_id_mapping().len(), 1000);
@@ -737,7 +737,7 @@ mod tests {
             .expect("Failed to read doc_id_mapping_len");
         assert_eq!(
             doc_id_mapping_len,
-            (std::mem::size_of::<u64>() * (num_vectors + 1)) as u64
+            (std::mem::size_of::<u128>() * (num_vectors + 1)) as u64
         );
 
         let centroids_len = index_reader
