@@ -86,15 +86,26 @@ message SearchRequest {
   uint32 top_k = 3;
   uint32 ef_construction = 5;
 
-  // For metrics, don't set by default
+  // For metrics, don't set by default. 
+  // This has some performance impact on the query.
   bool record_metrics = 4;
 
+  // In MuopDB, we support 128-bit ids (which is what most UUIDs are).
+  // However, in protobuf, there is no uint128 type, so we have to break
+  // the ids into two 64-bit parts.
+
+  // List of lower 64 bits of the user ids to search for.
   repeated uint64 low_user_ids = 6;
+
+  // List of higher 64 bits of the user ids to search for.
   repeated uint64 high_user_ids = 7;
 }
 
 message SearchResponse {
+  // List of lower 64 bits of the doc_ids
   repeated uint64 low_ids = 1;
+
+  // List of higher 64 bits of the doc_ids
   repeated uint64 high_ids = 4;
 
   repeated float scores = 2;
@@ -106,18 +117,29 @@ message SearchResponse {
 message InsertRequest {
   string collection_name = 1;
 
+  // List of lower 64 bits of the doc_ids
   repeated uint64 low_ids = 2;
+
+  // List of higher 64 bits of the doc_ids
   repeated uint64 high_ids = 5;
 
-  // flattened vector
+  // Flattened vector. If the dimension is 10, 
+  // and the number of vectors is 5,
+  // then this list should have 50 elements.
   repeated float vectors = 3;
 
+  // List of lower 64 bits of the user ids.
   repeated uint64 low_user_ids = 4;
+
+  // List of higher 64 bits of the user ids.
   repeated uint64 high_user_ids = 6;
 }
 
 message InsertResponse {
+  // List of lower 64 bits of the doc_ids
   repeated uint64 inserted_low_ids = 1;
+
+  // List of higher 64 bits of the doc_ids
   repeated uint64 inserted_high_ids = 2;
 }
 
@@ -129,11 +151,22 @@ message FlushResponse {
   repeated string flushed_segments = 1;
 }
 
+// If you send a large number of vectors, you can use this method to
+// save some time on serialization and deserialization.
 message InsertPackedRequest {
   string collection_name = 1;
+
+  // List of lower 64 bits of the doc_ids. 
+  // These ids should be packed with 8 bytes per number.
   bytes low_ids = 2;
+
+  // List of lower 64 bits of the doc_ids. 
+  // These ids should be packed with 8 bytes per number.
   bytes high_ids = 5;
 
+  // Packed flattened vector. If the dimension is 10, 
+  // and the number of vectors is 5, then this list should 
+  // have 50 elements, packed with 8 bytes per number.
   bytes vectors = 3;
 
   repeated uint64 low_user_ids = 4;
