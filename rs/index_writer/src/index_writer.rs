@@ -90,7 +90,7 @@ impl IndexWriter {
         input.reset();
         while input.has_next() {
             let row = input.next();
-            hnsw_builder.insert(row.id, row.data)?;
+            hnsw_builder.insert(row.id as u128, row.data)?;
             if row.id % 10000 == 0 {
                 debug!("Inserted {} rows", row.id);
             }
@@ -216,7 +216,7 @@ impl IndexWriter {
         input.reset();
         while input.has_next() {
             let row = input.next();
-            ivf_builder.add_vector(row.id, row.data)?;
+            ivf_builder.add_vector(row.id as u128, row.data)?;
             if row.id % 10000 == 0 {
                 debug!("Inserted {} rows", row.id);
             }
@@ -410,7 +410,7 @@ impl IndexWriter {
         input.reset();
         while input.has_next() {
             let row = input.next();
-            spann_builder.add(row.id, row.data)?;
+            spann_builder.add(row.id as u128, row.data)?;
             if row.id % 10000 == 0 {
                 debug!("Inserted {} rows", row.id);
             }

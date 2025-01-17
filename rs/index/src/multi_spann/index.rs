@@ -14,7 +14,7 @@ use crate::utils::{IdWithScore, SearchContext};
 
 pub struct MultiSpannIndex<Q: Quantizer> {
     base_directory: String,
-    user_to_spann: DashMap<u64, Arc<Spann<Q>>>,
+    user_to_spann: DashMap<u128, Arc<Spann<Q>>>,
     #[allow(dead_code)]
     user_index_info_mmap: Mmap,
     user_index_infos: HashTableOwned<HashConfig>,
@@ -45,7 +45,7 @@ impl<Q: Quantizer> Searchable for MultiSpannIndex<Q> {
 
     fn search_with_id(
         &self,
-        id: u64,
+        id: u128,
         query: &[f32],
         k: usize,
         ef_construction: u32,

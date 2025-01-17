@@ -11,8 +11,8 @@ use quantization::typing::VectorOps;
 use rand::Rng;
 
 use super::index::Hnsw;
-use super::utils::{BuilderContext, GraphTraversal, PointAndDistance};
-use crate::utils::SearchContext;
+use super::utils::{BuilderContext, GraphTraversal};
+use crate::utils::{PointAndDistance, SearchContext};
 use crate::vector::file::FileBackedAppendableVectorStorage;
 use crate::vector::{VectorStorage, VectorStorageConfig};
 
@@ -56,7 +56,7 @@ pub struct HnswBuilder<Q: Quantizer> {
     ef_contruction: u32,
     pub entry_point: Vec<u32>,
     max_layer: u8,
-    pub doc_id_mapping: Vec<u64>,
+    pub doc_id_mapping: Vec<u128>,
 }
 
 // TODO(hicder): support bare vector in addition to quantized one.
@@ -171,7 +171,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
         }
     }
 
-    fn generate_id(&mut self, doc_id: u64) -> u32 {
+    fn generate_id(&mut self, doc_id: u128) -> u32 {
         let generated_id = self.doc_id_mapping.len() as u32;
         self.doc_id_mapping.push(doc_id);
         return generated_id;
@@ -215,7 +215,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
                         {
                             continue;
                         }
-                        queue.push_back(edge.point_id);
+                        queue.push_back(edge.point_id as u32);
                         if assigned_ids[edge.point_id as usize] < 0 {
                             assigned_ids[edge.point_id as usize] = *current_id;
                             *current_id += 1;
@@ -300,7 +300,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
     }
 
     /// Insert a vector into the index
-    pub fn insert(&mut self, doc_id: u64, vector: &[f32]) -> Result<()> {
+    pub fn insert(&mut self, doc_id: u128, vector: &[f32]) -> Result<()> {
         let quantized_query = Q::QuantizedT::process_vector(vector, &self.quantizer);
         let point_id = self.generate_id(doc_id);
         let mut context = BuilderContext::new(point_id + 1);
@@ -326,7 +326,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
             for l in ((layer + 1)..=self.current_top_layer).rev() {
                 let nearest_elements =
                     self.search_layer(&mut context, &quantized_query, entry_point, 1, l);
-                entry_point = nearest_elements[0].point_id;
+                entry_point = nearest_elements[0].point_id as u32;
             }
         } else if layer > self.current_top_layer {
             // Initialize the layers

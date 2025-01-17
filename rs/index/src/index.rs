@@ -14,7 +14,7 @@ pub trait Searchable {
     #[allow(unused_variables)]
     fn search_with_id(
         &self,
-        id: u64,
+        id: u128,
         query: &[f32],
         k: usize,
         ef_construction: u32,

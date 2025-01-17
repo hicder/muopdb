@@ -57,7 +57,12 @@ impl HnswReader {
         let edge_offsets_offset =
             points_offset + header.points_len as usize + edge_offsets_padding as usize;
         let level_offsets_offset = edge_offsets_offset + header.edge_offsets_len as usize;
-        let doc_id_mapping_offset = level_offsets_offset + header.level_offsets_len as usize;
+
+        let doc_id_mapping_padding =
+            (16 - ((level_offsets_offset + header.level_offsets_len as usize) % 16)) % 16;
+        let doc_id_mapping_offset = level_offsets_offset
+            + header.level_offsets_len as usize
+            + doc_id_mapping_padding as usize;
 
         Ok(Hnsw::new(
             backing_file,
@@ -167,7 +172,7 @@ mod tests {
             10, 128, 20, 1024, 4096, 16, pq, vector_dir,
         );
         for i in 0..datapoints.len() {
-            hnsw_builder.insert(i as u64, &datapoints[i]).unwrap();
+            hnsw_builder.insert(i as u128, &datapoints[i]).unwrap();
         }
 
         let hnsw_dir = format!("{}/hnsw", base_directory);
@@ -201,7 +206,7 @@ mod tests {
         let mut hnsw_builder =
             HnswBuilder::new(10, 128, 20, 1024, 4096, 128, quantizer, vector_dir);
         for i in 0..datapoints.len() {
-            hnsw_builder.insert(i as u64, &datapoints[i]).unwrap();
+            hnsw_builder.insert(i as u128, &datapoints[i]).unwrap();
         }
 
         let hnsw_dir = format!("{}/hnsw", base_directory);

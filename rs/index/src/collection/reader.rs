@@ -88,8 +88,8 @@ mod tests {
         for i in 0..num_vectors {
             builder
                 .insert(
-                    (i % 5) as u64,
-                    i as u64,
+                    (i % 5) as u128,
+                    i as u128,
                     &generate_random_vector(num_features),
                 )
                 .unwrap();

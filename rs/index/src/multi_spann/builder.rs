@@ -9,7 +9,7 @@ use crate::spann::builder::{SpannBuilder, SpannBuilderConfig};
 
 pub struct MultiSpannBuilder {
     config: CollectionConfig,
-    inner_builders: DashMap<u64, RwLock<SpannBuilder>>,
+    inner_builders: DashMap<u128, RwLock<SpannBuilder>>,
     base_directory: String,
 }
 
@@ -22,7 +22,7 @@ impl MultiSpannBuilder {
         })
     }
 
-    pub fn insert(&self, user_id: u64, doc_id: u64, data: &[f32]) -> Result<()> {
+    pub fn insert(&self, user_id: u128, doc_id: u128, data: &[f32]) -> Result<()> {
         let spann_builder = self.inner_builders.entry(user_id).or_insert_with(|| {
             let user_directory = format!("{}/{}", self.base_directory, user_id);
             RwLock::new(
@@ -45,7 +45,7 @@ impl MultiSpannBuilder {
         Ok(())
     }
 
-    pub fn user_ids(&self) -> Vec<u64> {
+    pub fn user_ids(&self) -> Vec<u128> {
         self.inner_builders
             .iter()
             .map(|entry| *entry.key())
@@ -58,7 +58,7 @@ impl MultiSpannBuilder {
 
     /// This function will remove the builder for the given user id.
     /// If the builder is not found, it will return None.
-    pub fn take_builder_for_user(&self, user_id: u64) -> Option<SpannBuilder> {
+    pub fn take_builder_for_user(&self, user_id: u128) -> Option<SpannBuilder> {
         self.inner_builders
             .remove(&user_id)
             .map(|builder| builder.1.into_inner().unwrap())

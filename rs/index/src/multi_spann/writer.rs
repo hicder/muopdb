@@ -142,7 +142,7 @@ impl MultiSpannWriter {
             centroids_index_written += write_pad(
                 centroids_index_written as usize,
                 &mut hnsw_index_buffer_writer,
-                8,
+                16,
             )? as u64;
             user_index_info.centroid_index_offset = centroids_index_written;
             centroids_index_written +=
@@ -167,7 +167,7 @@ impl MultiSpannWriter {
 
             // IVF index
             ivf_index_written +=
-                write_pad(ivf_index_written as usize, &mut ivf_index_buffer_writer, 8)? as u64;
+                write_pad(ivf_index_written as usize, &mut ivf_index_buffer_writer, 16)? as u64;
             user_index_info.ivf_index_offset = ivf_index_written;
             ivf_index_written += append_file_to_writer(
                 &format!("{}/ivf/index", user_id_base_directory),
@@ -266,8 +266,8 @@ mod tests {
         for i in 0..num_vectors {
             builder
                 .insert(
-                    (i % 5) as u64,
-                    i as u64,
+                    (i % 5) as u128,
+                    i as u128,
                     &generate_random_vector(num_features),
                 )
                 .unwrap();

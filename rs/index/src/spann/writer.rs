@@ -203,7 +203,7 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add(i as u64, &generate_random_vector(num_features))
+                .add(i as u128, &generate_random_vector(num_features))
                 .unwrap();
         }
         builder.build().unwrap();
