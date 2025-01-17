@@ -47,11 +47,11 @@ mkdir -p /mnt/muopdb/data
     "high_ids": [
         0
     ],
-    "high_user_ids": [
-        0
-    ],
     "low_ids": [
         4
+    ],
+    "high_user_ids": [
+        0
     ],
     "low_user_ids": [
         0
