@@ -51,9 +51,11 @@ async fn main() -> Result<()> {
         // Create and send insert request
         let request = tonic::Request::new(InsertPackedRequest {
             collection_name: "test-collection-1".to_string(),
-            ids: id_buffer.to_vec(),
+            low_ids: id_buffer.to_vec(),
+            high_ids: vec![0u8; id_buffer.len()],
             vectors: vector_buffer.to_vec(),
-            user_ids: vec![0],
+            low_user_ids: vec![0],
+            high_user_ids: vec![0],
         });
 
         client.insert_packed(request).await?;

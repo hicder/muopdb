@@ -13,13 +13,17 @@ pub struct GetRequest {
     #[prost(bool, tag = "4")]
     pub record_metrics: bool,
     #[prost(uint64, repeated, tag = "6")]
-    pub user_ids: ::prost::alloc::vec::Vec<u64>,
+    pub low_user_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(uint64, repeated, tag = "7")]
+    pub high_user_ids: ::prost::alloc::vec::Vec<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetResponse {
     #[prost(uint64, repeated, tag = "1")]
-    pub ids: ::prost::alloc::vec::Vec<u64>,
+    pub low_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(uint64, repeated, tag = "3")]
+    pub high_ids: ::prost::alloc::vec::Vec<u64>,
     /// For metrics, not enabled by default
     #[prost(uint64, tag = "2")]
     pub num_pages_accessed: u64,
@@ -95,13 +99,17 @@ pub struct SearchRequest {
     #[prost(bool, tag = "4")]
     pub record_metrics: bool,
     #[prost(uint64, repeated, tag = "6")]
-    pub user_ids: ::prost::alloc::vec::Vec<u64>,
+    pub low_user_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(uint64, repeated, tag = "7")]
+    pub high_user_ids: ::prost::alloc::vec::Vec<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResponse {
     #[prost(uint64, repeated, tag = "1")]
-    pub ids: ::prost::alloc::vec::Vec<u64>,
+    pub low_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(uint64, repeated, tag = "4")]
+    pub high_ids: ::prost::alloc::vec::Vec<u64>,
     #[prost(float, repeated, tag = "2")]
     pub scores: ::prost::alloc::vec::Vec<f32>,
     /// For metrics, not enabled by default
@@ -114,18 +122,24 @@ pub struct InsertRequest {
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(uint64, repeated, tag = "2")]
-    pub ids: ::prost::alloc::vec::Vec<u64>,
+    pub low_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(uint64, repeated, tag = "5")]
+    pub high_ids: ::prost::alloc::vec::Vec<u64>,
     /// flattened vector
     #[prost(float, repeated, tag = "3")]
     pub vectors: ::prost::alloc::vec::Vec<f32>,
     #[prost(uint64, repeated, tag = "4")]
-    pub user_ids: ::prost::alloc::vec::Vec<u64>,
+    pub low_user_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(uint64, repeated, tag = "6")]
+    pub high_user_ids: ::prost::alloc::vec::Vec<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InsertResponse {
     #[prost(uint64, repeated, tag = "1")]
-    pub inserted_ids: ::prost::alloc::vec::Vec<u64>,
+    pub inserted_low_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(uint64, repeated, tag = "2")]
+    pub inserted_high_ids: ::prost::alloc::vec::Vec<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -145,11 +159,15 @@ pub struct InsertPackedRequest {
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(bytes = "vec", tag = "2")]
-    pub ids: ::prost::alloc::vec::Vec<u8>,
+    pub low_ids: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "5")]
+    pub high_ids: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "3")]
     pub vectors: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint64, repeated, tag = "4")]
-    pub user_ids: ::prost::alloc::vec::Vec<u64>,
+    pub low_user_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(uint64, repeated, tag = "6")]
+    pub high_user_ids: ::prost::alloc::vec::Vec<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
