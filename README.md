@@ -43,10 +43,22 @@ mkdir -p /mnt/muopdb/data
 
 ```
 {
-    "collection_name": "test-collection-2",
-    "ids": [4],
-    "user_ids": [0],
-    "vectors": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+    "collection_name": "test-collection-12",
+    "high_ids": [
+        0
+    ],
+    "high_user_ids": [
+        0
+    ],
+    "low_ids": [
+        4
+    ],
+    "low_user_ids": [
+        0
+    ],
+    "vectors": [
+        1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0
+    ]
 }
 ```
 
@@ -65,12 +77,13 @@ mkdir -p /mnt/muopdb/data
 
 ```
 {
-    "collection_name": "test-collection-2",
+    "collection_name": "test-collection-12",
     "ef_construction": 100,
     "record_metrics": false,
     "top_k": 1,
-    "user_ids": [0],
-    "vector": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+    "high_user_ids": [0],
+    "low_user_ids": [0],
+    "vector": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 9.0, 9.0]
 }
 ```
 
