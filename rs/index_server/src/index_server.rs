@@ -3,7 +3,7 @@ use std::vec;
 
 use config::collection::CollectionConfig;
 use index::utils::SearchContext;
-use log::{debug, info};
+use log::info;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
     CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse,
@@ -163,7 +163,6 @@ impl IndexServer for IndexServerImpl {
                     ef_construction,
                     &mut search_context,
                 );
-                info!("Search result: {:?}", result);
 
                 match result {
                     Some(result) => {
@@ -178,7 +177,7 @@ impl IndexServer for IndexServerImpl {
                         }
                         let end = std::time::Instant::now();
                         let duration = end.duration_since(start);
-                        debug!("Searched collection {} in {:?}", collection_name, duration);
+                        info!("[{}] Searched collection in {:?}", collection_name, duration);
                         return Ok(tonic::Response::new(SearchResponse {
                             low_ids,
                             high_ids,
@@ -246,7 +245,7 @@ impl IndexServer for IndexServerImpl {
                 // log the duration
                 let end = std::time::Instant::now();
                 let duration = end.duration_since(start);
-                debug!("Inserted {} vectors in {:?}", ids.len(), duration);
+                info!("[{}] Inserted {} vectors in {:?}", collection_name, ids.len(), duration);
 
                 let lows_and_highs = u128s_to_lows_highs(&ids);
                 Ok(tonic::Response::new(InsertResponse {
@@ -277,12 +276,12 @@ impl IndexServer for IndexServerImpl {
             .await;
 
         let end = std::time::Instant::now();
-        let duration = end.duration_since(start);
-        debug!("Indexing collection {} in {:?}", collection_name, duration);
 
         match collection_opt {
             Some(collection) => {
                 collection.flush().unwrap();
+                let duration = end.duration_since(start);
+                info!("Flushed collection {} in {:?}", collection_name, duration);
                 Ok(tonic::Response::new(FlushResponse {
                     // TODO(hicder): Return flushed segments
                     flushed_segments: vec![],
@@ -340,7 +339,7 @@ impl IndexServer for IndexServerImpl {
                 // log the duration
                 let end = std::time::Instant::now();
                 let duration = end.duration_since(start);
-                debug!("Inserted {} vectors in {:?}", num_docs, duration);
+                info!("[{}] Inserted {} vectors in {:?}", collection_name, num_docs, duration);
                 Ok(tonic::Response::new(InsertPackedResponse {}))
             }
             None => Err(tonic::Status::new(
