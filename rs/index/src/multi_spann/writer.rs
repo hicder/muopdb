@@ -289,4 +289,62 @@ mod tests {
         assert!(PathBuf::from(&hnsw_vector_storage_path).exists());
         assert!(PathBuf::from(&hnsw_index_path).exists());
     }
+
+    #[test]
+    fn test_write_with_pq() {
+        let temp_dir = TempDir::new("test_write").unwrap();
+
+        let base_directory = temp_dir.path().to_str().unwrap().to_string();
+        let num_clusters = 10;
+        let num_vectors = 1000;
+        let num_features = 4;
+        let file_size = 4096;
+        let balance_factor = 0.0;
+        let max_posting_list_size = usize::MAX;
+        let mut collection_config = CollectionConfig::default_test_config();
+        collection_config.num_features = num_features;
+        collection_config.max_posting_list_size = max_posting_list_size;
+        collection_config.initial_num_centroids = num_clusters;
+        collection_config.posting_list_builder_vector_storage_file_size = file_size;
+        collection_config.centroids_builder_vector_storage_file_size = file_size;
+        collection_config.posting_list_kmeans_unbalanced_penalty = balance_factor;
+        collection_config.quantization_type = QuantizerType::ProductQuantizer;
+        let mut builder =
+            MultiSpannBuilder::new(collection_config, base_directory.clone()).unwrap();
+
+        // Generate 1000 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            builder
+                .insert(
+                    (i % 5) as u128,
+                    i as u128,
+                    &generate_random_vector(num_features),
+                )
+                .unwrap();
+        }
+        builder.build().unwrap();
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        let user_index_infos = multi_spann_writer.write(&mut builder).unwrap();
+        assert_eq!(user_index_infos.len(), 5);
+
+        // Check if output directories and files exist
+        let centroids_directory_path = format!("{}/centroids/hnsw", base_directory);
+        let centroids_directory = PathBuf::from(&centroids_directory_path);
+        let hnsw_vector_storage_path =
+            format!("{}/vector_storage", centroids_directory.to_str().unwrap());
+        let hnsw_index_path = format!("{}/index", centroids_directory.to_str().unwrap());
+        let ivf_directory_path = format!("{}/ivf", base_directory);
+        let ivf_quantizer_directory = format!("{}/quantizer", ivf_directory_path);
+        let ivf_quantizer_codebook_path =
+            format!("{}/codebook", ivf_quantizer_directory.clone());
+        let ivf_quantizer_config_path =
+            format!("{}/product_quantizer_config.yaml", ivf_quantizer_directory);
+
+        assert!(PathBuf::from(&centroids_directory_path).exists());
+        assert!(PathBuf::from(&hnsw_vector_storage_path).exists());
+        assert!(PathBuf::from(&hnsw_index_path).exists());
+        assert!(PathBuf::from(&ivf_quantizer_codebook_path).exists());
+        assert!(PathBuf::from(&ivf_quantizer_config_path).exists());
+    }
 }

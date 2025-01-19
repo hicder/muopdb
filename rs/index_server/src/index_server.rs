@@ -177,7 +177,10 @@ impl IndexServer for IndexServerImpl {
                         }
                         let end = std::time::Instant::now();
                         let duration = end.duration_since(start);
-                        info!("[{}] Searched collection in {:?}", collection_name, duration);
+                        info!(
+                            "[{}] Searched collection in {:?}",
+                            collection_name, duration
+                        );
                         return Ok(tonic::Response::new(SearchResponse {
                             low_ids,
                             high_ids,
@@ -245,7 +248,12 @@ impl IndexServer for IndexServerImpl {
                 // log the duration
                 let end = std::time::Instant::now();
                 let duration = end.duration_since(start);
-                info!("[{}] Inserted {} vectors in {:?}", collection_name, ids.len(), duration);
+                info!(
+                    "[{}] Inserted {} vectors in {:?}",
+                    collection_name,
+                    ids.len(),
+                    duration
+                );
 
                 let lows_and_highs = u128s_to_lows_highs(&ids);
                 Ok(tonic::Response::new(InsertResponse {
@@ -339,7 +347,10 @@ impl IndexServer for IndexServerImpl {
                 // log the duration
                 let end = std::time::Instant::now();
                 let duration = end.duration_since(start);
-                info!("[{}] Inserted {} vectors in {:?}", collection_name, num_docs, duration);
+                info!(
+                    "[{}] Inserted {} vectors in {:?}",
+                    collection_name, num_docs, duration
+                );
                 Ok(tonic::Response::new(InsertPackedResponse {}))
             }
             None => Err(tonic::Status::new(
