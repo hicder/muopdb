@@ -83,3 +83,69 @@ impl<Q: Quantizer> Searchable for MultiSpannIndex<Q> {
         index.search(query, k, ef_construction, context)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use config::collection::CollectionConfig;
+    use quantization::noq::noq::NoQuantizer;
+    use utils::distance::l2::L2DistanceCalculator;
+
+    use crate::index::Searchable;
+    use crate::multi_spann::builder::MultiSpannBuilder;
+    use crate::multi_spann::reader::MultiSpannReader;
+    use crate::multi_spann::writer::MultiSpannWriter;
+    use crate::utils::SearchContext;
+
+    #[test]
+    fn test_multi_spann_search() {
+        let temp_dir = tempdir::TempDir::new("multi_spann_search_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_vectors = 1000;
+        let num_features = 4;
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        // Generate 1000 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            assert!(multi_spann_builder
+                .insert(0, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .is_ok());
+        }
+        assert!(multi_spann_builder
+            .insert(0, num_vectors as u128, &[1.2, 2.2, 3.2, 4.2])
+            .is_ok());
+        assert!(multi_spann_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read::<NoQuantizer<L2DistanceCalculator>>()
+            .expect("Failed to read Multi-SPANN index");
+
+        let query = vec![1.4, 2.4, 3.4, 4.4];
+        let k = 3;
+        let num_probes = 2;
+        let mut context = SearchContext::new(false);
+
+        let results = multi_spann_index
+            .search(&query, k, num_probes, &mut context)
+            .expect("Failed to search with Multi-SPANN index");
+
+        assert_eq!(results.len(), k);
+        assert_eq!(results[0].id, num_vectors);
+        assert_eq!(results[1].id, 3);
+        assert_eq!(results[2].id, 2);
+    }
+}
