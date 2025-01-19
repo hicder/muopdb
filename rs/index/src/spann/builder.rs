@@ -58,7 +58,8 @@ impl SpannBuilderConfig {
             centroids_ef_construction: collection_config.centroids_ef_construction,
             centroids_vector_storage_memory_size: collection_config
                 .centroids_builder_vector_storage_memory_size,
-            centroids_vector_storage_file_size: collection_config.centroids_builder_vector_storage_file_size,
+            centroids_vector_storage_file_size: collection_config
+                .centroids_builder_vector_storage_file_size,
             num_features: collection_config.num_features,
 
             pq_subvector_dimension: collection_config.product_quantization_subvector_dimension,
@@ -75,10 +76,13 @@ impl SpannBuilderConfig {
             posting_list_encoding_type: collection_config.posting_list_encoding_type.clone(),
 
             ivf_base_directory: base_directory,
-            ivf_vector_storage_memory_size: collection_config.posting_list_builder_vector_storage_memory_size,
-            ivf_vector_storage_file_size: collection_config.posting_list_builder_vector_storage_file_size,
+            ivf_vector_storage_memory_size: collection_config
+                .posting_list_builder_vector_storage_memory_size,
+            ivf_vector_storage_file_size: collection_config
+                .posting_list_builder_vector_storage_file_size,
 
-            centroids_clustering_tolerance: collection_config.posting_list_kmeans_unbalanced_penalty,
+            centroids_clustering_tolerance: collection_config
+                .posting_list_kmeans_unbalanced_penalty,
             ivf_max_posting_list_size: collection_config.max_posting_list_size,
 
             reindex: collection_config.reindex,
