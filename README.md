@@ -117,6 +117,7 @@ mkdir -p /mnt/muopdb/data
   - [ ] Querying mutable segment
   - [ ] [RabitQ quantization](https://arxiv.org/abs/2405.12497)
   - [ ] Embedded MuopDB (with Python binding)
+  - [ ] Cloud MuopDB
 - [ ] Database Management
   - [ ] Segment optimizers (vacumn, merge)
 
