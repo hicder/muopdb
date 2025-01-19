@@ -12,36 +12,36 @@ use crate::ivf::builder::{IvfBuilder, IvfBuilderConfig};
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SpannBuilderConfig {
     // For centroids
-    pub max_neighbors: usize,
-    pub max_layers: u8,
-    pub ef_construction: u32,
-    pub vector_storage_memory_size: usize,
-    pub vector_storage_file_size: usize,
+    pub centroids_max_neighbors: usize,
+    pub centroids_max_layers: u8,
+    pub centroids_ef_construction: u32,
+    pub centroids_vector_storage_memory_size: usize,
+    pub centroids_vector_storage_file_size: usize,
+    pub centroids_clustering_tolerance: f32,
     pub num_features: usize,
 
     // For quantization
-    pub subvector_dimension: usize,
-    pub num_bits: usize,
-    pub max_iteration: usize,
-    pub batch_size: usize,
-    pub num_training_rows: usize,
+    pub pq_subvector_dimension: usize,
+    pub pq_num_bits: usize,
+    pub pq_max_iteration: usize,
+    pub pq_batch_size: usize,
+    pub pq_num_training_rows: usize,
     pub quantizer_type: QuantizerType,
 
     // For posting lists
-    pub num_clusters: usize,
-    pub num_data_points_for_clustering: usize,
-    pub max_clusters_per_vector: usize,
-    pub distance_threshold: f32, // Threshold to add a vector to more than one cluster
+    pub ivf_num_clusters: usize,
+    pub ivf_num_data_points_for_clustering: usize,
+    pub ivf_max_clusters_per_vector: usize,
+    pub ivf_distance_threshold: f32, // Threshold to add a vector to more than one cluster
     pub posting_list_encoding_type: IntSeqEncodingType,
 
     // Parameters for storages
-    pub base_directory: String,
-    pub memory_size: usize,
-    pub file_size: usize,
+    pub ivf_base_directory: String,
+    pub ivf_vector_storage_memory_size: usize,
+    pub ivf_vector_storage_file_size: usize,
 
     // Parameters for clustering
-    pub tolerance: f32,
-    pub max_posting_list_size: usize,
+    pub ivf_max_posting_list_size: usize,
 
     // Optimization parameters
     pub reindex: bool,
@@ -53,33 +53,33 @@ impl SpannBuilderConfig {
         base_directory: String,
     ) -> Self {
         Self {
-            max_neighbors: collection_config.centroids_max_neighbors,
-            max_layers: collection_config.centroids_max_layers,
-            ef_construction: collection_config.centroids_ef_construction,
-            vector_storage_memory_size: collection_config
+            centroids_max_neighbors: collection_config.centroids_max_neighbors,
+            centroids_max_layers: collection_config.centroids_max_layers,
+            centroids_ef_construction: collection_config.centroids_ef_construction,
+            centroids_vector_storage_memory_size: collection_config
                 .centroids_builder_vector_storage_memory_size,
-            vector_storage_file_size: collection_config.centroids_builder_vector_storage_file_size,
+            centroids_vector_storage_file_size: collection_config.centroids_builder_vector_storage_file_size,
             num_features: collection_config.num_features,
 
-            subvector_dimension: collection_config.product_quantization_subvector_dimension,
-            num_bits: collection_config.product_quantization_num_bits,
-            max_iteration: collection_config.product_quantization_max_iteration,
-            batch_size: collection_config.product_quantization_batch_size,
-            num_training_rows: collection_config.product_quantization_num_training_rows,
+            pq_subvector_dimension: collection_config.product_quantization_subvector_dimension,
+            pq_num_bits: collection_config.product_quantization_num_bits,
+            pq_max_iteration: collection_config.product_quantization_max_iteration,
+            pq_batch_size: collection_config.product_quantization_batch_size,
+            pq_num_training_rows: collection_config.product_quantization_num_training_rows,
             quantizer_type: collection_config.quantization_type.clone(),
 
-            num_clusters: collection_config.initial_num_centroids,
-            num_data_points_for_clustering: collection_config.num_data_points_for_clustering,
-            max_clusters_per_vector: collection_config.max_clusters_per_vector,
-            distance_threshold: collection_config.clustering_distance_threshold_pct,
+            ivf_num_clusters: collection_config.initial_num_centroids,
+            ivf_num_data_points_for_clustering: collection_config.num_data_points_for_clustering,
+            ivf_max_clusters_per_vector: collection_config.max_clusters_per_vector,
+            ivf_distance_threshold: collection_config.clustering_distance_threshold_pct,
             posting_list_encoding_type: collection_config.posting_list_encoding_type.clone(),
 
-            base_directory,
-            memory_size: collection_config.posting_list_builder_vector_storage_memory_size,
-            file_size: collection_config.posting_list_builder_vector_storage_file_size,
+            ivf_base_directory: base_directory,
+            ivf_vector_storage_memory_size: collection_config.posting_list_builder_vector_storage_memory_size,
+            ivf_vector_storage_file_size: collection_config.posting_list_builder_vector_storage_file_size,
 
-            tolerance: collection_config.posting_list_kmeans_unbalanced_penalty,
-            max_posting_list_size: collection_config.max_posting_list_size,
+            centroids_clustering_tolerance: collection_config.posting_list_kmeans_unbalanced_penalty,
+            ivf_max_posting_list_size: collection_config.max_posting_list_size,
 
             reindex: collection_config.reindex,
         }
@@ -89,32 +89,32 @@ impl SpannBuilderConfig {
 impl Default for SpannBuilderConfig {
     fn default() -> Self {
         Self {
-            max_neighbors: 10,
-            max_layers: 2,
-            ef_construction: 100,
-            vector_storage_memory_size: 1024,
-            vector_storage_file_size: 1024,
+            centroids_max_neighbors: 10,
+            centroids_max_layers: 2,
+            centroids_ef_construction: 100,
+            centroids_vector_storage_memory_size: 1024,
+            centroids_vector_storage_file_size: 1024,
             num_features: 768,
 
-            subvector_dimension: 8,
-            num_bits: 8,
-            max_iteration: 1000,
-            batch_size: 4,
-            num_training_rows: 10000,
+            pq_subvector_dimension: 8,
+            pq_num_bits: 8,
+            pq_max_iteration: 1000,
+            pq_batch_size: 4,
+            pq_num_training_rows: 10000,
             quantizer_type: QuantizerType::NoQuantizer,
 
-            num_clusters: 10,
-            num_data_points_for_clustering: 1000,
-            max_clusters_per_vector: 1,
-            distance_threshold: 0.1,
+            ivf_num_clusters: 10,
+            ivf_num_data_points_for_clustering: 1000,
+            ivf_max_clusters_per_vector: 1,
+            ivf_distance_threshold: 0.1,
             posting_list_encoding_type: IntSeqEncodingType::PlainEncoding,
 
-            base_directory: "./".to_string(),
-            memory_size: 1024,
-            file_size: 1024,
+            ivf_base_directory: "./".to_string(),
+            ivf_vector_storage_memory_size: 1024,
+            ivf_vector_storage_file_size: 1024,
 
-            tolerance: 0.1,
-            max_posting_list_size: usize::MAX,
+            centroids_clustering_tolerance: 0.1,
+            ivf_max_posting_list_size: usize::MAX,
 
             reindex: true,
         }
@@ -130,21 +130,21 @@ pub struct SpannBuilder {
 impl SpannBuilder {
     pub fn new(config: SpannBuilderConfig) -> Result<Self> {
         let ivf_builder = IvfBuilder::<L2DistanceCalculator>::new(IvfBuilderConfig {
-            max_iteration: config.max_iteration,
-            batch_size: config.batch_size,
-            num_clusters: config.num_clusters,
-            num_data_points_for_clustering: config.num_data_points_for_clustering,
-            max_clusters_per_vector: config.max_clusters_per_vector,
-            distance_threshold: config.distance_threshold,
-            base_directory: config.base_directory.clone(),
-            memory_size: config.memory_size,
-            file_size: config.file_size,
+            max_iteration: config.pq_max_iteration,
+            batch_size: config.pq_batch_size,
+            num_clusters: config.ivf_num_clusters,
+            num_data_points_for_clustering: config.ivf_num_data_points_for_clustering,
+            max_clusters_per_vector: config.ivf_max_clusters_per_vector,
+            distance_threshold: config.ivf_distance_threshold,
+            base_directory: config.ivf_base_directory.clone(),
+            memory_size: config.ivf_vector_storage_memory_size,
+            file_size: config.ivf_vector_storage_file_size,
             num_features: config.num_features,
-            tolerance: config.tolerance,
-            max_posting_list_size: config.max_posting_list_size,
+            tolerance: config.centroids_clustering_tolerance,
+            max_posting_list_size: config.ivf_max_posting_list_size,
         })?;
 
-        let centroid_directory = format!("{}/centroids", config.base_directory.clone());
+        let centroid_directory = format!("{}/centroids", config.ivf_base_directory.clone());
         std::fs::create_dir_all(&centroid_directory)?;
 
         let hnsw_directory = format!("{}/hnsw", centroid_directory);
@@ -152,11 +152,11 @@ impl SpannBuilder {
 
         let centroid_quantizer = NoQuantizer::new(config.num_features);
         let centroid_builder = HnswBuilder::new(
-            config.max_neighbors,
-            config.max_layers,
-            config.ef_construction,
-            config.memory_size,
-            config.file_size,
+            config.centroids_max_neighbors,
+            config.centroids_max_layers,
+            config.centroids_ef_construction,
+            config.ivf_vector_storage_memory_size,
+            config.ivf_vector_storage_file_size,
             config.num_features,
             centroid_quantizer,
             hnsw_directory,

@@ -40,13 +40,13 @@ impl SpannWriter {
         // Create and train product quantizer
         let pq_config = ProductQuantizerConfig {
             dimension: index_writer_config.num_features,
-            subvector_dimension: index_writer_config.subvector_dimension,
-            num_bits: index_writer_config.num_bits as u8,
+            subvector_dimension: index_writer_config.pq_subvector_dimension,
+            num_bits: index_writer_config.pq_num_bits as u8,
         };
 
         let pq_builder_config = ProductQuantizerBuilderConfig {
-            max_iteration: index_writer_config.max_iteration,
-            batch_size: index_writer_config.batch_size,
+            max_iteration: index_writer_config.pq_max_iteration,
+            batch_size: index_writer_config.pq_batch_size,
         };
 
         let mut pq_builder =
@@ -55,7 +55,7 @@ impl SpannWriter {
         debug!("Start training product quantizer");
         let sorted_random_rows = Self::get_sorted_random_rows(
             ivf_builder.vectors().borrow().len(),
-            index_writer_config.num_training_rows,
+            index_writer_config.pq_num_training_rows,
         );
 
         for row_idx in sorted_random_rows {
@@ -174,28 +174,28 @@ mod tests {
         let balance_factor = 0.0;
         let max_posting_list_size = usize::MAX;
         let mut builder = SpannBuilder::new(SpannBuilderConfig {
-            max_neighbors: 10,
-            max_layers: 2,
-            ef_construction: 100,
-            vector_storage_memory_size: 1024,
-            vector_storage_file_size: file_size,
+            centroids_max_neighbors: 10,
+            centroids_max_layers: 2,
+            centroids_ef_construction: 100,
+            centroids_vector_storage_memory_size: 1024,
+            centroids_vector_storage_file_size: file_size,
             num_features,
-            subvector_dimension: 8,
-            num_bits: 8,
-            num_training_rows: 50,
+            pq_subvector_dimension: 8,
+            pq_num_bits: 8,
+            pq_num_training_rows: 50,
             quantizer_type: QuantizerType::NoQuantizer,
-            max_iteration: 1000,
-            batch_size: 4,
-            num_clusters,
-            num_data_points_for_clustering: num_vectors,
-            max_clusters_per_vector: 1,
-            distance_threshold: 0.1,
+            pq_max_iteration: 1000,
+            pq_batch_size: 4,
+            ivf_num_clusters: num_clusters,
+            ivf_num_data_points_for_clustering: num_vectors,
+            ivf_max_clusters_per_vector: 1,
+            ivf_distance_threshold: 0.1,
             posting_list_encoding_type: IntSeqEncodingType::PlainEncoding,
-            base_directory: base_directory.clone(),
-            memory_size: 1024,
-            file_size,
-            tolerance: balance_factor,
-            max_posting_list_size,
+            ivf_base_directory: base_directory.clone(),
+            ivf_vector_storage_memory_size: 1024,
+            ivf_vector_storage_file_size: file_size,
+            centroids_clustering_tolerance: balance_factor,
+            ivf_max_posting_list_size: max_posting_list_size,
             reindex: false,
         })
         .unwrap();
