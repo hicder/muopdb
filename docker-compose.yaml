@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  index_server:
+    build:
+      context: .
+      target: index_server
+    ports:
+      - "9002:9002"
+    # change this to your local path
+    volumes:
+      - /mnt/muopdb/data:/mnt/muopdb/data
+      - /mnt/muopdb/indices:/mnt/muopdb/indices
+    environment:
+      - RUST_LOG=info
+    command: [
+      "/app/index_server",
+      "--node-id", "0",
+      "--index-config-path", "/mnt/muopdb/indices",
+      "--index-data-path", "/mnt/muopdb/data",
+      "--port", "9002"
+    ]

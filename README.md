@@ -1,4 +1,5 @@
-# MuopDB - A vector database for AI memories
+MuopDB - A vector database for AI memories
+---
 
 ## Introduction
 MuopDB is a vector database for machine learning. Currently, it supports:
@@ -14,19 +15,26 @@ Think of it as:
 All users' indices will be stored in a few files, reducing operational complexity.
 
 ## Quick Start
-* Build MuopDB. Refer to this [instruction](https://github.com/hicder/muopdb?tab=readme-ov-file#building)
-* Prepare necessary `data` and `indices` directories. On Mac, you might want to change these directories since root directory is read-only.
+
+* Build MuopDB. Refer to this [instruction](https://github.com/hicder/muopdb?tab=readme-ov-file#building).
+* Prepare necessary `data` and `indices` directories. On Mac, you might want to change these directories since root directory is read-only, i.e: `~/mnt/muopdb/`.
 ```
 mkdir -p /mnt/muopdb/indices
 mkdir -p /mnt/muopdb/data
 ```
-* Run MuopDB `index_server` with the directories we just prepared.
-```
-./index_server --node-id 0 --index-config-path /mnt/muopdb/indices --index-data-path /mnt/muopdb/data --port 9002
+* Start MuopDB `index_server` with the directories we just prepared using one of these methods:
+```bash
+# Start server locally
+cd target/release
+RUST_LOG=info ./index_server --node-id 0 --index-config-path /mnt/muopdb/indices --index-data-path /mnt/muopdb/data --port 9002
+
+# Start server with Docker
+docker-compose up --build
 ```
 * Now you have an up and running MuopDB `index_server`.
   * You can send gRPC requests to this server (possibly with [Postman](https://www.postman.com/)).
-  * Use [muopdb.proto](https://github.com/hicder/muopdb/blob/b2b3c4bf84d900e118341bd95eae0e32ce65d3c0/rs/proto/proto/muopdb.proto#L38-L48) for Service Definition. [Guide](https://learning.postman.com/docs/sending-requests/grpc/using-service-definition/)
+  * Use [muopdb.proto](https://github.com/hicder/muopdb/blob/b2b3c4bf84d900e118341bd95eae0e32ce65d3c0/rs/proto/proto/muopdb.proto#L38-L48) for Service Definition. Refer to [this guide](https://learning.postman.com/docs/sending-requests/grpc/using-service-definition/) for more information.
+
 ### Examples using Postman
 1. Create collection
 <img width="603" alt="Screenshot 2025-01-16 at 11 14 23 AM" src="https://github.com/user-attachments/assets/cadf00c4-199f-4756-8446-7fb08de2b0c0" />
@@ -121,25 +129,34 @@ mkdir -p /mnt/muopdb/data
 - [ ] Database Management
   - [ ] Segment optimizers (vacumn, merge)
 
-## Building
-Install prerequisites:
-* Rust: https://www.rust-lang.org/tools/install
-* Libraries
-```
-# MacOS: Use Homebrew
+### Building
+
+- Install prerequisites:
+  - Rust: https://www.rust-lang.org/tools/install
+  - Libraries
+```bash
+# MacOS (using Homebrew)
 brew install hdf5 protobuf openblas
 
-# Linux: Use your package manager.
+# Linux (Arch-based)
 # On Arch Linux (and its derivatives, such as EndeavourOS, CachyOS):
 sudo pacman -Syu hdf5 protobuf openblas
+
+# Linux (Debian-based)
+sudo apt-get install libhdf5-dev libprotobuf-dev libopenblas-dev
 ```
-Build:
-```
+
+- Build from Source:
+```bash
+git clone https://github.com/hicder/muopdb.git
+cd muopdb
+
+# Build
 cargo build --release
-```
-Test:
-```
+
+# Run tests
 cargo test --release
 ```
+
 ## Contributions
 This project is done with [TechCare Coaching](https://techcarecoaching.com/). I am mentoring mentees who made contributions to this project.
