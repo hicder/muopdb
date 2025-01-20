@@ -97,7 +97,7 @@ impl FixedIndexFile {
         };
 
         // Align to the next 8-byte boundary
-        offset = Self::align_to_next_boundary(offset, 8);
+        offset = Self::align_to_next_boundary(offset, 16);
 
         Ok((header, offset))
     }
@@ -107,17 +107,17 @@ impl FixedIndexFile {
         (current_position + mask) & !mask
     }
 
-    pub fn get_doc_id(&self, index: usize) -> Result<u64> {
+    pub fn get_doc_id(&self, index: usize) -> Result<u128> {
         if index >= self.header.num_vectors as usize {
             return Err(anyhow!("Index out of bound"));
         }
 
         let start = self.doc_id_mapping_offset
-            + size_of::<u64>() // Read another u64 which encodes num_vectors (when combining with
-                               // doc_id_mapping storage)
-            + index * size_of::<u64>();
-        let slice = &self.mmap[start..start + size_of::<u64>()];
-        Ok(u64::from_le_bytes(slice.try_into()?))
+            + size_of::<u128>() // Read another u128 which encodes num_vectors (when combining with
+                                // doc_id_mapping storage)
+            + index * size_of::<u128>();
+        let slice = &self.mmap[start..start + size_of::<u128>()];
+        Ok(u128::from_le_bytes(slice.try_into()?))
     }
 
     pub fn get_centroid(&self, index: usize) -> Result<&[f32]> {
@@ -189,7 +189,7 @@ mod tests {
             4, 0, 0, 0, // quantized_dimension (little-endian)
             2, 0, 0, 0, // num_clusters (little-endian)
             4, 0, 0, 0, 0, 0, 0, 0, // num_vectors (little-endian)
-            40, 0, 0, 0, 0, 0, 0, 0, // doc_id_mapping_len (little-endian)
+            80, 0, 0, 0, 0, 0, 0, 0, // doc_id_mapping_len (little-endian)
             40, 0, 0, 0, 0, 0, 0, 0, // centroids_len (little-endian)
             9, 0, 0, 0, 0, 0, 0,
             0, // posting_lists_and_metadata_len - garbage (little-endian)
@@ -201,8 +201,8 @@ mod tests {
         }
         assert!(file.write_all(&header).is_ok());
 
-        let doc_id_mapping: Vec<u64> = vec![100, 200, 300, 400];
-        let num_vectors = vec![4, 0, 0, 0, 0, 0, 0, 0];
+        let doc_id_mapping: Vec<u128> = vec![100, 200, 300, 400];
+        let num_vectors = vec![4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         assert!(file.write_all(&num_vectors).is_ok());
         assert!(file
             .write_all(transmute_slice_to_u8(&doc_id_mapping))
@@ -236,7 +236,7 @@ mod tests {
         assert_eq!(combined_file.header.quantized_dimension, 4);
         assert_eq!(combined_file.header.num_clusters, 2);
         assert_eq!(combined_file.header.num_vectors, 4);
-        assert_eq!(combined_file.header.doc_id_mapping_len, 40);
+        assert_eq!(combined_file.header.doc_id_mapping_len, 80);
         assert_eq!(combined_file.header.centroids_len, 40);
         assert_eq!(combined_file.header.posting_lists_and_metadata_len, 9);
 

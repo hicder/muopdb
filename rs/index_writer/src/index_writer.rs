@@ -90,7 +90,7 @@ impl IndexWriter {
         input.reset();
         while input.has_next() {
             let row = input.next();
-            hnsw_builder.insert(row.id, row.data)?;
+            hnsw_builder.insert(row.id as u128, row.data)?;
             if row.id % 10000 == 0 {
                 debug!("Inserted {} rows", row.id);
             }
@@ -216,7 +216,7 @@ impl IndexWriter {
         input.reset();
         while input.has_next() {
             let row = input.next();
-            ivf_builder.add_vector(row.id, row.data)?;
+            ivf_builder.add_vector(row.id as u128, row.data)?;
             if row.id % 10000 == 0 {
                 debug!("Inserted {} rows", row.id);
             }
@@ -378,31 +378,31 @@ impl IndexWriter {
         let root_path = &self.output_root;
 
         let spann_config = SpannBuilderConfig {
-            max_neighbors: index_writer_config.hnsw_config.max_num_neighbors,
-            max_layers: index_writer_config.hnsw_config.num_layers,
-            ef_construction: index_writer_config.hnsw_config.ef_construction,
-            vector_storage_memory_size: index_writer_config.base_config.max_memory_size,
-            vector_storage_file_size: index_writer_config.base_config.file_size,
+            centroids_max_neighbors: index_writer_config.hnsw_config.max_num_neighbors,
+            centroids_max_layers: index_writer_config.hnsw_config.num_layers,
+            centroids_ef_construction: index_writer_config.hnsw_config.ef_construction,
+            centroids_vector_storage_memory_size: index_writer_config.base_config.max_memory_size,
+            centroids_vector_storage_file_size: index_writer_config.base_config.file_size,
             num_features: index_writer_config.base_config.dimension,
-            subvector_dimension: index_writer_config.quantizer_config.subvector_dimension,
-            num_bits: index_writer_config.quantizer_config.num_bits as usize,
-            num_training_rows: index_writer_config.quantizer_config.num_training_rows as usize,
+            pq_subvector_dimension: index_writer_config.quantizer_config.subvector_dimension,
+            pq_num_bits: index_writer_config.quantizer_config.num_bits as usize,
+            pq_num_training_rows: index_writer_config.quantizer_config.num_training_rows as usize,
             quantizer_type: index_writer_config.quantizer_config.quantizer_type.clone(),
-            max_iteration: index_writer_config.ivf_config.max_iteration,
-            batch_size: index_writer_config.ivf_config.batch_size,
-            num_clusters: index_writer_config.ivf_config.num_clusters,
-            num_data_points_for_clustering: index_writer_config.ivf_config.num_data_points,
-            max_clusters_per_vector: index_writer_config.ivf_config.max_clusters_per_vector,
-            distance_threshold: index_writer_config.ivf_config.distance_threshold,
+            pq_max_iteration: index_writer_config.ivf_config.max_iteration,
+            pq_batch_size: index_writer_config.ivf_config.batch_size,
+            ivf_num_clusters: index_writer_config.ivf_config.num_clusters,
+            ivf_num_data_points_for_clustering: index_writer_config.ivf_config.num_data_points,
+            ivf_max_clusters_per_vector: index_writer_config.ivf_config.max_clusters_per_vector,
+            ivf_distance_threshold: index_writer_config.ivf_config.distance_threshold,
             posting_list_encoding_type: index_writer_config
                 .ivf_config
                 .posting_list_encoding_type
                 .clone(),
-            base_directory: root_path.to_string(),
-            memory_size: index_writer_config.base_config.max_memory_size,
-            file_size: index_writer_config.base_config.file_size,
-            tolerance: index_writer_config.ivf_config.tolerance,
-            max_posting_list_size: index_writer_config.ivf_config.max_posting_list_size,
+            ivf_base_directory: root_path.to_string(),
+            ivf_vector_storage_memory_size: index_writer_config.base_config.max_memory_size,
+            ivf_vector_storage_file_size: index_writer_config.base_config.file_size,
+            centroids_clustering_tolerance: index_writer_config.ivf_config.tolerance,
+            ivf_max_posting_list_size: index_writer_config.ivf_config.max_posting_list_size,
             reindex: index_writer_config.base_config.reindex,
         };
         let mut spann_builder = SpannBuilder::new(spann_config)?;
@@ -410,7 +410,7 @@ impl IndexWriter {
         input.reset();
         while input.has_next() {
             let row = input.next();
-            spann_builder.add(row.id, row.data)?;
+            spann_builder.add(row.id as u128, row.data)?;
             if row.id % 10000 == 0 {
                 debug!("Inserted {} rows", row.id);
             }

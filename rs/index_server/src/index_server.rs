@@ -3,13 +3,13 @@ use std::vec;
 
 use config::collection::CollectionConfig;
 use index::utils::SearchContext;
-use log::{debug, info};
+use log::info;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
     CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse, InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, SearchRequest, SearchResponse, GetSegmentsRequest, GetSegmentsResponse,
 };
 use tokio::sync::Mutex;
-use utils::mem::transmute_u8_to_slice;
+use utils::mem::{lows_and_highs_to_u128s, transmute_u8_to_slice, u128s_to_lows_highs};
 
 use crate::collection_catalog::CollectionCatalog;
 use crate::collection_manager::CollectionManager;
@@ -143,7 +143,7 @@ impl IndexServer for IndexServerImpl {
         let k = req.top_k;
         let record_metrics = req.record_metrics;
         let ef_construction = req.ef_construction;
-        let user_ids = req.user_ids;
+        let user_ids = lows_and_highs_to_u128s(&req.low_user_ids, &req.high_user_ids);
 
         let collection_opt = self
             .collection_catalog
@@ -161,28 +161,35 @@ impl IndexServer for IndexServerImpl {
                     ef_construction,
                     &mut search_context,
                 );
-                info!("Search result: {:?}", result);
 
                 match result {
                     Some(result) => {
-                        let mut ids = vec![];
+                        let mut low_ids = vec![];
+                        let mut high_ids = vec![];
                         let mut scores = vec![];
                         for id_with_score in result {
-                            ids.push(id_with_score.id);
+                            // TODO(hicder): Support u128
+                            low_ids.push(id_with_score.id as u64);
+                            high_ids.push((id_with_score.id >> 64) as u64);
                             scores.push(id_with_score.score);
                         }
                         let end = std::time::Instant::now();
                         let duration = end.duration_since(start);
-                        debug!("Searched collection {} in {:?}", collection_name, duration);
+                        info!(
+                            "[{}] Searched collection in {:?}",
+                            collection_name, duration
+                        );
                         return Ok(tonic::Response::new(SearchResponse {
-                            ids: ids,
-                            scores: scores,
+                            low_ids,
+                            high_ids,
+                            scores,
                             num_pages_accessed: search_context.num_pages_accessed() as u64,
                         }));
                     }
                     None => {
                         return Ok(tonic::Response::new(SearchResponse {
-                            ids: vec![],
+                            low_ids: vec![],
+                            high_ids: vec![],
                             scores: vec![],
                             num_pages_accessed: 0,
                         }));
@@ -208,10 +215,9 @@ impl IndexServer for IndexServerImpl {
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
-        let ids = req.ids;
+        let ids = lows_and_highs_to_u128s(&req.low_ids, &req.high_ids);
         let vectors = req.vectors;
-        let user_ids = req.user_ids;
-
+        let user_ids = lows_and_highs_to_u128s(&req.low_user_ids, &req.high_user_ids);
         let collection_opt = self
             .collection_catalog
             .lock()
@@ -240,8 +246,18 @@ impl IndexServer for IndexServerImpl {
                 // log the duration
                 let end = std::time::Instant::now();
                 let duration = end.duration_since(start);
-                debug!("Inserted {} vectors in {:?}", ids.len(), duration);
-                Ok(tonic::Response::new(InsertResponse { inserted_ids: ids }))
+                info!(
+                    "[{}] Inserted {} vectors in {:?}",
+                    collection_name,
+                    ids.len(),
+                    duration
+                );
+
+                let lows_and_highs = u128s_to_lows_highs(&ids);
+                Ok(tonic::Response::new(InsertResponse {
+                    inserted_low_ids: lows_and_highs.lows,
+                    inserted_high_ids: lows_and_highs.highs,
+                }))
             }
             None => Err(tonic::Status::new(
                 tonic::Code::NotFound,
@@ -266,12 +282,12 @@ impl IndexServer for IndexServerImpl {
             .await;
 
         let end = std::time::Instant::now();
-        let duration = end.duration_since(start);
-        debug!("Indexing collection {} in {:?}", collection_name, duration);
 
         match collection_opt {
             Some(collection) => {
                 collection.flush().unwrap();
+                let duration = end.duration_since(start);
+                info!("Flushed collection {} in {:?}", collection_name, duration);
                 Ok(tonic::Response::new(FlushResponse {
                     // TODO(hicder): Return flushed segments
                     flushed_segments: vec![],
@@ -291,9 +307,13 @@ impl IndexServer for IndexServerImpl {
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
-        let ids_buffer = req.ids;
+        let doc_ids = lows_and_highs_to_u128s(
+            transmute_u8_to_slice(&req.low_ids),
+            transmute_u8_to_slice(&req.high_ids),
+        );
+        let num_docs = doc_ids.len();
         let vectors_buffer = req.vectors;
-        let user_ids = req.user_ids;
+        let user_ids = lows_and_highs_to_u128s(&req.low_user_ids, &req.high_user_ids);
 
         let collection_opt = self
             .collection_catalog
@@ -306,7 +326,6 @@ impl IndexServer for IndexServerImpl {
             Some(collection) => {
                 let dimensions = collection.dimensions();
                 let vectors = transmute_u8_to_slice(&vectors_buffer);
-                let ids = transmute_u8_to_slice(&ids_buffer);
 
                 if vectors.len() % dimensions != 0 {
                     return Err(tonic::Status::new(
@@ -317,16 +336,19 @@ impl IndexServer for IndexServerImpl {
 
                 vectors
                     .chunks(dimensions)
-                    .zip(ids)
+                    .zip(doc_ids)
                     .for_each(|(vector, id)| {
                         // TODO(hicder): Handle errors
-                        collection.insert_for_users(&user_ids, *id, vector).unwrap()
+                        collection.insert_for_users(&user_ids, id, vector).unwrap()
                     });
 
                 // log the duration
                 let end = std::time::Instant::now();
                 let duration = end.duration_since(start);
-                debug!("Inserted {} vectors in {:?}", ids.len(), duration);
+                info!(
+                    "[{}] Inserted {} vectors in {:?}",
+                    collection_name, num_docs, duration
+                );
                 Ok(tonic::Response::new(InsertPackedResponse {}))
             }
             None => Err(tonic::Status::new(

@@ -1,6 +1,7 @@
 use std::cmp::{Ord, Ordering};
 use std::collections::HashSet;
 
+use ordered_float::NotNan;
 use roaring::RoaringBitmap;
 
 pub struct SearchContext {
@@ -65,9 +66,42 @@ impl TraversalContext for SearchContext {
     }
 }
 
+#[derive(PartialEq, Eq, Ord, PartialOrd, Clone, Debug)]
+pub struct PointAndDistance {
+    pub distance: NotNan<f32>,
+    pub point_id: u32,
+}
+
+impl PointAndDistance {
+    pub fn new(distance: f32, point_id: u32) -> Self {
+        PointAndDistance {
+            distance: NotNan::new(distance).unwrap(),
+            point_id,
+        }
+    }
+}
+
+// impl Ord for PointAndDistance {
+//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+//         if self.distance == other.distance {
+//             return self.point_id.cmp(&other.point_id);
+//         }
+//         self.distance.cmp(&other.distance)
+//     }
+// }
+
+// impl PartialOrd for PointAndDistance {
+//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+//         if self.distance == other.distance {
+//             return self.point_id.partial_cmp(&other.point_id);
+//         }
+//         self.distance.partial_cmp(&other.distance)
+//     }
+// }
+
 #[derive(Debug)]
 pub struct IdWithScore {
-    pub id: u64,
+    pub id: u128,
     pub score: f32,
 }
 

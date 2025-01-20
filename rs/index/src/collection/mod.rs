@@ -149,11 +149,11 @@ impl Collection {
         })
     }
 
-    pub fn insert(&self, doc_id: u64, data: &[f32]) -> Result<()> {
+    pub fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
         self.mutable_segment.write().unwrap().insert(doc_id, data)
     }
 
-    pub fn insert_for_users(&self, user_ids: &[u64], doc_id: u64, data: &[f32]) -> Result<()> {
+    pub fn insert_for_users(&self, user_ids: &[u128], doc_id: u128, data: &[f32]) -> Result<()> {
         for user_id in user_ids {
             self.mutable_segment
                 .write()

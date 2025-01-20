@@ -119,7 +119,7 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add_vector((i + 100) as u64, &generate_random_vector(num_features))
+                .add_vector((i + 100) as u128, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 
@@ -278,7 +278,7 @@ mod tests {
         for i in 0..num_vectors {
             let vector = generate_random_vector(num_features);
             builder
-                .add_vector((i + 100) as u64, &vector)
+                .add_vector((i + 100) as u128, &vector)
                 .expect("Vector should be added");
         }
 
@@ -353,7 +353,7 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add_vector((i + 100) as u64, &generate_random_vector(num_features))
+                .add_vector((i + 100) as u128, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 
@@ -498,7 +498,7 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add_vector(i as u64, &generate_random_vector(num_features))
+                .add_vector(i as u128, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
 

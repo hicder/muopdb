@@ -250,6 +250,12 @@ impl<Q: Quantizer> HnswWriter<Q> {
         }
         written += append_file_to_writer(&edge_offsets_path, &mut combined_buffer_writer)?;
         written += append_file_to_writer(&level_offsets_path, &mut combined_buffer_writer)?;
+
+        padding = 16 - (written % 16);
+        if padding != 16 {
+            let padding_buffer = vec![0; padding];
+            written += wrap_write(&mut combined_buffer_writer, &padding_buffer)?;
+        }
         written += append_file_to_writer(&doc_id_mapping_path, &mut combined_buffer_writer)?;
 
         combined_buffer_writer
@@ -275,7 +281,8 @@ mod tests {
     use super::*;
     use crate::hnsw::builder::Layer;
     use crate::hnsw::reader::HnswReader;
-    use crate::hnsw::utils::{GraphTraversal, PointAndDistance};
+    use crate::hnsw::utils::GraphTraversal;
+    use crate::utils::PointAndDistance;
 
     fn construct_layers(hnsw_builder: &mut HnswBuilder<ProductQuantizer<L2DistanceCalculator>>) {
         // Prepare all layers

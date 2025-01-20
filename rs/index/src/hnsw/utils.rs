@@ -4,7 +4,7 @@ use bit_vec::BitVec;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 
-use crate::utils::TraversalContext;
+use crate::utils::{PointAndDistance, TraversalContext};
 pub struct BuilderContext {
     visited: BitVec,
 }
@@ -31,13 +31,6 @@ impl TraversalContext for BuilderContext {
     }
 
     fn record_pages(&mut self, _page_id: String) {}
-}
-
-/// A point and its distance to the query.
-#[derive(PartialEq, Eq, Ord, PartialOrd, Clone, Debug)]
-pub struct PointAndDistance {
-    pub point_id: u32,
-    pub distance: NotNan<f32>,
 }
 
 /// Move the traversal logic out, since it's used in both indexing and query path
@@ -78,7 +71,7 @@ pub trait GraphTraversal<Q: Quantizer> {
 
         while !candidates.is_empty() {
             let point_and_distance = candidates.pop().unwrap();
-            let point_id = point_and_distance.point_id;
+            let point_id = point_and_distance.point_id as u32;
             let distance: f32 = -*point_and_distance.distance;
 
             let mut furthest_element_from_working_list = working_list.peek().unwrap();

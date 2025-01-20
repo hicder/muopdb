@@ -30,7 +30,7 @@ impl Snapshot {
 
     pub fn search_for_ids(
         &self,
-        ids: &[u64],
+        ids: &[u128],
         query: &[f32],
         k: usize,
         ef_construction: u32,
@@ -57,7 +57,7 @@ impl Snapshot {
 impl Searchable for Snapshot {
     fn search_with_id(
         &self,
-        id: u64,
+        id: u128,
         query: &[f32],
         k: usize,
         ef_construction: u32,
@@ -86,7 +86,7 @@ impl Searchable for Snapshot {
         ef_construction: u32,
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>> {
-        self.search_with_id(0 as u64, query, k, ef_construction, context)
+        self.search_with_id(0u128, query, k, ef_construction, context)
     }
 }
 
