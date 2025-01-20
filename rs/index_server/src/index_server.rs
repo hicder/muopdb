@@ -425,6 +425,13 @@ impl IndexServer for IndexServerImpl {
                     ));
                 }
 
+                if segment_names.len() <= 1 {
+                    return Err(tonic::Status::new(
+                        tonic::Code::InvalidArgument,
+                        "Require at least 2 segments to compact",
+                    ));
+                }
+
                 // TODO- khoa165: Logic to compact segments here
                 
                 let end = std::time::Instant::now();
