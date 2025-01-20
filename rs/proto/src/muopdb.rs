@@ -26,6 +26,18 @@ pub struct GetResponse {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetSegmentsRequest {
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetSegmentsResponse {
+    #[prost(string, repeated, tag = "1")]
+    pub segment_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateCollectionRequest {
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
@@ -428,6 +440,20 @@ pub mod index_server_client {
             let path = http::uri::PathAndQuery::from_static("/muopdb.IndexServer/Flush");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn get_segments(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetSegmentsRequest>,
+        ) -> Result<tonic::Response<super::GetSegmentsResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/muopdb.IndexServer/GetSegments");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -588,6 +614,10 @@ pub mod index_server_server {
             &self,
             request: tonic::Request<super::FlushRequest>,
         ) -> Result<tonic::Response<super::FlushResponse>, tonic::Status>;
+        async fn get_segments(
+            &self,
+            request: tonic::Request<super::GetSegmentsRequest>,
+        ) -> Result<tonic::Response<super::GetSegmentsResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct IndexServerServer<T: IndexServer> {
@@ -791,6 +821,37 @@ pub mod index_server_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = FlushSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/muopdb.IndexServer/GetSegments" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetSegmentsSvc<T: IndexServer>(pub Arc<T>);
+                    impl<T: IndexServer> tonic::server::UnaryService<super::GetSegmentsRequest> for GetSegmentsSvc<T> {
+                        type Response = super::GetSegmentsResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetSegmentsRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).get_segments(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetSegmentsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,

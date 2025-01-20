@@ -6,9 +6,7 @@ use index::utils::SearchContext;
 use log::{debug, info};
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
-    CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse,
-    InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, SearchRequest,
-    SearchResponse,
+    CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse, InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, SearchRequest, SearchResponse, GetSegmentsRequest, GetSegmentsResponse,
 };
 use tokio::sync::Mutex;
 use utils::mem::transmute_u8_to_slice;
@@ -330,6 +328,38 @@ impl IndexServer for IndexServerImpl {
                 let duration = end.duration_since(start);
                 debug!("Inserted {} vectors in {:?}", ids.len(), duration);
                 Ok(tonic::Response::new(InsertPackedResponse {}))
+            }
+            None => Err(tonic::Status::new(
+                tonic::Code::NotFound,
+                "Collection not found",
+            )),
+        }
+    }
+
+    async fn get_segments(
+        &self,
+        request: tonic::Request<GetSegmentsRequest>,
+    ) -> Result<tonic::Response<GetSegmentsResponse>, tonic::Status> {
+        let start = std::time::Instant::now();
+        let req = request.into_inner();
+        let collection_name = req.collection_name;
+        
+        let collection_opt = self
+            .collection_catalog
+            .lock()
+            .await
+            .get_collection(&collection_name)
+            .await;
+        
+        match collection_opt {
+            Some(collection) => {
+                let segments = collection.get_all_segment_names();
+                let end = std::time::Instant::now();
+                let duration = end.duration_since(start);
+                debug!("Get segments for collection {} in {:?}", collection_name, duration);
+                Ok(tonic::Response::new(GetSegmentsResponse {
+                    segment_names: segments
+                }))
             }
             None => Err(tonic::Status::new(
                 tonic::Code::NotFound,
