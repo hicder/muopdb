@@ -47,6 +47,8 @@ service IndexServer {
   rpc Flush(FlushRequest) returns (FlushResponse) {}
 
   rpc GetSegments(GetSegmentsRequest) returns (GetSegmentsResponse) {}
+
+  rpc CompactSegments(CompactSegmentsRequest) returns (CompactSegmentsResponse) {}
 }
 
 message GetSegmentsRequest {
@@ -56,6 +58,15 @@ message GetSegmentsRequest {
 message GetSegmentsResponse {
   repeated string segment_names = 1;
 }
+
+message CompactSegmentsRequest {
+  string collection_name = 1;
+  repeated string segment_names = 2;
+}
+
+message CompactSegmentsResponse {
+}
+
 
 message CreateCollectionRequest {
   string collection_name = 1;

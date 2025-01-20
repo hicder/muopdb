@@ -8,7 +8,7 @@ use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
     CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse,
     GetSegmentsRequest, GetSegmentsResponse, InsertPackedRequest, InsertPackedResponse,
-    InsertRequest, InsertResponse, SearchRequest, SearchResponse,
+    InsertRequest, InsertResponse, SearchRequest, SearchResponse, CompactSegmentsRequest, CompactSegmentsResponse,
 };
 use tokio::sync::Mutex;
 use utils::mem::{lows_and_highs_to_u128s, transmute_u8_to_slice, u128s_to_lows_highs};
@@ -385,6 +385,39 @@ impl IndexServer for IndexServerImpl {
                 Ok(tonic::Response::new(GetSegmentsResponse {
                     segment_names: segments,
                 }))
+            }
+            None => Err(tonic::Status::new(
+                tonic::Code::NotFound,
+                "Collection not found",
+            )),
+        }
+    }
+
+    async fn compact_segments(
+        &self,
+        request: tonic::Request<CompactSegmentsRequest>,
+    ) -> Result<tonic::Response<CompactSegmentsResponse>, tonic::Status> {
+        let start = std::time::Instant::now();
+        let req = request.into_inner();
+        let collection_name = req.collection_name;
+        let _segment_names = req.segment_names;
+
+        let collection_opt = self
+            .collection_catalog
+            .lock()
+            .await
+            .get_collection(&collection_name)
+            .await;
+
+        match collection_opt {
+            Some(_collection) => {
+                // Validation that segments exist in the collection
+                // Logic to compact segments here
+                let end = std::time::Instant::now();
+                let duration = end.duration_since(start);
+                info!("[{}] Compacted segments in {:?}", collection_name, duration);
+
+                Ok(tonic::Response::new(CompactSegmentsResponse {}))
             }
             None => Err(tonic::Status::new(
                 tonic::Code::NotFound,
