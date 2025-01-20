@@ -336,8 +336,7 @@ mod tests {
         let hnsw_index_path = format!("{}/index", centroids_directory.to_str().unwrap());
         let ivf_directory_path = format!("{}/ivf", base_directory);
         let ivf_quantizer_directory = format!("{}/quantizer", ivf_directory_path);
-        let ivf_quantizer_codebook_path =
-            format!("{}/codebook", ivf_quantizer_directory.clone());
+        let ivf_quantizer_codebook_path = format!("{}/codebook", ivf_quantizer_directory.clone());
         let ivf_quantizer_config_path =
             format!("{}/product_quantizer_config.yaml", ivf_quantizer_directory);
 
