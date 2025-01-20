@@ -313,7 +313,10 @@ impl Collection {
     }
 
     pub fn get_all_segment_names(&self) -> Vec<String> {
-        self.all_segments.iter().map(|pair| pair.key().clone()).collect()
+        self.all_segments
+            .iter()
+            .map(|pair| pair.key().clone())
+            .collect()
     }
 }
 
