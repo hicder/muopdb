@@ -3,15 +3,16 @@ use std::sync::Arc;
 use anyhow::{Ok, Result};
 use config::collection::CollectionConfig;
 use config::enums::QuantizerType;
+use parking_lot::RwLock;
 use quantization::noq::noq::NoQuantizer;
 use quantization::pq::pq::ProductQuantizer;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::io::get_latest_version;
 
 use super::{Collection, TableOfContent};
-use crate::collection::BoxedSegmentSearchable;
 use crate::multi_spann::reader::MultiSpannReader;
 use crate::segment::immutable_segment::ImmutableSegment;
+use crate::segment::BoxedImmutableSegment;
 
 pub struct CollectionReader {
     path: String,
@@ -34,18 +35,22 @@ impl CollectionReader {
         let toc: TableOfContent = serde_json::from_reader(std::fs::File::open(toc_path)?)?;
 
         // let collection = Arc::new(Collection::new(self.path.clone()));
-        let mut segments: Vec<Arc<BoxedSegmentSearchable>> = vec![];
+        let mut segments: Vec<BoxedImmutableSegment> = vec![];
         for name in &toc.toc {
             let spann_path = format!("{}/{}", self.path, name);
             let spann_reader = MultiSpannReader::new(spann_path);
             match collection_config.quantization_type {
                 QuantizerType::ProductQuantizer => {
                     let index = spann_reader.read::<ProductQuantizer<L2DistanceCalculator>>()?;
-                    segments.push(Arc::new(Box::new(ImmutableSegment::new(index))));
+                    segments.push(BoxedImmutableSegment::FinalizedProductQuantizationSegment(
+                        Arc::new(RwLock::new(ImmutableSegment::new(index, name.clone()))),
+                    ));
                 }
                 QuantizerType::NoQuantizer => {
                     let index = spann_reader.read::<NoQuantizer<L2DistanceCalculator>>()?;
-                    segments.push(Arc::new(Box::new(ImmutableSegment::new(index))));
+                    segments.push(BoxedImmutableSegment::FinalizedNoQuantizationSegment(
+                        Arc::new(RwLock::new(ImmutableSegment::new(index, name.clone()))),
+                    ));
                 }
             };
         }

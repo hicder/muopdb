@@ -2,12 +2,15 @@ pub mod reader;
 pub mod snapshot;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Ok, Result};
 use config::collection::CollectionConfig;
 use config::enums::QuantizerType;
 use dashmap::DashMap;
+use fs_extra::dir::CopyOptions;
+use lock_api::RwLockUpgradableReadGuard;
+use parking_lot::{RawRwLock, RwLock};
 use quantization::noq::noq::NoQuantizer;
 use quantization::pq::pq::ProductQuantizer;
 use serde::{Deserialize, Serialize};
@@ -16,9 +19,11 @@ use utils::distance::l2::L2DistanceCalculator;
 
 use crate::index::Searchable;
 use crate::multi_spann::reader::MultiSpannReader;
+use crate::optimizers::SegmentOptimizer;
 use crate::segment::immutable_segment::ImmutableSegment;
 use crate::segment::mutable_segment::MutableSegment;
-use crate::segment::Segment;
+use crate::segment::pending_segment::PendingSegment;
+use crate::segment::{BoxedImmutableSegment, Segment};
 
 pub trait SegmentSearchable: Searchable + Segment {}
 pub type BoxedSegmentSearchable = Box<dyn SegmentSearchable + Send + Sync>;
@@ -26,11 +31,15 @@ pub type BoxedSegmentSearchable = Box<dyn SegmentSearchable + Send + Sync>;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TableOfContent {
     pub toc: Vec<String>,
+    pub pending: HashMap<String, Vec<String>>,
 }
 
 impl TableOfContent {
     pub fn new(toc: Vec<String>) -> Self {
-        Self { toc }
+        Self {
+            toc,
+            pending: HashMap::new(),
+        }
     }
 }
 
@@ -54,7 +63,7 @@ impl VersionsInfo {
 /// TODO(hicder): Add open segment to add documents.
 pub struct Collection {
     pub versions: DashMap<u64, TableOfContent>,
-    all_segments: DashMap<String, Arc<BoxedSegmentSearchable>>,
+    all_segments: DashMap<String, BoxedImmutableSegment>,
     versions_info: RwLock<VersionsInfo>,
     base_directory: String,
     mutable_segment: RwLock<MutableSegment>,
@@ -94,7 +103,10 @@ impl Collection {
 
         // Write version 0
         let toc_path = format!("{}/version_0", base_directory);
-        let toc = TableOfContent { toc: vec![] };
+        let toc = TableOfContent {
+            toc: vec![],
+            pending: HashMap::new(),
+        };
         serde_json::to_writer_pretty(std::fs::File::create(toc_path)?, &toc)?;
 
         // Write the config file
@@ -108,23 +120,19 @@ impl Collection {
         base_directory: String,
         version: u64,
         toc: TableOfContent,
-        segments: Vec<Arc<BoxedSegmentSearchable>>,
+        segments: Vec<BoxedImmutableSegment>,
         segment_config: CollectionConfig,
     ) -> Result<Self> {
         let versions_info = RwLock::new(VersionsInfo::new());
-        versions_info.write().unwrap().current_version = version;
-        versions_info
-            .write()
-            .unwrap()
-            .version_ref_counts
-            .insert(version, 0);
+        versions_info.write().current_version = version;
+        versions_info.write().version_ref_counts.insert(version, 0);
 
         let all_segments = DashMap::new();
         toc.toc
             .iter()
-            .zip(segments.iter())
+            .zip(segments.into_iter())
             .for_each(|(name, segment)| {
-                all_segments.insert(name.clone(), segment.clone());
+                all_segments.insert(name.clone(), segment);
             });
 
         let versions = DashMap::new();
@@ -150,14 +158,13 @@ impl Collection {
     }
 
     pub fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
-        self.mutable_segment.write().unwrap().insert(doc_id, data)
+        self.mutable_segment.write().insert(doc_id, data)
     }
 
     pub fn insert_for_users(&self, user_ids: &[u128], doc_id: u128, data: &[f32]) -> Result<()> {
         for user_id in user_ids {
             self.mutable_segment
                 .write()
-                .unwrap()
                 .insert_for_user(*user_id, doc_id, data)?;
         }
         Ok(())
@@ -181,7 +188,7 @@ impl Collection {
 
                 {
                     // Grab the write lock and swap tmp_segment with mutable_segment
-                    let mut mutable_segment = self.mutable_segment.write().unwrap();
+                    let mut mutable_segment = self.mutable_segment.write();
                     std::mem::swap(&mut *mutable_segment, &mut new_writable_segment);
                 }
 
@@ -198,16 +205,22 @@ impl Collection {
                     QuantizerType::ProductQuantizer => {
                         let index =
                             spann_reader.read::<ProductQuantizer<L2DistanceCalculator>>()?;
-                        let segment: Arc<Box<dyn SegmentSearchable + Send + Sync>> =
-                            Arc::new(Box::new(ImmutableSegment::new(index)));
-
+                        let segment = BoxedImmutableSegment::FinalizedProductQuantizationSegment(
+                            Arc::new(RwLock::new(ImmutableSegment::new(
+                                index,
+                                name_for_new_segment.clone(),
+                            ))),
+                        );
                         self.add_segments(vec![name_for_new_segment], vec![segment])
                     }
                     QuantizerType::NoQuantizer => {
                         let index = spann_reader.read::<NoQuantizer<L2DistanceCalculator>>()?;
-                        let segment: Arc<Box<dyn SegmentSearchable + Send + Sync>> =
-                            Arc::new(Box::new(ImmutableSegment::new(index)));
-
+                        let segment = BoxedImmutableSegment::FinalizedNoQuantizationSegment(
+                            Arc::new(RwLock::new(ImmutableSegment::new(
+                                index,
+                                name_for_new_segment.clone(),
+                            ))),
+                        );
                         self.add_segments(vec![name_for_new_segment], vec![segment])
                     }
                 }
@@ -234,10 +247,12 @@ impl Collection {
         }
 
         let toc = latest_version.unwrap().toc.clone();
+        let segments: Vec<BoxedImmutableSegment> = toc
+            .iter()
+            .map(|name| self.all_segments.get(name).unwrap().value().clone())
+            .collect();
         Ok(Snapshot::new(
-            toc.iter()
-                .map(|name| self.all_segments.get(name).unwrap().clone())
-                .collect(),
+            segments,
             current_version_number,
             Arc::clone(&self),
         ))
@@ -247,7 +262,7 @@ impl Collection {
     pub fn add_segments(
         &self,
         names: Vec<String>,
-        segments: Vec<Arc<BoxedSegmentSearchable>>,
+        segments: Vec<BoxedImmutableSegment>,
     ) -> Result<()> {
         for (name, segment) in names.iter().zip(segments) {
             self.all_segments.insert(name.clone(), segment);
@@ -257,16 +272,20 @@ impl Collection {
         // - Increment the current version
         // - Add the new version to the toc, and persist to disk
         // - Insert the new version to the toc
-        let mut locked_versions_info = self.versions_info.write().unwrap();
+        let mut locked_versions_info = self.versions_info.write();
         let current_version = locked_versions_info.current_version;
         let new_version = current_version + 1;
 
         let mut new_toc = self.versions.get(&current_version).unwrap().toc.clone();
         new_toc.extend_from_slice(&names);
+        let new_pending = self.versions.get(&current_version).unwrap().pending.clone();
 
         // Write the TOC to disk.
         let toc_path = format!("{}/version_{}", self.base_directory, new_version);
-        let toc = TableOfContent { toc: new_toc };
+        let toc = TableOfContent {
+            toc: new_toc,
+            pending: new_pending,
+        };
         serde_json::to_writer(std::fs::File::create(toc_path)?, &toc)?;
 
         // Once success, update the current version and ref counts.
@@ -280,14 +299,104 @@ impl Collection {
         Ok(())
     }
 
+    /// Replace old segments with a new segment.
+    /// This function is not thread-safe. Caller needs to ensure the thread safety.
+    pub fn replace_segment(
+        &self,
+        new_segment: BoxedImmutableSegment,
+        old_segment_names: Vec<String>,
+        is_pending: bool,
+        toc_locked: RwLockUpgradableReadGuard<RawRwLock, VersionsInfo>,
+    ) -> Result<()> {
+        self.all_segments
+            .insert(new_segment.name(), new_segment.clone());
+
+        // Under the lock, we do the following:
+        // - Increment the current version
+        // - Add the new version to the toc, and persist to disk
+        // - Insert the new version to the toc
+        let mut locked_versions_info = RwLockUpgradableReadGuard::upgrade(toc_locked);
+        let current_version = locked_versions_info.current_version;
+        let new_version = current_version + 1;
+
+        let mut new_toc = self.versions.get(&current_version).unwrap().toc.clone();
+        new_toc.retain(|name| !old_segment_names.contains(name));
+        new_toc.push(new_segment.name());
+
+        let mut new_pending = self.versions.get(&current_version).unwrap().pending.clone();
+        if is_pending {
+            new_pending.insert(new_segment.name(), old_segment_names);
+        }
+
+        // Write the TOC to disk.
+        let toc_path = format!("{}/version_{}", self.base_directory, new_version);
+        let toc = TableOfContent {
+            toc: new_toc,
+            pending: new_pending,
+        };
+        serde_json::to_writer(std::fs::File::create(toc_path)?, &toc)?;
+
+        locked_versions_info.current_version = new_version;
+        locked_versions_info
+            .version_ref_counts
+            .insert(new_version, 0);
+
+        self.versions.insert(new_version, toc);
+        Ok(())
+    }
+
+    /// Replace old segments with a new segment.
+    /// This function is thread-safe.
+    pub fn replace_segment_safe(
+        &self,
+        new_segment: BoxedImmutableSegment,
+        old_segment_names: Vec<String>,
+        is_pending: bool,
+    ) -> Result<()> {
+        self.all_segments
+            .insert(new_segment.name(), new_segment.clone());
+
+        // Under the lock, we do the following:
+        // - Increment the current version
+        // - Add the new version to the toc, and persist to disk
+        // - Insert the new version to the toc
+        let mut locked_versions_info = self.versions_info.write();
+        let current_version = locked_versions_info.current_version;
+        let new_version = current_version + 1;
+
+        let mut new_toc = self.versions.get(&current_version).unwrap().toc.clone();
+        new_toc.retain(|name| !old_segment_names.contains(name));
+        new_toc.push(new_segment.name());
+
+        let mut new_pending = self.versions.get(&current_version).unwrap().pending.clone();
+        if is_pending {
+            new_pending.insert(new_segment.name(), old_segment_names);
+        }
+
+        // Write the TOC to disk.
+        let toc_path = format!("{}/version_{}", self.base_directory, new_version);
+        let toc = TableOfContent {
+            toc: new_toc,
+            pending: new_pending,
+        };
+        serde_json::to_writer(std::fs::File::create(toc_path)?, &toc)?;
+
+        locked_versions_info.current_version = new_version;
+        locked_versions_info
+            .version_ref_counts
+            .insert(new_version, 0);
+
+        self.versions.insert(new_version, toc);
+        Ok(())
+    }
+
     pub fn current_version(&self) -> u64 {
-        self.versions_info.read().unwrap().current_version
+        self.versions_info.read().current_version
     }
 
     pub fn get_ref_count(&self, version_number: u64) -> usize {
         self.versions_info
             .read()
-            .unwrap()
             .version_ref_counts
             .get(&version_number)
             .unwrap_or(&0)
@@ -296,14 +405,14 @@ impl Collection {
 
     /// Release the ref count for the version once the snapshot is no longer needed.
     pub fn release_version(&self, version_number: u64) {
-        let mut lock = self.versions_info.write().unwrap();
+        let mut lock = self.versions_info.write();
         let count = *lock.version_ref_counts.get(&version_number).unwrap_or(&0);
         lock.version_ref_counts.insert(version_number, count - 1);
     }
 
     /// This is thread-safe, and will increment the ref count for the version.
     fn get_current_version_and_increment(&self) -> u64 {
-        let mut lock = self.versions_info.write().unwrap();
+        let mut lock = self.versions_info.write();
         let current_version = lock.current_version;
 
         let count = *lock.version_ref_counts.get(&current_version).unwrap_or(&0);
@@ -318,6 +427,136 @@ impl Collection {
             .map(|pair| pair.key().clone())
             .collect()
     }
+
+    #[allow(unused)]
+    pub fn init_optimizing(&self, segments: &Vec<String>) -> Result<String> {
+        let random_name = format!("pending_segment_{}", rand::random::<u64>());
+        let pending_segment_path = format!("{}/{}", self.base_directory, random_name);
+        std::fs::create_dir_all(pending_segment_path.clone())?;
+        let mut current_segments = Vec::new();
+        for segment in segments {
+            current_segments.push(self.all_segments.get(segment).unwrap().clone());
+        }
+        match self.segment_config.quantization_type {
+            QuantizerType::ProductQuantizer => {
+                let pending_segment = PendingSegment::<ProductQuantizer<L2DistanceCalculator>>::new(
+                    current_segments.clone(),
+                    pending_segment_path,
+                );
+                let new_boxed_segment = BoxedImmutableSegment::PendingProductQuantizationSegment(
+                    Arc::new(RwLock::new(pending_segment)),
+                );
+                self.replace_segment_safe(new_boxed_segment, segments.clone(), true)?;
+            }
+            QuantizerType::NoQuantizer => {
+                let pending_segment = PendingSegment::<NoQuantizer<L2DistanceCalculator>>::new(
+                    current_segments.clone(),
+                    pending_segment_path,
+                );
+                let new_boxed_segment = BoxedImmutableSegment::PendingNoQuantizationSegment(
+                    Arc::new(RwLock::new(pending_segment)),
+                );
+                self.replace_segment_safe(new_boxed_segment, segments.clone(), true)?;
+            }
+        }
+
+        Ok(random_name)
+    }
+
+    fn pending_to_finalized(
+        &self,
+        pending_segment: &str,
+        toc_locked: RwLockUpgradableReadGuard<RawRwLock, VersionsInfo>,
+    ) -> Result<()> {
+        let random_name = format!("segment_{}", rand::random::<u64>());
+
+        // Hardlink the pending segment to the new segment
+        let pending_segment_path = format!("{}/{}", self.base_directory, pending_segment);
+        let new_segment_path = format!("{}/{}", self.base_directory, random_name);
+
+        // Create and copy content of the pending segment to the new segment
+        std::fs::create_dir_all(new_segment_path.clone())?;
+
+        let mut options = CopyOptions::default();
+        options.content_only = true;
+        fs_extra::dir::copy(
+            pending_segment_path.clone(),
+            new_segment_path.clone(),
+            &options,
+        )?;
+
+        // Replace the pending segment with the new segment
+        match self.segment_config.quantization_type {
+            QuantizerType::ProductQuantizer => {
+                let index = MultiSpannReader::new(new_segment_path.clone())
+                    .read::<ProductQuantizer<L2DistanceCalculator>>()?;
+                let new_segment =
+                    BoxedImmutableSegment::FinalizedProductQuantizationSegment(Arc::new(
+                        RwLock::new(ImmutableSegment::new(index, random_name.clone())),
+                    ));
+                self.replace_segment(
+                    new_segment,
+                    vec![pending_segment.to_string()],
+                    false,
+                    toc_locked,
+                )?;
+                Ok(())
+            }
+            QuantizerType::NoQuantizer => {
+                let index = MultiSpannReader::new(new_segment_path)
+                    .read::<NoQuantizer<L2DistanceCalculator>>()?;
+                let new_segment = BoxedImmutableSegment::FinalizedNoQuantizationSegment(Arc::new(
+                    RwLock::new(ImmutableSegment::new(index, random_name.clone())),
+                ));
+                self.replace_segment(
+                    new_segment,
+                    vec![pending_segment.to_string()],
+                    false,
+                    toc_locked,
+                )?;
+                Ok(())
+            }
+        }
+    }
+
+    pub fn run_optimizer(
+        &self,
+        optimizer: &impl SegmentOptimizer,
+        pending_segment: &str,
+    ) -> Result<()> {
+        // Grab the read lock here.
+        let toc_locked = self.versions_info.upgradable_read();
+
+        let segment = self.all_segments.get(pending_segment).unwrap().clone();
+        match segment {
+            BoxedImmutableSegment::PendingNoQuantizationSegment(pending_segment) => {
+                let mut pending_segment = pending_segment.upgradable_read();
+                optimizer.optimize(&pending_segment)?;
+                pending_segment.build_index()?;
+                pending_segment.try_with_upgraded(|pending_segment_write| {
+                    pending_segment_write.apply_pending_deletions()?;
+                    pending_segment_write.switch_to_internal_index();
+                    Ok(())
+                });
+            }
+            BoxedImmutableSegment::PendingProductQuantizationSegment(pending_segment) => {
+                let mut pending_segment = pending_segment.upgradable_read();
+                optimizer.optimize(&pending_segment)?;
+                pending_segment.build_index()?;
+                pending_segment.try_with_upgraded(|pending_segment_write| {
+                    pending_segment_write.apply_pending_deletions()?;
+                    pending_segment_write.switch_to_internal_index();
+                    Ok(())
+                });
+            }
+            _ => {}
+        }
+
+        // Make the pending segment finalized
+        // Note that this function will upgrade toc lock.
+        self.pending_to_finalized(pending_segment, toc_locked)?;
+        Ok(())
+    }
 }
 
 // Test
@@ -329,48 +568,12 @@ mod tests {
 
     use anyhow::{Ok, Result};
     use config::collection::CollectionConfig;
+    use parking_lot::RwLock;
     use tempdir::TempDir;
 
-    use super::SegmentSearchable;
-    use crate::collection::{BoxedSegmentSearchable, Collection};
-    use crate::index::Searchable;
-    use crate::segment::Segment;
-
-    struct MockSearchable {}
-
-    impl MockSearchable {
-        pub fn new() -> Self {
-            Self {}
-        }
-    }
-
-    impl SegmentSearchable for MockSearchable {}
-
-    impl Segment for MockSearchable {
-        fn insert(&mut self, _doc_id: u64, _data: &[f32]) -> Result<()> {
-            todo!()
-        }
-
-        fn remove(&mut self, _doc_id: u64) -> Result<bool> {
-            todo!()
-        }
-
-        fn may_contains(&self, _doc_id: u64) -> bool {
-            todo!()
-        }
-    }
-
-    impl Searchable for MockSearchable {
-        fn search(
-            &self,
-            _query: &[f32],
-            _k: usize,
-            _ef_construction: u32,
-            _context: &mut crate::utils::SearchContext,
-        ) -> Option<Vec<crate::utils::IdWithScore>> {
-            todo!()
-        }
-    }
+    use crate::collection::Collection;
+    use crate::optimizers::noop::NoopOptimizer;
+    use crate::segment::{BoxedImmutableSegment, MockedSegment};
 
     #[test]
     fn test_collection() -> Result<()> {
@@ -380,8 +583,14 @@ mod tests {
         let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
 
         {
-            let segment1: Arc<BoxedSegmentSearchable> = Arc::new(Box::new(MockSearchable::new()));
-            let segment2: Arc<BoxedSegmentSearchable> = Arc::new(Box::new(MockSearchable::new()));
+            let segment1: BoxedImmutableSegment =
+                BoxedImmutableSegment::MockedNoQuantizationSegment(Arc::new(RwLock::new(
+                    MockedSegment::new("segment1".to_string()),
+                )));
+            let segment2: BoxedImmutableSegment =
+                BoxedImmutableSegment::MockedNoQuantizationSegment(Arc::new(RwLock::new(
+                    MockedSegment::new("segment2".to_string()),
+                )));
 
             collection
                 .add_segments(
@@ -417,8 +626,12 @@ mod tests {
                 .add_segments(
                     vec!["segment3".to_string(), "segment4".to_string()],
                     vec![
-                        Arc::new(Box::new(MockSearchable::new())),
-                        Arc::new(Box::new(MockSearchable::new())),
+                        BoxedImmutableSegment::MockedNoQuantizationSegment(Arc::new(RwLock::new(
+                            MockedSegment::new("segment3".to_string()),
+                        ))),
+                        BoxedImmutableSegment::MockedNoQuantizationSegment(Arc::new(RwLock::new(
+                            MockedSegment::new("segment4".to_string()),
+                        ))),
                     ],
                 )
                 .unwrap();
@@ -452,13 +665,17 @@ mod tests {
         let stopped_cpy = stopped.clone();
         let collection_cpy = collection.clone();
         std::thread::spawn(move || {
-            let segment1: Arc<BoxedSegmentSearchable> = Arc::new(Box::new(MockSearchable::new()));
-            let segment2: Arc<BoxedSegmentSearchable> = Arc::new(Box::new(MockSearchable::new()));
+            let segment1 = BoxedImmutableSegment::MockedNoQuantizationSegment(Arc::new(
+                RwLock::new(MockedSegment::new("segment1".to_string())),
+            ));
+            let segment2 = BoxedImmutableSegment::MockedNoQuantizationSegment(Arc::new(
+                RwLock::new(MockedSegment::new("segment2".to_string())),
+            ));
 
             collection_cpy
                 .add_segments(
                     vec!["segment1".to_string(), "segment2".to_string()],
-                    vec![segment1, segment2],
+                    vec![segment1.clone(), segment2.clone()],
                 )
                 .unwrap();
 
@@ -500,6 +717,32 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_millis(500));
         stopped.store(true, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+
+    #[test]
+    fn test_collection_optimizer() -> Result<()> {
+        let temp_dir = TempDir::new("test_collection")?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let segment_config = CollectionConfig::default_test_config();
+        let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
+
+        // Add a document and flush
+        collection.insert(0, &[1.0, 2.0, 3.0, 4.0])?;
+        collection.flush()?;
+
+        let segment_names = collection.get_all_segment_names();
+        assert_eq!(segment_names.len(), 1);
+
+        let pending_segment = collection.init_optimizing(&segment_names)?;
+
+        let optimizer = NoopOptimizer::new();
+        collection.run_optimizer(&optimizer, &pending_segment)?;
+
+        let snapshot = collection.clone().get_snapshot()?;
+        assert_eq!(snapshot.segments.len(), 1);
+        assert_eq!(snapshot.version(), 3);
+
         Ok(())
     }
 }

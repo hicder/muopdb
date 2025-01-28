@@ -369,3 +369,5 @@ mod tests {
         assert_eq!(new_pq.num_bits, 1);
     }
 }
+
+pub type ProductQuantizerL2 = ProductQuantizer<L2DistanceCalculator>;

@@ -9,27 +9,36 @@ use crate::multi_spann::index::MultiSpannIndex;
 /// This is an immutable segment. This usually contains a single index.
 pub struct ImmutableSegment<Q: Quantizer> {
     index: MultiSpannIndex<Q>,
+    name: String,
 }
 
 impl<Q: Quantizer> ImmutableSegment<Q> {
-    pub fn new(index: MultiSpannIndex<Q>) -> Self {
-        Self { index }
+    pub fn new(index: MultiSpannIndex<Q>, name: String) -> Self {
+        Self { index, name }
     }
 }
 
+/// This is the implementation of Segment for ImmutableSegment.
 impl<Q: Quantizer> Segment for ImmutableSegment<Q> {
-    fn insert(&mut self, _doc_id: u64, _data: &[f32]) -> Result<()> {
+    /// ImmutableSegment does not support insertion.
+    fn insert(&self, _doc_id: u64, _data: &[f32]) -> Result<()> {
         Err(anyhow!("ImmutableSegment does not support insertion"))
     }
 
-    fn remove(&mut self, _doc_id: u64) -> Result<bool> {
+    /// ImmutableSegment does not support removal.
+    fn remove(&self, _doc_id: u64) -> Result<bool> {
         // TODO(hicder): Implement this
         Ok(false)
     }
 
+    /// ImmutableSegment does not support contains.
     fn may_contains(&self, _doc_id: u64) -> bool {
         // TODO(hicder): Implement this
         return true;
+    }
+
+    fn name(&self) -> String {
+        self.name.clone()
     }
 }
 

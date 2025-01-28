@@ -775,6 +775,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs_extra"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
+
+[[package]]
 name = "fuchsia-cprng"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1385,12 +1391,15 @@ dependencies = [
  "config",
  "dashmap",
  "env_logger",
+ "fs_extra",
  "kmeans",
+ "lock_api",
  "log",
  "memmap2",
  "num-traits 0.2.19",
  "odht",
  "ordered-float",
+ "parking_lot",
  "quantization",
  "rand 0.8.5",
  "rayon",
