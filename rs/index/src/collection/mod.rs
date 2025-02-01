@@ -28,7 +28,7 @@ use crate::segment::{BoxedImmutableSegment, Segment};
 pub trait SegmentSearchable: Searchable + Segment {}
 pub type BoxedSegmentSearchable = Box<dyn SegmentSearchable + Send + Sync>;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TableOfContent {
     pub toc: Vec<String>,
     pub pending: HashMap<String, Vec<String>>,
@@ -258,6 +258,14 @@ impl Collection {
         ))
     }
 
+    pub fn get_current_toc(&self) -> TableOfContent {
+        self.versions
+            .get(&self.current_version())
+            .unwrap()
+            .value()
+            .clone()
+    }
+
     /// Add segments to the collection, effectively creating a new version.
     pub fn add_segments(
         &self,
@@ -334,6 +342,9 @@ impl Collection {
         let mut new_pending = self.versions.get(&current_version).unwrap().pending.clone();
         if is_pending {
             new_pending.insert(new_segment.name(), old_segment_names);
+        } else {
+            // Cleanup the pending segment
+            new_pending.retain(|name, _| new_toc.contains(name));
         }
 
         // Write the TOC to disk to a temporary file. Only rename atomically under the write lock.
@@ -413,7 +424,6 @@ impl Collection {
             .collect()
     }
 
-    #[allow(unused)]
     pub fn init_optimizing(&self, segments: &Vec<String>) -> Result<String> {
         let random_name = format!("pending_segment_{}", rand::random::<u64>());
         let pending_segment_path = format!("{}/{}", self.base_directory, random_name);
@@ -743,6 +753,10 @@ mod tests {
         assert_eq!(snapshot.segments.len(), 1);
         assert_eq!(snapshot.version(), 3);
 
+        let toc = collection.get_current_toc();
+        assert_eq!(toc.toc.len(), 1);
+        assert_eq!(toc.pending.len(), 0);
+
         Ok(())
     }
 
@@ -771,6 +785,9 @@ mod tests {
                     .init_optimizing(&segment_names)
                     .unwrap();
 
+                let toc = collection_cpy_for_optimizer.get_current_toc();
+                assert_eq!(toc.pending.len(), 1);
+
                 // Sleep randomly between 100ms and 200ms
                 let sleep_duration = rand::thread_rng().gen_range(100..200);
                 std::thread::sleep(std::time::Duration::from_millis(sleep_duration));
@@ -779,6 +796,9 @@ mod tests {
                 collection_cpy_for_optimizer
                     .run_optimizer(&optimizer, &pending_segment)
                     .unwrap();
+
+                let toc = collection_cpy_for_optimizer.get_current_toc();
+                assert_eq!(toc.pending.len(), 0);
             }
         });
 
