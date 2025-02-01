@@ -6,9 +6,10 @@ use index::utils::SearchContext;
 use log::info;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
-    CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse,
-    GetSegmentsRequest, GetSegmentsResponse, InsertPackedRequest, InsertPackedResponse,
-    InsertRequest, InsertResponse, SearchRequest, SearchResponse, CompactSegmentsRequest, CompactSegmentsResponse,
+    CompactSegmentsRequest, CompactSegmentsResponse, CreateCollectionRequest,
+    CreateCollectionResponse, FlushRequest, FlushResponse, GetSegmentsRequest, GetSegmentsResponse,
+    InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, SearchRequest,
+    SearchResponse,
 };
 use tokio::sync::Mutex;
 use utils::mem::{lows_and_highs_to_u128s, transmute_u8_to_slice, u128s_to_lows_highs};
@@ -433,10 +434,15 @@ impl IndexServer for IndexServerImpl {
                 }
 
                 // TODO- khoa165: Logic to compact segments here
-                
+
                 let end = std::time::Instant::now();
                 let duration = end.duration_since(start);
-                info!("[{}] Compacted {} segments in {:?}", collection_name, segment_names.len(), duration);
+                info!(
+                    "[{}] Compacted {} segments in {:?}",
+                    collection_name,
+                    segment_names.len(),
+                    duration
+                );
 
                 Ok(tonic::Response::new(CompactSegmentsResponse {}))
             }

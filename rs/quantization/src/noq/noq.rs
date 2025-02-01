@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use utils::distance::l2::L2DistanceCalculator;
 use utils::DistanceCalculator;
 
 use crate::quantization::{Quantizer, WritableQuantizer};
@@ -94,3 +95,5 @@ impl<D: DistanceCalculator> NoQuantizerReader<D> {
         Ok(NoQuantizer::new(config.dimension))
     }
 }
+
+pub type NoQuantizerL2 = NoQuantizer<L2DistanceCalculator>;

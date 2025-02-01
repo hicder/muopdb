@@ -5,6 +5,7 @@ pub mod hnsw;
 pub mod index;
 pub mod ivf;
 pub mod multi_spann;
+pub mod optimizers;
 pub mod posting_list;
 pub mod segment;
 pub mod spann;
