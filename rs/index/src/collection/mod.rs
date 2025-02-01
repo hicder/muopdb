@@ -573,7 +573,8 @@ mod tests {
 
     use crate::collection::Collection;
     use crate::optimizers::noop::NoopOptimizer;
-    use crate::segment::{BoxedImmutableSegment, MockedSegment};
+    use crate::segment::{BoxedImmutableSegment, MockedSegment, Segment};
+    use crate::utils::SearchContext;
 
     #[test]
     fn test_collection() -> Result<()> {
@@ -728,13 +729,26 @@ mod tests {
         let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
 
         // Add a document and flush
-        collection.insert(0, &[1.0, 2.0, 3.0, 4.0])?;
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0])?;
         collection.flush()?;
 
         let segment_names = collection.get_all_segment_names();
         assert_eq!(segment_names.len(), 1);
 
         let pending_segment = collection.init_optimizing(&segment_names)?;
+
+        let snapshot = collection.clone().get_snapshot()?;
+        assert_eq!(snapshot.segments.len(), 1);
+        assert_eq!(snapshot.version(), 2);
+        let segment_name = snapshot.segments[0].name();
+        assert_eq!(segment_name, pending_segment);
+
+        let mut context = SearchContext::new(false);
+        let result = snapshot
+            .search_for_ids(&[0], &[1.0, 2.0, 3.0, 4.0], 10, 10, &mut context)
+            .unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, 1);
 
         let optimizer = NoopOptimizer::new();
         collection.run_optimizer(&optimizer, &pending_segment)?;
