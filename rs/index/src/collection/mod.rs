@@ -31,6 +31,8 @@ pub type BoxedSegmentSearchable = Box<dyn SegmentSearchable + Send + Sync>;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TableOfContent {
     pub toc: Vec<String>,
+
+    #[serde(default)]
     pub pending: HashMap<String, Vec<String>>,
 }
 
