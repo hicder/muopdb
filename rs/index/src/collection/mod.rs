@@ -268,31 +268,40 @@ impl Collection {
             self.all_segments.insert(name.clone(), segment);
         }
 
-        // Under the lock, we do the following:
+        // Under the upgradable read lock, we do the following:
         // - Increment the current version
         // - Add the new version to the toc, and persist to disk
+        // Under the write lock, we do the following:
+        // - Rename the tmp_version_{} to version_{}
         // - Insert the new version to the toc
-        let mut locked_versions_info = self.versions_info.write();
-        let current_version = locked_versions_info.current_version;
+        let toc_read = self.versions_info.upgradable_read();
+        let current_version = toc_read.current_version;
         let new_version = current_version + 1;
 
         let mut new_toc = self.versions.get(&current_version).unwrap().toc.clone();
         new_toc.extend_from_slice(&names);
         let new_pending = self.versions.get(&current_version).unwrap().pending.clone();
 
-        // Write the TOC to disk.
-        let toc_path = format!("{}/version_{}", self.base_directory, new_version);
+        // Write the TOC to disk to a temporary file (with random name). Only rename atomically under the write lock.
+        let tmp_toc_path = format!(
+            "{}/tmp_version_{}",
+            self.base_directory,
+            rand::random::<u64>()
+        );
+        let mut tmp_toc_file = std::fs::File::create(tmp_toc_path.clone())?;
         let toc = TableOfContent {
             toc: new_toc,
             pending: new_pending,
         };
-        serde_json::to_writer(std::fs::File::create(toc_path)?, &toc)?;
+        serde_json::to_writer(&mut tmp_toc_file, &toc)?;
 
         // Once success, update the current version and ref counts.
-        locked_versions_info.current_version = new_version;
-        locked_versions_info
-            .version_ref_counts
-            .insert(new_version, 0);
+        let mut toc_write = RwLockUpgradableReadGuard::upgrade(toc_read);
+        let toc_path = format!("{}/version_{}", self.base_directory, new_version);
+        std::fs::rename(tmp_toc_path, toc_path)?;
+
+        toc_write.current_version = new_version;
+        toc_write.version_ref_counts.insert(new_version, 0);
 
         self.versions.insert(new_version, toc);
 
@@ -301,7 +310,7 @@ impl Collection {
 
     /// Replace old segments with a new segment.
     /// This function is not thread-safe. Caller needs to ensure the thread safety.
-    pub fn replace_segment(
+    fn replace_segment(
         &self,
         new_segment: BoxedImmutableSegment,
         old_segment_names: Vec<String>,
@@ -315,8 +324,7 @@ impl Collection {
         // - Increment the current version
         // - Add the new version to the toc, and persist to disk
         // - Insert the new version to the toc
-        let mut locked_versions_info = RwLockUpgradableReadGuard::upgrade(toc_locked);
-        let current_version = locked_versions_info.current_version;
+        let current_version = toc_locked.current_version;
         let new_version = current_version + 1;
 
         let mut new_toc = self.versions.get(&current_version).unwrap().toc.clone();
@@ -328,13 +336,22 @@ impl Collection {
             new_pending.insert(new_segment.name(), old_segment_names);
         }
 
-        // Write the TOC to disk.
-        let toc_path = format!("{}/version_{}", self.base_directory, new_version);
+        // Write the TOC to disk to a temporary file. Only rename atomically under the write lock.
+        let tmp_toc_path = format!(
+            "{}/tmp_version_{}",
+            self.base_directory,
+            rand::random::<u64>()
+        );
+        let mut tmp_toc_file = std::fs::File::create(tmp_toc_path.clone())?;
         let toc = TableOfContent {
             toc: new_toc,
             pending: new_pending,
         };
-        serde_json::to_writer(std::fs::File::create(toc_path)?, &toc)?;
+        serde_json::to_writer(&mut tmp_toc_file, &toc)?;
+
+        let mut locked_versions_info = RwLockUpgradableReadGuard::upgrade(toc_locked);
+        let toc_path = format!("{}/version_{}", self.base_directory, new_version);
+        std::fs::rename(tmp_toc_path, toc_path)?;
 
         locked_versions_info.current_version = new_version;
         locked_versions_info
@@ -353,40 +370,8 @@ impl Collection {
         old_segment_names: Vec<String>,
         is_pending: bool,
     ) -> Result<()> {
-        self.all_segments
-            .insert(new_segment.name(), new_segment.clone());
-
-        // Under the lock, we do the following:
-        // - Increment the current version
-        // - Add the new version to the toc, and persist to disk
-        // - Insert the new version to the toc
-        let mut locked_versions_info = self.versions_info.write();
-        let current_version = locked_versions_info.current_version;
-        let new_version = current_version + 1;
-
-        let mut new_toc = self.versions.get(&current_version).unwrap().toc.clone();
-        new_toc.retain(|name| !old_segment_names.contains(name));
-        new_toc.push(new_segment.name());
-
-        let mut new_pending = self.versions.get(&current_version).unwrap().pending.clone();
-        if is_pending {
-            new_pending.insert(new_segment.name(), old_segment_names);
-        }
-
-        // Write the TOC to disk.
-        let toc_path = format!("{}/version_{}", self.base_directory, new_version);
-        let toc = TableOfContent {
-            toc: new_toc,
-            pending: new_pending,
-        };
-        serde_json::to_writer(std::fs::File::create(toc_path)?, &toc)?;
-
-        locked_versions_info.current_version = new_version;
-        locked_versions_info
-            .version_ref_counts
-            .insert(new_version, 0);
-
-        self.versions.insert(new_version, toc);
+        let toc_locked = self.versions_info.upgradable_read();
+        self.replace_segment(new_segment, old_segment_names, is_pending, toc_locked)?;
         Ok(())
     }
 
@@ -569,6 +554,7 @@ mod tests {
     use anyhow::{Ok, Result};
     use config::collection::CollectionConfig;
     use parking_lot::RwLock;
+    use rand::Rng;
     use tempdir::TempDir;
 
     use crate::collection::Collection;
@@ -757,6 +743,67 @@ mod tests {
         assert_eq!(snapshot.segments.len(), 1);
         assert_eq!(snapshot.version(), 3);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_collection_multi_thread_optimizer() -> Result<()> {
+        let temp_dir = TempDir::new("test_collection")?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let segment_config = CollectionConfig::default_test_config();
+        let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
+
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0])?;
+        collection.flush()?;
+
+        // A thread to optimize the segment
+        let collection_cpy_for_optimizer = collection.clone();
+        let collection_cpy_for_query = collection.clone();
+
+        let stopped = Arc::new(AtomicBool::new(false));
+        let stopped_cpy_for_optimizer = stopped.clone();
+        std::thread::spawn(move || {
+            while !stopped_cpy_for_optimizer.load(std::sync::atomic::Ordering::Relaxed) {
+                let c = collection_cpy_for_optimizer.clone();
+                let snapshot = c.get_snapshot().unwrap();
+                let segment_names = snapshot.segments.iter().map(|s| s.name()).collect();
+                let pending_segment = collection_cpy_for_optimizer
+                    .init_optimizing(&segment_names)
+                    .unwrap();
+
+                // Sleep randomly between 100ms and 200ms
+                let sleep_duration = rand::thread_rng().gen_range(100..200);
+                std::thread::sleep(std::time::Duration::from_millis(sleep_duration));
+
+                let optimizer = NoopOptimizer::new();
+                collection_cpy_for_optimizer
+                    .run_optimizer(&optimizer, &pending_segment)
+                    .unwrap();
+            }
+        });
+
+        // A thread to query the collection
+        let stopped_cpy_for_query = stopped.clone();
+        std::thread::spawn(move || {
+            while !stopped_cpy_for_query.load(std::sync::atomic::Ordering::Relaxed) {
+                let c = collection_cpy_for_query.clone();
+                let snapshot = c.get_snapshot().unwrap();
+                let mut context = SearchContext::new(false);
+                let result = snapshot
+                    .search_for_ids(&[0], &[1.0, 2.0, 3.0, 4.0], 10, 10, &mut context)
+                    .unwrap();
+                assert_eq!(result.len(), 1);
+                assert_eq!(result[0].id, 1);
+
+                // Sleep randomly between 100ms and 200ms
+                let sleep_duration = rand::thread_rng().gen_range(100..200);
+                std::thread::sleep(std::time::Duration::from_millis(sleep_duration));
+            }
+        });
+
+        // Sleep for 5 seconds, then stop the threads
+        std::thread::sleep(std::time::Duration::from_millis(5000));
+        stopped.store(true, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 }
