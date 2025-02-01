@@ -519,9 +519,6 @@ impl Collection {
         optimizer: &impl SegmentOptimizer,
         pending_segment: &str,
     ) -> Result<()> {
-        // Grab the read lock here.
-        let toc_locked = self.versions_info.upgradable_read();
-
         let segment = self.all_segments.get(pending_segment).unwrap().clone();
         match segment {
             BoxedImmutableSegment::PendingNoQuantizationSegment(pending_segment) => {
@@ -549,8 +546,8 @@ impl Collection {
 
         // Make the pending segment finalized
         // Note that this function will upgrade toc lock.
-        self.pending_to_finalized(pending_segment, toc_locked)?;
-        Ok(())
+        let toc_locked = self.versions_info.upgradable_read();
+        self.pending_to_finalized(pending_segment, toc_locked)
     }
 }
 
