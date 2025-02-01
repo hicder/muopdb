@@ -49,6 +49,11 @@ impl<Q: Quantizer> PendingSegment<Q> {
 
     // Caller must hold the read lock before calling this function.
     pub fn build_index(&self) -> Result<()> {
+        if self.use_internal_index {
+            // We shouldn't build the index if it already exists.
+            return Err(anyhow::anyhow!("Index already exists"));
+        }
+
         let current_directory = format!("{}/{}", self.parent_directory, self.name);
         let reader = MultiSpannReader::new(current_directory);
         let index = reader.read::<Q>()?;
