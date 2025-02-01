@@ -51,7 +51,7 @@ docker-compose up --build
 
 ```
 {
-    "collection_name": "test-collection-12",
+    "collection_name": "test-collection-2",
     "high_ids": [
         0
     ],
@@ -85,7 +85,7 @@ docker-compose up --build
 
 ```
 {
-    "collection_name": "test-collection-12",
+    "collection_name": "test-collection-2",
     "ef_construction": 100,
     "record_metrics": false,
     "top_k": 1,
