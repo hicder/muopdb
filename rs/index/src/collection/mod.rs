@@ -566,6 +566,7 @@ mod tests {
     use rand::Rng;
     use tempdir::TempDir;
 
+    use super::reader::CollectionReader;
     use crate::collection::Collection;
     use crate::optimizers::noop::NoopOptimizer;
     use crate::segment::{BoxedImmutableSegment, MockedSegment, Segment};
@@ -823,6 +824,39 @@ mod tests {
         // Sleep for 5 seconds, then stop the threads
         std::thread::sleep(std::time::Duration::from_millis(5000));
         stopped.store(true, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+
+    #[test]
+    fn test_collection_reader() -> Result<()> {
+        let temp_dir = TempDir::new("test_collection")?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let segment_config = CollectionConfig::default_test_config();
+        // write the collection config
+        let collection_config_path = format!("{}/collection_config.json", base_directory);
+        serde_json::to_writer_pretty(std::fs::File::create(collection_config_path)?, &segment_config)?;
+
+        {
+            let collection =
+                Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
+
+            collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0])?;
+            collection.flush()?;
+
+            let segment_names = collection.get_all_segment_names();
+            assert_eq!(segment_names.len(), 1);
+
+            let pending_segment = collection.init_optimizing(&segment_names)?;
+
+            let toc = collection.get_current_toc();
+            assert_eq!(toc.pending.len(), 1);
+            assert_eq!(toc.pending.get(&pending_segment).unwrap().len(), 1);
+        }
+
+        let reader = CollectionReader::new(base_directory);
+        let collection = reader.read()?;
+        let toc = collection.get_current_toc();
+        assert_eq!(toc.pending.len(), 1);
         Ok(())
     }
 }

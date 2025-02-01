@@ -12,7 +12,8 @@ use utils::io::get_latest_version;
 use super::{Collection, TableOfContent};
 use crate::multi_spann::reader::MultiSpannReader;
 use crate::segment::immutable_segment::ImmutableSegment;
-use crate::segment::BoxedImmutableSegment;
+use crate::segment::pending_segment::PendingSegment;
+use crate::segment::{BoxedImmutableSegment, Segment};
 
 pub struct CollectionReader {
     path: String,
@@ -34,9 +35,14 @@ impl CollectionReader {
         let toc_path = format!("{}/version_{}", self.path, latest_version);
         let toc: TableOfContent = serde_json::from_reader(std::fs::File::open(toc_path)?)?;
 
-        // let collection = Arc::new(Collection::new(self.path.clone()));
+        // Read the segments
         let mut segments: Vec<BoxedImmutableSegment> = vec![];
         for name in &toc.toc {
+            // We read pending segments later
+            if toc.pending.contains_key(name) {
+                continue;
+            }
+
             let spann_path = format!("{}/{}", self.path, name);
             let spann_reader = MultiSpannReader::new(spann_path);
             match collection_config.quantization_type {
@@ -53,6 +59,45 @@ impl CollectionReader {
                     ));
                 }
             };
+        }
+
+        // Empty all the pending segments
+        let pending_segment_names = toc.pending.keys().collect::<Vec<&String>>();
+        for pending_segment_name in pending_segment_names {
+            let pending_segment_path = format!("{}/{}", self.path, pending_segment_name);
+            std::fs::remove_dir_all(&pending_segment_path).unwrap();
+            std::fs::create_dir_all(&pending_segment_path).unwrap();
+
+            // Get the inner segments
+            let inner_segment_names = toc.pending.get(pending_segment_name).unwrap();
+            let mut inner_segments: Vec<BoxedImmutableSegment> = vec![];
+            for inner_segment_name in inner_segment_names {
+                for segment in &segments {
+                    if segment.name() == *inner_segment_name {
+                        inner_segments.push(segment.clone());
+                        break;
+                    }
+                }
+            }
+
+            match collection_config.quantization_type {
+                QuantizerType::ProductQuantizer => {
+                    segments.push(BoxedImmutableSegment::PendingProductQuantizationSegment(
+                        Arc::new(RwLock::new(PendingSegment::new(
+                            inner_segments,
+                            pending_segment_path,
+                        ))),
+                    ));
+                }
+                QuantizerType::NoQuantizer => {
+                    segments.push(BoxedImmutableSegment::PendingNoQuantizationSegment(
+                        Arc::new(RwLock::new(PendingSegment::new(
+                            inner_segments,
+                            pending_segment_path,
+                        ))),
+                    ));
+                }
+            }
         }
 
         let collection = Arc::new(Collection::init_from(
