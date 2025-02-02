@@ -284,8 +284,8 @@ impl Collection {
         // Under the write lock, we do the following:
         // - Rename the tmp_version_{} to version_{}
         // - Insert the new version to the toc
-        let toc_read = self.versions_info.upgradable_read();
-        let current_version = toc_read.current_version;
+        let versions_info_read = self.versions_info.upgradable_read();
+        let current_version = versions_info_read.current_version;
         let new_version = current_version + 1;
 
         let mut new_toc = self.versions.get(&current_version).unwrap().toc.clone();
@@ -306,12 +306,14 @@ impl Collection {
         serde_json::to_writer(&mut tmp_toc_file, &toc)?;
 
         // Once success, update the current version and ref counts.
-        let mut toc_write = RwLockUpgradableReadGuard::upgrade(toc_read);
+        let mut versions_info_write = RwLockUpgradableReadGuard::upgrade(versions_info_read);
         let toc_path = format!("{}/version_{}", self.base_directory, new_version);
         std::fs::rename(tmp_toc_path, toc_path)?;
 
-        toc_write.current_version = new_version;
-        toc_write.version_ref_counts.insert(new_version, 0);
+        versions_info_write.current_version = new_version;
+        versions_info_write
+            .version_ref_counts
+            .insert(new_version, 0);
 
         self.versions.insert(new_version, toc);
 
@@ -325,7 +327,7 @@ impl Collection {
         new_segment: BoxedImmutableSegment,
         old_segment_names: Vec<String>,
         is_pending: bool,
-        toc_locked: RwLockUpgradableReadGuard<RawRwLock, VersionsInfo>,
+        versions_info_read: RwLockUpgradableReadGuard<RawRwLock, VersionsInfo>,
     ) -> Result<()> {
         self.all_segments
             .insert(new_segment.name(), new_segment.clone());
@@ -334,7 +336,7 @@ impl Collection {
         // - Increment the current version
         // - Add the new version to the toc, and persist to disk
         // - Insert the new version to the toc
-        let current_version = toc_locked.current_version;
+        let current_version = versions_info_read.current_version;
         let new_version = current_version + 1;
 
         let mut new_toc = self.versions.get(&current_version).unwrap().toc.clone();
@@ -362,12 +364,12 @@ impl Collection {
         };
         serde_json::to_writer(&mut tmp_toc_file, &toc)?;
 
-        let mut locked_versions_info = RwLockUpgradableReadGuard::upgrade(toc_locked);
+        let mut versions_info_write = RwLockUpgradableReadGuard::upgrade(versions_info_read);
         let toc_path = format!("{}/version_{}", self.base_directory, new_version);
         std::fs::rename(tmp_toc_path, toc_path)?;
 
-        locked_versions_info.current_version = new_version;
-        locked_versions_info
+        versions_info_write.current_version = new_version;
+        versions_info_write
             .version_ref_counts
             .insert(new_version, 0);
 
@@ -383,8 +385,13 @@ impl Collection {
         old_segment_names: Vec<String>,
         is_pending: bool,
     ) -> Result<()> {
-        let toc_locked = self.versions_info.upgradable_read();
-        self.replace_segment(new_segment, old_segment_names, is_pending, toc_locked)?;
+        let versions_info_read = self.versions_info.upgradable_read();
+        self.replace_segment(
+            new_segment,
+            old_segment_names,
+            is_pending,
+            versions_info_read,
+        )?;
         Ok(())
     }
 
@@ -403,18 +410,28 @@ impl Collection {
 
     /// Release the ref count for the version once the snapshot is no longer needed.
     pub fn release_version(&self, version_number: u64) {
-        let mut lock = self.versions_info.write();
-        let count = *lock.version_ref_counts.get(&version_number).unwrap_or(&0);
-        lock.version_ref_counts.insert(version_number, count - 1);
+        let mut versions_info_write = self.versions_info.write();
+        let count = *versions_info_write
+            .version_ref_counts
+            .get(&version_number)
+            .unwrap_or(&0);
+        versions_info_write
+            .version_ref_counts
+            .insert(version_number, count - 1);
     }
 
     /// This is thread-safe, and will increment the ref count for the version.
     fn get_current_version_and_increment(&self) -> u64 {
-        let mut lock = self.versions_info.write();
-        let current_version = lock.current_version;
+        let mut versions_info_write = self.versions_info.write();
+        let current_version = versions_info_write.current_version;
 
-        let count = *lock.version_ref_counts.get(&current_version).unwrap_or(&0);
-        lock.version_ref_counts.insert(current_version, count + 1);
+        let count = *versions_info_write
+            .version_ref_counts
+            .get(&current_version)
+            .unwrap_or(&0);
+        versions_info_write
+            .version_ref_counts
+            .insert(current_version, count + 1);
 
         current_version
     }
@@ -463,7 +480,7 @@ impl Collection {
     fn pending_to_finalized(
         &self,
         pending_segment: &str,
-        toc_locked: RwLockUpgradableReadGuard<RawRwLock, VersionsInfo>,
+        versions_info_read: RwLockUpgradableReadGuard<RawRwLock, VersionsInfo>,
     ) -> Result<()> {
         let random_name = format!("segment_{}", rand::random::<u64>());
 
@@ -495,7 +512,7 @@ impl Collection {
                     new_segment,
                     vec![pending_segment.to_string()],
                     false,
-                    toc_locked,
+                    versions_info_read,
                 )?;
                 Ok(())
             }
@@ -509,7 +526,7 @@ impl Collection {
                     new_segment,
                     vec![pending_segment.to_string()],
                     false,
-                    toc_locked,
+                    versions_info_read,
                 )?;
                 Ok(())
             }
@@ -834,7 +851,10 @@ mod tests {
         let segment_config = CollectionConfig::default_test_config();
         // write the collection config
         let collection_config_path = format!("{}/collection_config.json", base_directory);
-        serde_json::to_writer_pretty(std::fs::File::create(collection_config_path)?, &segment_config)?;
+        serde_json::to_writer_pretty(
+            std::fs::File::create(collection_config_path)?,
+            &segment_config,
+        )?;
 
         {
             let collection =
