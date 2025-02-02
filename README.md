@@ -133,6 +133,7 @@ docker-compose up --build
 
 - Install prerequisites:
   - Rust: https://www.rust-lang.org/tools/install
+  - Make sure you're on nightly: `rustup toolchain install nightly`
   - Libraries
 ```bash
 # MacOS (using Homebrew)
