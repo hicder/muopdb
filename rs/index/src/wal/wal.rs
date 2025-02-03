@@ -10,7 +10,7 @@ pub struct Wal {
 }
 
 impl Wal {
-    pub fn new(directory: &str) -> Result<Self> {
+    pub fn open(directory: &str) -> Result<Self> {
         let mut files = Vec::new();
 
         // Get all files in the directory. Each file will have the name of wal.<file_id>
@@ -19,8 +19,15 @@ impl Wal {
             .collect::<Vec<_>>();
         file_paths.sort();
 
-        for file_path in file_paths {
-            files.push(WalFile::open(&file_path)?);
+        if file_paths.is_empty() {
+            // Create a new wal file
+            let file_path = format!("{}/wal.0", directory);
+            let wal = WalFile::create(&file_path, 0)?;
+            files.push(wal);
+        } else {
+            for file_path in file_paths {
+                files.push(WalFile::open(&file_path)?);
+            }
         }
 
         Ok(Self {
@@ -54,10 +61,19 @@ mod tests {
             }
         }
 
-        let wal = Wal::new(dir.to_str().unwrap()).unwrap();
+        let wal = Wal::open(dir.to_str().unwrap()).unwrap();
         let iterators = wal.get_iterators();
         for (i, iterator) in iterators.iter().enumerate() {
             assert_eq!(iterator.last_seq_no(), (i as u64 + 1) * 10 - 1);
         }
+    }
+
+    #[test]
+    fn test_wal_open_empty_dir() {
+        let tmp_dir = tempdir::TempDir::new("wal_test").unwrap();
+        let dir = tmp_dir.path();
+        let wal = Wal::open(dir.to_str().unwrap()).unwrap();
+        assert_eq!(wal.files.len(), 1);
+        assert_eq!(wal.files[0].get_num_entries(), 0);
     }
 }
