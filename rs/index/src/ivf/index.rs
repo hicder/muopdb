@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 
 use anyhow::{Context, Result};
 use compression::compression::IntSeqDecoder;
+use dashmap::DashSet;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
@@ -30,6 +31,8 @@ pub struct Ivf<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64
 
     pub quantizer: Q,
 
+    pub invalid_point_ids: DashSet<u32>,
+
     _distance_calculator_marker: PhantomData<DC>,
     _decoder_marker: PhantomData<D>,
 }
@@ -46,6 +49,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
             index_storage,
             num_clusters,
             quantizer,
+            invalid_point_ids: DashSet::new(),
             _distance_calculator_marker: PhantomData,
             _decoder_marker: PhantomData,
         }
@@ -83,6 +87,9 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
             let decoder =
                 D::new_decoder(byte_slice).expect("Failed to create posting list decoder");
             for idx in decoder.get_iterator(byte_slice) {
+                if self.invalid_point_ids.contains(&(idx as u32)) {
+                    continue;
+                }
                 match self.vector_storage.get(idx as usize, context) {
                     Some(vector) => {
                         let distance =
@@ -147,6 +154,10 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         let point_ids = self.search_with_centroids(query, nearest_centroid_ids, k, context);
         let doc_ids = self.map_point_id_to_doc_id(&point_ids);
         doc_ids
+    }
+
+    pub fn invalidate_id(&self, point_id: u32) {
+        self.invalid_point_ids.insert(point_id);
     }
 }
 
@@ -592,5 +603,68 @@ mod tests {
 
         assert_eq!(results.len(), 1); // Only one result available
         assert_eq!(results[0].id, 100);
+    }
+
+    #[test]
+    fn test_ivf_search_invalidated_ids() {
+        let temp_dir = tempdir::TempDir::new("test_ivf_search_invalidated_ids")
+            .expect("Failed to create temporary directory");
+        let base_dir = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let file_path = format!("{}/vectors", base_dir);
+        let dataset: Vec<Vec<f32>> = vec![
+            vec![1.0, 2.0, 3.0],
+            vec![4.0, 5.0, 6.0],
+            vec![7.0, 8.0, 9.0],
+            vec![2.0, 3.0, 4.0],
+        ];
+        assert!(create_fixed_file_vector_storage(&file_path, &dataset).is_ok());
+        let num_features = 3;
+        let storage = FixedFileVectorStorage::<f32>::new(file_path, num_features)
+            .expect("FixedFileVectorStorage should be created");
+
+        let file_path = format!("{}/index", base_dir);
+        let doc_id_mapping = vec![100, 101, 102, 103];
+        let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
+        let posting_lists = vec![vec![0, 3], vec![1, 2]];
+        assert!(create_fixed_file_index_storage(
+            &file_path,
+            &doc_id_mapping,
+            &centroids,
+            &posting_lists
+        )
+        .is_ok());
+        let index_storage =
+            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
+
+        let doc_ids_mapping = index_storage.get_doc_id(0).unwrap();
+        println!("{:?}", doc_ids_mapping);
+
+        let num_clusters = 2;
+        let num_probes = 2;
+
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
+        let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> =
+            Ivf::new(storage, index_storage, num_clusters, quantizer);
+
+        let query = vec![2.0, 3.0, 4.0];
+        let k = 4;
+        let mut context = SearchContext::new(false);
+
+        ivf.invalidate_id(3);
+
+        let results = ivf
+            .search(&query, k, num_probes, &mut context)
+            .expect("IVF search should return a result");
+
+        assert_eq!(results.len(), k - 1);
+        // doc id 103 is not in result
+        assert_eq!(results[0].id, 100);
+        assert_eq!(results[1].id, 101);
+        assert_eq!(results[2].id, 102);
     }
 }
