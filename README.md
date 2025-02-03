@@ -24,11 +24,11 @@ mkdir -p /mnt/muopdb/data
 ```
 * Start MuopDB `index_server` with the directories we just prepared using one of these methods:
 ```bash
-# Start server locally
+# Start server locally. This is recommended for Mac.
 cd target/release
 RUST_LOG=info ./index_server --node-id 0 --index-config-path /mnt/muopdb/indices --index-data-path /mnt/muopdb/data --port 9002
 
-# Start server with Docker
+# Start server with Docker. Only use this option on Linux.
 docker-compose up --build
 ```
 * Now you have an up and running MuopDB `index_server`.
