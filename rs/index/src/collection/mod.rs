@@ -4,8 +4,8 @@ pub mod snapshot;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use atomic_refcell::AtomicRefCell;
 use anyhow::{Ok, Result};
+use atomic_refcell::AtomicRefCell;
 use config::collection::CollectionConfig;
 use config::enums::QuantizerType;
 use dashmap::DashMap;
@@ -81,7 +81,13 @@ pub struct OpChannelEntry {
 }
 
 impl OpChannelEntry {
-    pub fn new(doc_ids: &[u128], user_ids: &[u128], data: &[f32], seq_no: u64, op_type: WalOpType) -> Self {
+    pub fn new(
+        doc_ids: &[u128],
+        user_ids: &[u128],
+        data: &[f32],
+        seq_no: u64,
+        op_type: WalOpType,
+    ) -> Self {
         let mut buffer: Vec<u8> = Vec::new();
         buffer.extend_from_slice(transmute_slice_to_u8(doc_ids));
         buffer.extend_from_slice(transmute_slice_to_u8(user_ids));
@@ -101,11 +107,15 @@ impl OpChannelEntry {
     }
 
     pub fn doc_ids(&self) -> &[u128] {
-        transmute_u8_to_slice(&self.buffer[self.doc_ids_offset..self.doc_ids_offset + self.doc_ids_length])
+        transmute_u8_to_slice(
+            &self.buffer[self.doc_ids_offset..self.doc_ids_offset + self.doc_ids_length],
+        )
     }
 
     pub fn user_ids(&self) -> &[u128] {
-        transmute_u8_to_slice(&self.buffer[self.user_ids_offset..self.user_ids_offset + self.user_ids_length])
+        transmute_u8_to_slice(
+            &self.buffer[self.user_ids_offset..self.user_ids_offset + self.user_ids_length],
+        )
     }
 
     pub fn data(&self) -> &[f32] {
@@ -250,14 +260,21 @@ impl Collection {
         self.wal.is_some()
     }
 
-    pub async fn write_to_wal(&self, doc_ids: &[u128], user_ids: &[u128], data: &[f32]) -> Result<u64> {
+    pub async fn write_to_wal(
+        &self,
+        doc_ids: &[u128],
+        user_ids: &[u128],
+        data: &[f32],
+    ) -> Result<u64> {
         if let Some(wal) = &self.wal {
             // Write to WAL, and persist to disk
-            let seq_no = wal.write()
+            let seq_no = wal
+                .write()
                 .append(doc_ids, user_ids, data, WalOpType::Insert)?;
 
             // Once the WAL is written, send the op to the channel
-            let op_channel_entry = OpChannelEntry::new(doc_ids, user_ids, data, seq_no, WalOpType::Insert);
+            let op_channel_entry =
+                OpChannelEntry::new(doc_ids, user_ids, data, seq_no, WalOpType::Insert);
             self.sender.send(op_channel_entry).await?;
             Ok(seq_no)
         } else {
@@ -273,11 +290,18 @@ impl Collection {
                     let doc_ids = op.doc_ids();
                     let user_ids = op.user_ids();
                     let data = op.data();
-                    data.chunks(self.segment_config.num_features).zip(doc_ids).for_each(|(vector, doc_id)| {
-                        self.insert_for_users(user_ids, *doc_id, vector).unwrap();
-                    });
+                    data.chunks(self.segment_config.num_features)
+                        .zip(doc_ids)
+                        .for_each(|(vector, doc_id)| {
+                            self.insert_for_users(user_ids, *doc_id, vector).unwrap();
+                        });
                 }
-                _ => return Err(anyhow::anyhow!("Unsupported operation type: {:?}", op.op_type)),
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "Unsupported operation type: {:?}",
+                        op.op_type
+                    ))
+                }
             }
             Ok(1)
         } else {
