@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicU64;
+
 use anyhow::{Ok, Result};
 use config::collection::CollectionConfig;
 
@@ -9,6 +11,7 @@ pub struct MutableSegment {
 
     // Prevent a mutable segment from being modified after it is built.
     finalized: bool,
+    last_sequence_number: AtomicU64,
 }
 
 impl MutableSegment {
@@ -16,6 +19,7 @@ impl MutableSegment {
         Ok(Self {
             multi_spann_builder: MultiSpannBuilder::new(config, base_directory)?,
             finalized: false,
+            last_sequence_number: AtomicU64::new(0),
         })
     }
 
@@ -24,16 +28,24 @@ impl MutableSegment {
             return Err(anyhow::anyhow!("Cannot insert into a finalized segment"));
         }
 
-        self.insert_for_user(0, doc_id, data)
+        self.insert_for_user(0, doc_id, data, 0)
     }
 
     /// Insert a document for a user
-    pub fn insert_for_user(&self, user_id: u128, doc_id: u128, data: &[f32]) -> Result<()> {
+    pub fn insert_for_user(
+        &self,
+        user_id: u128,
+        doc_id: u128,
+        data: &[f32],
+        sequence_number: u64,
+    ) -> Result<()> {
         if self.finalized {
             return Err(anyhow::anyhow!("Cannot insert into a finalized segment"));
         }
 
         self.multi_spann_builder.insert(user_id, doc_id, data)?;
+        self.last_sequence_number
+            .store(sequence_number, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 
@@ -51,6 +63,11 @@ impl MutableSegment {
         multi_spann_writer.write(&mut self.multi_spann_builder)?;
         self.finalized = true;
         Ok(())
+    }
+
+    pub fn last_sequence_number(&self) -> u64 {
+        self.last_sequence_number
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
