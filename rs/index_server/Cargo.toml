@@ -7,18 +7,18 @@ edition = "2021"
 anyhow.workspace = true
 clap = { version = "4.1.4", features = ["derive"] }
 env_logger.workspace = true
-futures = "0.3"
+futures.workspace = true
 index.workspace = true
 log.workspace = true
-prost = "0.11"
+prost.workspace = true
 proto.workspace = true
 rand.workspace = true
 serde = { version = "1.0", features = ["derive"] }
 serde_json.workspace = true
 serde_yaml.workspace = true
-tokio = { version = "1.24", features = ["macros", "rt-multi-thread"] }
-tokio-stream = { version = "0.1", features = ["net"] }
-tonic-reflection = "0.6.0"
+tokio.workspace = true
+tokio-stream.workspace = true
+tonic-reflection.workspace = true
 tonic.workspace = true
 utils.workspace = true
 quantization.workspace = true

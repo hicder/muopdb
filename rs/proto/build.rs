@@ -10,9 +10,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .protoc_arg("--experimental_allow_proto3_optional") // for older systems
         .build_client(true)
         .build_server(true)
-        .file_descriptor_set_path(out_dir.join("aggregator_descriptor.bin"))
-        .out_dir("./src")
-        .compile(&[proto_file], &["proto"])?;
+        .file_descriptor_set_path(out_dir.join("muopdb_descriptor.bin"))
+        .out_dir(out_dir)
+        .compile_protos(&[proto_file], &["proto"])?;
 
     let output = Command::new("cargo")
         .args(&["fmt"])
