@@ -1066,4 +1066,40 @@ mod tests {
         assert_eq!(toc.pending.len(), 1);
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_collection_with_wal() -> Result<()> {
+        let temp_dir = TempDir::new("test_collection")?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let mut segment_config = CollectionConfig::default_test_config();
+        segment_config.wal_file_size = 1024 * 1024;
+        
+        let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
+        collection.write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0]).await?;
+        collection.write_to_wal(&[2], &[0], &[1.0, 2.0, 3.0, 4.0]).await?;
+        collection.write_to_wal(&[3], &[0], &[1.0, 2.0, 3.0, 4.0]).await?;
+        collection.write_to_wal(&[4], &[0], &[1.0, 2.0, 3.0, 4.0]).await?;
+        collection.write_to_wal(&[5], &[0], &[1.0, 2.0, 3.0, 4.0]).await?;
+
+        // Process all ops
+        loop {
+            let op = collection.process_one_op().await?;
+            if op == 0 {
+                break;
+            }
+        }
+        collection.flush()?;
+        let toc = collection.get_current_toc();
+        assert_eq!(toc.pending.len(), 0);
+        assert_eq!(toc.sequence_number, 6);
+
+        // let segment_names = collection.get_all_segment_names();
+        // assert_eq!(segment_names.len(), 1);
+
+        // let toc = collection.get_current_toc();
+        // assert_eq!(toc.pending.len(), 1);
+        // assert_eq!(toc.pending.get(&segment_names[0]).unwrap().len(), 1);
+
+        Ok(())
+    }
 }
