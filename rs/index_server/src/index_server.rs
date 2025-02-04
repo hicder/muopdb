@@ -111,6 +111,9 @@ impl IndexServer for IndexServerImpl {
         if let Some(reindex) = req.reindex {
             collection_config.reindex = reindex;
         }
+        if let Some(wal_file_size) = req.wal_file_size {
+            collection_config.wal_file_size = wal_file_size as u64;
+        }
 
         let mut collection_manager_locked = self.collection_manager.lock().await;
         if collection_manager_locked
@@ -238,6 +241,16 @@ impl IndexServer for IndexServerImpl {
                     ));
                 }
 
+                let seq_no = collection
+                    .write_to_wal(&ids, &user_ids, &vectors)
+                    .unwrap_or(0);
+                info!(
+                    "[{}] Inserted {} vectors in WAL with seq_no {}",
+                    collection_name,
+                    ids.len(),
+                    seq_no
+                );
+
                 vectors
                     .chunks(dimensions)
                     .zip(&ids)
@@ -336,6 +349,15 @@ impl IndexServer for IndexServerImpl {
                         "Vectors must be a multiple of the number of dimensions",
                     ));
                 }
+
+                let seq_no = collection
+                    .write_to_wal(&doc_ids, &user_ids, &vectors)
+                    .unwrap_or(0);
+                info!(
+                    "Inserted {} vectors in WAL with seq_no {}",
+                    doc_ids.len(),
+                    seq_no
+                );
 
                 vectors
                     .chunks(dimensions)

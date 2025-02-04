@@ -24,6 +24,7 @@ use crate::segment::immutable_segment::ImmutableSegment;
 use crate::segment::mutable_segment::MutableSegment;
 use crate::segment::pending_segment::PendingSegment;
 use crate::segment::{BoxedImmutableSegment, Segment};
+use crate::wal::wal::Wal;
 
 pub trait SegmentSearchable: Searchable + Segment {}
 pub type BoxedSegmentSearchable = Box<dyn SegmentSearchable + Send + Sync>;
@@ -70,6 +71,7 @@ pub struct Collection {
     base_directory: String,
     mutable_segment: RwLock<MutableSegment>,
     segment_config: CollectionConfig,
+    wal: Option<RwLock<Wal>>,
 
     // A mutex for flushing
     flushing: Mutex<()>,
@@ -89,6 +91,13 @@ impl Collection {
             segment_base_directory,
         )?);
 
+        let wal = if segment_config.wal_file_size > 0 {
+            let wal_directory = format!("{}/wal", base_directory);
+            Some(RwLock::new(Wal::open(&wal_directory, segment_config.wal_file_size)?))
+        } else {
+            None
+        };
+
         Ok(Self {
             versions,
             all_segments: DashMap::new(),
@@ -97,6 +106,7 @@ impl Collection {
             mutable_segment,
             segment_config,
             flushing: Mutex::new(()),
+            wal,
         })
     }
 
@@ -148,6 +158,13 @@ impl Collection {
             random_base_directory,
         )?);
 
+        let wal = if segment_config.wal_file_size > 0 {
+            let wal_directory = format!("{}/wal", base_directory);
+            Some(RwLock::new(Wal::open(&wal_directory, segment_config.wal_file_size)?))
+        } else {
+            None
+        };
+
         Ok(Self {
             versions,
             all_segments,
@@ -156,7 +173,16 @@ impl Collection {
             mutable_segment,
             segment_config,
             flushing: Mutex::new(()),
+            wal,
         })
+    }
+
+    pub fn write_to_wal(&self, doc_ids: &[u128], user_ids: &[u128], data: &[f32]) -> Result<u64> {
+        if let Some(wal) = &self.wal {
+            wal.write().append(doc_ids, user_ids, data)
+        } else {
+            Err(anyhow::anyhow!("WAL is not enabled"))
+        }
     }
 
     pub fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
