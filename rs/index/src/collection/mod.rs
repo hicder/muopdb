@@ -328,7 +328,7 @@ impl Collection {
 
     /// Turns mutable segment into immutable one, which is the only queryable segment type
     /// currently.
-    pub fn flush(&self) -> Result<()> {
+    pub fn flush(&self) -> Result<String> {
         // Try to acquire the flushing lock. If it fails, then another thread is already flushing.
         // This is a best effort approach, and we don't want to block the main thread.
         match self.flushing.try_lock() {
@@ -351,7 +351,7 @@ impl Collection {
                 // Read the segment
                 let spann_reader = MultiSpannReader::new(format!(
                     "{}/{}",
-                    self.base_directory, name_for_new_segment
+                    self.base_directory, name_for_new_segment.clone()
                 ));
                 match self.segment_config.quantization_type {
                     QuantizerType::ProductQuantizer => {
@@ -363,7 +363,8 @@ impl Collection {
                                 name_for_new_segment.clone(),
                             ))),
                         );
-                        self.add_segments(vec![name_for_new_segment], vec![segment])
+                        self.add_segments(vec![name_for_new_segment.clone()], vec![segment])?;
+                        Ok(name_for_new_segment)
                     }
                     QuantizerType::NoQuantizer => {
                         let index = spann_reader.read::<NoQuantizer<L2DistanceCalculator>>()?;
@@ -373,7 +374,8 @@ impl Collection {
                                 name_for_new_segment.clone(),
                             ))),
                         );
-                        self.add_segments(vec![name_for_new_segment], vec![segment])
+                        self.add_segments(vec![name_for_new_segment.clone()], vec![segment])?;
+                        Ok(name_for_new_segment)
                     }
                 }
             }

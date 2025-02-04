@@ -12,7 +12,7 @@ use proto::muopdb::{
     SearchResponse,
 };
 use tokio::sync::Mutex;
-use utils::mem::{lows_and_highs_to_u128s, transmute_u8_to_slice, u128s_to_lows_highs};
+use utils::mem::{lows_and_highs_to_u128s, transmute_u8_to_slice};
 
 use crate::collection_catalog::CollectionCatalog;
 use crate::collection_manager::CollectionManager;
@@ -245,18 +245,17 @@ impl IndexServer for IndexServerImpl {
                     .write_to_wal(&ids, &user_ids, &vectors)
                     .await
                     .unwrap_or(0);
+                let num_docs_inserted = ids.len() as u32;
                 info!(
                     "[{}] Inserted {} vectors in WAL with seq_no {}",
                     collection_name,
-                    ids.len(),
+                    num_docs_inserted,
                     seq_no
                 );
 
-                let lows_and_highs = u128s_to_lows_highs(&ids);
                 if collection.use_wal() {
                     return Ok(tonic::Response::new(InsertResponse {
-                        inserted_low_ids: lows_and_highs.lows,
-                        inserted_high_ids: lows_and_highs.highs,
+                        num_docs_inserted,
                     }));
                 }
 
@@ -274,13 +273,12 @@ impl IndexServer for IndexServerImpl {
                 info!(
                     "[{}] Inserted {} vectors in {:?}",
                     collection_name,
-                    ids.len(),
+                    num_docs_inserted,
                     duration
                 );
 
                 Ok(tonic::Response::new(InsertResponse {
-                    inserted_low_ids: lows_and_highs.lows,
-                    inserted_high_ids: lows_and_highs.highs,
+                    num_docs_inserted,
                 }))
             }
             None => Err(tonic::Status::new(
@@ -309,12 +307,11 @@ impl IndexServer for IndexServerImpl {
 
         match collection_opt {
             Some(collection) => {
-                collection.flush().unwrap();
+                let flushed_segment = collection.flush().unwrap();
                 let duration = end.duration_since(start);
                 info!("Flushed collection {} in {:?}", collection_name, duration);
                 Ok(tonic::Response::new(FlushResponse {
-                    // TODO(hicder): Return flushed segments
-                    flushed_segments: vec![],
+                    flushed_segments: vec![flushed_segment],
                 }))
             }
             None => Err(tonic::Status::new(
@@ -362,14 +359,17 @@ impl IndexServer for IndexServerImpl {
                     .write_to_wal(&doc_ids, &user_ids, &vectors)
                     .await
                     .unwrap_or(0);
+                let num_docs_inserted = doc_ids.len() as u32;
                 info!(
                     "Inserted {} vectors in WAL with seq_no {}",
-                    doc_ids.len(),
+                    num_docs_inserted,
                     seq_no
                 );
 
                 if collection.use_wal() {
-                    return Ok(tonic::Response::new(InsertPackedResponse {}));
+                    return Ok(tonic::Response::new(InsertPackedResponse {
+                        num_docs_inserted,
+                    }));
                 }
 
                 vectors
@@ -387,7 +387,9 @@ impl IndexServer for IndexServerImpl {
                     "[{}] Inserted {} vectors in {:?}",
                     collection_name, num_docs, duration
                 );
-                Ok(tonic::Response::new(InsertPackedResponse {}))
+                Ok(tonic::Response::new(InsertPackedResponse {
+                    num_docs_inserted,
+                }))
             }
             None => Err(tonic::Status::new(
                 tonic::Code::NotFound,

@@ -158,11 +158,8 @@ message InsertRequest {
 }
 
 message InsertResponse {
-  // List of lower 64 bits of the doc_ids
-  repeated uint64 inserted_low_ids = 1;
-
-  // List of higher 64 bits of the doc_ids
-  repeated uint64 inserted_high_ids = 2;
+  // The number of docs that were inserted.
+  uint32 num_docs_inserted = 3;
 }
 
 message FlushRequest {
@@ -196,4 +193,6 @@ message InsertPackedRequest {
 }
 
 message InsertPackedResponse {
+  // The number of docs that were inserted.
+  uint32 num_docs_inserted = 1;
 }
