@@ -5,17 +5,21 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Ok, Result};
+use atomic_refcell::AtomicRefCell;
 use config::collection::CollectionConfig;
 use config::enums::QuantizerType;
 use dashmap::DashMap;
 use fs_extra::dir::CopyOptions;
 use lock_api::RwLockUpgradableReadGuard;
+use log::info;
 use parking_lot::{RawRwLock, RwLock};
 use quantization::noq::noq::NoQuantizer;
 use quantization::pq::pq::ProductQuantizer;
 use serde::{Deserialize, Serialize};
 use snapshot::Snapshot;
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use utils::distance::l2::L2DistanceCalculator;
+use utils::mem::{transmute_slice_to_u8, transmute_u8_to_slice};
 
 use crate::index::Searchable;
 use crate::multi_spann::reader::MultiSpannReader;
@@ -63,6 +67,62 @@ impl VersionsInfo {
     }
 }
 
+pub struct OpChannelEntry {
+    pub doc_ids_offset: usize,
+    pub doc_ids_length: usize,
+    pub user_ids_offset: usize,
+    pub user_ids_length: usize,
+    pub data_offset: usize,
+    pub data_length: usize,
+
+    pub seq_no: u64,
+    pub op_type: WalOpType,
+    pub buffer: Vec<u8>,
+}
+
+impl OpChannelEntry {
+    pub fn new(
+        doc_ids: &[u128],
+        user_ids: &[u128],
+        data: &[f32],
+        seq_no: u64,
+        op_type: WalOpType,
+    ) -> Self {
+        let mut buffer: Vec<u8> = Vec::new();
+        buffer.extend_from_slice(transmute_slice_to_u8(doc_ids));
+        buffer.extend_from_slice(transmute_slice_to_u8(user_ids));
+        buffer.extend_from_slice(transmute_slice_to_u8(data));
+
+        Self {
+            doc_ids_offset: 0,
+            doc_ids_length: doc_ids.len() * 16,
+            user_ids_offset: doc_ids.len() * 16,
+            user_ids_length: user_ids.len() * 16,
+            data_offset: doc_ids.len() * 16 + user_ids.len() * 16,
+            data_length: data.len() * 4,
+            seq_no,
+            op_type,
+            buffer,
+        }
+    }
+
+    pub fn doc_ids(&self) -> &[u128] {
+        transmute_u8_to_slice(
+            &self.buffer[self.doc_ids_offset..self.doc_ids_offset + self.doc_ids_length],
+        )
+    }
+
+    pub fn user_ids(&self) -> &[u128] {
+        transmute_u8_to_slice(
+            &self.buffer[self.user_ids_offset..self.user_ids_offset + self.user_ids_length],
+        )
+    }
+
+    pub fn data(&self) -> &[f32] {
+        transmute_u8_to_slice(&self.buffer[self.data_offset..self.data_offset + self.data_length])
+    }
+}
+
 /// Collection is thread-safe. All pub fn are thread-safe.
 /// TODO(hicder): Add open segment to add documents.
 pub struct Collection {
@@ -73,6 +133,10 @@ pub struct Collection {
     mutable_segment: RwLock<MutableSegment>,
     segment_config: CollectionConfig,
     wal: Option<RwLock<Wal>>,
+
+    // A channel for sending ops to collection
+    sender: Sender<OpChannelEntry>,
+    receiver: AtomicRefCell<Receiver<OpChannelEntry>>,
 
     // A mutex for flushing
     flushing: Mutex<()>,
@@ -102,6 +166,8 @@ impl Collection {
             None
         };
 
+        let (sender, receiver) = mpsc::channel(100);
+        let receiver = AtomicRefCell::new(receiver);
         Ok(Self {
             versions,
             all_segments: DashMap::new(),
@@ -111,6 +177,8 @@ impl Collection {
             segment_config,
             flushing: Mutex::new(()),
             wal,
+            sender,
+            receiver,
         })
     }
 
@@ -171,6 +239,8 @@ impl Collection {
         } else {
             None
         };
+        let (sender, receiver) = mpsc::channel(100);
+        let receiver = AtomicRefCell::new(receiver);
 
         Ok(Self {
             versions,
@@ -181,15 +251,61 @@ impl Collection {
             segment_config,
             flushing: Mutex::new(()),
             wal,
+            sender,
+            receiver,
         })
     }
 
-    pub fn write_to_wal(&self, doc_ids: &[u128], user_ids: &[u128], data: &[f32]) -> Result<u64> {
+    pub fn use_wal(&self) -> bool {
+        self.wal.is_some()
+    }
+
+    pub async fn write_to_wal(
+        &self,
+        doc_ids: &[u128],
+        user_ids: &[u128],
+        data: &[f32],
+    ) -> Result<u64> {
         if let Some(wal) = &self.wal {
-            wal.write()
-                .append(doc_ids, user_ids, data, WalOpType::Insert)
+            // Write to WAL, and persist to disk
+            let seq_no = wal
+                .write()
+                .append(doc_ids, user_ids, data, WalOpType::Insert)?;
+
+            // Once the WAL is written, send the op to the channel
+            let op_channel_entry =
+                OpChannelEntry::new(doc_ids, user_ids, data, seq_no, WalOpType::Insert);
+            self.sender.send(op_channel_entry).await?;
+            Ok(seq_no)
         } else {
             Err(anyhow::anyhow!("WAL is not enabled"))
+        }
+    }
+
+    pub async fn process_one_op(&self) -> Result<usize> {
+        if let std::result::Result::Ok(op) = self.receiver.borrow_mut().try_recv() {
+            match op.op_type {
+                WalOpType::Insert => {
+                    info!("Processing insert operation with seq_no {}", op.seq_no);
+                    let doc_ids = op.doc_ids();
+                    let user_ids = op.user_ids();
+                    let data = op.data();
+                    data.chunks(self.segment_config.num_features)
+                        .zip(doc_ids)
+                        .for_each(|(vector, doc_id)| {
+                            self.insert_for_users(user_ids, *doc_id, vector).unwrap();
+                        });
+                }
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "Unsupported operation type: {:?}",
+                        op.op_type
+                    ))
+                }
+            }
+            Ok(1)
+        } else {
+            Ok(0)
         }
     }
 
@@ -212,7 +328,7 @@ impl Collection {
 
     /// Turns mutable segment into immutable one, which is the only queryable segment type
     /// currently.
-    pub fn flush(&self) -> Result<()> {
+    pub fn flush(&self) -> Result<String> {
         // Try to acquire the flushing lock. If it fails, then another thread is already flushing.
         // This is a best effort approach, and we don't want to block the main thread.
         match self.flushing.try_lock() {
@@ -235,7 +351,7 @@ impl Collection {
                 // Read the segment
                 let spann_reader = MultiSpannReader::new(format!(
                     "{}/{}",
-                    self.base_directory, name_for_new_segment
+                    self.base_directory, name_for_new_segment.clone()
                 ));
                 match self.segment_config.quantization_type {
                     QuantizerType::ProductQuantizer => {
@@ -247,7 +363,8 @@ impl Collection {
                                 name_for_new_segment.clone(),
                             ))),
                         );
-                        self.add_segments(vec![name_for_new_segment], vec![segment])
+                        self.add_segments(vec![name_for_new_segment.clone()], vec![segment])?;
+                        Ok(name_for_new_segment)
                     }
                     QuantizerType::NoQuantizer => {
                         let index = spann_reader.read::<NoQuantizer<L2DistanceCalculator>>()?;
@@ -257,7 +374,8 @@ impl Collection {
                                 name_for_new_segment.clone(),
                             ))),
                         );
-                        self.add_segments(vec![name_for_new_segment], vec![segment])
+                        self.add_segments(vec![name_for_new_segment.clone()], vec![segment])?;
+                        Ok(name_for_new_segment)
                     }
                 }
             }
