@@ -128,7 +128,6 @@ impl OpChannelEntry {
 }
 
 /// Collection is thread-safe. All pub fn are thread-safe.
-/// TODO(hicder): Add open segment to add documents.
 pub struct Collection {
     pub versions: DashMap<u64, TableOfContent>,
     all_segments: DashMap<String, BoxedImmutableSegment>,
@@ -480,8 +479,6 @@ impl Collection {
         let toc = TableOfContent {
             toc: new_toc,
             pending: new_pending,
-
-            // TODO(hicder): Use the sequence number from the WAL
             sequence_number: last_sequence_number,
         };
         serde_json::to_writer(&mut tmp_toc_file, &toc)?;
