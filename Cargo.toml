@@ -59,7 +59,7 @@ serde_yaml = "0.9"
 sorted-vec = "0.8.5"
 strum = { version = "0.25.0", features = ["derive"] }
 tempdir = "0.3.7"
-tokio = { version = "1.24", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.24", features = ["macros", "rt-multi-thread", "sync"] }
 tokio-stream = { version = "0.1", features = ["net"] }
 tonic = "0.12.3"
 tonic-build = "0.12.3"

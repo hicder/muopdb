@@ -525,6 +525,7 @@ impl Collection {
         new_toc.push(new_segment.name());
 
         let mut new_pending = self.versions.get(&current_version).unwrap().pending.clone();
+        let last_sequence_number = self.versions.get(&current_version).unwrap().sequence_number;
         if is_pending {
             new_pending.insert(new_segment.name(), old_segment_names);
         } else {
@@ -543,8 +544,8 @@ impl Collection {
             toc: new_toc,
             pending: new_pending,
 
-            // TODO(hicder): Use the sequence number from the WAL
-            sequence_number: 0,
+            // Since we're just replacing the segment, the sequence number should be the same.
+            sequence_number: last_sequence_number,
         };
         serde_json::to_writer(&mut tmp_toc_file, &toc)?;
 
@@ -1091,7 +1092,7 @@ mod tests {
         collection.flush()?;
         let toc = collection.get_current_toc();
         assert_eq!(toc.pending.len(), 0);
-        assert_eq!(toc.sequence_number, 6);
+        assert_eq!(toc.sequence_number, 4);
 
         // let segment_names = collection.get_all_segment_names();
         // assert_eq!(segment_names.len(), 1);
