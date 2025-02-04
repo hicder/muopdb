@@ -40,6 +40,9 @@ pub struct TableOfContent {
 
     #[serde(default)]
     pub pending: HashMap<String, Vec<String>>,
+
+    #[serde(default)]
+    pub sequence_number: u64,
 }
 
 impl TableOfContent {
@@ -47,6 +50,7 @@ impl TableOfContent {
         Self {
             toc,
             pending: HashMap::new(),
+            sequence_number: 0,
         }
     }
 }
@@ -124,7 +128,6 @@ impl OpChannelEntry {
 }
 
 /// Collection is thread-safe. All pub fn are thread-safe.
-/// TODO(hicder): Add open segment to add documents.
 pub struct Collection {
     pub versions: DashMap<u64, TableOfContent>,
     all_segments: DashMap<String, BoxedImmutableSegment>,
@@ -190,6 +193,7 @@ impl Collection {
         let toc = TableOfContent {
             toc: vec![],
             pending: HashMap::new(),
+            sequence_number: 0,
         };
         serde_json::to_writer_pretty(std::fs::File::create(toc_path)?, &toc)?;
 
@@ -293,7 +297,8 @@ impl Collection {
                     data.chunks(self.segment_config.num_features)
                         .zip(doc_ids)
                         .for_each(|(vector, doc_id)| {
-                            self.insert_for_users(user_ids, *doc_id, vector).unwrap();
+                            self.insert_for_users(user_ids, *doc_id, vector, op.seq_no)
+                                .unwrap();
                         });
                 }
                 _ => {
@@ -313,11 +318,20 @@ impl Collection {
         self.mutable_segment.write().insert(doc_id, data)
     }
 
-    pub fn insert_for_users(&self, user_ids: &[u128], doc_id: u128, data: &[f32]) -> Result<()> {
+    pub fn insert_for_users(
+        &self,
+        user_ids: &[u128],
+        doc_id: u128,
+        data: &[f32],
+        sequence_number: u64,
+    ) -> Result<()> {
         for user_id in user_ids {
-            self.mutable_segment
-                .write()
-                .insert_for_user(*user_id, doc_id, data)?;
+            self.mutable_segment.write().insert_for_user(
+                *user_id,
+                doc_id,
+                data,
+                sequence_number,
+            )?;
         }
         Ok(())
     }
@@ -333,6 +347,11 @@ impl Collection {
         // This is a best effort approach, and we don't want to block the main thread.
         match self.flushing.try_lock() {
             std::result::Result::Ok(_) => {
+                // If there are no documents to flush, just return an empty string (meaning we're not flushing)
+                if self.mutable_segment.read().num_docs() == 0 {
+                    return Ok(String::new());
+                }
+
                 let tmp_name = format!("tmp_segment_{}", rand::random::<u64>());
                 let writable_base_directory = format!("{}/{}", self.base_directory, tmp_name);
                 let mut new_writable_segment =
@@ -345,13 +364,15 @@ impl Collection {
                 }
 
                 let name_for_new_segment = format!("segment_{}", rand::random::<u64>());
+                let last_sequence_number = new_writable_segment.last_sequence_number();
                 new_writable_segment
                     .build(self.base_directory.clone(), name_for_new_segment.clone())?;
 
                 // Read the segment
                 let spann_reader = MultiSpannReader::new(format!(
                     "{}/{}",
-                    self.base_directory, name_for_new_segment.clone()
+                    self.base_directory,
+                    name_for_new_segment.clone()
                 ));
                 match self.segment_config.quantization_type {
                     QuantizerType::ProductQuantizer => {
@@ -363,7 +384,11 @@ impl Collection {
                                 name_for_new_segment.clone(),
                             ))),
                         );
-                        self.add_segments(vec![name_for_new_segment.clone()], vec![segment])?;
+                        self.add_segments(
+                            vec![name_for_new_segment.clone()],
+                            vec![segment],
+                            last_sequence_number,
+                        )?;
                         Ok(name_for_new_segment)
                     }
                     QuantizerType::NoQuantizer => {
@@ -374,7 +399,11 @@ impl Collection {
                                 name_for_new_segment.clone(),
                             ))),
                         );
-                        self.add_segments(vec![name_for_new_segment.clone()], vec![segment])?;
+                        self.add_segments(
+                            vec![name_for_new_segment.clone()],
+                            vec![segment],
+                            last_sequence_number,
+                        )?;
                         Ok(name_for_new_segment)
                     }
                 }
@@ -425,6 +454,7 @@ impl Collection {
         &self,
         names: Vec<String>,
         segments: Vec<BoxedImmutableSegment>,
+        last_sequence_number: u64,
     ) -> Result<()> {
         for (name, segment) in names.iter().zip(segments) {
             self.all_segments.insert(name.clone(), segment);
@@ -454,6 +484,7 @@ impl Collection {
         let toc = TableOfContent {
             toc: new_toc,
             pending: new_pending,
+            sequence_number: last_sequence_number,
         };
         serde_json::to_writer(&mut tmp_toc_file, &toc)?;
 
@@ -496,6 +527,7 @@ impl Collection {
         new_toc.push(new_segment.name());
 
         let mut new_pending = self.versions.get(&current_version).unwrap().pending.clone();
+        let last_sequence_number = self.versions.get(&current_version).unwrap().sequence_number;
         if is_pending {
             new_pending.insert(new_segment.name(), old_segment_names);
         } else {
@@ -513,6 +545,9 @@ impl Collection {
         let toc = TableOfContent {
             toc: new_toc,
             pending: new_pending,
+
+            // Since we're just replacing the segment, the sequence number should be the same.
+            sequence_number: last_sequence_number,
         };
         serde_json::to_writer(&mut tmp_toc_file, &toc)?;
 
@@ -762,6 +797,7 @@ mod tests {
                 .add_segments(
                     vec!["segment1".to_string(), "segment2".to_string()],
                     vec![segment1.clone(), segment2.clone()],
+                    0,
                 )
                 .unwrap();
         }
@@ -799,6 +835,7 @@ mod tests {
                             MockedSegment::new("segment4".to_string()),
                         ))),
                     ],
+                    0,
                 )
                 .unwrap();
 
@@ -842,6 +879,7 @@ mod tests {
                 .add_segments(
                     vec!["segment1".to_string(), "segment2".to_string()],
                     vec![segment1.clone(), segment2.clone()],
+                    0,
                 )
                 .unwrap();
 
@@ -894,7 +932,7 @@ mod tests {
         let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
 
         // Add a document and flush
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0])?;
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
         collection.flush()?;
 
         let segment_names = collection.get_all_segment_names();
@@ -936,7 +974,7 @@ mod tests {
         let segment_config = CollectionConfig::default_test_config();
         let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0])?;
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
         collection.flush()?;
 
         // A thread to optimize the segment
@@ -1012,7 +1050,7 @@ mod tests {
             let collection =
                 Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
 
-            collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0])?;
+            collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
             collection.flush()?;
 
             let segment_names = collection.get_all_segment_names();
@@ -1029,6 +1067,44 @@ mod tests {
         let collection = reader.read()?;
         let toc = collection.get_current_toc();
         assert_eq!(toc.pending.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_collection_with_wal() -> Result<()> {
+        let temp_dir = TempDir::new("test_collection")?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let mut segment_config = CollectionConfig::default_test_config();
+        segment_config.wal_file_size = 1024 * 1024;
+
+        let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
+        collection
+            .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .await?;
+        collection
+            .write_to_wal(&[2], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .await?;
+        collection
+            .write_to_wal(&[3], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .await?;
+        collection
+            .write_to_wal(&[4], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .await?;
+        collection
+            .write_to_wal(&[5], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .await?;
+
+        // Process all ops
+        loop {
+            let op = collection.process_one_op().await?;
+            if op == 0 {
+                break;
+            }
+        }
+        collection.flush()?;
+        let toc = collection.get_current_toc();
+        assert_eq!(toc.pending.len(), 0);
+        assert_eq!(toc.sequence_number, 4);
         Ok(())
     }
 }

@@ -248,15 +248,11 @@ impl IndexServer for IndexServerImpl {
                 let num_docs_inserted = ids.len() as u32;
                 info!(
                     "[{}] Inserted {} vectors in WAL with seq_no {}",
-                    collection_name,
-                    num_docs_inserted,
-                    seq_no
+                    collection_name, num_docs_inserted, seq_no
                 );
 
                 if collection.use_wal() {
-                    return Ok(tonic::Response::new(InsertResponse {
-                        num_docs_inserted,
-                    }));
+                    return Ok(tonic::Response::new(InsertResponse { num_docs_inserted }));
                 }
 
                 vectors
@@ -264,7 +260,9 @@ impl IndexServer for IndexServerImpl {
                     .zip(&ids)
                     .for_each(|(vector, id)| {
                         // TODO(hicder): Handle errors
-                        collection.insert_for_users(&user_ids, *id, vector).unwrap()
+                        collection
+                            .insert_for_users(&user_ids, *id, vector, seq_no)
+                            .unwrap()
                     });
 
                 // log the duration
@@ -272,14 +270,10 @@ impl IndexServer for IndexServerImpl {
                 let duration = end.duration_since(start);
                 info!(
                     "[{}] Inserted {} vectors in {:?}",
-                    collection_name,
-                    num_docs_inserted,
-                    duration
+                    collection_name, num_docs_inserted, duration
                 );
 
-                Ok(tonic::Response::new(InsertResponse {
-                    num_docs_inserted,
-                }))
+                Ok(tonic::Response::new(InsertResponse { num_docs_inserted }))
             }
             None => Err(tonic::Status::new(
                 tonic::Code::NotFound,
@@ -362,8 +356,7 @@ impl IndexServer for IndexServerImpl {
                 let num_docs_inserted = doc_ids.len() as u32;
                 info!(
                     "Inserted {} vectors in WAL with seq_no {}",
-                    num_docs_inserted,
-                    seq_no
+                    num_docs_inserted, seq_no
                 );
 
                 if collection.use_wal() {
@@ -377,7 +370,9 @@ impl IndexServer for IndexServerImpl {
                     .zip(doc_ids)
                     .for_each(|(vector, id)| {
                         // TODO(hicder): Handle errors
-                        collection.insert_for_users(&user_ids, id, vector).unwrap()
+                        collection
+                            .insert_for_users(&user_ids, id, vector, seq_no)
+                            .unwrap()
                     });
 
                 // log the duration
