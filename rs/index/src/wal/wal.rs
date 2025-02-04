@@ -1,6 +1,7 @@
 use anyhow::Result;
 use log::info;
 
+use super::entry::WalOpType;
 use super::file::WalFileIterator;
 use crate::wal::file::WalFile;
 
@@ -55,7 +56,13 @@ impl Wal {
             .collect()
     }
 
-    pub fn append(&mut self, doc_ids: &[u128], user_ids: &[u128], data: &[f32]) -> Result<u64> {
+    pub fn append(
+        &mut self,
+        doc_ids: &[u128],
+        user_ids: &[u128],
+        data: &[f32],
+        op_type: WalOpType,
+    ) -> Result<u64> {
         let last_file = self.files.last().unwrap();
         if last_file.get_file_size()? >= self.max_file_size {
             let seq_no = last_file.get_start_seq_no() + last_file.get_num_entries() as u64;
@@ -66,7 +73,7 @@ impl Wal {
         self.files
             .last_mut()
             .unwrap()
-            .append(doc_ids, user_ids, data)
+            .append(doc_ids, user_ids, data, op_type)
     }
 
     /// Append a new entry to the wal. If the last file is full, create a new file.
@@ -143,7 +150,7 @@ mod tests {
         for i in 0..5 {
             let data = vec![i as f32; 10];
             let seq_no = wal
-                .append(&vec![i as u128], &vec![i as u128], &data)
+                .append(&vec![i as u128], &vec![i as u128], &data, WalOpType::Insert)
                 .unwrap();
             assert_eq!(seq_no, i as u64);
         }
@@ -158,6 +165,34 @@ mod tests {
             assert_eq!(decoded.doc_ids, vec![i as u128]);
             assert_eq!(decoded.user_ids, vec![i as u128]);
             assert_eq!(decoded.data, vec![i as f32; 10]);
+            assert_eq!(decoded.op_type, WalOpType::Insert);
+        }
+    }
+
+    #[test]
+    fn test_wal_append_delete() {
+        let tmp_dir = tempdir::TempDir::new("wal_test").unwrap();
+        let dir = tmp_dir.path();
+        let mut wal = Wal::open(dir.to_str().unwrap(), 1024).unwrap();
+        for i in 0..5 {
+            let data = vec![i as f32; 10];
+            let seq_no = wal
+                .append(&vec![i as u128], &vec![i as u128], &data, WalOpType::Delete)
+                .unwrap();
+            assert_eq!(seq_no, i as u64);
+        }
+        assert_eq!(wal.files.len(), 1);
+
+        let mut iterators = wal.get_iterators();
+        let mut last_it = iterators.pop().unwrap();
+        for i in 0..5 {
+            let entry = last_it.next().unwrap().unwrap();
+            assert_eq!(entry.seq_no, i as u64);
+            let decoded = entry.decode(10);
+            assert_eq!(decoded.doc_ids, vec![i as u128]);
+            assert_eq!(decoded.user_ids, vec![i as u128]);
+            assert_eq!(decoded.data, vec![i as f32; 10]);
+            assert_eq!(decoded.op_type, WalOpType::Delete);
         }
     }
 }
