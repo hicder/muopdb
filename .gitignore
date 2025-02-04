@@ -9,3 +9,4 @@ perf.data*
 .DS_Store
 .venv
 */__pycache__/
+rs/proto/src/muopdb.rs
