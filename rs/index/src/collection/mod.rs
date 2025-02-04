@@ -1074,13 +1074,23 @@ mod tests {
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let mut segment_config = CollectionConfig::default_test_config();
         segment_config.wal_file_size = 1024 * 1024;
-        
+
         let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
-        collection.write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0]).await?;
-        collection.write_to_wal(&[2], &[0], &[1.0, 2.0, 3.0, 4.0]).await?;
-        collection.write_to_wal(&[3], &[0], &[1.0, 2.0, 3.0, 4.0]).await?;
-        collection.write_to_wal(&[4], &[0], &[1.0, 2.0, 3.0, 4.0]).await?;
-        collection.write_to_wal(&[5], &[0], &[1.0, 2.0, 3.0, 4.0]).await?;
+        collection
+            .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .await?;
+        collection
+            .write_to_wal(&[2], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .await?;
+        collection
+            .write_to_wal(&[3], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .await?;
+        collection
+            .write_to_wal(&[4], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .await?;
+        collection
+            .write_to_wal(&[5], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .await?;
 
         // Process all ops
         loop {
