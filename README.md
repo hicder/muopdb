@@ -33,8 +33,7 @@ docker-compose up --build
 ```
 * Now you have an up and running MuopDB `index_server`.
   * You can send gRPC requests to this server (possibly with [Postman](https://www.postman.com/)).
-  * Use [muopdb.proto](https://github.com/hicder/muopdb/blob/b2b3c4bf84d900e118341bd95eae0e32ce65d3c0/rs/proto/proto/muopdb.proto#L38-L48) for Service Definition. Refer to [this guide](https://learning.postman.com/docs/sending-requests/grpc/using-service-definition/) for more information.
-
+  * You can use Server Reflection in Postman - it will automatically detect the RPCs for MuopDB.
 ### Examples using Postman
 1. Create collection
 <img width="603" alt="Screenshot 2025-01-16 at 11 14 23 AM" src="https://github.com/user-attachments/assets/cadf00c4-199f-4756-8446-7fb08de2b0c0" />
