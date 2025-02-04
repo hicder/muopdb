@@ -16,10 +16,10 @@ const VERSION_1: &[u8] = b"version1";
 /// | 8 bytes  | 8 bytes      | 4 bytes     | ...  |
 ///
 /// Each data entry will have the following format (n is number of vectors):
-/// | length  | doc_ids      | user_ids     | data                       |
-/// | 4 bytes | 16 bytes * n | 16 bytes * n | 4 bytes * n * num_features |
+/// | length  | doc_ids      | user_ids     | data                       | op_type |
+/// | 4 bytes | 16 bytes * n | 16 bytes * n | 4 bytes * n * num_features | 1 byte  |
 ///
-/// To compute number of vectors in each entry: length / (16 + 16 + 4 * num_features)
+/// To compute number of vectors in each entry: (length - 1) / (16 + 16 + 4 * num_features)
 #[allow(unused)]
 pub struct WalFile {
     file: File,
