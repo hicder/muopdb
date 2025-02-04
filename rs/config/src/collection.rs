@@ -112,6 +112,15 @@ pub struct CollectionConfig {
     /// increased build time.
     /// Default: true
     pub reindex: bool,
+
+    /// The size of the WAL file.
+    /// Default: 0 (not using WAL)
+    #[serde(default = "default_wal_file_size")]
+    pub wal_file_size: u64,
+}
+
+fn default_wal_file_size() -> u64 {
+    0
 }
 
 impl Default for CollectionConfig {
@@ -139,6 +148,7 @@ impl Default for CollectionConfig {
             max_posting_list_size: usize::MAX,
             posting_list_kmeans_unbalanced_penalty: 0.0,
             reindex: true,
+            wal_file_size: 0,
         }
     }
 }
@@ -168,6 +178,7 @@ impl CollectionConfig {
             posting_list_kmeans_unbalanced_penalty: 0.1,
             reindex: true,
             quantization_type: QuantizerType::NoQuantizer,
+            wal_file_size: 1024 * 1024 * 1024,
         }
     }
 }

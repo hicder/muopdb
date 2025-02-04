@@ -103,6 +103,8 @@ pub struct CreateCollectionRequest {
     pub posting_list_kmeans_unbalanced_penalty: ::core::option::Option<f32>,
     #[prost(bool, optional, tag = "24")]
     pub reindex: ::core::option::Option<bool>,
+    #[prost(uint64, optional, tag = "25")]
+    pub wal_file_size: ::core::option::Option<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

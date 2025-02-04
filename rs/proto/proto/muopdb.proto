@@ -96,6 +96,7 @@ message CreateCollectionRequest {
   optional uint64 max_posting_list_size = 22;
   optional float posting_list_kmeans_unbalanced_penalty = 23;
   optional bool reindex = 24;
+  optional uint64 wal_file_size = 25;
 }
 
 message CreateCollectionResponse {
