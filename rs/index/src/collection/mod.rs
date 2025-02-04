@@ -186,7 +186,8 @@ impl Collection {
 
     pub fn write_to_wal(&self, doc_ids: &[u128], user_ids: &[u128], data: &[f32]) -> Result<u64> {
         if let Some(wal) = &self.wal {
-            wal.write().append(doc_ids, user_ids, data, WalOpType::Insert)
+            wal.write()
+                .append(doc_ids, user_ids, data, WalOpType::Insert)
         } else {
             Err(anyhow::anyhow!("WAL is not enabled"))
         }
