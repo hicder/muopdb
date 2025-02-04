@@ -13,6 +13,7 @@ use collection_provider::CollectionProvider;
 use index_server::IndexServerImpl;
 use log::{error, info};
 use proto::muopdb::index_server_server::IndexServerServer;
+use proto::muopdb::FILE_DESCRIPTOR_SET;
 use tokio::spawn;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
@@ -71,9 +72,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let reflection_service = tonic_reflection::server::Builder::configure()
+        .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
+        .build_v1()?;
+
+    let reflection_service_v1_alpha = tonic_reflection::server::Builder::configure()
+        .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
+        .build_v1alpha()?;
+
     let server_impl = IndexServerImpl::new(collection_catalog_for_server, collection_manager);
     Server::builder()
         .add_service(IndexServerServer::new(server_impl))
+        .add_service(reflection_service)
+        .add_service(reflection_service_v1_alpha)
         .serve(addr)
         .await?;
 
