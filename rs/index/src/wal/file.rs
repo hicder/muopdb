@@ -7,7 +7,7 @@ use log::info;
 use memmap2::{MmapMut, MmapOptions};
 use utils::mem::{transmute_slice_to_u8, transmute_u8_to_val};
 
-use super::entry::WalEntry;
+use super::entry::{WalEntry, WalOpType};
 
 const VERSION_1: &[u8] = b"version1";
 
@@ -103,12 +103,19 @@ impl WalFile {
         })
     }
 
-    pub fn append(&mut self, doc_ids: &[u128], user_ids: &[u128], data: &[f32]) -> Result<u64> {
-        let len = (doc_ids.len() * 16 + user_ids.len() * 16 + data.len() * 4) as u32;
+    pub fn append(
+        &mut self,
+        doc_ids: &[u128],
+        user_ids: &[u128],
+        data: &[f32],
+        op_type: WalOpType,
+    ) -> Result<u64> {
+        let len = (doc_ids.len() * 16 + user_ids.len() * 16 + data.len() * 4 + 1) as u32;
         self.file.write_all(&len.to_le_bytes())?;
         self.file.write_all(transmute_slice_to_u8(doc_ids))?;
         self.file.write_all(transmute_slice_to_u8(user_ids))?;
         self.file.write_all(transmute_slice_to_u8(data))?;
+        self.file.write_all(&(op_type as u8).to_le_bytes())?;
         self.file.flush()?;
 
         // Increment the number of entries in the file

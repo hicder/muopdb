@@ -24,6 +24,7 @@ use crate::segment::immutable_segment::ImmutableSegment;
 use crate::segment::mutable_segment::MutableSegment;
 use crate::segment::pending_segment::PendingSegment;
 use crate::segment::{BoxedImmutableSegment, Segment};
+use crate::wal::entry::WalOpType;
 use crate::wal::wal::Wal;
 
 pub trait SegmentSearchable: Searchable + Segment {}
@@ -185,7 +186,8 @@ impl Collection {
 
     pub fn write_to_wal(&self, doc_ids: &[u128], user_ids: &[u128], data: &[f32]) -> Result<u64> {
         if let Some(wal) = &self.wal {
-            wal.write().append(doc_ids, user_ids, data)
+            wal.write()
+                .append(doc_ids, user_ids, data, WalOpType::Insert)
         } else {
             Err(anyhow::anyhow!("WAL is not enabled"))
         }
