@@ -44,9 +44,20 @@ impl InvalidatedIdsStorage {
         }
 
         let file = &mut self.files[self.current_backing_id as usize];
-        file.write_all(&user_id.to_le_bytes())?;
-        file.write_all(&point_id.to_le_bytes())?;
-        self.current_offset += size_of::<u128>() + size_of::<u32>();
+
+        let bytes_written = size_of::<u128>() + size_of::<u32>();
+        let mut buffer = Vec::with_capacity(bytes_written);
+
+        // Write user_id and point_id into the buffer
+        buffer.extend_from_slice(&user_id.to_le_bytes());
+        buffer.extend_from_slice(&point_id.to_le_bytes());
+
+        // Perform a single atomic write
+        file.write_all(&buffer)?;
+
+        // Ensure all written data is flushed to disk
+        file.sync_all()?;
+        self.current_offset += bytes_written;
 
         Ok(())
     }
