@@ -243,6 +243,7 @@ impl IndexServer for IndexServerImpl {
 
                 let seq_no = collection
                     .write_to_wal(&ids, &user_ids, &vectors)
+                    .await
                     .unwrap_or(0);
                 info!(
                     "[{}] Inserted {} vectors in WAL with seq_no {}",
@@ -250,6 +251,14 @@ impl IndexServer for IndexServerImpl {
                     ids.len(),
                     seq_no
                 );
+
+                let lows_and_highs = u128s_to_lows_highs(&ids);
+                if collection.use_wal() {
+                    return Ok(tonic::Response::new(InsertResponse {
+                        inserted_low_ids: lows_and_highs.lows,
+                        inserted_high_ids: lows_and_highs.highs,
+                    }));
+                }
 
                 vectors
                     .chunks(dimensions)
@@ -269,7 +278,6 @@ impl IndexServer for IndexServerImpl {
                     duration
                 );
 
-                let lows_and_highs = u128s_to_lows_highs(&ids);
                 Ok(tonic::Response::new(InsertResponse {
                     inserted_low_ids: lows_and_highs.lows,
                     inserted_high_ids: lows_and_highs.highs,
@@ -352,12 +360,17 @@ impl IndexServer for IndexServerImpl {
 
                 let seq_no = collection
                     .write_to_wal(&doc_ids, &user_ids, &vectors)
+                    .await
                     .unwrap_or(0);
                 info!(
                     "Inserted {} vectors in WAL with seq_no {}",
                     doc_ids.len(),
                     seq_no
                 );
+
+                if collection.use_wal() {
+                    return Ok(tonic::Response::new(InsertPackedResponse {}));
+                }
 
                 vectors
                     .chunks(dimensions)

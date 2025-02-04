@@ -1333,6 +1333,7 @@ dependencies = [
  "serde_yaml",
  "sorted-vec",
  "tempdir",
+ "tokio",
  "utils",
 ]
 

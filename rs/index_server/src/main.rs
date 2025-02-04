@@ -11,7 +11,7 @@ use collection_catalog::CollectionCatalog;
 use collection_manager::CollectionManager;
 use collection_provider::CollectionProvider;
 use index_server::IndexServerImpl;
-use log::{error, info};
+use log::{debug, error, info};
 use proto::muopdb::index_server_server::IndexServerServer;
 use proto::muopdb::FILE_DESCRIPTOR_SET;
 use tokio::spawn;
@@ -33,6 +33,9 @@ struct Args {
 
     #[arg(long)]
     index_data_path: String,
+
+    #[arg(long, default_value_t = 10)]
+    num_workers: u32,
 }
 
 #[tokio::main]
@@ -49,12 +52,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let collection_catalog_for_server = collection_catalog.clone();
 
     info!("Node: {}, listening on port {}", node_id, arg.port);
+    info!("Number of workers: {}", arg.num_workers);
 
     let collection_provider = CollectionProvider::new(collection_data_path);
     let collection_manager = Arc::new(Mutex::new(CollectionManager::new(
         collection_config_path,
         collection_provider,
         collection_catalog_for_manager,
+        arg.num_workers,
     )));
 
     let collection_manager_clone = collection_manager.clone();
@@ -71,6 +76,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             sleep(std::time::Duration::from_secs(60)).await;
         }
     });
+
+    let mut worker_threads = Vec::new();
+    for i in 0..arg.num_workers {
+        let collection_manager_process_ops_clone = collection_manager.clone();
+        let collection_manager_process_ops_thread = spawn(async move {
+            loop {
+                let processed_ops = collection_manager_process_ops_clone
+                    .lock()
+                    .await
+                    .process_ops(i)
+                    .await
+                    .unwrap();
+                debug!("Processed {} ops for worker {}", processed_ops, i);
+                // if there is no ops to process, sleep for 1 second
+                if processed_ops == 0 {
+                    sleep(std::time::Duration::from_secs(1)).await;
+                }
+            }
+        });
+        worker_threads.push(collection_manager_process_ops_thread);
+    }
 
     let reflection_service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
@@ -91,5 +117,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO(hicder): Add graceful shutdown
     info!("Received signal, shutting down");
     collection_manager_thread.await?;
+    for thread in worker_threads {
+        thread.await?;
+    }
     Ok(())
 }

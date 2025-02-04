@@ -1,8 +1,9 @@
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use index::collection::Collection;
-use log::{info, warn};
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use utils::io::get_latest_version;
@@ -25,6 +26,7 @@ pub struct CollectionManager {
     collection_provider: CollectionProvider,
     collection_catalog: Arc<Mutex<CollectionCatalog>>,
     latest_version: u64,
+    num_workers: u32,
 }
 
 impl CollectionManager {
@@ -32,12 +34,14 @@ impl CollectionManager {
         config_path: String,
         collection_provider: CollectionProvider,
         collection_catalog: Arc<Mutex<CollectionCatalog>>,
+        num_workers: u32,
     ) -> Self {
         Self {
             config_path,
             collection_provider,
             collection_catalog,
             latest_version: 0,
+            num_workers,
         }
     }
 
@@ -173,5 +177,40 @@ impl CollectionManager {
             info!("No new version available");
         }
         Ok(())
+    }
+
+    pub async fn process_ops(&self, worker_id: u32) -> Result<usize> {
+        let mut processed_ops = 0;
+        let collections = self
+            .collection_catalog
+            .lock()
+            .await
+            .get_all_collection_names_sorted()
+            .await;
+
+        for collection_name in collections {
+            if self.get_worker_id(&collection_name) == worker_id {
+                let collection = self
+                    .collection_catalog
+                    .lock()
+                    .await
+                    .get_collection(&collection_name)
+                    .await
+                    .unwrap();
+                if collection.use_wal() {
+                    debug!("Processing ops for collection {}", collection_name);
+                    processed_ops += collection.process_one_op().await?;
+                }
+            }
+        }
+
+        Ok(processed_ops)
+    }
+
+    pub fn get_worker_id(&self, collection_name: &str) -> u32 {
+        let mut hasher = DefaultHasher::new();
+        collection_name.hash(&mut hasher);
+        let hash = hasher.finish();
+        hash as u32 % self.num_workers
     }
 }
