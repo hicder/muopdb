@@ -347,6 +347,11 @@ impl Collection {
         // This is a best effort approach, and we don't want to block the main thread.
         match self.flushing.try_lock() {
             std::result::Result::Ok(_) => {
+                // If there are no documents to flush, just return an empty string (meaning we're not flushing)
+                if self.mutable_segment.read().num_docs() == 0 {
+                    return Ok(String::new());
+                }
+
                 let tmp_name = format!("tmp_segment_{}", rand::random::<u64>());
                 let writable_base_directory = format!("{}/{}", self.base_directory, tmp_name);
                 let mut new_writable_segment =

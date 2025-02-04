@@ -12,6 +12,7 @@ pub struct MutableSegment {
     // Prevent a mutable segment from being modified after it is built.
     finalized: bool,
     last_sequence_number: AtomicU64,
+    num_docs: AtomicU64,
 }
 
 impl MutableSegment {
@@ -20,6 +21,7 @@ impl MutableSegment {
             multi_spann_builder: MultiSpannBuilder::new(config, base_directory)?,
             finalized: false,
             last_sequence_number: AtomicU64::new(0),
+            num_docs: AtomicU64::new(0),
         })
     }
 
@@ -46,6 +48,8 @@ impl MutableSegment {
         self.multi_spann_builder.insert(user_id, doc_id, data)?;
         self.last_sequence_number
             .store(sequence_number, std::sync::atomic::Ordering::Relaxed);
+        self.num_docs
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 
@@ -68,6 +72,10 @@ impl MutableSegment {
     pub fn last_sequence_number(&self) -> u64 {
         self.last_sequence_number
             .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn num_docs(&self) -> u64 {
+        self.num_docs.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
