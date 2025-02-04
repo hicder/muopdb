@@ -1105,14 +1105,6 @@ mod tests {
         let toc = collection.get_current_toc();
         assert_eq!(toc.pending.len(), 0);
         assert_eq!(toc.sequence_number, 4);
-
-        // let segment_names = collection.get_all_segment_names();
-        // assert_eq!(segment_names.len(), 1);
-
-        // let toc = collection.get_current_toc();
-        // assert_eq!(toc.pending.len(), 1);
-        // assert_eq!(toc.pending.get(&segment_names[0]).unwrap().len(), 1);
-
         Ok(())
     }
 }
