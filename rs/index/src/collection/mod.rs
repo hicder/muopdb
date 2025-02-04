@@ -93,7 +93,10 @@ impl Collection {
 
         let wal = if segment_config.wal_file_size > 0 {
             let wal_directory = format!("{}/wal", base_directory);
-            Some(RwLock::new(Wal::open(&wal_directory, segment_config.wal_file_size)?))
+            Some(RwLock::new(Wal::open(
+                &wal_directory,
+                segment_config.wal_file_size,
+            )?))
         } else {
             None
         };
@@ -160,7 +163,10 @@ impl Collection {
 
         let wal = if segment_config.wal_file_size > 0 {
             let wal_directory = format!("{}/wal", base_directory);
-            Some(RwLock::new(Wal::open(&wal_directory, segment_config.wal_file_size)?))
+            Some(RwLock::new(Wal::open(
+                &wal_directory,
+                segment_config.wal_file_size,
+            )?))
         } else {
             None
         };

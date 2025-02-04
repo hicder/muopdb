@@ -63,7 +63,10 @@ impl Wal {
             let wal = WalFile::create(&file_path, seq_no)?;
             self.files.push(wal);
         }
-        self.files.last_mut().unwrap().append(doc_ids, user_ids, data)
+        self.files
+            .last_mut()
+            .unwrap()
+            .append(doc_ids, user_ids, data)
     }
 
     /// Append a new entry to the wal. If the last file is full, create a new file.
@@ -139,7 +142,9 @@ mod tests {
         let mut wal = Wal::open(dir.to_str().unwrap(), 1024).unwrap();
         for i in 0..5 {
             let data = vec![i as f32; 10];
-            let seq_no = wal.append(&vec![i as u128], &vec![i as u128], &data).unwrap();
+            let seq_no = wal
+                .append(&vec![i as u128], &vec![i as u128], &data)
+                .unwrap();
             assert_eq!(seq_no, i as u64);
         }
         assert_eq!(wal.files.len(), 1);
