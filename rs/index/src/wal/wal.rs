@@ -133,13 +133,17 @@ mod tests {
         }
         assert_eq!(wal.files.len(), 2);
 
-        let mut iterators = wal.get_iterators();
-        let mut last_it = iterators.pop().unwrap();
-        for i in 93..100 {
-            let entry = last_it.next().unwrap().unwrap();
-            assert_eq!(entry.seq_no, i as u64);
-            assert_eq!(entry.buffer, format!("hello{}", i).as_bytes());
+        // Check that all entries are in the correct order
+        let mut start = 0;
+        let iterators = wal.get_iterators();
+        for it in iterators {
+            for i in it {
+                assert_eq!(i.unwrap().seq_no, start);
+                start += 1;
+            }
         }
+
+        assert_eq!(start, 100);
     }
 
     #[test]
