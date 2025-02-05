@@ -181,6 +181,7 @@ impl Collection {
             Some(RwLock::new(Wal::open(
                 &wal_directory,
                 segment_config.wal_file_size,
+                -1,
             )?))
         } else {
             None
@@ -270,7 +271,11 @@ impl Collection {
 
         let wal = if segment_config.wal_file_size > 0 {
             let wal_directory = format!("{}/wal", base_directory);
-            let wal = Wal::open(&wal_directory, segment_config.wal_file_size)?;
+            let wal = Wal::open(
+                &wal_directory,
+                segment_config.wal_file_size,
+                last_sequence_number as i64,
+            )?;
             let iterators = wal.get_iterators();
             let mut seq_no = (last_sequence_number + 1) as i64;
             for mut iterator in iterators {
@@ -514,6 +519,7 @@ impl Collection {
                             vec![segment],
                             last_sequence_number,
                         )?;
+                        self.trim_wal(last_sequence_number as i64)?;
                         *self.last_flush_time.lock().unwrap() = Instant::now();
                         Ok(name_for_new_segment)
                     }
@@ -530,6 +536,7 @@ impl Collection {
                             vec![segment],
                             last_sequence_number,
                         )?;
+                        self.trim_wal(last_sequence_number as i64)?;
                         *self.last_flush_time.lock().unwrap() = Instant::now();
                         Ok(name_for_new_segment)
                     }
@@ -881,6 +888,13 @@ impl Collection {
         // Note that this function will upgrade toc lock.
         let toc_locked = self.versions_info.upgradable_read();
         self.pending_to_finalized(pending_segment, toc_locked)
+    }
+
+    fn trim_wal(&self, flushed_seq_no: i64) -> Result<()> {
+        if let Some(wal) = &self.wal {
+            wal.write().trim_wal(flushed_seq_no)?;
+        }
+        Ok(())
     }
 }
 
