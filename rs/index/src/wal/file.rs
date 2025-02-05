@@ -163,6 +163,18 @@ impl WalFile {
     pub fn get_start_seq_no(&self) -> i64 {
         self.start_seq_no
     }
+
+    pub fn get_last_seq_no(&self) -> i64 {
+        self.start_seq_no + self.get_num_entries() as i64
+    }
+
+    pub fn get_path(&self) -> &str {
+        &self.path
+    }
+
+    pub fn get_wal_id(&self) -> u32 {
+        self.path.split(".").last().unwrap().parse::<u32>().unwrap()
+    }
 }
 
 #[allow(unused)]
