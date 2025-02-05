@@ -1,4 +1,5 @@
 use std::sync::atomic::AtomicU64;
+use std::time::Instant;
 
 use anyhow::{Ok, Result};
 use config::collection::CollectionConfig;
@@ -14,6 +15,7 @@ pub struct MutableSegment {
     finalized: bool,
     last_sequence_number: AtomicU64,
     num_docs: AtomicU64,
+    created_at: Instant,
 }
 
 impl MutableSegment {
@@ -23,7 +25,12 @@ impl MutableSegment {
             finalized: false,
             last_sequence_number: AtomicU64::new(0),
             num_docs: AtomicU64::new(0),
+            created_at: Instant::now(),
         })
+    }
+
+    pub fn created_at(&self) -> Instant {
+        self.created_at
     }
 
     pub fn insert(&mut self, doc_id: u128, data: &[f32]) -> Result<()> {

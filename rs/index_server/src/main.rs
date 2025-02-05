@@ -15,7 +15,7 @@ use log::{debug, error, info};
 use proto::muopdb::index_server_server::IndexServerServer;
 use proto::muopdb::FILE_DESCRIPTOR_SET;
 use tokio::spawn;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tokio::time::sleep;
 use tonic::transport::Server;
 
@@ -35,7 +35,10 @@ struct Args {
     index_data_path: String,
 
     #[arg(long, default_value_t = 10)]
-    num_workers: u32,
+    num_ingestion_workers: u32,
+
+    #[arg(long, default_value_t = 10)]
+    num_flush_workers: u32,
 }
 
 #[tokio::main]
@@ -52,21 +55,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let collection_catalog_for_server = collection_catalog.clone();
 
     info!("Node: {}, listening on port {}", node_id, arg.port);
-    info!("Number of workers: {}", arg.num_workers);
+    info!("Number of ingestion workers: {}", arg.num_ingestion_workers);
+    info!("Number of flush workers: {}", arg.num_flush_workers);
 
     let collection_provider = CollectionProvider::new(collection_data_path);
-    let collection_manager = Arc::new(Mutex::new(CollectionManager::new(
+    let collection_manager = Arc::new(RwLock::new(CollectionManager::new(
         collection_config_path,
         collection_provider,
         collection_catalog_for_manager,
-        arg.num_workers,
+        arg.num_ingestion_workers,
+        arg.num_flush_workers,
     )));
 
     let collection_manager_clone = collection_manager.clone();
     let collection_manager_thread = spawn(async move {
         loop {
             if let Err(e) = collection_manager_clone
-                .lock()
+                .read()
                 .await
                 .check_for_update()
                 .await
@@ -77,13 +82,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let mut worker_threads = Vec::new();
-    for i in 0..arg.num_workers {
+    let mut ingestion_worker_threads = Vec::new();
+    for i in 0..arg.num_ingestion_workers {
         let collection_manager_process_ops_clone = collection_manager.clone();
         let collection_manager_process_ops_thread = spawn(async move {
             loop {
                 let processed_ops = collection_manager_process_ops_clone
-                    .lock()
+                    .read()
                     .await
                     .process_ops(i)
                     .await
@@ -95,7 +100,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         });
-        worker_threads.push(collection_manager_process_ops_thread);
+        ingestion_worker_threads.push(collection_manager_process_ops_thread);
+    }
+
+    let mut flush_worker_threads = Vec::new();
+    for i in 0..arg.num_flush_workers {
+        let collection_manager_flush_clone = collection_manager.clone();
+        let collection_manager_flush_thread = spawn(async move {
+            loop {
+                let flushed_ops = collection_manager_flush_clone
+                    .read()
+                    .await
+                    .flush(i)
+                    .await
+                    .unwrap();
+                debug!("Flushed {} ops for worker {}", flushed_ops, i);
+                if flushed_ops == 0 {
+                    sleep(std::time::Duration::from_secs(1)).await;
+                }
+            }
+        });
+        flush_worker_threads.push(collection_manager_flush_thread);
     }
 
     let reflection_service = tonic_reflection::server::Builder::configure()
@@ -106,7 +131,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
         .build_v1alpha()?;
 
-    let server_impl = IndexServerImpl::new(collection_catalog_for_server, collection_manager);
+    let server_impl =
+        IndexServerImpl::new(collection_catalog_for_server, collection_manager.clone());
     Server::builder()
         .add_service(IndexServerServer::new(server_impl))
         .add_service(reflection_service)
@@ -117,7 +143,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO(hicder): Add graceful shutdown
     info!("Received signal, shutting down");
     collection_manager_thread.await?;
-    for thread in worker_threads {
+    for thread in ingestion_worker_threads {
+        thread.await?;
+    }
+    for thread in flush_worker_threads {
         thread.await?;
     }
     Ok(())

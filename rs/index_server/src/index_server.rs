@@ -11,7 +11,7 @@ use proto::muopdb::{
     InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, SearchRequest,
     SearchResponse,
 };
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use utils::mem::{lows_and_highs_to_u128s, transmute_u8_to_slice};
 
 use crate::collection_catalog::CollectionCatalog;
@@ -19,13 +19,13 @@ use crate::collection_manager::CollectionManager;
 
 pub struct IndexServerImpl {
     pub collection_catalog: Arc<Mutex<CollectionCatalog>>,
-    pub collection_manager: Arc<Mutex<CollectionManager>>,
+    pub collection_manager: Arc<RwLock<CollectionManager>>,
 }
 
 impl IndexServerImpl {
     pub fn new(
         index_catalog: Arc<Mutex<CollectionCatalog>>,
-        collection_manager: Arc<Mutex<CollectionManager>>,
+        collection_manager: Arc<RwLock<CollectionManager>>,
     ) -> Self {
         Self {
             collection_catalog: index_catalog,
@@ -114,8 +114,14 @@ impl IndexServer for IndexServerImpl {
         if let Some(wal_file_size) = req.wal_file_size {
             collection_config.wal_file_size = wal_file_size as u64;
         }
+        if let Some(max_pending_ops) = req.max_pending_ops {
+            collection_config.max_pending_ops = max_pending_ops as u64;
+        }
+        if let Some(max_time_to_flush_ms) = req.max_time_to_flush_ms {
+            collection_config.max_time_to_flush_ms = max_time_to_flush_ms as u64;
+        }
 
-        let mut collection_manager_locked = self.collection_manager.lock().await;
+        let mut collection_manager_locked = self.collection_manager.write().await;
         if collection_manager_locked
             .collection_exists(&collection_name)
             .await

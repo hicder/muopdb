@@ -1,4 +1,5 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -25,8 +26,9 @@ pub struct CollectionManager {
     config_path: String,
     collection_provider: CollectionProvider,
     collection_catalog: Arc<Mutex<CollectionCatalog>>,
-    latest_version: u64,
-    num_workers: u32,
+    latest_version: AtomicU64,
+    num_ingestion_workers: u32,
+    num_flush_workers: u32,
 }
 
 impl CollectionManager {
@@ -34,14 +36,16 @@ impl CollectionManager {
         config_path: String,
         collection_provider: CollectionProvider,
         collection_catalog: Arc<Mutex<CollectionCatalog>>,
-        num_workers: u32,
+        num_ingestion_workers: u32,
+        num_flush_workers: u32,
     ) -> Self {
         Self {
             config_path,
             collection_provider,
             collection_catalog,
-            latest_version: 0,
-            num_workers,
+            latest_version: AtomicU64::new(0),
+            num_ingestion_workers,
+            num_flush_workers,
         }
     }
 
@@ -83,10 +87,16 @@ impl CollectionManager {
         }
 
         // Increment the latest version
-        self.latest_version += 1;
+        self.latest_version
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         // Write the collection manager config as latest version
-        let toc_path = format!("{}/version_{}", self.config_path, self.latest_version);
+        let toc_path = format!(
+            "{}/version_{}",
+            self.config_path,
+            self.latest_version
+                .load(std::sync::atomic::Ordering::Relaxed)
+        );
         let all_collection_names = self
             .collection_catalog
             .lock()
@@ -131,10 +141,14 @@ impl CollectionManager {
         collections_to_remove
     }
 
-    pub async fn check_for_update(&mut self) -> Result<()> {
+    pub async fn check_for_update(&self) -> Result<()> {
         let latest_version =
             get_latest_version(&self.config_path).context("Failed to get latest version")?;
-        if latest_version > self.latest_version {
+        if latest_version
+            > self
+                .latest_version
+                .load(std::sync::atomic::Ordering::Relaxed)
+        {
             info!("New version available: {}", latest_version);
             let latest_config_path = format!("{}/version_{}", self.config_path, latest_version);
 
@@ -149,7 +163,8 @@ impl CollectionManager {
                 .map(|x| x.name.clone())
                 .collect::<Vec<String>>();
 
-            self.latest_version = latest_version;
+            self.latest_version
+                .store(latest_version, std::sync::atomic::Ordering::Relaxed);
             let current_collection_names = self
                 .collection_catalog
                 .lock()
@@ -189,7 +204,7 @@ impl CollectionManager {
             .await;
 
         for collection_name in collections {
-            if self.get_worker_id(&collection_name) == worker_id {
+            if self.get_worker_id(&collection_name, self.num_ingestion_workers) == worker_id {
                 let collection = self
                     .collection_catalog
                     .lock()
@@ -207,10 +222,37 @@ impl CollectionManager {
         Ok(processed_ops)
     }
 
-    pub fn get_worker_id(&self, collection_name: &str) -> u32 {
+    pub async fn flush(&self, worker_id: u32) -> Result<usize> {
+        let mut flushed_ops = 0;
+        let collections = self
+            .collection_catalog
+            .lock()
+            .await
+            .get_all_collection_names_sorted()
+            .await;
+
+        for collection_name in collections {
+            if self.get_worker_id(&collection_name, self.num_flush_workers) == worker_id {
+                let collection = self
+                    .collection_catalog
+                    .lock()
+                    .await
+                    .get_collection(&collection_name)
+                    .await
+                    .unwrap();
+                if collection.should_auto_flush() {
+                    debug!("Automatically flushing collection {}", collection_name);
+                    flushed_ops += (collection.flush().unwrap().len() > 0) as usize;
+                }
+            }
+        }
+        Ok(flushed_ops)
+    }
+
+    pub fn get_worker_id(&self, collection_name: &str, num_workers: u32) -> u32 {
         let mut hasher = DefaultHasher::new();
         collection_name.hash(&mut hasher);
         let hash = hasher.finish();
-        hash as u32 % self.num_workers
+        hash as u32 % num_workers
     }
 }
