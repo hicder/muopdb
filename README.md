@@ -121,12 +121,12 @@ docker-compose up --build
 ### Phase 3 (Ongoing)
 - [ ] Features
   - [ ] Delete vector from collection
-  - [ ] Querying mutable segment
   - [ ] [RabitQ quantization](https://arxiv.org/abs/2405.12497)
-  - [ ] Embedded MuopDB (with Python binding)
-  - [ ] Cloud MuopDB
 - [ ] Database Management
-  - [ ] Segment optimizers (vacumn, merge)
+  - [x] Segment optimizer framework
+  - [x] Write-ahead-log
+  - [ ] Segments merger
+  - [ ] Segments vacuum
 
 ### Building
 
