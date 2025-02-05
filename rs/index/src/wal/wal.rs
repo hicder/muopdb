@@ -1,14 +1,16 @@
+use std::collections::VecDeque;
+
 use anyhow::Result;
 use log::info;
 
-use super::entry::WalOpType;
-use super::file::WalFileIterator;
+use crate::wal::entry::WalOpType;
 use crate::wal::file::WalFile;
+use crate::wal::file::WalFileIterator;
 
 #[allow(unused)]
 pub struct Wal {
     directory: String,
-    files: Vec<WalFile>,
+    files: VecDeque<WalFile>,
 
     // The size of the wal file.
     max_file_size: u64,
@@ -21,7 +23,7 @@ impl Wal {
             std::fs::create_dir_all(directory)?;
         }
 
-        let mut files = Vec::new();
+        let mut files = VecDeque::new();
 
         // Get all files in the directory. Each file will have the name of wal.<file_id>
         let mut file_paths = std::fs::read_dir(directory)?
@@ -35,10 +37,10 @@ impl Wal {
             // Create a new wal file
             let file_path = format!("{}/wal.0", directory);
             let wal = WalFile::create(&file_path, -1)?;
-            files.push(wal);
+            files.push_back(wal);
         } else {
             for file_path in file_paths {
-                files.push(WalFile::open(&file_path)?);
+                files.push_back(WalFile::open(&file_path)?);
             }
         }
 
@@ -63,29 +65,29 @@ impl Wal {
         data: &[f32],
         op_type: WalOpType,
     ) -> Result<u64> {
-        let last_file = self.files.last().unwrap();
+        let last_file = self.files.back().unwrap();
         if last_file.get_file_size()? >= self.max_file_size {
             let seq_no = last_file.get_start_seq_no() + last_file.get_num_entries() as i64;
             let file_path = format!("{}/wal.{}", self.directory, self.files.len());
             let wal = WalFile::create(&file_path, seq_no)?;
-            self.files.push(wal);
+            self.files.push_back(wal);
         }
         self.files
-            .last_mut()
+            .back_mut()
             .unwrap()
             .append(doc_ids, user_ids, data, op_type)
     }
 
     /// Append a new entry to the wal. If the last file is full, create a new file.
     pub fn append_raw(&mut self, data: &[u8]) -> Result<u64> {
-        let last_file = self.files.last().unwrap();
+        let last_file = self.files.back().unwrap();
         if last_file.get_file_size()? >= self.max_file_size {
             let seq_no = last_file.get_start_seq_no() + last_file.get_num_entries() as i64;
             let file_path = format!("{}/wal.{}", self.directory, self.files.len());
             let wal = WalFile::create(&file_path, seq_no)?;
-            self.files.push(wal);
+            self.files.push_back(wal);
         }
-        self.files.last_mut().unwrap().append_raw(data)
+        self.files.back_mut().unwrap().append_raw(data)
     }
 }
 
