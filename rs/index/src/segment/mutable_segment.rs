@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicU64;
 
 use anyhow::{Ok, Result};
 use config::collection::CollectionConfig;
+use log::debug;
 
 use crate::multi_spann::builder::MultiSpannBuilder;
 use crate::multi_spann::writer::MultiSpannWriter;
@@ -41,6 +42,10 @@ impl MutableSegment {
         data: &[f32],
         sequence_number: u64,
     ) -> Result<()> {
+        debug!(
+            "Inserting for user: {}, doc_id: {}, sequence_number: {}",
+            user_id, doc_id, sequence_number
+        );
         if self.finalized {
             return Err(anyhow::anyhow!("Cannot insert into a finalized segment"));
         }

@@ -11,7 +11,7 @@ use config::enums::QuantizerType;
 use dashmap::DashMap;
 use fs_extra::dir::CopyOptions;
 use lock_api::RwLockUpgradableReadGuard;
-use log::info;
+use log::{debug, info};
 use parking_lot::{RawRwLock, RwLock};
 use quantization::noq::noq::NoQuantizer;
 use quantization::pq::pq::ProductQuantizer;
@@ -41,8 +41,12 @@ pub struct TableOfContent {
     #[serde(default)]
     pub pending: HashMap<String, Vec<String>>,
 
-    #[serde(default)]
-    pub sequence_number: u64,
+    #[serde(default = "default_sequence_number")]
+    pub sequence_number: i64,
+}
+
+fn default_sequence_number() -> i64 {
+    -1
 }
 
 impl TableOfContent {
@@ -50,7 +54,17 @@ impl TableOfContent {
         Self {
             toc,
             pending: HashMap::new(),
-            sequence_number: 0,
+            sequence_number: -1,
+        }
+    }
+}
+
+impl Default for TableOfContent {
+    fn default() -> Self {
+        Self {
+            toc: vec![],
+            pending: HashMap::new(),
+            sequence_number: -1,
         }
     }
 }
@@ -190,11 +204,7 @@ impl Collection {
 
         // Write version 0
         let toc_path = format!("{}/version_0", base_directory);
-        let toc = TableOfContent {
-            toc: vec![],
-            pending: HashMap::new(),
-            sequence_number: 0,
-        };
+        let toc = TableOfContent::default();
         serde_json::to_writer_pretty(std::fs::File::create(toc_path)?, &toc)?;
 
         // Write the config file
@@ -222,13 +232,33 @@ impl Collection {
             .for_each(|(name, segment)| {
                 all_segments.insert(name.clone(), segment);
             });
+        let last_sequence_number = toc.sequence_number;
 
         let versions = DashMap::new();
         versions.insert(version, toc);
 
+        // Remove all directories whose name starts with tmp_segment_
+        let base_dir = std::path::Path::new(&base_directory);
+        if base_dir.exists() {
+            for entry in std::fs::read_dir(base_dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    if let Some(file_name) = path.file_name() {
+                        if let Some(file_name_str) = file_name.to_str() {
+                            if file_name_str.starts_with("tmp_segment_") {
+                                std::fs::remove_dir_all(path)?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Create a new segment_config with a random name
         let random_name = format!("tmp_segment_{}", rand::random::<u64>());
         let random_base_directory = format!("{}/{}", base_directory, random_name);
+        std::fs::create_dir_all(&random_base_directory)?;
         let mutable_segment = RwLock::new(MutableSegment::new(
             segment_config.clone(),
             random_base_directory,
@@ -236,13 +266,62 @@ impl Collection {
 
         let wal = if segment_config.wal_file_size > 0 {
             let wal_directory = format!("{}/wal", base_directory);
-            Some(RwLock::new(Wal::open(
-                &wal_directory,
-                segment_config.wal_file_size,
-            )?))
+            let wal = Wal::open(&wal_directory, segment_config.wal_file_size)?;
+            let iterators = wal.get_iterators();
+            let mut seq_no = (last_sequence_number + 1) as i64;
+            for mut iterator in iterators {
+                if iterator.last_seq_no() < seq_no {
+                    debug!(
+                        "Skipping iterator with last seq_no: {}",
+                        iterator.last_seq_no()
+                    );
+                    continue;
+                }
+
+                iterator.skip_to(seq_no)?;
+                for op in iterator {
+                    if let anyhow::Result::Ok(wal_entry) = op {
+                        let entry_seq_no = wal_entry.seq_no;
+                        debug!("Processing op with seq_no: {}", entry_seq_no);
+                        let wal_entry = wal_entry.decode(segment_config.num_features);
+                        match wal_entry.op_type {
+                            WalOpType::Insert => {
+                                let doc_ids = wal_entry.doc_ids;
+                                let user_ids = wal_entry.user_ids;
+                                let data = wal_entry.data;
+
+                                data.chunks(segment_config.num_features)
+                                    .zip(doc_ids)
+                                    .for_each(|(vector, doc_id)| {
+                                        for user_id in user_ids {
+                                            mutable_segment
+                                                .write()
+                                                .insert_for_user(
+                                                    *user_id,
+                                                    *doc_id,
+                                                    vector,
+                                                    entry_seq_no,
+                                                )
+                                                .unwrap();
+                                        }
+                                    });
+                            }
+                            WalOpType::Delete => {
+                                // TODO(hicder): Implement delete
+                            }
+                        }
+                    } else {
+                        break;
+                    }
+                    seq_no += 1;
+                }
+            }
+
+            Some(RwLock::new(wal))
         } else {
             None
         };
+
         let (sender, receiver) = mpsc::channel(100);
         let receiver = AtomicRefCell::new(receiver);
 
@@ -484,9 +563,9 @@ impl Collection {
         let toc = TableOfContent {
             toc: new_toc,
             pending: new_pending,
-            sequence_number: last_sequence_number,
+            sequence_number: last_sequence_number as i64,
         };
-        serde_json::to_writer(&mut tmp_toc_file, &toc)?;
+        serde_json::to_writer_pretty(&mut tmp_toc_file, &toc)?;
 
         // Once success, update the current version and ref counts.
         let mut versions_info_write = RwLockUpgradableReadGuard::upgrade(versions_info_read);
@@ -549,7 +628,7 @@ impl Collection {
             // Since we're just replacing the segment, the sequence number should be the same.
             sequence_number: last_sequence_number,
         };
-        serde_json::to_writer(&mut tmp_toc_file, &toc)?;
+        serde_json::to_writer_pretty(&mut tmp_toc_file, &toc)?;
 
         let mut versions_info_write = RwLockUpgradableReadGuard::upgrade(versions_info_read);
         let toc_path = format!("{}/version_{}", self.base_directory, new_version);
@@ -1105,6 +1184,72 @@ mod tests {
         let toc = collection.get_current_toc();
         assert_eq!(toc.pending.len(), 0);
         assert_eq!(toc.sequence_number, 4);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_collection_with_wal_reopen() -> Result<()> {
+        let temp_dir = TempDir::new("test_collection")?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let mut segment_config = CollectionConfig::default_test_config();
+        segment_config.wal_file_size = 1024 * 1024;
+
+        Collection::init_new_collection(base_directory.clone(), &segment_config)?;
+
+        // Insert but don't flush
+        {
+            let reader = CollectionReader::new(base_directory.clone());
+            let collection = reader.read()?;
+            collection
+                .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0])
+                .await?;
+            collection
+                .write_to_wal(&[2], &[0], &[1.0, 2.0, 3.0, 4.0])
+                .await?;
+
+            // Process all ops
+            loop {
+                let op = collection.process_one_op().await?;
+                if op == 0 {
+                    break;
+                }
+            }
+        }
+
+        {
+            let reader = CollectionReader::new(base_directory.clone());
+            let collection = reader.read()?;
+            let toc = collection.get_current_toc();
+            assert_eq!(toc.pending.len(), 0);
+            assert_eq!(toc.sequence_number, -1);
+
+            collection.flush()?;
+            let toc = collection.get_current_toc();
+            assert_eq!(toc.pending.len(), 0);
+            assert_eq!(toc.sequence_number, 1);
+
+            // Write 2 more ops, but don't flush
+            collection
+                .write_to_wal(&[3], &[0], &[1.0, 2.0, 3.0, 4.0])
+                .await?;
+            collection
+                .write_to_wal(&[4], &[0], &[1.0, 2.0, 3.0, 4.0])
+                .await?;
+        }
+
+        {
+            let reader = CollectionReader::new(base_directory.clone());
+            let collection = reader.read()?;
+            let toc = collection.get_current_toc();
+            assert_eq!(toc.pending.len(), 0);
+            assert_eq!(toc.sequence_number, 1);
+
+            collection.flush()?;
+            let toc = collection.get_current_toc();
+            assert_eq!(toc.pending.len(), 0);
+            assert_eq!(toc.sequence_number, 3);
+        }
+
         Ok(())
     }
 }
