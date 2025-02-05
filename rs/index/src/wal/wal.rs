@@ -34,7 +34,7 @@ impl Wal {
 
             // Create a new wal file
             let file_path = format!("{}/wal.0", directory);
-            let wal = WalFile::create(&file_path, 0)?;
+            let wal = WalFile::create(&file_path, -1)?;
             files.push(wal);
         } else {
             for file_path in file_paths {
@@ -65,7 +65,7 @@ impl Wal {
     ) -> Result<u64> {
         let last_file = self.files.last().unwrap();
         if last_file.get_file_size()? >= self.max_file_size {
-            let seq_no = last_file.get_start_seq_no() + last_file.get_num_entries() as u64;
+            let seq_no = last_file.get_start_seq_no() + last_file.get_num_entries() as i64;
             let file_path = format!("{}/wal.{}", self.directory, self.files.len());
             let wal = WalFile::create(&file_path, seq_no)?;
             self.files.push(wal);
@@ -80,7 +80,7 @@ impl Wal {
     pub fn append_raw(&mut self, data: &[u8]) -> Result<u64> {
         let last_file = self.files.last().unwrap();
         if last_file.get_file_size()? >= self.max_file_size {
-            let seq_no = last_file.get_start_seq_no() + last_file.get_num_entries() as u64;
+            let seq_no = last_file.get_start_seq_no() + last_file.get_num_entries() as i64;
             let file_path = format!("{}/wal.{}", self.directory, self.files.len());
             let wal = WalFile::create(&file_path, seq_no)?;
             self.files.push(wal);
@@ -100,7 +100,7 @@ mod tests {
         let dir = tmp_dir.path();
         for i in 0..3 {
             let file_path = dir.join(format!("wal.{}", i));
-            let mut wal = WalFile::create(&file_path.to_str().unwrap(), i * 10).unwrap();
+            let mut wal = WalFile::create(&file_path.to_str().unwrap(), i * 10 - 1).unwrap();
             for j in 0..10 {
                 wal.append_raw(&format!("hello_{}", j).as_bytes()).unwrap();
             }
@@ -109,7 +109,7 @@ mod tests {
         let wal = Wal::open(dir.to_str().unwrap(), 1024).unwrap();
         let iterators = wal.get_iterators();
         for (i, iterator) in iterators.iter().enumerate() {
-            assert_eq!(iterator.last_seq_no(), (i as u64 + 1) * 10 - 1);
+            assert_eq!(iterator.last_seq_no(), (i as i64 + 1) * 10 - 1);
         }
     }
 

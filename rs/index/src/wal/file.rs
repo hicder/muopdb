@@ -30,11 +30,11 @@ pub struct WalFile {
     path: String,
 
     // The start sequence number of the file
-    start_seq_no: u64,
+    start_seq_no: i64,
 }
 
 impl WalFile {
-    pub fn create(path: &str, start_seq_no: u64) -> Result<Self> {
+    pub fn create(path: &str, start_seq_no: i64) -> Result<Self> {
         // If the file does not exist, create it
         let mut file = OpenOptions::new()
             .read(true)
@@ -75,10 +75,10 @@ impl WalFile {
         // Read the start sequence number
         let mut buf = vec![0; 8];
         file.read_exact(&mut buf)?;
-        let start_seq_no = transmute_u8_to_val::<u64>(&buf);
+        let start_seq_no = transmute_u8_to_val::<i64>(&buf);
 
-        // Move past the number of entries
-        file.seek(SeekFrom::Start(VERSION_1.len() as u64 + 8 + 4))?;
+        // Reopen with append only
+        file = OpenOptions::new().append(true).open(path)?;
 
         // We mmap the number of entries in the file, so that every time we append, we don't have to
         // read the file
@@ -124,7 +124,7 @@ impl WalFile {
         self.mmap[0..4].copy_from_slice(&num_entries.to_le_bytes());
         self.mmap.flush()?;
 
-        Ok(self.start_seq_no + num_entries as u64 - 1)
+        Ok((self.start_seq_no + num_entries as i64) as u64)
     }
 
     pub fn append_raw(&mut self, data: &[u8]) -> Result<u64> {
@@ -139,7 +139,7 @@ impl WalFile {
         num_entries += 1;
         self.mmap[0..4].copy_from_slice(&num_entries.to_le_bytes());
         self.mmap.flush()?;
-        Ok(self.start_seq_no + num_entries as u64 - 1)
+        Ok((self.start_seq_no + num_entries as i64) as u64)
     }
 
     pub fn get_num_entries(&self) -> u32 {
@@ -160,7 +160,7 @@ impl WalFile {
         Ok(metadata.len())
     }
 
-    pub fn get_start_seq_no(&self) -> u64 {
+    pub fn get_start_seq_no(&self) -> i64 {
         self.start_seq_no
     }
 }
@@ -170,7 +170,7 @@ pub struct WalFileIterator {
     file: File,
     file_size: u64,
     offset: u64,
-    current_seq_no: u64,
+    current_seq_no: i64,
     num_entries: u32,
 }
 
@@ -182,7 +182,7 @@ impl WalFileIterator {
 
         let mut buf = vec![0; 8];
         file.read_exact(&mut buf)?;
-        let start_seq_no = transmute_u8_to_val::<u64>(&buf);
+        let start_seq_no = transmute_u8_to_val::<i64>(&buf);
 
         let mut buf = vec![0; 4];
         file.read_exact(&mut buf)?;
@@ -198,13 +198,13 @@ impl WalFileIterator {
     }
 
     /// Get the last sequence number in the file
-    pub fn last_seq_no(&self) -> u64 {
-        self.current_seq_no + self.num_entries as u64 - 1
+    pub fn last_seq_no(&self) -> i64 {
+        self.current_seq_no + self.num_entries as i64
     }
 
     /// Skip to the the sequence number that is less than or equal to the given sequence number
-    pub fn skip_to(&mut self, seq_no: u64) -> Result<u64> {
-        let mut idx = seq_no - self.current_seq_no;
+    pub fn skip_to(&mut self, seq_no: i64) -> Result<i64> {
+        let mut idx = seq_no - self.current_seq_no - 1;
         while idx > 0 {
             if self.offset >= self.file_size {
                 break;
@@ -237,10 +237,13 @@ impl Iterator for WalFileIterator {
 
         let mut buffer = vec![0; length as usize];
         self.file.read_exact(buffer.as_mut_slice()).unwrap();
-        let seq_no = self.current_seq_no;
         self.current_seq_no += 1;
+        let seq_no = self.current_seq_no;
 
-        Some(Ok(WalEntry { buffer, seq_no }))
+        Some(Ok(WalEntry {
+            buffer,
+            seq_no: seq_no as u64,
+        }))
     }
 }
 
@@ -252,7 +255,7 @@ mod tests {
     fn test_wal() {
         let tmp_dir = tempdir::TempDir::new("wal_file_test").unwrap();
         let mut wal_file =
-            WalFile::create(tmp_dir.path().join("test.wal").to_str().unwrap(), 0).unwrap();
+            WalFile::create(tmp_dir.path().join("test.wal").to_str().unwrap(), -1).unwrap();
 
         // Append some data
         wal_file.append_raw(b"hello").unwrap();
@@ -279,11 +282,11 @@ mod tests {
 
         let entry = iter.next().unwrap().unwrap();
         assert_eq!(entry.buffer, b"hello");
-        assert_eq!(entry.seq_no, 100);
+        assert_eq!(entry.seq_no, 101);
 
         let entry = iter.next().unwrap().unwrap();
         assert_eq!(entry.buffer, b"world");
-        assert_eq!(entry.seq_no, 101);
+        assert_eq!(entry.seq_no, 102);
 
         let entry = iter.next();
         assert!(entry.is_none());
@@ -293,7 +296,7 @@ mod tests {
     fn test_skip_to() {
         let tmp_dir = tempdir::TempDir::new("wal_file_test").unwrap();
         let mut wal_file =
-            WalFile::create(tmp_dir.path().join("test.wal").to_str().unwrap(), 0).unwrap();
+            WalFile::create(tmp_dir.path().join("test.wal").to_str().unwrap(), -1).unwrap();
 
         // Insert hello_x for x = 0, 1, 2, 3, 4
         for x in 0..5 {
@@ -315,7 +318,7 @@ mod tests {
         assert_eq!(entry.seq_no, 3);
 
         let seq_no = iter.skip_to(10).unwrap();
-        assert_eq!(seq_no, 5);
+        assert_eq!(seq_no, 4);
         assert!(iter.next().is_none());
     }
 }
