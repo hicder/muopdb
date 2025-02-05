@@ -3,6 +3,7 @@ pub mod snapshot;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use anyhow::{Ok, Result};
 use atomic_refcell::AtomicRefCell;
@@ -155,6 +156,8 @@ pub struct Collection {
     sender: Sender<OpChannelEntry>,
     receiver: AtomicRefCell<Receiver<OpChannelEntry>>,
 
+    last_flush_time: Mutex<Instant>,
+
     // A mutex for flushing
     flushing: Mutex<()>,
 }
@@ -196,6 +199,7 @@ impl Collection {
             wal,
             sender,
             receiver,
+            last_flush_time: Mutex::new(Instant::now()),
         })
     }
 
@@ -336,11 +340,52 @@ impl Collection {
             wal,
             sender,
             receiver,
+            last_flush_time: Mutex::new(Instant::now()),
         })
     }
 
     pub fn use_wal(&self) -> bool {
         self.wal.is_some()
+    }
+
+    pub fn should_auto_flush(&self) -> bool {
+        if self.segment_config.max_pending_ops == 0 && self.segment_config.max_time_to_flush_ms == 0
+        {
+            return false;
+        }
+
+        if self.segment_config.max_pending_ops > 0 {
+            let current_seq_no = self.mutable_segment.read().last_sequence_number();
+            let flushed_seq_no = self
+                .versions
+                .get(&self.current_version())
+                .unwrap()
+                .sequence_number;
+            if current_seq_no as i64 - flushed_seq_no >= self.segment_config.max_pending_ops as i64
+            {
+                debug!(
+                    "Flushing because of max pending ops: {}",
+                    current_seq_no as i64 - flushed_seq_no as i64
+                );
+                return true;
+            }
+        }
+
+        if self.segment_config.max_time_to_flush_ms > 0 {
+            let last_flush_time = self.last_flush_time.lock().unwrap().clone();
+            let current_time = std::time::Instant::now();
+            if current_time.duration_since(last_flush_time)
+                >= std::time::Duration::from_millis(self.segment_config.max_time_to_flush_ms)
+            {
+                debug!(
+                    "Flushing because of max time to flush: {:?}",
+                    current_time.duration_since(last_flush_time)
+                );
+                return true;
+            }
+        }
+
+        false
     }
 
     pub async fn write_to_wal(
@@ -428,6 +473,7 @@ impl Collection {
             std::result::Result::Ok(_) => {
                 // If there are no documents to flush, just return an empty string (meaning we're not flushing)
                 if self.mutable_segment.read().num_docs() == 0 {
+                    *self.last_flush_time.lock().unwrap() = Instant::now();
                     return Ok(String::new());
                 }
 
@@ -468,6 +514,7 @@ impl Collection {
                             vec![segment],
                             last_sequence_number,
                         )?;
+                        *self.last_flush_time.lock().unwrap() = Instant::now();
                         Ok(name_for_new_segment)
                     }
                     QuantizerType::NoQuantizer => {
@@ -483,6 +530,7 @@ impl Collection {
                             vec![segment],
                             last_sequence_number,
                         )?;
+                        *self.last_flush_time.lock().unwrap() = Instant::now();
                         Ok(name_for_new_segment)
                     }
                 }

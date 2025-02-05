@@ -97,6 +97,8 @@ message CreateCollectionRequest {
   optional float posting_list_kmeans_unbalanced_penalty = 23;
   optional bool reindex = 24;
   optional uint64 wal_file_size = 25;
+  optional uint64 max_pending_ops = 26;
+  optional uint64 max_time_to_flush_ms = 27;
 }
 
 message CreateCollectionResponse {

@@ -117,9 +117,27 @@ pub struct CollectionConfig {
     /// Default: 0 (not using WAL)
     #[serde(default = "default_wal_file_size")]
     pub wal_file_size: u64,
+
+    /// The maximum number of pending operations before flushing.
+    /// Default: 0 (not using max pending ops)
+    #[serde(default = "default_max_pending_ops")]
+    pub max_pending_ops: u64,
+
+    /// The maximum time to wait before flushing.
+    /// Default: 0 (not using max time to flush)
+    #[serde(default = "default_max_time_to_flush_ms")]
+    pub max_time_to_flush_ms: u64,
 }
 
 fn default_wal_file_size() -> u64 {
+    0
+}
+
+fn default_max_pending_ops() -> u64 {
+    0
+}
+
+fn default_max_time_to_flush_ms() -> u64 {
     0
 }
 
@@ -149,6 +167,8 @@ impl Default for CollectionConfig {
             posting_list_kmeans_unbalanced_penalty: 0.0,
             reindex: true,
             wal_file_size: 0,
+            max_pending_ops: 0,
+            max_time_to_flush_ms: 0,
         }
     }
 }
@@ -179,6 +199,8 @@ impl CollectionConfig {
             reindex: true,
             quantization_type: QuantizerType::NoQuantizer,
             wal_file_size: 1024 * 1024 * 1024,
+            max_pending_ops: 10000,
+            max_time_to_flush_ms: 10000,
         }
     }
 }
