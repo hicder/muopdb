@@ -202,15 +202,23 @@ impl BoxedCollection {
 
     pub fn get_all_segment_names(&self) -> Vec<String> {
         match self {
-            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.get_all_segment_names(),
-            BoxedCollection::CollectionProductQuantization(collection) => collection.get_all_segment_names(),
+            BoxedCollection::CollectionNoQuantizationL2(collection) => {
+                collection.get_all_segment_names()
+            }
+            BoxedCollection::CollectionProductQuantization(collection) => {
+                collection.get_all_segment_names()
+            }
         }
     }
 
     pub async fn process_one_op(&self) -> Result<usize> {
         match self {
-            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.process_one_op().await,
-            BoxedCollection::CollectionProductQuantization(collection) => collection.process_one_op().await,
+            BoxedCollection::CollectionNoQuantizationL2(collection) => {
+                collection.process_one_op().await
+            }
+            BoxedCollection::CollectionProductQuantization(collection) => {
+                collection.process_one_op().await
+            }
         }
     }
 
