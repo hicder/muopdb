@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use quantization::quantization::Quantizer;
 
 use super::noop::NoopOptimizer;
-use crate::collection::Collection;
+use crate::collection::collection::Collection;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum OptimizingType {
@@ -12,12 +13,12 @@ pub enum OptimizingType {
     Noop,
 }
 
-pub struct OptimizerEngine {
-    collection: Arc<Collection>,
+pub struct OptimizerEngine<Q: Quantizer + Clone> {
+    collection: Arc<Collection<Q>>,
 }
 
-impl OptimizerEngine {
-    pub fn new(collection: Arc<Collection>) -> Self {
+impl<Q: Quantizer + Clone> OptimizerEngine<Q> {
+    pub fn new(collection: Arc<Collection<Q>>) -> Self {
         Self { collection }
     }
 

@@ -143,8 +143,9 @@ mod tests {
     use std::sync::Arc;
 
     use config::collection::CollectionConfig;
-    use quantization::noq::noq::NoQuantizerL2;
+    use quantization::noq::noq::{NoQuantizer, NoQuantizerL2};
     use rand::Rng;
+    use utils::distance::l2::L2DistanceCalculator;
 
     use super::*;
     use crate::multi_spann::builder::MultiSpannBuilder;
@@ -191,9 +192,10 @@ mod tests {
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
         let segment1 = read_segment(segment1_dir.clone())?;
-        let segment1 = BoxedImmutableSegment::<NoQuantizerL2>::FinalizedSegment(Arc::new(
-            RwLock::new(ImmutableSegment::new(segment1, "segment_1".to_string())),
-        ));
+        let segment1 =
+            BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(Arc::new(
+                RwLock::new(ImmutableSegment::new(segment1, "segment_1".to_string())),
+            ));
 
         let random_name = format!(
             "pending_segment_{}",
@@ -203,8 +205,10 @@ mod tests {
         std::fs::create_dir_all(pending_dir.clone()).unwrap();
 
         // Create a pending segment
-        let pending_segment =
-            PendingSegment::<NoQuantizerL2>::new(vec![segment1], pending_dir.clone());
+        let pending_segment = PendingSegment::<NoQuantizer<L2DistanceCalculator>>::new(
+            vec![segment1],
+            pending_dir.clone(),
+        );
 
         let mut context = SearchContext::new(false);
         let results = pending_segment.search_with_id(0, &[1.0, 2.0, 3.0, 4.0], 1, 10, &mut context);

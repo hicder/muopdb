@@ -6,7 +6,8 @@ use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
 use utils::io::get_latest_version;
 
-use super::{Collection, TableOfContent};
+use super::collection::Collection;
+use super::TableOfContent;
 use crate::multi_spann::reader::MultiSpannReader;
 use crate::segment::immutable_segment::ImmutableSegment;
 use crate::segment::pending_segment::PendingSegment;
@@ -67,12 +68,9 @@ impl CollectionReader {
                 }
             }
 
-            segments.push(BoxedImmutableSegment::PendingSegment(
-                Arc::new(RwLock::new(PendingSegment::new(
-                    inner_segments,
-                    pending_segment_path,
-                ))),
-            ));
+            segments.push(BoxedImmutableSegment::PendingSegment(Arc::new(
+                RwLock::new(PendingSegment::new(inner_segments, pending_segment_path)),
+            )));
         }
 
         let collection = Arc::new(Collection::init_from(

@@ -34,7 +34,6 @@ pub trait Segment {
     fn name(&self) -> String;
 }
 
-// TODO(hicder): Add different types of distance
 #[derive(Clone)]
 pub enum BoxedImmutableSegment<Q: Quantizer + Clone> {
     FinalizedSegment(Arc<RwLock<ImmutableSegment<Q>>>),
@@ -64,16 +63,12 @@ impl<Q: Quantizer + Clone> Searchable for BoxedImmutableSegment<Q> {
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>> {
         match self {
-            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment
-                    .read()
-                    .search_with_id(id, query, k, ef_construction, context)
-            }
-            BoxedImmutableSegment::PendingSegment(pending_segment) => {
-                pending_segment
-                    .read()
-                    .search_with_id(id, query, k, ef_construction, context)
-            }
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => immutable_segment
+                .read()
+                .search_with_id(id, query, k, ef_construction, context),
+            BoxedImmutableSegment::PendingSegment(pending_segment) => pending_segment
+                .read()
+                .search_with_id(id, query, k, ef_construction, context),
             BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => mocked_segment
                 .read()
                 .search_with_id(id, query, k, ef_construction, context),
@@ -129,9 +124,7 @@ impl<Q: Quantizer + Clone> Segment for BoxedImmutableSegment<Q> {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                 immutable_segment.read().name()
             }
-            BoxedImmutableSegment::PendingSegment(pending_segment) => {
-                pending_segment.read().name()
-            }
+            BoxedImmutableSegment::PendingSegment(pending_segment) => pending_segment.read().name(),
             BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
                 mocked_segment.read().name()
             }

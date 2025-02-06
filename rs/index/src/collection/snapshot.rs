@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
+use quantization::noq::noq::NoQuantizerL2;
+use quantization::pq::pq::ProductQuantizerL2;
 use quantization::quantization::Quantizer;
 
-use super::Collection;
+use super::collection::Collection;
 use crate::index::Searchable;
 use crate::segment::BoxedImmutableSegment;
 use crate::utils::{IdWithScore, SearchContext};
@@ -96,5 +98,38 @@ impl<Q: Quantizer + Clone> Searchable for Snapshot<Q> {
 impl<Q: Quantizer + Clone> Drop for Snapshot<Q> {
     fn drop(&mut self) {
         self.collection.release_version(self.version);
+    }
+}
+
+pub enum SnapshotWithQuantizer {
+    SnapshotNoQuantizer(Snapshot<NoQuantizerL2>),
+    SnapshotProductQuantizer(Snapshot<ProductQuantizerL2>),
+}
+
+impl SnapshotWithQuantizer {
+    pub fn new_with_no_quantizer(snapshot: Snapshot<NoQuantizerL2>) -> Self {
+        Self::SnapshotNoQuantizer(snapshot)
+    }
+
+    pub fn new_with_product_quantizer(snapshot: Snapshot<ProductQuantizerL2>) -> Self {
+        Self::SnapshotProductQuantizer(snapshot)
+    }
+
+    pub fn search_for_ids(
+        &self,
+        ids: &[u128],
+        query: &[f32],
+        k: usize,
+        ef_construction: u32,
+        context: &mut SearchContext,
+    ) -> Option<Vec<IdWithScore>> {
+        match self {
+            Self::SnapshotNoQuantizer(snapshot) => {
+                snapshot.search_for_ids(ids, query, k, ef_construction, context)
+            }
+            Self::SnapshotProductQuantizer(snapshot) => {
+                snapshot.search_for_ids(ids, query, k, ef_construction, context)
+            }
+        }
     }
 }
