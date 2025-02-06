@@ -10,8 +10,8 @@ use crate::multi_spann::index::MultiSpannIndex;
 use crate::multi_spann::reader::MultiSpannReader;
 use crate::utils::{IdWithScore, SearchContext};
 
-pub struct PendingSegment<Q: Quantizer> {
-    inner_segments: Vec<BoxedImmutableSegment>,
+pub struct PendingSegment<Q: Quantizer + Clone> {
+    inner_segments: Vec<BoxedImmutableSegment<Q>>,
     inner_segments_names: Vec<String>,
     name: String,
     parent_directory: String,
@@ -24,8 +24,8 @@ pub struct PendingSegment<Q: Quantizer> {
     index: RwLock<Option<MultiSpannIndex<Q>>>,
 }
 
-impl<Q: Quantizer> PendingSegment<Q> {
-    pub fn new(inner_segments: Vec<BoxedImmutableSegment>, data_directory: String) -> Self {
+impl<Q: Quantizer + Clone> PendingSegment<Q> {
+    pub fn new(inner_segments: Vec<BoxedImmutableSegment<Q>>, data_directory: String) -> Self {
         let path = PathBuf::from(&data_directory);
         // name is the last portion of the data_directory
         let name = path.file_name().unwrap().to_str().unwrap().to_string();
@@ -82,7 +82,7 @@ impl<Q: Quantizer> PendingSegment<Q> {
 }
 
 #[allow(unused)]
-impl<Q: Quantizer> Segment for PendingSegment<Q> {
+impl<Q: Quantizer + Clone> Segment for PendingSegment<Q> {
     fn insert(&self, doc_id: u64, data: &[f32]) -> Result<()> {
         Err(anyhow::anyhow!("Pending segment does not support insert"))
     }
@@ -100,7 +100,7 @@ impl<Q: Quantizer> Segment for PendingSegment<Q> {
     }
 }
 
-impl<Q: Quantizer> Searchable for PendingSegment<Q> {
+impl<Q: Quantizer + Clone> Searchable for PendingSegment<Q> {
     fn search(
         &self,
         query: &[f32],
@@ -143,8 +143,9 @@ mod tests {
     use std::sync::Arc;
 
     use config::collection::CollectionConfig;
-    use quantization::noq::noq::NoQuantizerL2;
+    use quantization::noq::noq::{NoQuantizer, NoQuantizerL2};
     use rand::Rng;
+    use utils::distance::l2::L2DistanceCalculator;
 
     use super::*;
     use crate::multi_spann::builder::MultiSpannBuilder;
@@ -191,9 +192,10 @@ mod tests {
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
         let segment1 = read_segment(segment1_dir.clone())?;
-        let segment1 = BoxedImmutableSegment::FinalizedNoQuantizationSegment(Arc::new(
-            RwLock::new(ImmutableSegment::new(segment1, "segment_1".to_string())),
-        ));
+        let segment1 =
+            BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(Arc::new(
+                RwLock::new(ImmutableSegment::new(segment1, "segment_1".to_string())),
+            ));
 
         let random_name = format!(
             "pending_segment_{}",
@@ -203,8 +205,10 @@ mod tests {
         std::fs::create_dir_all(pending_dir.clone()).unwrap();
 
         // Create a pending segment
-        let pending_segment =
-            PendingSegment::<NoQuantizerL2>::new(vec![segment1], pending_dir.clone());
+        let pending_segment = PendingSegment::<NoQuantizer<L2DistanceCalculator>>::new(
+            vec![segment1],
+            pending_dir.clone(),
+        );
 
         let mut context = SearchContext::new(false);
         let results = pending_segment.search_with_id(0, &[1.0, 2.0, 3.0, 4.0], 1, 10, &mut context);

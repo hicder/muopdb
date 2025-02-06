@@ -3,8 +3,11 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use index::collection::Collection;
+use config::enums::QuantizerType;
+use index::collection::collection::Collection;
 use log::{debug, info, warn};
+use quantization::noq::noq::NoQuantizerL2;
+use quantization::pq::pq::ProductQuantizerL2;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use utils::io::get_latest_version;
@@ -62,16 +65,32 @@ impl CollectionManager {
         collection_name: String,
         collection_config: config::collection::CollectionConfig,
     ) -> Result<()> {
-        // Create new directory
-        Collection::init_new_collection(
-            format!(
-                "{}/{}",
-                self.collection_provider.data_directory(),
-                collection_name
-            ),
-            &collection_config,
-        )
-        .unwrap();
+        let quantizer_type = &collection_config.quantization_type;
+        match quantizer_type {
+            QuantizerType::NoQuantizer => {
+                // Create new directory
+                Collection::<NoQuantizerL2>::init_new_collection(
+                    format!(
+                        "{}/{}",
+                        self.collection_provider.data_directory(),
+                        collection_name
+                    ),
+                    &collection_config,
+                )
+                .unwrap();
+            }
+            QuantizerType::ProductQuantizer => {
+                Collection::<ProductQuantizerL2>::init_new_collection(
+                    format!(
+                        "{}/{}",
+                        self.collection_provider.data_directory(),
+                        collection_name
+                    ),
+                    &collection_config,
+                )
+                .unwrap();
+            }
+        }
 
         match self.collection_provider.read_collection(&collection_name) {
             Some(collection) => {
@@ -85,7 +104,6 @@ impl CollectionManager {
                 return Err(anyhow::anyhow!("Failed to read collection"));
             }
         }
-
         // Increment the latest version
         self.latest_version
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);

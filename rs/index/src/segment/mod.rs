@@ -8,8 +8,7 @@ use anyhow::Result;
 use immutable_segment::ImmutableSegment;
 use parking_lot::RwLock;
 use pending_segment::PendingSegment;
-use quantization::noq::noq::NoQuantizerL2;
-use quantization::pq::pq::ProductQuantizerL2;
+use quantization::quantization::Quantizer;
 
 use crate::index::Searchable;
 use crate::utils::{IdWithScore, SearchContext};
@@ -35,20 +34,16 @@ pub trait Segment {
     fn name(&self) -> String;
 }
 
-// TODO(hicder): Add different types of distance
 #[derive(Clone)]
-pub enum BoxedImmutableSegment {
-    FinalizedNoQuantizationSegment(Arc<RwLock<ImmutableSegment<NoQuantizerL2>>>),
-    FinalizedProductQuantizationSegment(Arc<RwLock<ImmutableSegment<ProductQuantizerL2>>>),
-
-    PendingNoQuantizationSegment(Arc<RwLock<PendingSegment<NoQuantizerL2>>>),
-    PendingProductQuantizationSegment(Arc<RwLock<PendingSegment<ProductQuantizerL2>>>),
+pub enum BoxedImmutableSegment<Q: Quantizer + Clone> {
+    FinalizedSegment(Arc<RwLock<ImmutableSegment<Q>>>),
+    PendingSegment(Arc<RwLock<PendingSegment<Q>>>),
 
     // For tests
     MockedNoQuantizationSegment(Arc<RwLock<MockedSegment>>),
 }
 
-impl Searchable for BoxedImmutableSegment {
+impl<Q: Quantizer + Clone> Searchable for BoxedImmutableSegment<Q> {
     fn search(
         &self,
         query: &[f32],
@@ -68,106 +63,68 @@ impl Searchable for BoxedImmutableSegment {
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>> {
         match self {
-            BoxedImmutableSegment::FinalizedNoQuantizationSegment(immutable_segment) => {
-                immutable_segment
-                    .read()
-                    .search_with_id(id, query, k, ef_construction, context)
-            }
-            BoxedImmutableSegment::FinalizedProductQuantizationSegment(immutable_segment) => {
-                immutable_segment
-                    .read()
-                    .search_with_id(id, query, k, ef_construction, context)
-            }
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => immutable_segment
+                .read()
+                .search_with_id(id, query, k, ef_construction, context),
+            BoxedImmutableSegment::PendingSegment(pending_segment) => pending_segment
+                .read()
+                .search_with_id(id, query, k, ef_construction, context),
             BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => mocked_segment
                 .read()
                 .search_with_id(id, query, k, ef_construction, context),
-            BoxedImmutableSegment::PendingNoQuantizationSegment(pending_segment) => pending_segment
-                .read()
-                .search_with_id(id, query, k, ef_construction, context),
-            BoxedImmutableSegment::PendingProductQuantizationSegment(pending_segment) => {
-                pending_segment
-                    .read()
-                    .search_with_id(id, query, k, ef_construction, context)
-            }
         }
     }
 }
 
-impl Segment for BoxedImmutableSegment {
+impl<Q: Quantizer + Clone> Segment for BoxedImmutableSegment<Q> {
     fn insert(&self, doc_id: u64, data: &[f32]) -> Result<()> {
         match self {
-            BoxedImmutableSegment::FinalizedNoQuantizationSegment(immutable_segment) => {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                 immutable_segment.write().insert(doc_id, data)
             }
-            BoxedImmutableSegment::FinalizedProductQuantizationSegment(immutable_segment) => {
-                immutable_segment.write().insert(doc_id, data)
+            BoxedImmutableSegment::PendingSegment(pending_segment) => {
+                pending_segment.write().insert(doc_id, data)
             }
             BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
                 mocked_segment.write().insert(doc_id, data)
-            }
-            BoxedImmutableSegment::PendingNoQuantizationSegment(pending_segment) => {
-                pending_segment.write().insert(doc_id, data)
-            }
-            BoxedImmutableSegment::PendingProductQuantizationSegment(pending_segment) => {
-                pending_segment.write().insert(doc_id, data)
             }
         }
     }
 
     fn remove(&self, doc_id: u64) -> Result<bool> {
         match self {
-            BoxedImmutableSegment::FinalizedNoQuantizationSegment(immutable_segment) => {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                 immutable_segment.read().remove(doc_id)
             }
-            BoxedImmutableSegment::FinalizedProductQuantizationSegment(immutable_segment) => {
-                immutable_segment.read().remove(doc_id)
+            BoxedImmutableSegment::PendingSegment(pending_segment) => {
+                pending_segment.read().remove(doc_id)
             }
             BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
                 mocked_segment.read().remove(doc_id)
-            }
-            BoxedImmutableSegment::PendingNoQuantizationSegment(pending_segment) => {
-                pending_segment.read().remove(doc_id)
-            }
-            BoxedImmutableSegment::PendingProductQuantizationSegment(pending_segment) => {
-                pending_segment.read().remove(doc_id)
             }
         }
     }
 
     fn may_contains(&self, doc_id: u64) -> bool {
         match self {
-            BoxedImmutableSegment::FinalizedNoQuantizationSegment(immutable_segment) => {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                 immutable_segment.read().may_contains(doc_id)
             }
-            BoxedImmutableSegment::FinalizedProductQuantizationSegment(immutable_segment) => {
-                immutable_segment.read().may_contains(doc_id)
+            BoxedImmutableSegment::PendingSegment(pending_segment) => {
+                pending_segment.read().may_contains(doc_id)
             }
             BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
                 mocked_segment.read().may_contains(doc_id)
-            }
-            BoxedImmutableSegment::PendingNoQuantizationSegment(pending_segment) => {
-                pending_segment.read().may_contains(doc_id)
-            }
-            BoxedImmutableSegment::PendingProductQuantizationSegment(pending_segment) => {
-                pending_segment.read().may_contains(doc_id)
             }
         }
     }
 
     fn name(&self) -> String {
         match self {
-            BoxedImmutableSegment::FinalizedNoQuantizationSegment(immutable_segment) => {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                 immutable_segment.read().name()
             }
-            BoxedImmutableSegment::FinalizedProductQuantizationSegment(immutable_segment) => {
-                immutable_segment.read().name()
-            }
-            BoxedImmutableSegment::PendingNoQuantizationSegment(pending_segment) => {
-                pending_segment.read().name()
-            }
-            BoxedImmutableSegment::PendingProductQuantizationSegment(pending_segment) => {
-                pending_segment.read().name()
-            }
+            BoxedImmutableSegment::PendingSegment(pending_segment) => pending_segment.read().name(),
             BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
                 mocked_segment.read().name()
             }
@@ -175,8 +132,8 @@ impl Segment for BoxedImmutableSegment {
     }
 }
 
-unsafe impl Send for BoxedImmutableSegment {}
-unsafe impl Sync for BoxedImmutableSegment {}
+unsafe impl<Q: Quantizer + Clone> Send for BoxedImmutableSegment<Q> {}
+unsafe impl<Q: Quantizer + Clone> Sync for BoxedImmutableSegment<Q> {}
 
 pub struct MockedSegment {
     name: String,

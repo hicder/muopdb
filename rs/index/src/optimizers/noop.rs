@@ -6,19 +6,23 @@ use super::SegmentOptimizer;
 use crate::segment::pending_segment::PendingSegment;
 use crate::segment::Segment;
 
-pub struct NoopOptimizer;
+pub struct NoopOptimizer<Q: Quantizer + Clone> {
+    _marker: std::marker::PhantomData<Q>,
+}
 
 /// This optimizer does nothing. It just copies the original segment to a new segment.
 /// Useful for testing the optimizer framework.
-impl NoopOptimizer {
+impl<Q: Quantizer + Clone> NoopOptimizer<Q> {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
 /// This optimizer does nothing. It just copies the original segment to a new segment.
-impl SegmentOptimizer for NoopOptimizer {
-    fn optimize<Q: Quantizer>(&self, segment: &PendingSegment<Q>) -> Result<()> {
+impl<Q: Quantizer + Clone> SegmentOptimizer<Q> for NoopOptimizer<Q> {
+    fn optimize(&self, segment: &PendingSegment<Q>) -> Result<()> {
         let inner_segments = segment.inner_segments();
         let data_directory = segment.base_directory();
 

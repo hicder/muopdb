@@ -13,6 +13,7 @@ pub enum L2DistanceCalculatorImpl {
     StreamingSIMD,
 }
 
+#[derive(Debug, Clone)]
 pub struct L2DistanceCalculator {}
 
 impl L2DistanceCalculator {

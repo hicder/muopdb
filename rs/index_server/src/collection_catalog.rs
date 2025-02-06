@@ -1,10 +1,9 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
-use index::collection::Collection;
+use index::collection::BoxedCollection;
 
 pub struct CollectionCatalog {
-    collections: HashMap<String, Arc<Collection>>,
+    collections: HashMap<String, BoxedCollection>,
 }
 
 impl CollectionCatalog {
@@ -14,14 +13,14 @@ impl CollectionCatalog {
         }
     }
 
-    pub async fn add_collection(&mut self, name: String, collection: Arc<Collection>) {
+    pub async fn add_collection(&mut self, name: String, collection: BoxedCollection) {
         self.collections.insert(name, collection);
     }
 
-    pub async fn get_collection(&self, name: &str) -> Option<Arc<Collection>> {
+    pub async fn get_collection(&self, name: &str) -> Option<BoxedCollection> {
         self.collections
             .get(name)
-            .map(|collection| collection.clone())
+            .map(|collection| (*collection).clone())
     }
 
     pub async fn get_all_collection_names_sorted(&self) -> Vec<String> {

@@ -1,22 +1,26 @@
 use std::sync::Arc;
 
-use super::Collection;
+use quantization::noq::noq::NoQuantizerL2;
+use quantization::pq::pq::ProductQuantizerL2;
+use quantization::quantization::Quantizer;
+
+use super::collection::Collection;
 use crate::index::Searchable;
 use crate::segment::BoxedImmutableSegment;
 use crate::utils::{IdWithScore, SearchContext};
 
 /// Snapshot provides a view of the collection at a given point in time
-pub struct Snapshot {
-    pub segments: Vec<BoxedImmutableSegment>,
+pub struct Snapshot<Q: Quantizer + Clone> {
+    pub segments: Vec<BoxedImmutableSegment<Q>>,
     pub version: u64,
-    pub collection: Arc<Collection>,
+    pub collection: Arc<Collection<Q>>,
 }
 
-impl Snapshot {
+impl<Q: Quantizer + Clone> Snapshot<Q> {
     pub fn new(
-        segments: Vec<BoxedImmutableSegment>,
+        segments: Vec<BoxedImmutableSegment<Q>>,
         version: u64,
-        collection: Arc<Collection>,
+        collection: Arc<Collection<Q>>,
     ) -> Self {
         Self {
             segments,
@@ -55,7 +59,7 @@ impl Snapshot {
 }
 
 /// Search the collection using the given query
-impl Searchable for Snapshot {
+impl<Q: Quantizer + Clone> Searchable for Snapshot<Q> {
     fn search_with_id(
         &self,
         id: u128,
@@ -91,8 +95,41 @@ impl Searchable for Snapshot {
     }
 }
 
-impl Drop for Snapshot {
+impl<Q: Quantizer + Clone> Drop for Snapshot<Q> {
     fn drop(&mut self) {
         self.collection.release_version(self.version);
+    }
+}
+
+pub enum SnapshotWithQuantizer {
+    SnapshotNoQuantizer(Snapshot<NoQuantizerL2>),
+    SnapshotProductQuantizer(Snapshot<ProductQuantizerL2>),
+}
+
+impl SnapshotWithQuantizer {
+    pub fn new_with_no_quantizer(snapshot: Snapshot<NoQuantizerL2>) -> Self {
+        Self::SnapshotNoQuantizer(snapshot)
+    }
+
+    pub fn new_with_product_quantizer(snapshot: Snapshot<ProductQuantizerL2>) -> Self {
+        Self::SnapshotProductQuantizer(snapshot)
+    }
+
+    pub fn search_for_ids(
+        &self,
+        ids: &[u128],
+        query: &[f32],
+        k: usize,
+        ef_construction: u32,
+        context: &mut SearchContext,
+    ) -> Option<Vec<IdWithScore>> {
+        match self {
+            Self::SnapshotNoQuantizer(snapshot) => {
+                snapshot.search_for_ids(ids, query, k, ef_construction, context)
+            }
+            Self::SnapshotProductQuantizer(snapshot) => {
+                snapshot.search_for_ids(ids, query, k, ef_construction, context)
+            }
+        }
     }
 }
