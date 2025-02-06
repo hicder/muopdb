@@ -1,22 +1,24 @@
 use std::sync::Arc;
 
+use quantization::quantization::Quantizer;
+
 use super::Collection;
 use crate::index::Searchable;
 use crate::segment::BoxedImmutableSegment;
 use crate::utils::{IdWithScore, SearchContext};
 
 /// Snapshot provides a view of the collection at a given point in time
-pub struct Snapshot {
-    pub segments: Vec<BoxedImmutableSegment>,
+pub struct Snapshot<Q: Quantizer + Clone> {
+    pub segments: Vec<BoxedImmutableSegment<Q>>,
     pub version: u64,
-    pub collection: Arc<Collection>,
+    pub collection: Arc<Collection<Q>>,
 }
 
-impl Snapshot {
+impl<Q: Quantizer + Clone> Snapshot<Q> {
     pub fn new(
-        segments: Vec<BoxedImmutableSegment>,
+        segments: Vec<BoxedImmutableSegment<Q>>,
         version: u64,
-        collection: Arc<Collection>,
+        collection: Arc<Collection<Q>>,
     ) -> Self {
         Self {
             segments,
@@ -55,7 +57,7 @@ impl Snapshot {
 }
 
 /// Search the collection using the given query
-impl Searchable for Snapshot {
+impl<Q: Quantizer + Clone> Searchable for Snapshot<Q> {
     fn search_with_id(
         &self,
         id: u128,
@@ -91,7 +93,7 @@ impl Searchable for Snapshot {
     }
 }
 
-impl Drop for Snapshot {
+impl<Q: Quantizer + Clone> Drop for Snapshot<Q> {
     fn drop(&mut self) {
         self.collection.release_version(self.version);
     }

@@ -7,6 +7,7 @@ use utils::DistanceCalculator;
 
 use crate::quantization::{Quantizer, WritableQuantizer};
 
+#[derive(Debug, Clone, Copy)]
 pub struct NoQuantizer<D: DistanceCalculator> {
     dimension: usize,
 

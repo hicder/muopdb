@@ -2,11 +2,8 @@ use std::sync::Arc;
 
 use anyhow::{Ok, Result};
 use config::collection::CollectionConfig;
-use config::enums::QuantizerType;
 use parking_lot::RwLock;
-use quantization::noq::noq::NoQuantizer;
-use quantization::pq::pq::ProductQuantizer;
-use utils::distance::l2::L2DistanceCalculator;
+use quantization::quantization::Quantizer;
 use utils::io::get_latest_version;
 
 use super::{Collection, TableOfContent};
@@ -24,7 +21,7 @@ impl CollectionReader {
         Self { path }
     }
 
-    pub fn read(&self) -> Result<Arc<Collection>> {
+    pub fn read<Q: Quantizer + Clone>(&self) -> Result<Arc<Collection<Q>>> {
         // Read the SpannBuilderConfig
         let spann_builder_config_path = format!("{}/collection_config.json", self.path);
         let collection_config: CollectionConfig =
@@ -36,7 +33,7 @@ impl CollectionReader {
         let toc: TableOfContent = serde_json::from_reader(std::fs::File::open(toc_path)?)?;
 
         // Read the segments
-        let mut segments: Vec<BoxedImmutableSegment> = vec![];
+        let mut segments: Vec<BoxedImmutableSegment<Q>> = vec![];
         for name in &toc.toc {
             // We read pending segments later
             if toc.pending.contains_key(name) {
@@ -45,20 +42,10 @@ impl CollectionReader {
 
             let spann_path = format!("{}/{}", self.path, name);
             let spann_reader = MultiSpannReader::new(spann_path);
-            match collection_config.quantization_type {
-                QuantizerType::ProductQuantizer => {
-                    let index = spann_reader.read::<ProductQuantizer<L2DistanceCalculator>>()?;
-                    segments.push(BoxedImmutableSegment::FinalizedProductQuantizationSegment(
-                        Arc::new(RwLock::new(ImmutableSegment::new(index, name.clone()))),
-                    ));
-                }
-                QuantizerType::NoQuantizer => {
-                    let index = spann_reader.read::<NoQuantizer<L2DistanceCalculator>>()?;
-                    segments.push(BoxedImmutableSegment::FinalizedNoQuantizationSegment(
-                        Arc::new(RwLock::new(ImmutableSegment::new(index, name.clone()))),
-                    ));
-                }
-            };
+            let index = spann_reader.read::<Q>()?;
+            segments.push(BoxedImmutableSegment::FinalizedSegment(Arc::new(
+                RwLock::new(ImmutableSegment::new(index, name.clone())),
+            )));
         }
 
         // Empty all the pending segments
@@ -70,7 +57,7 @@ impl CollectionReader {
 
             // Get the inner segments
             let inner_segment_names = toc.pending.get(pending_segment_name).unwrap();
-            let mut inner_segments: Vec<BoxedImmutableSegment> = vec![];
+            let mut inner_segments: Vec<BoxedImmutableSegment<Q>> = vec![];
             for inner_segment_name in inner_segment_names {
                 for segment in &segments {
                     if segment.name() == *inner_segment_name {
@@ -80,24 +67,12 @@ impl CollectionReader {
                 }
             }
 
-            match collection_config.quantization_type {
-                QuantizerType::ProductQuantizer => {
-                    segments.push(BoxedImmutableSegment::PendingProductQuantizationSegment(
-                        Arc::new(RwLock::new(PendingSegment::new(
-                            inner_segments,
-                            pending_segment_path,
-                        ))),
-                    ));
-                }
-                QuantizerType::NoQuantizer => {
-                    segments.push(BoxedImmutableSegment::PendingNoQuantizationSegment(
-                        Arc::new(RwLock::new(PendingSegment::new(
-                            inner_segments,
-                            pending_segment_path,
-                        ))),
-                    ));
-                }
-            }
+            segments.push(BoxedImmutableSegment::PendingSegment(
+                Arc::new(RwLock::new(PendingSegment::new(
+                    inner_segments,
+                    pending_segment_path,
+                ))),
+            ));
         }
 
         let collection = Arc::new(Collection::init_from(
@@ -116,10 +91,12 @@ impl CollectionReader {
 mod tests {
     use anyhow::Result;
     use config::collection::CollectionConfig;
+    use quantization::noq::noq::NoQuantizerL2;
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
 
     use super::*;
+    use crate::collection::snapshot::Snapshot;
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::writer::MultiSpannWriter;
 
@@ -191,7 +168,7 @@ mod tests {
         assert_eq!(collection.current_version(), 1);
 
         // Get current snapshot
-        let snapshot = collection.get_snapshot().unwrap();
+        let snapshot: Snapshot<NoQuantizerL2> = collection.get_snapshot().unwrap();
         assert_eq!(snapshot.segments.len(), 2);
     }
 }

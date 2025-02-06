@@ -16,6 +16,7 @@ use crate::quantization::{Quantizer, WritableQuantizer};
 pub const CODEBOOK_NAME: &str = "codebook";
 
 // (TODO): support inner PQ distance template
+#[derive(Debug, Clone)]
 pub struct ProductQuantizer<D: DistanceCalculator> {
     pub dimension: usize,
     pub subvector_dimension: usize,

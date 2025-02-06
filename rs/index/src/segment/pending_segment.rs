@@ -10,8 +10,8 @@ use crate::multi_spann::index::MultiSpannIndex;
 use crate::multi_spann::reader::MultiSpannReader;
 use crate::utils::{IdWithScore, SearchContext};
 
-pub struct PendingSegment<Q: Quantizer> {
-    inner_segments: Vec<BoxedImmutableSegment>,
+pub struct PendingSegment<Q: Quantizer + Clone> {
+    inner_segments: Vec<BoxedImmutableSegment<Q>>,
     inner_segments_names: Vec<String>,
     name: String,
     parent_directory: String,
@@ -24,8 +24,8 @@ pub struct PendingSegment<Q: Quantizer> {
     index: RwLock<Option<MultiSpannIndex<Q>>>,
 }
 
-impl<Q: Quantizer> PendingSegment<Q> {
-    pub fn new(inner_segments: Vec<BoxedImmutableSegment>, data_directory: String) -> Self {
+impl<Q: Quantizer + Clone> PendingSegment<Q> {
+    pub fn new(inner_segments: Vec<BoxedImmutableSegment<Q>>, data_directory: String) -> Self {
         let path = PathBuf::from(&data_directory);
         // name is the last portion of the data_directory
         let name = path.file_name().unwrap().to_str().unwrap().to_string();
@@ -82,7 +82,7 @@ impl<Q: Quantizer> PendingSegment<Q> {
 }
 
 #[allow(unused)]
-impl<Q: Quantizer> Segment for PendingSegment<Q> {
+impl<Q: Quantizer + Clone> Segment for PendingSegment<Q> {
     fn insert(&self, doc_id: u64, data: &[f32]) -> Result<()> {
         Err(anyhow::anyhow!("Pending segment does not support insert"))
     }
@@ -100,7 +100,7 @@ impl<Q: Quantizer> Segment for PendingSegment<Q> {
     }
 }
 
-impl<Q: Quantizer> Searchable for PendingSegment<Q> {
+impl<Q: Quantizer + Clone> Searchable for PendingSegment<Q> {
     fn search(
         &self,
         query: &[f32],
@@ -191,7 +191,7 @@ mod tests {
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
         let segment1 = read_segment(segment1_dir.clone())?;
-        let segment1 = BoxedImmutableSegment::FinalizedNoQuantizationSegment(Arc::new(
+        let segment1 = BoxedImmutableSegment::<NoQuantizerL2>::FinalizedSegment(Arc::new(
             RwLock::new(ImmutableSegment::new(segment1, "segment_1".to_string())),
         ));
 

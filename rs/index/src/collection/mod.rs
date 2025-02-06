@@ -8,18 +8,15 @@ use std::time::Instant;
 use anyhow::{Ok, Result};
 use atomic_refcell::AtomicRefCell;
 use config::collection::CollectionConfig;
-use config::enums::QuantizerType;
 use dashmap::DashMap;
 use fs_extra::dir::CopyOptions;
 use lock_api::RwLockUpgradableReadGuard;
 use log::{debug, info};
 use parking_lot::{RawRwLock, RwLock};
-use quantization::noq::noq::NoQuantizer;
-use quantization::pq::pq::ProductQuantizer;
+use quantization::quantization::Quantizer;
 use serde::{Deserialize, Serialize};
 use snapshot::Snapshot;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use utils::distance::l2::L2DistanceCalculator;
 use utils::mem::{transmute_slice_to_u8, transmute_u8_to_slice};
 
 use crate::index::Searchable;
@@ -143,9 +140,9 @@ impl OpChannelEntry {
 }
 
 /// Collection is thread-safe. All pub fn are thread-safe.
-pub struct Collection {
+pub struct Collection<Q: Quantizer + Clone> {
     pub versions: DashMap<u64, TableOfContent>,
-    all_segments: DashMap<String, BoxedImmutableSegment>,
+    all_segments: DashMap<String, BoxedImmutableSegment<Q>>,
     versions_info: RwLock<VersionsInfo>,
     base_directory: String,
     mutable_segment: RwLock<MutableSegment>,
@@ -162,7 +159,7 @@ pub struct Collection {
     flushing: Mutex<()>,
 }
 
-impl Collection {
+impl<Q: Quantizer + Clone> Collection<Q> {
     pub fn new(base_directory: String, segment_config: CollectionConfig) -> Result<Self> {
         let versions: DashMap<u64, TableOfContent> = DashMap::new();
         versions.insert(0, TableOfContent::new(vec![]));
@@ -223,7 +220,7 @@ impl Collection {
         base_directory: String,
         version: u64,
         toc: TableOfContent,
-        segments: Vec<BoxedImmutableSegment>,
+        segments: Vec<BoxedImmutableSegment<Q>>,
         segment_config: CollectionConfig,
     ) -> Result<Self> {
         let versions_info = RwLock::new(VersionsInfo::new());
@@ -504,43 +501,18 @@ impl Collection {
                     self.base_directory,
                     name_for_new_segment.clone()
                 ));
-                match self.segment_config.quantization_type {
-                    QuantizerType::ProductQuantizer => {
-                        let index =
-                            spann_reader.read::<ProductQuantizer<L2DistanceCalculator>>()?;
-                        let segment = BoxedImmutableSegment::FinalizedProductQuantizationSegment(
-                            Arc::new(RwLock::new(ImmutableSegment::new(
-                                index,
-                                name_for_new_segment.clone(),
-                            ))),
-                        );
-                        self.add_segments(
-                            vec![name_for_new_segment.clone()],
-                            vec![segment],
-                            last_sequence_number,
-                        )?;
-                        self.trim_wal(last_sequence_number as i64)?;
-                        *self.last_flush_time.lock().unwrap() = Instant::now();
-                        Ok(name_for_new_segment)
-                    }
-                    QuantizerType::NoQuantizer => {
-                        let index = spann_reader.read::<NoQuantizer<L2DistanceCalculator>>()?;
-                        let segment = BoxedImmutableSegment::FinalizedNoQuantizationSegment(
-                            Arc::new(RwLock::new(ImmutableSegment::new(
-                                index,
-                                name_for_new_segment.clone(),
-                            ))),
-                        );
-                        self.add_segments(
-                            vec![name_for_new_segment.clone()],
-                            vec![segment],
-                            last_sequence_number,
-                        )?;
-                        self.trim_wal(last_sequence_number as i64)?;
-                        *self.last_flush_time.lock().unwrap() = Instant::now();
-                        Ok(name_for_new_segment)
-                    }
-                }
+                let index = spann_reader.read::<Q>()?;
+                let segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
+                    ImmutableSegment::new(index, name_for_new_segment.clone()),
+                )));
+                self.add_segments(
+                    vec![name_for_new_segment.clone()],
+                    vec![segment],
+                    last_sequence_number,
+                )?;
+                self.trim_wal(last_sequence_number as i64)?;
+                *self.last_flush_time.lock().unwrap() = Instant::now();
+                Ok(name_for_new_segment)
             }
             Err(_) => {
                 return Err(anyhow::anyhow!("Another thread is already flushing"));
@@ -550,7 +522,7 @@ impl Collection {
 
     /// Get a consistent snapshot for the collection
     /// TODO(hicder): Get the consistent snapshot w.r.t. time.
-    pub fn get_snapshot(self: Arc<Self>) -> Result<Snapshot> {
+    pub fn get_snapshot(self: Arc<Self>) -> Result<Snapshot<Q>> {
         if self.versions.is_empty() {
             return Err(anyhow::anyhow!("Collection is empty"));
         }
@@ -564,7 +536,7 @@ impl Collection {
         }
 
         let toc = latest_version.unwrap().toc.clone();
-        let segments: Vec<BoxedImmutableSegment> = toc
+        let segments: Vec<BoxedImmutableSegment<Q>> = toc
             .iter()
             .map(|name| self.all_segments.get(name).unwrap().value().clone())
             .collect();
@@ -587,7 +559,7 @@ impl Collection {
     pub fn add_segments(
         &self,
         names: Vec<String>,
-        segments: Vec<BoxedImmutableSegment>,
+        segments: Vec<BoxedImmutableSegment<Q>>,
         last_sequence_number: u64,
     ) -> Result<()> {
         for (name, segment) in names.iter().zip(segments) {
@@ -641,13 +613,12 @@ impl Collection {
     /// This function is not thread-safe. Caller needs to ensure the thread safety.
     fn replace_segment(
         &self,
-        new_segment: BoxedImmutableSegment,
+        new_segment: BoxedImmutableSegment<Q>,
         old_segment_names: Vec<String>,
         is_pending: bool,
         versions_info_read: RwLockUpgradableReadGuard<RawRwLock, VersionsInfo>,
     ) -> Result<()> {
-        self.all_segments
-            .insert(new_segment.name(), new_segment.clone());
+        self.all_segments.insert(new_segment.name(), new_segment);
 
         // Under the lock, we do the following:
         // - Increment the current version
@@ -702,7 +673,7 @@ impl Collection {
     /// This function is thread-safe.
     pub fn replace_segment_safe(
         &self,
-        new_segment: BoxedImmutableSegment,
+        new_segment: BoxedImmutableSegment<Q>,
         old_segment_names: Vec<String>,
         is_pending: bool,
     ) -> Result<()> {
@@ -772,28 +743,11 @@ impl Collection {
         for segment in segments {
             current_segments.push(self.all_segments.get(segment).unwrap().clone());
         }
-        match self.segment_config.quantization_type {
-            QuantizerType::ProductQuantizer => {
-                let pending_segment = PendingSegment::<ProductQuantizer<L2DistanceCalculator>>::new(
-                    current_segments.clone(),
-                    pending_segment_path,
-                );
-                let new_boxed_segment = BoxedImmutableSegment::PendingProductQuantizationSegment(
-                    Arc::new(RwLock::new(pending_segment)),
-                );
-                self.replace_segment_safe(new_boxed_segment, segments.clone(), true)?;
-            }
-            QuantizerType::NoQuantizer => {
-                let pending_segment = PendingSegment::<NoQuantizer<L2DistanceCalculator>>::new(
-                    current_segments.clone(),
-                    pending_segment_path,
-                );
-                let new_boxed_segment = BoxedImmutableSegment::PendingNoQuantizationSegment(
-                    Arc::new(RwLock::new(pending_segment)),
-                );
-                self.replace_segment_safe(new_boxed_segment, segments.clone(), true)?;
-            }
-        }
+        let pending_segment =
+            PendingSegment::<Q>::new(current_segments.clone(), pending_segment_path);
+        let new_boxed_segment =
+            BoxedImmutableSegment::PendingSegment(Arc::new(RwLock::new(pending_segment)));
+        self.replace_segment_safe(new_boxed_segment, segments.clone(), true)?;
 
         Ok(random_name)
     }
@@ -821,37 +775,17 @@ impl Collection {
         )?;
 
         // Replace the pending segment with the new segment
-        match self.segment_config.quantization_type {
-            QuantizerType::ProductQuantizer => {
-                let index = MultiSpannReader::new(new_segment_path.clone())
-                    .read::<ProductQuantizer<L2DistanceCalculator>>()?;
-                let new_segment =
-                    BoxedImmutableSegment::FinalizedProductQuantizationSegment(Arc::new(
-                        RwLock::new(ImmutableSegment::new(index, random_name.clone())),
-                    ));
-                self.replace_segment(
-                    new_segment,
-                    vec![pending_segment.to_string()],
-                    false,
-                    versions_info_read,
-                )?;
-                Ok(())
-            }
-            QuantizerType::NoQuantizer => {
-                let index = MultiSpannReader::new(new_segment_path)
-                    .read::<NoQuantizer<L2DistanceCalculator>>()?;
-                let new_segment = BoxedImmutableSegment::FinalizedNoQuantizationSegment(Arc::new(
-                    RwLock::new(ImmutableSegment::new(index, random_name.clone())),
-                ));
-                self.replace_segment(
-                    new_segment,
-                    vec![pending_segment.to_string()],
-                    false,
-                    versions_info_read,
-                )?;
-                Ok(())
-            }
-        }
+        let index = MultiSpannReader::new(new_segment_path.clone()).read::<Q>()?;
+        let new_segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
+            ImmutableSegment::new(index, random_name.clone()),
+        )));
+        self.replace_segment(
+            new_segment,
+            vec![pending_segment.to_string()],
+            false,
+            versions_info_read,
+        )?;
+        Ok(())
     }
 
     pub fn run_optimizer(
@@ -859,19 +793,10 @@ impl Collection {
         optimizer: &impl SegmentOptimizer,
         pending_segment: &str,
     ) -> Result<()> {
-        let segment = self.all_segments.get(pending_segment).unwrap().clone();
+        let x = self.all_segments.get(pending_segment).unwrap();
+        let segment = x.value().clone();
         match segment {
-            BoxedImmutableSegment::PendingNoQuantizationSegment(pending_segment) => {
-                let mut pending_segment = pending_segment.upgradable_read();
-                optimizer.optimize(&pending_segment)?;
-                pending_segment.build_index()?;
-                pending_segment.try_with_upgraded(|pending_segment_write| {
-                    pending_segment_write.apply_pending_deletions()?;
-                    pending_segment_write.switch_to_internal_index();
-                    Ok(())
-                });
-            }
-            BoxedImmutableSegment::PendingProductQuantizationSegment(pending_segment) => {
+            BoxedImmutableSegment::PendingSegment(pending_segment) => {
                 let mut pending_segment = pending_segment.upgradable_read();
                 optimizer.optimize(&pending_segment)?;
                 pending_segment.build_index()?;
@@ -908,6 +833,7 @@ mod tests {
     use anyhow::{Ok, Result};
     use config::collection::CollectionConfig;
     use parking_lot::RwLock;
+    use quantization::noq::noq::NoQuantizerL2;
     use rand::Rng;
     use tempdir::TempDir;
 
@@ -925,11 +851,11 @@ mod tests {
         let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
 
         {
-            let segment1: BoxedImmutableSegment =
+            let segment1: BoxedImmutableSegment<NoQuantizerL2> =
                 BoxedImmutableSegment::MockedNoQuantizationSegment(Arc::new(RwLock::new(
                     MockedSegment::new("segment1".to_string()),
                 )));
-            let segment2: BoxedImmutableSegment =
+            let segment2: BoxedImmutableSegment<NoQuantizerL2> =
                 BoxedImmutableSegment::MockedNoQuantizationSegment(Arc::new(RwLock::new(
                     MockedSegment::new("segment2".to_string()),
                 )));
@@ -1188,8 +1114,11 @@ mod tests {
         )?;
 
         {
-            let collection =
-                Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
+            let collection = Arc::new(Collection::<NoQuantizerL2>::new(
+                base_directory.clone(),
+                segment_config,
+            )
+            .unwrap());
 
             collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
             collection.flush()?;
@@ -1205,7 +1134,7 @@ mod tests {
         }
 
         let reader = CollectionReader::new(base_directory);
-        let collection = reader.read()?;
+        let collection = reader.read::<NoQuantizerL2>()?;
         let toc = collection.get_current_toc();
         assert_eq!(toc.pending.len(), 1);
         Ok(())
@@ -1218,7 +1147,9 @@ mod tests {
         let mut segment_config = CollectionConfig::default_test_config();
         segment_config.wal_file_size = 1024 * 1024;
 
-        let collection = Arc::new(Collection::new(base_directory.clone(), segment_config).unwrap());
+        let collection = Arc::new(
+            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+        );
         collection
             .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0])
             .await?;
@@ -1256,12 +1187,12 @@ mod tests {
         let mut segment_config = CollectionConfig::default_test_config();
         segment_config.wal_file_size = 1024 * 1024;
 
-        Collection::init_new_collection(base_directory.clone(), &segment_config)?;
+        Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &segment_config)?;
 
         // Insert but don't flush
         {
             let reader = CollectionReader::new(base_directory.clone());
-            let collection = reader.read()?;
+            let collection = reader.read::<NoQuantizerL2>()?;
             collection
                 .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0])
                 .await?;
@@ -1280,7 +1211,7 @@ mod tests {
 
         {
             let reader = CollectionReader::new(base_directory.clone());
-            let collection = reader.read()?;
+            let collection = reader.read::<NoQuantizerL2>()?;
             let toc = collection.get_current_toc();
             assert_eq!(toc.pending.len(), 0);
             assert_eq!(toc.sequence_number, -1);
@@ -1301,7 +1232,7 @@ mod tests {
 
         {
             let reader = CollectionReader::new(base_directory.clone());
-            let collection = reader.read()?;
+            let collection = reader.read::<NoQuantizerL2>()?;
             let toc = collection.get_current_toc();
             assert_eq!(toc.pending.len(), 0);
             assert_eq!(toc.sequence_number, 1);
