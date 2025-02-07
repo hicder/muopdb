@@ -121,11 +121,10 @@ docker-compose up --build
 ### Phase 3 (Ongoing)
 - [ ] Features
   - [ ] Delete vector from collection
-  - [ ] [RabitQ quantization](https://arxiv.org/abs/2405.12497)
 - [ ] Database Management
   - [x] Segment optimizer framework
   - [x] Write-ahead-log
-  - [ ] Segments merger
+  - [x] Segments merger
   - [ ] Segments vacuum
 
 ### Building
