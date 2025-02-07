@@ -1,6 +1,8 @@
-use std::fs::{File, OpenOptions};
+use std::cmp::max;
+use std::fs::{metadata, read_dir, File, OpenOptions};
 use std::io::Write;
 use std::mem::size_of;
+use std::path::Path;
 
 use anyhow::Result;
 
@@ -13,6 +15,7 @@ pub struct InvalidatedIdsStorage {
 }
 
 impl InvalidatedIdsStorage {
+    const DEFAULT_BACKING_FILE_SIZE: usize = 8192;
     pub fn new(base_directory: &str, backing_file_size: usize) -> Self {
         let bytes_per_invalidation = size_of::<u128>() + size_of::<u32>();
         let rounded_backing_file_size =
@@ -24,6 +27,70 @@ impl InvalidatedIdsStorage {
             current_backing_id: -1,
             current_offset: rounded_backing_file_size,
         }
+    }
+
+    pub fn read(base_directory: &str) -> Result<Self> {
+        let base_path = Path::new(base_directory);
+        // Create a storage from scratch if none exists.
+        if !base_path.exists() || !base_path.is_dir() {
+            return Ok(Self::new(base_directory, Self::DEFAULT_BACKING_FILE_SIZE));
+        }
+
+        // Get the list of invalidated ids files
+        let mut invalidated_ids_files: Vec<String> = read_dir(base_directory)?
+            .filter_map(|entry| entry.ok()) // Ignore errors
+            .filter_map(|entry| {
+                let file_name = entry.file_name();
+                let file_name_str = file_name.to_str()?.to_string();
+
+                if file_name_str.starts_with("invalidated_ids.bin.") {
+                    Some(entry.path().to_str()?.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if invalidated_ids_files.is_empty() {
+            return Ok(Self::new(base_directory, Self::DEFAULT_BACKING_FILE_SIZE));
+        }
+
+        // Sort the files numerically by their suffix
+        invalidated_ids_files.sort_by_key(|file_name| {
+            file_name
+                .rsplit_once('.') // Split at the last dot
+                .and_then(|(_, suffix)| suffix.parse::<u32>().ok()) // Parse the suffix as a number
+                .unwrap_or(0) // Default to 0 if parsing fails
+        });
+        let current_offset = metadata(invalidated_ids_files.last().unwrap())?.len() as usize;
+
+        // - If there are multiple files, all files (except maybe last one) should have the same
+        // size, and backing file size should be this
+        // - If there is only one file, backing file size should be max between this file size and
+        // default file size
+        let first_file_size = metadata(invalidated_ids_files.first().unwrap())?.len() as usize;
+        let backing_file_size = if invalidated_ids_files.len() == 1 {
+            max(Self::DEFAULT_BACKING_FILE_SIZE, first_file_size)
+        } else {
+            first_file_size
+        };
+
+        let mut files: Vec<File> = Vec::new();
+        for file_name in invalidated_ids_files.iter() {
+            let file = OpenOptions::new().append(true).open(file_name)?;
+            files.push(file);
+        }
+
+        let bytes_per_invalidation = size_of::<u128>() + size_of::<u32>();
+        let rounded_backing_file_size =
+            backing_file_size / bytes_per_invalidation * bytes_per_invalidation;
+        Ok(Self {
+            base_directory: base_directory.to_string(),
+            backing_file_size: rounded_backing_file_size,
+            files,
+            current_backing_id: invalidated_ids_files.len() as i32 - 1,
+            current_offset,
+        })
     }
 
     fn new_backing_file(&mut self) -> Result<()> {
@@ -174,5 +241,88 @@ mod tests {
 
         // Ensure all entries were verified
         assert_eq!(num_invalidations, expected_data.len());
+    }
+
+    #[test]
+    fn test_read_single_file() {
+        let temp_dir = tempdir::TempDir::new("test_read_single_file")
+            .expect("Failed to create temporary directory");
+        let base_dir = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let mut storage = InvalidatedIdsStorage::new(&base_dir, 1024);
+
+        // Invalidate a user ID and point ID
+        let user_id: u128 = 123456789012345678901234567890123456;
+        let point_id: u32 = 987654321;
+        assert!(storage.invalidate(user_id, point_id).is_ok());
+
+        let mut read_back_storage = InvalidatedIdsStorage::read(&base_dir)
+            .expect("Failed to read back invalidated ids storage");
+
+        // Verify state after invalidation
+        assert_eq!(read_back_storage.current_backing_id, 0);
+        assert_eq!(
+            read_back_storage.current_offset,
+            size_of::<u128>() + size_of::<u32>()
+        );
+
+        let bytes_per_invalidation = size_of::<u128>() + size_of::<u32>();
+        assert_eq!(
+            read_back_storage.backing_file_size,
+            InvalidatedIdsStorage::DEFAULT_BACKING_FILE_SIZE / bytes_per_invalidation
+                * bytes_per_invalidation
+        );
+
+        // Test invalidating read back storage
+        assert!(read_back_storage.invalidate(user_id, point_id + 1).is_ok());
+        assert_eq!(
+            storage.current_offset + size_of::<u128>() + size_of::<u32>(),
+            read_back_storage.current_offset
+        );
+    }
+
+    #[test]
+    fn test_read_multiple_files() {
+        let temp_dir = tempdir::TempDir::new("test_read_multiple_files")
+            .expect("Failed to create temporary directory");
+        let base_dir = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let mut storage = InvalidatedIdsStorage::new(&base_dir, 64); // Small size for testing
+
+        // Write multiple invalidations to trigger new backing files
+        let num_invalidations = 31;
+        let mut expected_data = Vec::new();
+        for i in 0..num_invalidations {
+            let user_id = i as u128;
+            let point_id = i as u32;
+            assert!(storage.invalidate(user_id, point_id).is_ok());
+            expected_data.push((user_id, point_id));
+        }
+
+        let mut read_back_storage = InvalidatedIdsStorage::read(&base_dir)
+            .expect("Failed to read back invalidated ids storage");
+
+        assert_eq!(
+            storage.current_backing_id,
+            read_back_storage.current_backing_id
+        );
+        assert_eq!(storage.current_offset, read_back_storage.current_offset);
+        assert_eq!(
+            storage.backing_file_size,
+            read_back_storage.backing_file_size
+        );
+
+        // Test invalidating read back storage
+        assert!(read_back_storage.invalidate(31, 31).is_ok());
+        assert_eq!(
+            storage.current_offset + size_of::<u128>() + size_of::<u32>(),
+            read_back_storage.current_offset
+        );
     }
 }
