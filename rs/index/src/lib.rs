@@ -1,4 +1,5 @@
 #![feature(auto_traits)]
+#![feature(min_specialization)]
 
 pub mod collection;
 pub mod hnsw;

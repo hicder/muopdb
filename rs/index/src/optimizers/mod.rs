@@ -1,4 +1,5 @@
 pub mod engine;
+pub mod merge;
 pub mod noop;
 
 use anyhow::Result;

@@ -5,6 +5,7 @@ use super::Segment;
 use crate::collection::SegmentSearchable;
 use crate::index::Searchable;
 use crate::multi_spann::index::MultiSpannIndex;
+use crate::spann::iter::SpannIter;
 
 /// This is an immutable segment. This usually contains a single index.
 pub struct ImmutableSegment<Q: Quantizer> {
@@ -15,6 +16,14 @@ pub struct ImmutableSegment<Q: Quantizer> {
 impl<Q: Quantizer> ImmutableSegment<Q> {
     pub fn new(index: MultiSpannIndex<Q>, name: String) -> Self {
         Self { index, name }
+    }
+
+    pub fn user_ids(&self) -> Vec<u128> {
+        self.index.user_ids()
+    }
+
+    pub fn iter_for_user(&self, user_id: u128) -> Option<SpannIter<Q>> {
+        self.index.iter_for_user(user_id)
     }
 }
 

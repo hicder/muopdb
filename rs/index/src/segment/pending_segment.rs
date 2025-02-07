@@ -1,6 +1,8 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use anyhow::{Ok, Result};
+use config::collection::CollectionConfig;
 use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
 
@@ -22,10 +24,16 @@ pub struct PendingSegment<Q: Quantizer + Clone> {
 
     // The internal index.
     index: RwLock<Option<MultiSpannIndex<Q>>>,
+
+    collection_config: CollectionConfig,
 }
 
 impl<Q: Quantizer + Clone> PendingSegment<Q> {
-    pub fn new(inner_segments: Vec<BoxedImmutableSegment<Q>>, data_directory: String) -> Self {
+    pub fn new(
+        inner_segments: Vec<BoxedImmutableSegment<Q>>,
+        data_directory: String,
+        collection_config: CollectionConfig,
+    ) -> Self {
         let path = PathBuf::from(&data_directory);
         // name is the last portion of the data_directory
         let name = path.file_name().unwrap().to_str().unwrap().to_string();
@@ -44,6 +52,7 @@ impl<Q: Quantizer + Clone> PendingSegment<Q> {
             parent_directory,
             index: RwLock::new(None),
             use_internal_index: false,
+            collection_config,
         }
     }
 
@@ -72,12 +81,32 @@ impl<Q: Quantizer + Clone> PendingSegment<Q> {
         self.use_internal_index = true;
     }
 
-    pub fn inner_segments(&self) -> &Vec<String> {
+    pub fn inner_segments_names(&self) -> &Vec<String> {
         &self.inner_segments_names
     }
 
-    pub fn base_directory(&self) -> &String {
+    pub fn parent_directory(&self) -> &String {
         &self.parent_directory
+    }
+
+    pub fn base_directory(&self) -> String {
+        format!("{}/{}", self.parent_directory, self.name)
+    }
+
+    pub fn inner_segments(&self) -> &Vec<BoxedImmutableSegment<Q>> {
+        &self.inner_segments
+    }
+
+    pub fn collection_config(&self) -> &CollectionConfig {
+        &self.collection_config
+    }
+
+    pub fn all_user_ids(&self) -> Vec<u128> {
+        let mut user_ids = HashSet::new();
+        for segment in &self.inner_segments {
+            user_ids.extend(segment.user_ids());
+        }
+        user_ids.into_iter().collect()
     }
 }
 
@@ -208,6 +237,7 @@ mod tests {
         let pending_segment = PendingSegment::<NoQuantizer<L2DistanceCalculator>>::new(
             vec![segment1],
             pending_dir.clone(),
+            CollectionConfig::default_test_config(),
         );
 
         let mut context = SearchContext::new(false);

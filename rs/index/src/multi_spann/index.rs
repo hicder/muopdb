@@ -9,6 +9,7 @@ use quantization::quantization::Quantizer;
 use super::user_index_info::HashConfig;
 use crate::index::Searchable;
 use crate::spann::index::Spann;
+use crate::spann::iter::SpannIter;
 use crate::spann::reader::SpannReader;
 use crate::utils::{IdWithScore, SearchContext};
 
@@ -29,6 +30,54 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             user_index_info_mmap,
             user_index_infos,
         })
+    }
+
+    pub fn user_ids(&self) -> Vec<u128> {
+        let mut user_ids = Vec::new();
+        for (key, _) in self.user_index_infos.iter() {
+            user_ids.push(key);
+        }
+        user_ids
+    }
+
+    pub fn iter_for_user(&self, user_id: u128) -> Option<SpannIter<Q>> {
+        let index = self.user_to_spann.get(&user_id);
+        if index.is_none() {
+            let index = self.prefetch_for_user(user_id);
+            if index.is_err() {
+                return None;
+            }
+            let index = index.unwrap();
+            return Some(SpannIter::new(Arc::clone(&index)));
+        }
+        let index = index.unwrap().clone();
+        Some(SpannIter::new(Arc::clone(&index)))
+    }
+
+    pub fn prefetch_for_user(&self, user_id: u128) -> Result<Arc<Spann<Q>>> {
+        let index_info = self.user_index_infos.get(&user_id);
+        if index_info.is_none() {
+            return Err(anyhow::anyhow!("User not found"));
+        }
+
+        let index_info = index_info.unwrap();
+        let reader = SpannReader::new_with_offsets(
+            self.base_directory.clone(),
+            index_info.centroid_index_offset as usize,
+            index_info.centroid_vector_offset as usize,
+            index_info.ivf_index_offset as usize,
+            index_info.ivf_vectors_offset as usize,
+        );
+        match reader.read::<Q>() {
+            Ok(index) => {
+                let index = Arc::new(index);
+                self.user_to_spann.insert(user_id, index.clone());
+                Ok(index)
+            }
+            Err(_) => {
+                return Err(anyhow::anyhow!("Failed to read index"));
+            }
+        }
     }
 }
 
