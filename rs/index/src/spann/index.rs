@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use anyhow::Result;
 use compression::noc::noc::PlainDecoder;
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
@@ -54,6 +55,10 @@ impl<Q: Quantizer> Spann<Q> {
         self.posting_lists
             .vector_storage
             .get(point_id as usize, context)
+    }
+
+    pub fn invalidate(&self, doc_id: u128) -> Result<bool> {
+        self.posting_lists.invalidate(doc_id)
     }
 }
 
@@ -188,6 +193,79 @@ mod tests {
         assert_eq!(results.len(), k);
         assert_eq!(results[0].id, 4); // Closest to [4.0, 4.0, 4.0, 4.0]
         assert_eq!(results[1].id, 3); // Next is [3.0, 3.0, 3.0, 3.0]
+    }
+
+    #[test]
+    fn test_spann_search_with_invalidation() {
+        let temp_dir = tempdir::TempDir::new("spann_search_with_invalidation_test")
+            .expect("Failed to create temporary directory");
+        let base_dir = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_clusters = 10;
+        let num_vectors = 1000;
+        let num_features = 4;
+        let file_size = 4096;
+        let balance_factor = 0.0;
+        let max_posting_list_size = usize::MAX;
+        let mut builder = SpannBuilder::new(SpannBuilderConfig {
+            centroids_max_neighbors: 10,
+            centroids_max_layers: 2,
+            centroids_ef_construction: 100,
+            centroids_vector_storage_memory_size: 1024,
+            centroids_vector_storage_file_size: file_size,
+            num_features,
+            pq_subvector_dimension: 8,
+            pq_num_bits: 8,
+            pq_num_training_rows: 50,
+            quantizer_type: QuantizerType::NoQuantizer,
+            pq_max_iteration: 1000,
+            pq_batch_size: 4,
+            ivf_num_clusters: num_clusters,
+            ivf_num_data_points_for_clustering: num_vectors,
+            ivf_max_clusters_per_vector: 1,
+            ivf_distance_threshold: 0.1,
+            posting_list_encoding_type: IntSeqEncodingType::PlainEncoding,
+            ivf_base_directory: base_dir.clone(),
+            ivf_vector_storage_memory_size: 1024,
+            ivf_vector_storage_file_size: file_size,
+            centroids_clustering_tolerance: balance_factor,
+            ivf_max_posting_list_size: max_posting_list_size,
+            reindex: false,
+        })
+        .unwrap();
+
+        // Generate 1000 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            builder
+                .add(i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .unwrap();
+        }
+        assert!(builder.build().is_ok());
+        let spann_writer = SpannWriter::new(base_dir.clone());
+        assert!(spann_writer.write(&mut builder).is_ok());
+
+        let spann_reader = SpannReader::new(base_dir.clone());
+        let spann = spann_reader
+            .read::<NoQuantizer<L2DistanceCalculator>>()
+            .unwrap();
+
+        let query = vec![2.4, 3.4, 4.4, 5.4];
+        let k = 2;
+        let num_probes = 2;
+        let mut context = SearchContext::new(false);
+
+        assert!(spann.invalidate(4).expect("Failed to invalidate"));
+        let results = spann
+            .search(&query, k, num_probes, &mut context)
+            .expect("IVF search should return a result");
+
+        assert_eq!(results.len(), k);
+        assert_eq!(results[0].id, 3); // Closest to [3.0, 3.0, 3.0, 3.0]
+        assert_eq!(results[1].id, 5); // Next is [5.0, 5.0, 5.0, 5.0]
     }
 
     #[test]
