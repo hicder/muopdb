@@ -59,10 +59,7 @@ impl<Q: Quantizer + Clone> BoxedImmutableSegment<Q> {
         }
     }
 
-    pub fn iter_for_user(
-        &self,
-        user_id: u128,
-    ) -> Option<SpannIter<Q>> {
+    pub fn iter_for_user(&self, user_id: u128) -> Option<SpannIter<Q>> {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                 immutable_segment.read().iter_for_user(user_id)
