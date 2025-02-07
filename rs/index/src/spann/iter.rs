@@ -19,19 +19,15 @@ impl<Q: Quantizer> SpannIter<Q> {
             search_context: SearchContext::new(false),
         }
     }
-}
 
-impl<Q: Quantizer> Iterator for SpannIter<Q> {
-    type Item = (u128, Vec<Q::QuantizedT>);
-
-    fn next(&mut self) -> Option<Self::Item> {
+    pub fn next_point(&mut self) -> Option<(u128, &[Q::QuantizedT])> {
         if let Some(doc_id) = self.index.get_doc_id(self.next_point_id) {
             let vector = self
                 .index
                 .get_vector(self.next_point_id, &mut self.search_context)
                 .unwrap();
             self.next_point_id += 1;
-            Some((doc_id, vector.to_vec()))
+            Some((doc_id, vector))
         } else {
             None
         }

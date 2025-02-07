@@ -11,6 +11,7 @@ use pending_segment::PendingSegment;
 use quantization::quantization::Quantizer;
 
 use crate::index::Searchable;
+use crate::spann::iter::SpannIter;
 use crate::utils::{IdWithScore, SearchContext};
 
 /// A segment is a partial index: users can insert some documents, then flush
@@ -61,7 +62,7 @@ impl<Q: Quantizer + Clone> BoxedImmutableSegment<Q> {
     pub fn iter_for_user(
         &self,
         user_id: u128,
-    ) -> Option<impl Iterator<Item = (u128, Vec<Q::QuantizedT>)>> {
+    ) -> Option<SpannIter<Q>> {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                 immutable_segment.read().iter_for_user(user_id)
