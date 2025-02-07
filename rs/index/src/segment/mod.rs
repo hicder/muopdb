@@ -43,6 +43,34 @@ pub enum BoxedImmutableSegment<Q: Quantizer + Clone> {
     MockedNoQuantizationSegment(Arc<RwLock<MockedSegment>>),
 }
 
+impl<Q: Quantizer + Clone> BoxedImmutableSegment<Q> {
+    pub fn user_ids(&self) -> Vec<u128> {
+        match self {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                immutable_segment.read().user_ids()
+            }
+            BoxedImmutableSegment::PendingSegment(pending_segment) => {
+                pending_segment.read().all_user_ids()
+            }
+            BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
+                mocked_segment.read().ids_to_return.clone()
+            }
+        }
+    }
+
+    pub fn iter_for_user(
+        &self,
+        user_id: u128,
+    ) -> Option<impl Iterator<Item = (u128, Vec<Q::QuantizedT>)>> {
+        match self {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                immutable_segment.read().iter_for_user(user_id)
+            }
+            _ => None,
+        }
+    }
+}
+
 impl<Q: Quantizer + Clone> Searchable for BoxedImmutableSegment<Q> {
     fn search(
         &self,

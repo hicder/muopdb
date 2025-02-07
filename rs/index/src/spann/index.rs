@@ -9,6 +9,7 @@ use utils::distance::l2::L2DistanceCalculator;
 use crate::hnsw::index::Hnsw;
 use crate::index::Searchable;
 use crate::ivf::index::Ivf;
+use crate::utils::SearchContext;
 
 pub struct Spann<Q: Quantizer> {
     centroids: Hnsw<NoQuantizer<L2DistanceCalculator>>,
@@ -32,6 +33,27 @@ impl<Q: Quantizer> Spann<Q> {
 
     pub fn get_posting_lists(&self) -> &Ivf<Q, L2DistanceCalculator, PlainDecoder> {
         &self.posting_lists
+    }
+
+    pub fn get_doc_id(&self, point_id: u32) -> Option<u128> {
+        match self
+            .posting_lists
+            .index_storage
+            .get_doc_id(point_id as usize)
+        {
+            Ok(doc_id) => Some(doc_id),
+            Err(_) => None,
+        }
+    }
+
+    pub fn get_vector(
+        &self,
+        point_id: u32,
+        context: &mut SearchContext,
+    ) -> Option<&[Q::QuantizedT]> {
+        self.posting_lists
+            .vector_storage
+            .get(point_id as usize, context)
     }
 }
 

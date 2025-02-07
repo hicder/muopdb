@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Ok, Result};
 use quantization::quantization::Quantizer;
 
+use super::merge::MergeOptimizer;
 use super::noop::NoopOptimizer;
 use crate::collection::collection::Collection;
 
@@ -30,7 +31,12 @@ impl<Q: Quantizer + Clone> OptimizerEngine<Q> {
         let pending_segment = self.collection.init_optimizing(&segments)?;
         match optimizing_type {
             OptimizingType::Vacuum => Ok(()),
-            OptimizingType::Merge => Ok(()),
+            OptimizingType::Merge => {
+                let merge_optimizer = MergeOptimizer::<Q>::new();
+                self.collection
+                    .run_optimizer(&merge_optimizer, &pending_segment)?;
+                Ok(())
+            }
             OptimizingType::Noop => {
                 let noop_optimizer = NoopOptimizer::new();
                 self.collection

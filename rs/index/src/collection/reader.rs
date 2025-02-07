@@ -69,7 +69,11 @@ impl CollectionReader {
             }
 
             segments.push(BoxedImmutableSegment::PendingSegment(Arc::new(
-                RwLock::new(PendingSegment::new(inner_segments, pending_segment_path)),
+                RwLock::new(PendingSegment::new(
+                    inner_segments,
+                    pending_segment_path,
+                    collection_config.clone(),
+                )),
             )));
         }
 

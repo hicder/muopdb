@@ -629,8 +629,11 @@ impl<Q: Quantizer + Clone> Collection<Q> {
         for segment in segments {
             current_segments.push(self.all_segments.get(segment).unwrap().clone());
         }
-        let pending_segment =
-            PendingSegment::<Q>::new(current_segments.clone(), pending_segment_path);
+        let pending_segment = PendingSegment::<Q>::new(
+            current_segments.clone(),
+            pending_segment_path,
+            self.segment_config.clone(),
+        );
         let new_boxed_segment =
             BoxedImmutableSegment::PendingSegment(Arc::new(RwLock::new(pending_segment)));
         self.replace_segment_safe(new_boxed_segment, segments.clone(), true)?;
