@@ -682,8 +682,12 @@ impl<Q: Quantizer + Clone> Collection<Q> {
         optimizer: &impl SegmentOptimizer<Q>,
         pending_segment: &str,
     ) -> Result<()> {
-        let x = self.all_segments.get(pending_segment).unwrap();
-        let segment = x.value().clone();
+        let segment = self
+            .all_segments
+            .get(pending_segment)
+            .unwrap()
+            .value()
+            .clone();
         match segment {
             BoxedImmutableSegment::PendingSegment(pending_segment) => {
                 let mut pending_segment = pending_segment.upgradable_read();
