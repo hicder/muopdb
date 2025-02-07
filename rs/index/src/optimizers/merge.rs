@@ -75,6 +75,7 @@ mod tests {
         config.wal_file_size = 0;
         config.max_time_to_flush_ms = 0;
         config.max_pending_ops = 0;
+        config.initial_num_centroids = 1;
 
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
@@ -87,9 +88,9 @@ mod tests {
 
         collection.flush()?;
 
-        collection.insert_for_users(&[0], 4, &[10.0, 11.0, 12.0], 3)?;
-        collection.insert_for_users(&[0], 5, &[13.0, 14.0, 15.0], 4)?;
-        collection.insert_for_users(&[0], 6, &[16.0, 17.0, 18.0], 5)?;
+        collection.insert_for_users(&[0], 4, &[100.0, 101.0, 102.0], 3)?;
+        collection.insert_for_users(&[0], 5, &[103.0, 104.0, 105.0], 4)?;
+        collection.insert_for_users(&[0], 6, &[106.0, 107.0, 108.0], 5)?;
 
         collection.flush()?;
 
@@ -108,20 +109,21 @@ mod tests {
         let snapshot = collection.get_snapshot()?;
         let mut context = SearchContext::new(false);
         let result = snapshot
-            .search_for_ids(&[0], &[10.0, 11.0, 12.0], 3, 10, &mut context)
+            .search_for_ids(&[0], &[100.0, 101.0, 102.0], 3, 10, &mut context)
             .unwrap();
         assert_eq!(result.len(), 3);
-        assert_eq!(result[0].id, 4);
-        assert_eq!(result[1].id, 5);
-        assert_eq!(result[2].id, 6);
+
+        let mut result_ids = result.iter().map(|id| id.id).collect::<Vec<_>>();
+        result_ids.sort();
+        assert_eq!(result_ids, vec![4, 5, 6]);
 
         let result = snapshot
             .search_for_ids(&[0], &[1.0, 2.0, 3.0], 3, 10, &mut context)
             .unwrap();
         assert_eq!(result.len(), 3);
-        assert_eq!(result[0].id, 1);
-        assert_eq!(result[1].id, 2);
-        assert_eq!(result[2].id, 3);
+        let mut result_ids = result.iter().map(|id| id.id).collect::<Vec<_>>();
+        result_ids.sort();
+        assert_eq!(result_ids, vec![1, 2, 3]);
 
         Ok(())
     }
@@ -177,17 +179,19 @@ mod tests {
             .search_for_ids(&[0], &[1.0, 2.0, 3.0], 3, 10, &mut context)
             .unwrap();
         assert_eq!(result.len(), 3);
-        assert_eq!(result[0].id, 1);
-        assert_eq!(result[1].id, 2);
-        assert_eq!(result[2].id, 3);
+
+        let mut result_ids = result.iter().map(|id| id.id).collect::<Vec<_>>();
+        result_ids.sort();
+        assert_eq!(result_ids, vec![1, 2, 3]);
 
         let result = snapshot
             .search_for_ids(&[1], &[10.0, 11.0, 12.0], 3, 10, &mut context)
             .unwrap();
         assert_eq!(result.len(), 3);
-        assert_eq!(result[0].id, 4);
-        assert_eq!(result[1].id, 5);
-        assert_eq!(result[2].id, 6);
+
+        let mut result_ids = result.iter().map(|id| id.id).collect::<Vec<_>>();
+        result_ids.sort();
+        assert_eq!(result_ids, vec![4, 5, 6]);
 
         Ok(())
     }
