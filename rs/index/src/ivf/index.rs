@@ -156,8 +156,14 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         doc_ids
     }
 
-    pub fn invalidate_id(&self, point_id: u32) {
-        self.invalid_point_ids.insert(point_id);
+    pub fn invalidate(&self, doc_id: u128) -> Result<bool> {
+        for point_id in 0..self.vector_storage.num_vectors {
+            if self.index_storage.get_doc_id(point_id)? == doc_id {
+                self.invalid_point_ids.insert(point_id as u32);
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }
 
@@ -655,7 +661,7 @@ mod tests {
         let k = 4;
         let mut context = SearchContext::new(false);
 
-        ivf.invalidate_id(3);
+        assert!(ivf.invalidate(103).expect("Failed to invalidate"));
 
         let results = ivf
             .search(&query, k, num_probes, &mut context)
