@@ -38,8 +38,9 @@ impl SegmentOptimizer<NoQuantizerL2> for MergeOptimizer<NoQuantizerL2> {
             for inner_segment in inner_segments {
                 let iter = inner_segment.iter_for_user(user_id);
                 if let Some(iter) = iter {
-                    for (doc_id, vector) in iter {
-                        builder.insert(user_id, doc_id, vector.as_slice())?;
+                    let mut iter = iter;
+                    while let Some((doc_id, vector)) = iter.next() {
+                        builder.insert(user_id, doc_id, vector)?;
                     }
                 }
             }
