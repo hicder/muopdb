@@ -112,15 +112,15 @@ impl<Q: Quantizer + Clone> PendingSegment<Q> {
 
 #[allow(unused)]
 impl<Q: Quantizer + Clone> Segment for PendingSegment<Q> {
-    fn insert(&self, doc_id: u64, data: &[f32]) -> Result<()> {
+    fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
         Err(anyhow::anyhow!("Pending segment does not support insert"))
     }
 
-    fn remove(&self, _doc_id: u64) -> Result<bool> {
+    fn remove(&self, _doc_id: u128) -> Result<bool> {
         todo!()
     }
 
-    fn may_contains(&self, _doc_id: u64) -> bool {
+    fn may_contains(&self, _doc_id: u128) -> bool {
         todo!()
     }
 

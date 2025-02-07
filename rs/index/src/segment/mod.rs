@@ -20,16 +20,16 @@ pub trait Segment {
     /// Inserts a document into the segment.
     /// Returns an error if the insertion process fails for any reason.
     /// NOTE: Some type of segment may not support insertion.
-    fn insert(&self, doc_id: u64, data: &[f32]) -> Result<()>;
+    fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()>;
 
     /// Removes a document from the segment.
     /// Returns true if the document was removed, false if the document was not found.
     /// Returns an error if the removal process fails for any reason.
-    fn remove(&self, doc_id: u64) -> Result<bool>;
+    fn remove(&self, doc_id: u128) -> Result<bool>;
 
     /// Returns true if the segment may contain the given document.
     /// False if the segment definitely does not contain the document.
-    fn may_contains(&self, doc_id: u64) -> bool;
+    fn may_contains(&self, doc_id: u128) -> bool;
 
     /// Returns the name of the segment.
     fn name(&self) -> String;
@@ -114,7 +114,7 @@ impl<Q: Quantizer + Clone> Searchable for BoxedImmutableSegment<Q> {
 }
 
 impl<Q: Quantizer + Clone> Segment for BoxedImmutableSegment<Q> {
-    fn insert(&self, doc_id: u64, data: &[f32]) -> Result<()> {
+    fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                 immutable_segment.write().insert(doc_id, data)
@@ -128,7 +128,7 @@ impl<Q: Quantizer + Clone> Segment for BoxedImmutableSegment<Q> {
         }
     }
 
-    fn remove(&self, doc_id: u64) -> Result<bool> {
+    fn remove(&self, doc_id: u128) -> Result<bool> {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                 immutable_segment.read().remove(doc_id)
@@ -142,7 +142,7 @@ impl<Q: Quantizer + Clone> Segment for BoxedImmutableSegment<Q> {
         }
     }
 
-    fn may_contains(&self, doc_id: u64) -> bool {
+    fn may_contains(&self, doc_id: u128) -> bool {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                 immutable_segment.read().may_contains(doc_id)
@@ -216,15 +216,15 @@ impl Searchable for MockedSegment {
 
 #[allow(unused)]
 impl Segment for MockedSegment {
-    fn insert(&self, doc_id: u64, data: &[f32]) -> Result<()> {
+    fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
         todo!()
     }
 
-    fn remove(&self, doc_id: u64) -> Result<bool> {
+    fn remove(&self, doc_id: u128) -> Result<bool> {
         todo!()
     }
 
-    fn may_contains(&self, doc_id: u64) -> bool {
+    fn may_contains(&self, doc_id: u128) -> bool {
         todo!()
     }
 
