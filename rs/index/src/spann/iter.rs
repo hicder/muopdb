@@ -20,7 +20,7 @@ impl<Q: Quantizer> SpannIter<Q> {
         }
     }
 
-    pub fn next_point(&mut self) -> Option<(u128, &[Q::QuantizedT])> {
+    pub fn next(&mut self) -> Option<(u128, &[Q::QuantizedT])> {
         if let Some(doc_id) = self.index.get_doc_id(self.next_point_id) {
             let vector = self
                 .index
