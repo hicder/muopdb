@@ -2,7 +2,22 @@ syntax = "proto3";
 package admin;
 
 service IndexServerAdmin {
+    rpc GetSegments(GetSegmentsRequest) returns (GetSegmentsResponse) {}
     rpc MergeSegments(MergeSegmentsRequest) returns (MergeSegmentsResponse) {}
+}
+
+message GetSegmentsRequest {
+  string collection_name = 1;
+}
+
+message SegmentInfo {
+  string segment_name = 1;
+  uint64 size_in_bytes = 2;
+}
+
+message GetSegmentsResponse {
+  repeated SegmentInfo segment_infos = 1;
+  uint64 version = 2;
 }
 
 message MergeSegmentsRequest {

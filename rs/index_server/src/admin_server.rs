@@ -2,8 +2,12 @@ use std::sync::Arc;
 
 use index::collection::BoxedCollection;
 use index::optimizers::engine::{OptimizerEngine, OptimizingType};
+use log::info;
 use proto::admin::index_server_admin_server::IndexServerAdmin;
-use proto::admin::{MergeSegmentsRequest, MergeSegmentsResponse};
+use proto::admin::{
+    GetSegmentsRequest, GetSegmentsResponse, MergeSegmentsRequest, MergeSegmentsResponse,
+    SegmentInfo,
+};
 use tokio::sync::Mutex;
 
 use crate::collection_catalog::CollectionCatalog;
@@ -64,5 +68,47 @@ impl IndexServerAdmin for AdminServerImpl {
         Ok(tonic::Response::new(MergeSegmentsResponse {
             segment_name: returned_segment_name,
         }))
+    }
+
+    async fn get_segments(
+        &self,
+        request: tonic::Request<GetSegmentsRequest>,
+    ) -> Result<tonic::Response<GetSegmentsResponse>, tonic::Status> {
+        let start = std::time::Instant::now();
+        let req = request.into_inner();
+        let collection_name = req.collection_name;
+
+        let collection_opt = self
+            .collection_catalog
+            .lock()
+            .await
+            .get_collection(&collection_name)
+            .await;
+
+        match collection_opt {
+            Some(collection) => {
+                let segment_infos = collection.get_active_segment_infos();
+                let returned_segment_infos = segment_infos
+                    .segment_infos
+                    .iter()
+                    .map(|segment_info| SegmentInfo {
+                        segment_name: segment_info.name.clone(),
+                        size_in_bytes: segment_info.size_in_bytes,
+                    })
+                    .collect();
+                let end = std::time::Instant::now();
+                let duration = end.duration_since(start);
+                info!("[{}] Get segments in {:?}", collection_name, duration);
+
+                Ok(tonic::Response::new(GetSegmentsResponse {
+                    segment_infos: returned_segment_infos,
+                    version: segment_infos.version,
+                }))
+            }
+            None => Err(tonic::Status::new(
+                tonic::Code::NotFound,
+                "Collection not found",
+            )),
+        }
     }
 }

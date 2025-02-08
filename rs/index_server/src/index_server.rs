@@ -6,10 +6,9 @@ use index::utils::SearchContext;
 use log::info;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
-    CompactSegmentsRequest, CompactSegmentsResponse, CreateCollectionRequest,
-    CreateCollectionResponse, FlushRequest, FlushResponse, GetSegmentsRequest, GetSegmentsResponse,
+    CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse,
     InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, SearchRequest,
-    SearchResponse, SegmentInfo,
+    SearchResponse,
 };
 use tokio::sync::{Mutex, RwLock};
 use utils::mem::{lows_and_highs_to_u128s, transmute_u8_to_slice};
@@ -391,110 +390,6 @@ impl IndexServer for IndexServerImpl {
                 Ok(tonic::Response::new(InsertPackedResponse {
                     num_docs_inserted,
                 }))
-            }
-            None => Err(tonic::Status::new(
-                tonic::Code::NotFound,
-                "Collection not found",
-            )),
-        }
-    }
-
-    async fn get_segments(
-        &self,
-        request: tonic::Request<GetSegmentsRequest>,
-    ) -> Result<tonic::Response<GetSegmentsResponse>, tonic::Status> {
-        let start = std::time::Instant::now();
-        let req = request.into_inner();
-        let collection_name = req.collection_name;
-
-        let collection_opt = self
-            .collection_catalog
-            .lock()
-            .await
-            .get_collection(&collection_name)
-            .await;
-
-        match collection_opt {
-            Some(collection) => {
-                let segment_infos = collection.get_all_segment_infos();
-                let returned_segment_names = segment_infos
-                    .iter()
-                    .map(|segment_info| segment_info.name.clone())
-                    .collect();
-                let returned_segment_infos = segment_infos
-                    .iter()
-                    .map(|segment_info| SegmentInfo {
-                        segment_name: segment_info.name.clone(),
-                        size_in_bytes: segment_info.size_in_bytes,
-                    })
-                    .collect();
-                let end = std::time::Instant::now();
-                let duration = end.duration_since(start);
-                info!("[{}] Get segments in {:?}", collection_name, duration);
-
-                Ok(tonic::Response::new(GetSegmentsResponse {
-                    segment_names: returned_segment_names,
-                    segment_infos: returned_segment_infos,
-                }))
-            }
-            None => Err(tonic::Status::new(
-                tonic::Code::NotFound,
-                "Collection not found",
-            )),
-        }
-    }
-
-    async fn compact_segments(
-        &self,
-        request: tonic::Request<CompactSegmentsRequest>,
-    ) -> Result<tonic::Response<CompactSegmentsResponse>, tonic::Status> {
-        let start = std::time::Instant::now();
-        let req = request.into_inner();
-        let collection_name = req.collection_name;
-        let segment_names = req.segment_names;
-
-        let collection_opt = self
-            .collection_catalog
-            .lock()
-            .await
-            .get_collection(&collection_name)
-            .await;
-
-        match collection_opt {
-            Some(collection) => {
-                // Validation that segments exist in the collection
-                let segments = collection.get_all_segment_names();
-                let missing_segments: Vec<String> = segment_names
-                    .iter()
-                    .filter(|segment_name| !segments.contains(segment_name))
-                    .cloned()
-                    .collect();
-                if !missing_segments.is_empty() {
-                    return Err(tonic::Status::new(
-                        tonic::Code::NotFound,
-                        format!("Segments not found: {:?}", missing_segments),
-                    ));
-                }
-
-                if segment_names.len() <= 1 {
-                    return Err(tonic::Status::new(
-                        tonic::Code::InvalidArgument,
-                        "Require at least 2 segments to compact",
-                    ));
-                }
-
-                // TODO- khoa165: Logic to compact segments here
-
-                let end = std::time::Instant::now();
-                let duration = end.duration_since(start);
-                info!(
-                    "[{}] Compacted {} segments in {:?}",
-                    collection_name,
-                    segment_names.len(),
-                    duration
-                );
-
-                Ok(tonic::Response::new(CompactSegmentsResponse {}))
             }
             None => Err(tonic::Status::new(
                 tonic::Code::NotFound,
