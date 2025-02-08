@@ -1,5 +1,5 @@
 use std::cmp::max;
-use std::fs::{metadata, read_dir, File, OpenOptions};
+use std::fs::{create_dir_all, metadata, read_dir, File, OpenOptions};
 use std::io::Write;
 use std::mem::size_of;
 use std::path::Path;
@@ -35,6 +35,7 @@ impl InvalidatedIdsStorage {
         let base_path = Path::new(base_directory);
         // Create a storage from scratch if none exists.
         if !base_path.exists() || !base_path.is_dir() {
+            create_dir_all(base_directory)?;
             return Ok(Self::new(base_directory, Self::DEFAULT_BACKING_FILE_SIZE));
         }
 
