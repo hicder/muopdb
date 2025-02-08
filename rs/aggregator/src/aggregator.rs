@@ -2,9 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use log::info;
-use proto::muopdb::aggregator_server::Aggregator;
+use proto::aggregator::aggregator_server::Aggregator;
+use proto::aggregator::{GetRequest, GetResponse};
 use proto::muopdb::index_server_client::IndexServerClient;
-use proto::muopdb::{GetRequest, GetResponse, SearchRequest};
+use proto::muopdb::SearchRequest;
 use tokio::sync::RwLock;
 
 use crate::node_manager::{self, NodeManager};
