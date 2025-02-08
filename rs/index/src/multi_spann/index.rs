@@ -4,10 +4,12 @@ use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use memmap2::Mmap;
 use odht::HashTableOwned;
+use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
 
 use super::user_index_info::HashConfig;
 use crate::index::Searchable;
+use crate::ivf::files::invalidated_ids::InvalidatedIdsStorage;
 use crate::spann::index::Spann;
 use crate::spann::iter::SpannIter;
 use crate::spann::reader::SpannReader;
@@ -19,16 +21,24 @@ pub struct MultiSpannIndex<Q: Quantizer> {
     #[allow(dead_code)]
     user_index_info_mmap: Mmap,
     user_index_infos: HashTableOwned<HashConfig>,
+    invalidated_ids_storage: RwLock<InvalidatedIdsStorage>,
 }
 
 impl<Q: Quantizer> MultiSpannIndex<Q> {
     pub fn new(base_directory: String, user_index_info_mmap: Mmap) -> Result<Self> {
         let user_index_infos = HashTableOwned::from_raw_bytes(&user_index_info_mmap).unwrap();
+
+        // Read invalidated ids
+        let invalidated_ids_directory = format!("{}/invalidated_ids_storage", base_directory);
+
         Ok(Self {
             base_directory,
             user_to_spann: DashMap::new(),
             user_index_info_mmap,
             user_index_infos,
+            invalidated_ids_storage: RwLock::new(InvalidatedIdsStorage::read(
+                &invalidated_ids_directory,
+            )?),
         })
     }
 
@@ -81,6 +91,19 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             size += std::fs::metadata(entry.unwrap().path()).unwrap().len();
         }
         size
+    }
+
+    pub fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+        let index = self.get_or_create_index(user_id)?;
+        match index.get_point_id(doc_id) {
+            Some(point_id) => {
+                self.invalidated_ids_storage
+                    .write()
+                    .invalidate(user_id, point_id)?;
+                index.invalidate(doc_id)
+            }
+            None => Err(anyhow!("doc_id {} not found for user {}", doc_id, user_id)),
+        }
     }
 }
 
@@ -215,5 +238,62 @@ mod tests {
 
         let size_in_bytes = multi_spann_index.size_in_bytes();
         assert!(size_in_bytes >= 2000);
+    }
+
+    #[test]
+    fn test_multi_spann_search_with_invalidation() {
+        let temp_dir = tempdir::TempDir::new("multi_spann_search_with_invalidation_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_vectors = 1000;
+        let num_features = 4;
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        // Generate 1000 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            assert!(multi_spann_builder
+                .insert(0, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .is_ok());
+        }
+        assert!(multi_spann_builder
+            .insert(0, num_vectors as u128, &[1.2, 2.2, 3.2, 4.2])
+            .is_ok());
+        assert!(multi_spann_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read::<NoQuantizer<L2DistanceCalculator>>()
+            .expect("Failed to read Multi-SPANN index");
+
+        let query = vec![1.4, 2.4, 3.4, 4.4];
+        let k = 3;
+        let num_probes = 2;
+        let mut context = SearchContext::new(false);
+
+        assert!(multi_spann_index
+            .invalidate(0, num_vectors as u128)
+            .expect("Failed to invalidate"));
+
+        let results = multi_spann_index
+            .search(&query, k, num_probes, &mut context)
+            .expect("Failed to search with Multi-SPANN index");
+
+        assert_eq!(results.len(), k);
+        assert_eq!(results[0].id, 3);
+        assert_eq!(results[1].id, 2);
+        assert_eq!(results[2].id, 4);
     }
 }
