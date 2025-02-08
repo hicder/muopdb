@@ -13,11 +13,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .build_server(true)
         .file_descriptor_set_path(out_dir.join("muopdb_descriptor.bin"))
+        .out_dir(out_dir.clone())
+        .compile_protos(&[proto_file, admin_proto_file], &["proto"])?;
+
+    tonic_build::configure()
+        .protoc_arg("--experimental_allow_proto3_optional") // for older systems
+        .build_client(true)
+        .build_server(true)
+        .file_descriptor_set_path(out_dir.join("aggregator_descriptor.bin"))
         .out_dir(out_dir)
-        .compile_protos(
-            &[proto_file, admin_proto_file, aggregator_proto_file],
-            &["proto"],
-        )?;
+        .compile_protos(&[aggregator_proto_file], &["proto"])?;
 
     let output = Command::new("cargo")
         .args(&["fmt"])
