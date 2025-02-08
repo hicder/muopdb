@@ -7,3 +7,7 @@ pub mod muopdb {
 pub mod admin {
     include!(concat!(env!("OUT_DIR"), "/admin.rs"));
 }
+
+pub mod aggregator {
+    include!(concat!(env!("OUT_DIR"), "/aggregator.rs"));
+}

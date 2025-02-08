@@ -1,0 +1,26 @@
+syntax = "proto3";
+package aggregator;
+
+service Aggregator {
+  rpc Get(GetRequest) returns (GetResponse) {}
+}
+
+message GetRequest {
+  string index = 1;
+  repeated float vector = 2;
+  uint32 top_k = 3;
+  uint32 ef_construction = 5;
+
+  // For metrics, don't set by default
+  bool record_metrics = 4;
+  repeated uint64 low_user_ids = 6;
+  repeated uint64 high_user_ids = 7;
+}
+
+message GetResponse {
+  repeated uint64 low_ids = 1;
+  repeated uint64 high_ids = 3;
+
+  // For metrics, not enabled by default
+  uint64 num_pages_accessed = 2;
+}

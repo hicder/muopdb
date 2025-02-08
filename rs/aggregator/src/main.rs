@@ -7,7 +7,7 @@ use std::sync::Arc;
 use clap::Parser;
 use log::{error, info};
 use node_manager::NodeManager;
-use proto::muopdb::aggregator_server::AggregatorServer;
+use proto::aggregator::aggregator_server::AggregatorServer;
 use shard_manager::ShardManager;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
