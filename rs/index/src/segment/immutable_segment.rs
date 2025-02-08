@@ -25,6 +25,10 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
     pub fn iter_for_user(&self, user_id: u128) -> Option<SpannIter<Q>> {
         self.index.iter_for_user(user_id)
     }
+
+    pub fn size_in_bytes(&self) -> u64 {
+        self.index.size_in_bytes()
+    }
 }
 
 /// This is the implementation of Segment for ImmutableSegment.

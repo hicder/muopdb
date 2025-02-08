@@ -9,7 +9,7 @@ use proto::muopdb::{
     CompactSegmentsRequest, CompactSegmentsResponse, CreateCollectionRequest,
     CreateCollectionResponse, FlushRequest, FlushResponse, GetSegmentsRequest, GetSegmentsResponse,
     InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, SearchRequest,
-    SearchResponse,
+    SearchResponse, SegmentInfo,
 };
 use tokio::sync::{Mutex, RwLock};
 use utils::mem::{lows_and_highs_to_u128s, transmute_u8_to_slice};
@@ -416,13 +416,25 @@ impl IndexServer for IndexServerImpl {
 
         match collection_opt {
             Some(collection) => {
-                let segments = collection.get_all_segment_names();
+                let segment_infos = collection.get_all_segment_infos();
+                let returned_segment_names = segment_infos
+                    .iter()
+                    .map(|segment_info| segment_info.name.clone())
+                    .collect();
+                let returned_segment_infos = segment_infos
+                    .iter()
+                    .map(|segment_info| SegmentInfo {
+                        segment_name: segment_info.name.clone(),
+                        size_in_bytes: segment_info.size_in_bytes,
+                    })
+                    .collect();
                 let end = std::time::Instant::now();
                 let duration = end.duration_since(start);
                 info!("[{}] Get segments in {:?}", collection_name, duration);
 
                 Ok(tonic::Response::new(GetSegmentsResponse {
-                    segment_names: segments,
+                    segment_names: returned_segment_names,
+                    segment_infos: returned_segment_infos,
                 }))
             }
             None => Err(tonic::Status::new(

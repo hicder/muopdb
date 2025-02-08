@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
-use collection::Collection;
+use collection::{Collection, SegmentInfo};
 use quantization::noq::noq::NoQuantizer;
 use quantization::pq::pq::ProductQuantizer;
 use serde::{Deserialize, Serialize};
@@ -207,6 +207,17 @@ impl BoxedCollection {
             }
             BoxedCollection::CollectionProductQuantization(collection) => {
                 collection.get_all_segment_names()
+            }
+        }
+    }
+
+    pub fn get_all_segment_infos(&self) -> Vec<SegmentInfo> {
+        match self {
+            BoxedCollection::CollectionNoQuantizationL2(collection) => {
+                collection.get_all_segment_infos()
+            }
+            BoxedCollection::CollectionProductQuantization(collection) => {
+                collection.get_all_segment_infos()
             }
         }
     }

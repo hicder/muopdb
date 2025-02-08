@@ -1,3 +1,4 @@
+mod admin_server;
 mod collection_catalog;
 mod collection_manager;
 mod collection_provider;
@@ -6,12 +7,14 @@ mod index_server;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use admin_server::AdminServerImpl;
 use clap::Parser;
 use collection_catalog::CollectionCatalog;
 use collection_manager::CollectionManager;
 use collection_provider::CollectionProvider;
 use index_server::IndexServerImpl;
 use log::{debug, error, info};
+use proto::admin::index_server_admin_server::IndexServerAdminServer;
 use proto::muopdb::index_server_server::IndexServerServer;
 use proto::muopdb::FILE_DESCRIPTOR_SET;
 use tokio::spawn;
@@ -131,10 +134,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
         .build_v1alpha()?;
 
-    let server_impl =
-        IndexServerImpl::new(collection_catalog_for_server, collection_manager.clone());
+    let server_impl = IndexServerImpl::new(
+        collection_catalog_for_server.clone(),
+        collection_manager.clone(),
+    );
+    let admin_impl = AdminServerImpl::new(collection_catalog_for_server.clone());
     Server::builder()
         .add_service(IndexServerServer::new(server_impl))
+        .add_service(IndexServerAdminServer::new(admin_impl))
         .add_service(reflection_service)
         .add_service(reflection_service_v1_alpha)
         .serve(addr)
