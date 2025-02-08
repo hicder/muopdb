@@ -23,6 +23,11 @@ use crate::segment::{BoxedImmutableSegment, Segment};
 use crate::wal::entry::WalOpType;
 use crate::wal::wal::Wal;
 
+pub struct SegmentInfo {
+    pub name: String,
+    pub size_in_bytes: u64,
+}
+
 /// Collection is thread-safe. All pub fn are thread-safe.
 pub struct Collection<Q: Quantizer + Clone> {
     pub versions: DashMap<u64, TableOfContent>,
@@ -621,6 +626,16 @@ impl<Q: Quantizer + Clone> Collection<Q> {
             .collect()
     }
 
+    pub fn get_all_segment_infos(&self) -> Vec<SegmentInfo> {
+        self.all_segments
+            .iter()
+            .map(|pair| SegmentInfo {
+                name: pair.key().clone(),
+                size_in_bytes: pair.value().size_in_bytes_immutable_segments(),
+            })
+            .collect()
+    }
+
     pub fn init_optimizing(&self, segments: &Vec<String>) -> Result<String> {
         let random_name = format!("pending_segment_{}", rand::random::<u64>());
         let pending_segment_path = format!("{}/{}", self.base_directory, random_name);
@@ -645,7 +660,7 @@ impl<Q: Quantizer + Clone> Collection<Q> {
         &self,
         pending_segment: &str,
         versions_info_read: RwLockUpgradableReadGuard<RawRwLock, VersionsInfo>,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let random_name = format!("segment_{}", rand::random::<u64>());
 
         // Hardlink the pending segment to the new segment
@@ -674,14 +689,14 @@ impl<Q: Quantizer + Clone> Collection<Q> {
             false,
             versions_info_read,
         )?;
-        Ok(())
+        Ok(random_name)
     }
 
     pub fn run_optimizer(
         &self,
         optimizer: &impl SegmentOptimizer<Q>,
         pending_segment: &str,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let segment = self
             .all_segments
             .get(pending_segment)

@@ -23,25 +23,27 @@ impl<Q: Quantizer + Clone> OptimizerEngine<Q> {
         Self { collection }
     }
 
-    pub fn run(&self, segments: Vec<String>, optimizing_type: OptimizingType) -> Result<()> {
+    pub fn run(&self, segments: Vec<String>, optimizing_type: OptimizingType) -> Result<String> {
         if segments.len() < 2 && optimizing_type == OptimizingType::Merge {
-            return Ok(());
+            return Ok("".to_string());
         }
 
         let pending_segment = self.collection.init_optimizing(&segments)?;
         match optimizing_type {
-            OptimizingType::Vacuum => Ok(()),
+            OptimizingType::Vacuum => Ok("".to_string()),
             OptimizingType::Merge => {
                 let merge_optimizer = MergeOptimizer::<Q>::new();
-                self.collection
+                let new_segment_name = self
+                    .collection
                     .run_optimizer(&merge_optimizer, &pending_segment)?;
-                Ok(())
+                Ok(new_segment_name)
             }
             OptimizingType::Noop => {
                 let noop_optimizer = NoopOptimizer::new();
-                self.collection
+                let new_segment_name = self
+                    .collection
                     .run_optimizer(&noop_optimizer, &pending_segment)?;
-                Ok(())
+                Ok(new_segment_name)
             }
         }
     }

@@ -67,6 +67,17 @@ impl<Q: Quantizer + Clone> BoxedImmutableSegment<Q> {
             _ => None,
         }
     }
+
+    /// Only get the size of the index from immutable segments for now
+    pub fn size_in_bytes_immutable_segments(&self) -> u64 {
+        match self {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                immutable_segment.read().size_in_bytes()
+            }
+            BoxedImmutableSegment::PendingSegment(_pending_segment) => 0,
+            BoxedImmutableSegment::MockedNoQuantizationSegment(_mocked_segment) => 0,
+        }
+    }
 }
 
 impl<Q: Quantizer + Clone> Searchable for BoxedImmutableSegment<Q> {

@@ -79,6 +79,15 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             }
         }
     }
+
+    pub fn size_in_bytes(&self) -> u64 {
+        // Compute the size of all files in the base_directory
+        let mut size = 0;
+        for entry in std::fs::read_dir(self.base_directory.clone()).unwrap() {
+            size += std::fs::metadata(entry.unwrap().path()).unwrap().len();
+        }
+        size
+    }
 }
 
 impl<Q: Quantizer> Searchable for MultiSpannIndex<Q> {
@@ -196,5 +205,47 @@ mod tests {
         assert_eq!(results[0].id, num_vectors);
         assert_eq!(results[1].id, 3);
         assert_eq!(results[2].id, 2);
+    }
+
+    #[test]
+    fn test_multi_spann_size_in_bytes() {
+        let temp_dir = tempdir::TempDir::new("multi_spann_size_in_bytes_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_vectors = 1000;
+        let num_features = 4;
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        // Generate 1000 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            assert!(multi_spann_builder
+                .insert(0, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .is_ok());
+        }
+        assert!(multi_spann_builder
+            .insert(0, num_vectors as u128, &[1.2, 2.2, 3.2, 4.2])
+            .is_ok());
+        assert!(multi_spann_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read::<NoQuantizer<L2DistanceCalculator>>()
+            .expect("Failed to read Multi-SPANN index");
+
+        let size_in_bytes = multi_spann_index.size_in_bytes();
+        assert_eq!(size_in_bytes, 2036);
     }
 }

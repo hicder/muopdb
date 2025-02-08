@@ -1,0 +1,15 @@
+syntax = "proto3";
+package admin;
+
+service IndexServerAdmin {
+    rpc MergeSegments(MergeSegmentsRequest) returns (MergeSegmentsResponse) {}
+}
+
+message MergeSegmentsRequest {
+    string collection_name = 1;
+    repeated string segment_names = 2;
+}
+
+message MergeSegmentsResponse {
+    string segment_name = 1;
+}
