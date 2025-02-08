@@ -28,6 +28,11 @@ pub struct SegmentInfo {
     pub size_in_bytes: u64,
 }
 
+pub struct SegmentInfoAndVersion {
+    pub segment_infos: Vec<SegmentInfo>,
+    pub version: u64,
+}
+
 /// Collection is thread-safe. All pub fn are thread-safe.
 pub struct Collection<Q: Quantizer + Clone> {
     pub versions: DashMap<u64, TableOfContent>,
@@ -626,14 +631,22 @@ impl<Q: Quantizer + Clone> Collection<Q> {
             .collect()
     }
 
-    pub fn get_all_segment_infos(&self) -> Vec<SegmentInfo> {
-        self.all_segments
+    pub fn get_active_segment_infos(&self) -> SegmentInfoAndVersion {
+        let current_version = self.versions_info.read().current_version;
+        let active_segments = self.versions.get(&current_version).unwrap().toc.clone();
+        let segment_infos = self
+            .all_segments
             .iter()
+            .filter(|pair| active_segments.contains(pair.key()))
             .map(|pair| SegmentInfo {
                 name: pair.key().clone(),
                 size_in_bytes: pair.value().size_in_bytes_immutable_segments(),
             })
-            .collect()
+            .collect();
+        SegmentInfoAndVersion {
+            segment_infos,
+            version: current_version,
+        }
     }
 
     pub fn init_optimizing(&self, segments: &Vec<String>) -> Result<String> {
