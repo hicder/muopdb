@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use memmap2::Mmap;
 use odht::HashTableOwned;
@@ -40,27 +40,16 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         user_ids
     }
 
-    pub fn iter_for_user(&self, user_id: u128) -> Option<SpannIter<Q>> {
-        let index = self.user_to_spann.get(&user_id);
-        if index.is_none() {
-            let index = self.prefetch_for_user(user_id);
-            if index.is_err() {
-                return None;
-            }
-            let index = index.unwrap();
-            return Some(SpannIter::new(Arc::clone(&index)));
-        }
-        let index = index.unwrap().clone();
-        Some(SpannIter::new(Arc::clone(&index)))
-    }
-
-    pub fn prefetch_for_user(&self, user_id: u128) -> Result<Arc<Spann<Q>>> {
-        let index_info = self.user_index_infos.get(&user_id);
-        if index_info.is_none() {
-            return Err(anyhow::anyhow!("User not found"));
+    fn get_or_create_index(&self, user_id: u128) -> Result<Arc<Spann<Q>>> {
+        if let Some(index) = self.user_to_spann.get(&user_id) {
+            return Ok(index.clone());
         }
 
-        let index_info = index_info.unwrap();
+        let index_info = self
+            .user_index_infos
+            .get(&user_id)
+            .ok_or_else(|| anyhow!("User not found"))?;
+
         let reader = SpannReader::new_with_offsets(
             self.base_directory.clone(),
             index_info.centroid_index_offset as usize,
@@ -68,15 +57,20 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             index_info.ivf_index_offset as usize,
             index_info.ivf_vectors_offset as usize,
         );
-        match reader.read::<Q>() {
-            Ok(index) => {
-                let index = Arc::new(index);
-                self.user_to_spann.insert(user_id, index.clone());
-                Ok(index)
-            }
-            Err(_) => {
-                return Err(anyhow::anyhow!("Failed to read index"));
-            }
+
+        let index = reader
+            .read::<Q>()
+            .map_err(|_| anyhow!("Failed to read index"))?;
+
+        let arc_index = Arc::new(index);
+        self.user_to_spann.insert(user_id, arc_index.clone());
+        Ok(arc_index)
+    }
+
+    pub fn iter_for_user(&self, user_id: u128) -> Option<SpannIter<Q>> {
+        match self.get_or_create_index(user_id) {
+            Ok(index) => Some(SpannIter::new(Arc::clone(&index))),
+            Err(_) => None,
         }
     }
 
@@ -109,36 +103,10 @@ impl<Q: Quantizer> Searchable for MultiSpannIndex<Q> {
         ef_construction: u32,
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>> {
-        let index = self.user_to_spann.get(&id);
-        if index.is_none() {
-            // Fetch the index from the mmap
-            let index_info = self.user_index_infos.get(&id);
-            if index_info.is_none() {
-                return None;
-            }
-
-            let index_info = index_info.unwrap();
-            let reader = SpannReader::new_with_offsets(
-                self.base_directory.clone(),
-                index_info.centroid_index_offset as usize,
-                index_info.centroid_vector_offset as usize,
-                index_info.ivf_index_offset as usize,
-                index_info.ivf_vectors_offset as usize,
-            );
-            match reader.read::<Q>() {
-                Ok(index) => {
-                    let index = Arc::new(index);
-                    self.user_to_spann.insert(id, index.clone());
-                    return index.search(query, k, ef_construction, context);
-                }
-                Err(_) => {
-                    return None;
-                }
-            }
+        match self.get_or_create_index(id) {
+            Ok(index) => index.search(query, k, ef_construction, context),
+            Err(_) => None,
         }
-
-        let index = index.unwrap().clone();
-        index.search(query, k, ef_construction, context)
     }
 }
 
