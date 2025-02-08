@@ -12,6 +12,7 @@ pub struct InvalidatedIdsStorage {
     files: Vec<File>,
     current_backing_id: i32,
     current_offset: usize,
+    backing_id_offset: usize,
 }
 
 impl InvalidatedIdsStorage {
@@ -26,6 +27,7 @@ impl InvalidatedIdsStorage {
             files: vec![],
             current_backing_id: -1,
             current_offset: rounded_backing_file_size,
+            backing_id_offset: 0,
         }
     }
 
@@ -62,7 +64,8 @@ impl InvalidatedIdsStorage {
                 .and_then(|(_, suffix)| suffix.parse::<u32>().ok()) // Parse the suffix as a number
                 .unwrap_or(0) // Default to 0 if parsing fails
         });
-        let current_offset = metadata(invalidated_ids_files.last().unwrap())?.len() as usize;
+        let last_file = invalidated_ids_files.last().unwrap();
+        let current_offset = metadata(last_file)?.len() as usize;
 
         // - If there are multiple files, all files (except maybe last one) should have the same
         // size, and backing file size should be this
@@ -75,11 +78,7 @@ impl InvalidatedIdsStorage {
             first_file_size
         };
 
-        let mut files: Vec<File> = Vec::new();
-        for file_name in invalidated_ids_files.iter() {
-            let file = OpenOptions::new().append(true).open(file_name)?;
-            files.push(file);
-        }
+        let files: Vec<File> = vec![OpenOptions::new().append(true).open(last_file)?];
 
         let bytes_per_invalidation = size_of::<u128>() + size_of::<u32>();
         let rounded_backing_file_size =
@@ -90,6 +89,9 @@ impl InvalidatedIdsStorage {
             files,
             current_backing_id: invalidated_ids_files.len() as i32 - 1,
             current_offset,
+            // Since we did not add all the files that are already complete, we need an id offset
+            // to make indexing to self.files in bound
+            backing_id_offset: invalidated_ids_files.len() - 1,
         })
     }
 
@@ -110,7 +112,7 @@ impl InvalidatedIdsStorage {
             self.new_backing_file()?;
         }
 
-        let file = &mut self.files[self.current_backing_id as usize];
+        let file = &mut self.files[self.current_backing_id as usize - self.backing_id_offset];
 
         let bytes_written = size_of::<u128>() + size_of::<u32>();
         let mut buffer = Vec::with_capacity(bytes_written);
