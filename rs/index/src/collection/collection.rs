@@ -574,6 +574,23 @@ impl<Q: Quantizer + Clone> Collection<Q> {
         is_pending: bool,
     ) -> Result<()> {
         let versions_info_read = self.versions_info.upgradable_read();
+
+        // Check that the old segments if they are not active
+        let current_toc = self
+            .versions
+            .get(&versions_info_read.current_version)
+            .unwrap()
+            .toc
+            .clone();
+        for old_segment_name in old_segment_names.iter() {
+            if !current_toc.contains(old_segment_name) {
+                return Err(anyhow::anyhow!(
+                    "Old segment {} is not active",
+                    old_segment_name
+                ));
+            }
+        }
+
         self.replace_segment(
             new_segment,
             old_segment_names,
