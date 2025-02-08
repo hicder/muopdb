@@ -144,6 +144,17 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
             .collect()
     }
 
+    pub fn get_point_id(&self, doc_id: u128) -> Option<u32> {
+        for point_id in 0..self.vector_storage.num_vectors {
+            if let Ok(stored_doc_id) = self.index_storage.get_doc_id(point_id) {
+                if stored_doc_id == doc_id {
+                    return Some(point_id as u32);
+                }
+            }
+        }
+        None
+    }
+
     pub fn search_with_centroids_and_remap(
         &self,
         query: &[f32],
@@ -157,13 +168,13 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
     }
 
     pub fn invalidate(&self, doc_id: u128) -> Result<bool> {
-        for point_id in 0..self.vector_storage.num_vectors {
-            if self.index_storage.get_doc_id(point_id)? == doc_id {
+        match self.get_point_id(doc_id) {
+            Some(point_id) => {
                 self.invalid_point_ids.insert(point_id as u32);
                 return Ok(true);
             }
+            None => Ok(false),
         }
-        Ok(false)
     }
 }
 

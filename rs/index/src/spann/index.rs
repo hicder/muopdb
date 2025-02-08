@@ -46,6 +46,10 @@ impl<Q: Quantizer> Spann<Q> {
         }
     }
 
+    pub fn get_point_id(&self, doc_id: u128) -> Option<u32> {
+        self.posting_lists.get_point_id(doc_id)
+    }
+
     pub fn get_vector(
         &self,
         point_id: u32,
