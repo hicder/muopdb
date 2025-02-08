@@ -34,18 +34,18 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
 /// This is the implementation of Segment for ImmutableSegment.
 impl<Q: Quantizer> Segment for ImmutableSegment<Q> {
     /// ImmutableSegment does not support insertion.
-    fn insert(&self, _doc_id: u64, _data: &[f32]) -> Result<()> {
+    fn insert(&self, _doc_id: u128, _data: &[f32]) -> Result<()> {
         Err(anyhow!("ImmutableSegment does not support insertion"))
     }
 
     /// ImmutableSegment does not support removal.
-    fn remove(&self, _doc_id: u64) -> Result<bool> {
+    fn remove(&self, _doc_id: u128) -> Result<bool> {
         // TODO(hicder): Implement this
         Ok(false)
     }
 
     /// ImmutableSegment does not support contains.
-    fn may_contains(&self, _doc_id: u64) -> bool {
+    fn may_contains(&self, _doc_id: u128) -> bool {
         // TODO(hicder): Implement this
         return true;
     }
