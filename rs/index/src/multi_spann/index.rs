@@ -100,9 +100,9 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
                 self.invalidated_ids_storage
                     .write()
                     .invalidate(user_id, point_id)?;
-                index.invalidate(doc_id)
+                Ok(index.invalidate(doc_id))
             }
-            None => Err(anyhow!("doc_id {} not found for user {}", doc_id, user_id)),
+            None => Ok(false),
         }
     }
 }
