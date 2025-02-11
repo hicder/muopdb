@@ -39,7 +39,7 @@ impl<Q: Quantizer> Segment for ImmutableSegment<Q> {
     }
 
     /// ImmutableSegment does not support removal.
-    fn remove(&self, _doc_id: u128) -> Result<bool> {
+    fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         // TODO(hicder): Implement this
         Ok(false)
     }

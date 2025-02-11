@@ -116,7 +116,7 @@ impl<Q: Quantizer + Clone> Segment for PendingSegment<Q> {
         Err(anyhow::anyhow!("Pending segment does not support insert"))
     }
 
-    fn remove(&self, _doc_id: u128) -> Result<bool> {
+    fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         todo!()
     }
 
