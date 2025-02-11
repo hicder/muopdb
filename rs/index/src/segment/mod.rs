@@ -22,10 +22,10 @@ pub trait Segment {
     /// NOTE: Some type of segment may not support insertion.
     fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()>;
 
-    /// Removes a document from the segment.
+    /// Removes a document for an user from the segment.
     /// Returns true if the document was removed, false if the document was not found.
     /// Returns an error if the removal process fails for any reason.
-    fn remove(&self, doc_id: u128) -> Result<bool>;
+    fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool>;
 
     /// Returns true if the segment may contain the given document.
     /// False if the segment definitely does not contain the document.
@@ -128,16 +128,16 @@ impl<Q: Quantizer + Clone> Segment for BoxedImmutableSegment<Q> {
         }
     }
 
-    fn remove(&self, doc_id: u128) -> Result<bool> {
+    fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment.read().remove(doc_id)
+                immutable_segment.read().remove(user_id, doc_id)
             }
             BoxedImmutableSegment::PendingSegment(pending_segment) => {
-                pending_segment.read().remove(doc_id)
+                pending_segment.read().remove(user_id, doc_id)
             }
             BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
-                mocked_segment.read().remove(doc_id)
+                mocked_segment.read().remove(user_id, doc_id)
             }
         }
     }
@@ -220,7 +220,7 @@ impl Segment for MockedSegment {
         todo!()
     }
 
-    fn remove(&self, doc_id: u128) -> Result<bool> {
+    fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         todo!()
     }
 
