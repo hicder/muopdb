@@ -167,13 +167,13 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         doc_ids
     }
 
-    pub fn invalidate(&self, doc_id: u128) -> Result<bool> {
+    pub fn invalidate(&self, doc_id: u128) -> bool {
         match self.get_point_id(doc_id) {
             Some(point_id) => {
                 self.invalid_point_ids.insert(point_id as u32);
-                return Ok(true);
+                true
             }
-            None => Ok(false),
+            None => false,
         }
     }
 }
@@ -672,7 +672,7 @@ mod tests {
         let k = 4;
         let mut context = SearchContext::new(false);
 
-        assert!(ivf.invalidate(103).expect("Failed to invalidate"));
+        assert!(ivf.invalidate(103));
 
         let results = ivf
             .search(&query, k, num_probes, &mut context)

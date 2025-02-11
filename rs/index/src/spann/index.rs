@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 
-use anyhow::Result;
 use compression::noc::noc::PlainDecoder;
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
@@ -61,7 +60,7 @@ impl<Q: Quantizer> Spann<Q> {
             .get(point_id as usize, context)
     }
 
-    pub fn invalidate(&self, doc_id: u128) -> Result<bool> {
+    pub fn invalidate(&self, doc_id: u128) -> bool {
         self.posting_lists.invalidate(doc_id)
     }
 }
@@ -262,7 +261,7 @@ mod tests {
         let num_probes = 2;
         let mut context = SearchContext::new(false);
 
-        assert!(spann.invalidate(4).expect("Failed to invalidate"));
+        assert!(spann.invalidate(4));
         let results = spann
             .search(&query, k, num_probes, &mut context)
             .expect("IVF search should return a result");

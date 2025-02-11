@@ -177,6 +177,11 @@ mod tests {
                 .insert(0, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
                 .is_ok());
         }
+        for i in 0..num_vectors {
+            assert!(multi_spann_builder
+                .insert(1, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .is_ok());
+        }
         assert!(multi_spann_builder
             .insert(0, num_vectors as u128, &[1.2, 2.2, 3.2, 4.2])
             .is_ok());
@@ -211,5 +216,9 @@ mod tests {
         assert_eq!(results[0].id, 3);
         assert_eq!(results[1].id, 2);
         assert_eq!(results[2].id, 4);
+
+        assert!(!immutable_segment
+            .remove(1, num_vectors as u128)
+            .expect("Failed to invalidate"));
     }
 }
