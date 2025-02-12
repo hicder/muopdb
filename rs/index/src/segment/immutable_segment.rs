@@ -72,6 +72,7 @@ unsafe impl<Q: Quantizer> Sync for ImmutableSegment<Q> {}
 #[cfg(test)]
 mod tests {
     use config::collection::CollectionConfig;
+    use config::enums::IntSeqEncodingType;
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
 
@@ -116,7 +117,7 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>()
+            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
             .expect("Failed to read Multi-SPANN index");
 
         let name_for_new_segment = format!("segment_{}", rand::random::<u64>());
@@ -178,7 +179,7 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>()
+            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
             .expect("Failed to read Multi-SPANN index");
 
         let name_for_new_segment = format!("segment_{}", rand::random::<u64>());

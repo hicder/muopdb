@@ -64,7 +64,7 @@ impl<Q: Quantizer + Clone> PendingSegment<Q> {
 
         let current_directory = format!("{}/{}", self.parent_directory, self.name);
         let reader = MultiSpannReader::new(current_directory);
-        let index = reader.read::<Q>()?;
+        let index = reader.read::<Q>(self.collection_config.posting_list_encoding_type.clone())?;
         self.index.write().replace(index);
         Ok(())
     }
@@ -161,6 +161,7 @@ mod tests {
     use std::sync::Arc;
 
     use config::collection::CollectionConfig;
+    use config::enums::IntSeqEncodingType;
     use quantization::noq::noq::{NoQuantizer, NoQuantizerL2};
     use rand::Rng;
     use utils::distance::l2::L2DistanceCalculator;
@@ -195,7 +196,7 @@ mod tests {
 
     fn read_segment(base_directory: String) -> Result<MultiSpannIndex<NoQuantizerL2>> {
         let reader = MultiSpannReader::new(base_directory);
-        let index = reader.read::<NoQuantizerL2>()?;
+        let index = reader.read::<NoQuantizerL2>(IntSeqEncodingType::PlainEncoding)?;
         Ok(index)
     }
 

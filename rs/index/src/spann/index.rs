@@ -1,24 +1,23 @@
 use std::cmp::Ordering;
 
-use compression::noc::noc::PlainDecoder;
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
 use quantization::quantization::Quantizer;
 use utils::distance::l2::L2DistanceCalculator;
 
 use crate::hnsw::index::Hnsw;
-use crate::ivf::index::Ivf;
+use crate::ivf::index::IvfType;
 use crate::utils::SearchContext;
 
 pub struct Spann<Q: Quantizer> {
     centroids: Hnsw<NoQuantizer<L2DistanceCalculator>>,
-    posting_lists: Ivf<Q, L2DistanceCalculator, PlainDecoder>,
+    posting_lists: IvfType<Q>,
 }
 
 impl<Q: Quantizer> Spann<Q> {
     pub fn new(
         centroids: Hnsw<NoQuantizer<L2DistanceCalculator>>,
-        posting_lists: Ivf<Q, L2DistanceCalculator, PlainDecoder>,
+        posting_lists: IvfType<Q>,
     ) -> Self {
         Self {
             centroids,
@@ -30,14 +29,14 @@ impl<Q: Quantizer> Spann<Q> {
         &self.centroids
     }
 
-    pub fn get_posting_lists(&self) -> &Ivf<Q, L2DistanceCalculator, PlainDecoder> {
+    pub fn get_posting_lists(&self) -> &IvfType<Q> {
         &self.posting_lists
     }
 
     pub fn get_doc_id(&self, point_id: u32) -> Option<u128> {
         match self
             .posting_lists
-            .index_storage
+            .get_index_storage()
             .get_doc_id(point_id as usize)
         {
             Ok(doc_id) => Some(doc_id),
@@ -54,7 +53,11 @@ impl<Q: Quantizer> Spann<Q> {
         point_id: u32,
         context: &mut SearchContext,
     ) -> Option<&[Q::QuantizedT]> {
-        match self.posting_lists.vector_storage.get(point_id, context) {
+        match self
+            .posting_lists
+            .get_vector_storage()
+            .get(point_id, context)
+        {
             Ok(v) => Some(v),
             Err(_) => None,
         }
@@ -176,7 +179,7 @@ mod tests {
         let spann_writer = SpannWriter::new(base_dir.clone());
         assert!(spann_writer.write(&mut builder).is_ok());
 
-        let spann_reader = SpannReader::new(base_dir.clone());
+        let spann_reader = SpannReader::new(base_dir.clone(), IntSeqEncodingType::PlainEncoding);
         let spann = spann_reader
             .read::<NoQuantizer<L2DistanceCalculator>>()
             .unwrap();
@@ -248,7 +251,7 @@ mod tests {
         let spann_writer = SpannWriter::new(base_dir.clone());
         assert!(spann_writer.write(&mut builder).is_ok());
 
-        let spann_reader = SpannReader::new(base_dir.clone());
+        let spann_reader = SpannReader::new(base_dir.clone(), IntSeqEncodingType::PlainEncoding);
         let spann = spann_reader
             .read::<NoQuantizer<L2DistanceCalculator>>()
             .unwrap();
@@ -321,7 +324,7 @@ mod tests {
         let spann_writer = SpannWriter::new(base_dir.clone());
         assert!(spann_writer.write(&mut builder).is_ok());
 
-        let spann_reader = SpannReader::new(base_dir.clone());
+        let spann_reader = SpannReader::new(base_dir.clone(), IntSeqEncodingType::PlainEncoding);
         let spann = spann_reader
             .read::<ProductQuantizer<L2DistanceCalculator>>()
             .unwrap();

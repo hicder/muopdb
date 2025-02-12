@@ -1,11 +1,14 @@
 use anyhow::Result;
+use compression::elias_fano::ef::EliasFanoDecoder;
 use compression::noc::noc::PlainDecoder;
+use config::enums::IntSeqEncodingType;
 use quantization::noq::noq::NoQuantizer;
 use quantization::quantization::Quantizer;
 use utils::distance::l2::L2DistanceCalculator;
 
 use super::index::Spann;
 use crate::hnsw::reader::HnswReader;
+use crate::ivf::index::IvfType;
 use crate::ivf::reader::IvfReader;
 
 pub struct SpannReader {
@@ -14,16 +17,19 @@ pub struct SpannReader {
     centroids_vector_offset: usize,
     ivf_index_offset: usize,
     ivf_vector_offset: usize,
+
+    ivf_type: IntSeqEncodingType,
 }
 
 impl SpannReader {
-    pub fn new(base_directory: String) -> Self {
+    pub fn new(base_directory: String, ivf_type: IntSeqEncodingType) -> Self {
         Self {
             base_directory,
             centroids_index_offset: 0,
             centroids_vector_offset: 0,
             ivf_index_offset: 0,
             ivf_vector_offset: 0,
+            ivf_type,
         }
     }
 
@@ -33,6 +39,7 @@ impl SpannReader {
         centroids_vector_offset: usize,
         ivf_index_offset: usize,
         ivf_vector_offset: usize,
+        ivf_type: IntSeqEncodingType,
     ) -> Self {
         Self {
             base_directory,
@@ -40,6 +47,7 @@ impl SpannReader {
             centroids_vector_offset,
             ivf_index_offset,
             ivf_vector_offset,
+            ivf_type,
         }
     }
 
@@ -53,14 +61,26 @@ impl SpannReader {
             self.centroids_vector_offset,
         )
         .read::<NoQuantizer<L2DistanceCalculator>>()?;
-        let posting_lists = IvfReader::new_with_offset(
-            posting_list_path,
-            self.ivf_index_offset,
-            self.ivf_vector_offset,
-        )
-        .read::<Q, L2DistanceCalculator, PlainDecoder>()?;
-
-        Ok(Spann::<_>::new(centroids, posting_lists))
+        match self.ivf_type {
+            IntSeqEncodingType::PlainEncoding => {
+                let posting_lists = IvfReader::new_with_offset(
+                    posting_list_path,
+                    self.ivf_index_offset,
+                    self.ivf_vector_offset,
+                )
+                .read::<Q, L2DistanceCalculator, PlainDecoder>()?;
+                Ok(Spann::<_>::new(centroids, IvfType::L2Plain(posting_lists)))
+            }
+            IntSeqEncodingType::EliasFano => {
+                let posting_lists = IvfReader::new_with_offset(
+                    posting_list_path,
+                    self.ivf_index_offset,
+                    self.ivf_vector_offset,
+                )
+                .read::<Q, L2DistanceCalculator, EliasFanoDecoder>()?;
+                Ok(Spann::<_>::new(centroids, IvfType::L2EF(posting_lists)))
+            }
+        }
     }
 }
 
@@ -124,7 +144,8 @@ mod tests {
         let spann_writer = SpannWriter::new(base_directory.clone());
         spann_writer.write(&mut builder).unwrap();
 
-        let spann_reader = SpannReader::new(base_directory.clone());
+        let spann_reader =
+            SpannReader::new(base_directory.clone(), IntSeqEncodingType::PlainEncoding);
         let spann = spann_reader
             .read::<NoQuantizer<L2DistanceCalculator>>()
             .unwrap();
@@ -132,7 +153,7 @@ mod tests {
         let centroids = spann.get_centroids();
         let posting_lists = spann.get_posting_lists();
         assert_eq!(
-            posting_lists.num_clusters,
+            posting_lists.num_clusters(),
             centroids.vector_storage.num_vectors
         );
     }
@@ -184,7 +205,8 @@ mod tests {
         let spann_writer = SpannWriter::new(base_directory.clone());
         spann_writer.write(&mut builder).unwrap();
 
-        let spann_reader = SpannReader::new(base_directory.clone());
+        let spann_reader =
+            SpannReader::new(base_directory.clone(), IntSeqEncodingType::PlainEncoding);
         let spann = spann_reader
             .read::<ProductQuantizer<L2DistanceCalculator>>()
             .unwrap();
@@ -192,7 +214,7 @@ mod tests {
         let centroids = spann.get_centroids();
         let posting_lists = spann.get_posting_lists();
         assert_eq!(
-            posting_lists.num_clusters,
+            posting_lists.num_clusters(),
             centroids.vector_storage.num_vectors
         );
         // Verify posting list content
@@ -204,7 +226,7 @@ mod tests {
                 .expect("Failed to read vector for SPANN built from builder");
             let read_vector = transmute_u8_to_slice::<u64>(
                 posting_lists
-                    .index_storage
+                    .get_index_storage()
                     .get_posting_list(i)
                     .expect("Failed to read vector for SPANN read by reader"),
             );
