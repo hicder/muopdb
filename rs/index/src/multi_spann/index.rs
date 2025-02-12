@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use config::enums::IntSeqEncodingType;
 use dashmap::DashMap;
 use memmap2::Mmap;
 use odht::HashTableOwned;
@@ -21,10 +22,15 @@ pub struct MultiSpannIndex<Q: Quantizer> {
     user_index_info_mmap: Mmap,
     user_index_infos: HashTableOwned<HashConfig>,
     invalidated_ids_storage: RwLock<InvalidatedIdsStorage>,
+    ivf_type: IntSeqEncodingType,
 }
 
 impl<Q: Quantizer> MultiSpannIndex<Q> {
-    pub fn new(base_directory: String, user_index_info_mmap: Mmap) -> Result<Self> {
+    pub fn new(
+        base_directory: String,
+        user_index_info_mmap: Mmap,
+        ivf_type: IntSeqEncodingType,
+    ) -> Result<Self> {
         let user_index_infos = HashTableOwned::from_raw_bytes(&user_index_info_mmap).unwrap();
 
         // Read invalidated ids
@@ -38,6 +44,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             invalidated_ids_storage: RwLock::new(InvalidatedIdsStorage::read(
                 &invalidated_ids_directory,
             )?),
+            ivf_type,
         })
     }
 
@@ -65,6 +72,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             index_info.centroid_vector_offset as usize,
             index_info.ivf_index_offset as usize,
             index_info.ivf_vectors_offset as usize,
+            self.ivf_type.clone(),
         );
 
         let index = reader
@@ -123,6 +131,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
 #[cfg(test)]
 mod tests {
     use config::collection::CollectionConfig;
+    use config::enums::IntSeqEncodingType;
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
 
@@ -166,7 +175,7 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>()
+            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
             .expect("Failed to read Multi-SPANN index");
 
         let query = vec![1.4, 2.4, 3.4, 4.4];
@@ -219,7 +228,7 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>()
+            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
             .expect("Failed to read Multi-SPANN index");
 
         let size_in_bytes = multi_spann_index.size_in_bytes();
@@ -261,7 +270,7 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>()
+            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
             .expect("Failed to read Multi-SPANN index");
 
         let query = vec![1.4, 2.4, 3.4, 4.4];

@@ -3,9 +3,12 @@ use std::marker::PhantomData;
 
 use anyhow::{Context, Result};
 use compression::compression::IntSeqDecoder;
+use compression::elias_fano::ef::EliasFanoDecoder;
+use compression::noc::noc::PlainDecoder;
 use dashmap::DashSet;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
+use utils::distance::l2::L2DistanceCalculator;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 use utils::DistanceCalculator;
 
@@ -34,6 +37,65 @@ pub struct Ivf<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64
 
     _distance_calculator_marker: PhantomData<DC>,
     _decoder_marker: PhantomData<D>,
+}
+
+pub enum IvfType<Q: Quantizer> {
+    L2Plain(Ivf<Q, L2DistanceCalculator, PlainDecoder>),
+    L2EF(Ivf<Q, L2DistanceCalculator, EliasFanoDecoder>),
+}
+
+impl<Q: Quantizer> IvfType<Q> {
+    pub fn search_with_centroids_and_remap(
+        &self,
+        query: &[f32],
+        nearest_centroid_ids: Vec<usize>,
+        k: usize,
+        context: &mut SearchContext,
+    ) -> Vec<IdWithScore> {
+        match self {
+            IvfType::L2Plain(ivf) => {
+                ivf.search_with_centroids_and_remap(query, nearest_centroid_ids, k, context)
+            }
+            IvfType::L2EF(ivf) => {
+                ivf.search_with_centroids_and_remap(query, nearest_centroid_ids, k, context)
+            }
+        }
+    }
+
+    pub fn get_point_id(&self, doc_id: u128) -> Option<u32> {
+        match self {
+            IvfType::L2Plain(ivf) => ivf.get_point_id(doc_id),
+            IvfType::L2EF(ivf) => ivf.get_point_id(doc_id),
+        }
+    }
+
+    pub fn get_vector_storage(&self) -> &FixedFileVectorStorage<Q::QuantizedT> {
+        match self {
+            IvfType::L2Plain(ivf) => &ivf.vector_storage,
+            IvfType::L2EF(ivf) => &ivf.vector_storage,
+        }
+    }
+
+    pub fn get_index_storage(&self) -> &FixedIndexFile {
+        match self {
+            IvfType::L2Plain(ivf) => &ivf.index_storage,
+            IvfType::L2EF(ivf) => &ivf.index_storage,
+        }
+    }
+
+    pub fn invalidate(&self, doc_id: u128) -> bool {
+        match self {
+            IvfType::L2Plain(ivf) => ivf.invalidate(doc_id),
+            IvfType::L2EF(ivf) => ivf.invalidate(doc_id),
+        }
+    }
+
+    pub fn num_clusters(&self) -> usize {
+        match self {
+            IvfType::L2Plain(ivf) => ivf.num_clusters,
+            IvfType::L2EF(ivf) => ivf.num_clusters,
+        }
+    }
 }
 
 impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, DC, D> {

@@ -1,6 +1,7 @@
 use anyhow::Result;
+use compression::elias_fano::ef::EliasFano;
 use compression::noc::noc::PlainEncoder;
-use config::enums::QuantizerType;
+use config::enums::{IntSeqEncodingType, QuantizerType};
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
 use quantization::pq::pq::ProductQuantizerConfig;
@@ -76,9 +77,23 @@ impl SpannWriter {
         pq.write_to_directory(&ivf_quantizer_directory)?;
 
         debug!("Writing IVF index");
-        let ivf_writer =
-            IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(ivf_directory.to_string(), pq);
-        ivf_writer.write(ivf_builder, index_writer_config.reindex)?;
+
+        match index_writer_config.posting_list_encoding_type {
+            IntSeqEncodingType::PlainEncoding => {
+                let ivf_writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
+                    ivf_directory.to_string(),
+                    pq,
+                );
+                ivf_writer.write(ivf_builder, index_writer_config.reindex)?;
+            }
+            IntSeqEncodingType::EliasFano => {
+                let ivf_writer = IvfWriter::<_, EliasFano, L2DistanceCalculator>::new(
+                    ivf_directory.to_string(),
+                    pq,
+                );
+                ivf_writer.write(ivf_builder, index_writer_config.reindex)?;
+            }
+        }
         ivf_builder.cleanup()?;
         debug!("Finish writing IVF index");
         Ok(())
