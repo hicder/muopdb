@@ -16,7 +16,7 @@ use utils::{ceil_div, CalculateSquared, DistanceCalculator};
 
 use crate::posting_list::file::FileBackedAppendablePostingListStorage;
 use crate::posting_list::PostingListStorage;
-use crate::utils::{PointAndDistance, SearchContext};
+use crate::utils::PointAndDistance;
 use crate::vector::file::FileBackedAppendableVectorStorage;
 use crate::vector::VectorStorage;
 
@@ -260,12 +260,11 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         vector: &[f32],
         centroids: &VectorStorage<f32>,
         num_probes: usize,
-        search_context: &mut SearchContext,
     ) -> Result<Vec<PointAndDistance>> {
         let mut distances: Vec<PointAndDistance> = Vec::new();
         let num_centroids = centroids.len();
         for i in 0..num_centroids {
-            let centroid = centroids.get(i as u32, search_context)?;
+            let centroid = centroids.get_no_context(i as u32)?;
             let dist = L2DistanceCalculator::calculate_squared(&vector, &centroid);
             if dist.is_nan() {
                 println!("NAN found");
@@ -290,37 +289,33 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         let max_clusters_per_vector = self.config.max_clusters_per_vector;
         let posting_list_per_doc = doc_ids
             .par_iter()
-            .map_init(
-                || SearchContext::new(false),
-                |search_context, doc_id| {
-                    let nearest_centroids = Self::find_nearest_centroids(
-                        self.vectors
-                            .borrow()
-                            .get(*doc_id as u32, search_context)
-                            .unwrap(),
-                        &self.centroids.borrow(),
-                        max_clusters_per_vector,
-                        search_context,
-                    )
-                    .expect("Nearest centroids should not be None");
-                    // Find the nearest distance, ensuring that NaN values are treated as greater than any
-                    // other value
-                    let nearest_distance = nearest_centroids
-                        .iter()
-                        .map(|pad| pad.distance.into_inner())
-                        .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Greater))
-                        .expect("nearest_distance should not be None");
-                    let mut accepted_centroid_ids = vec![];
-                    for centroid_and_distance in nearest_centroids.iter() {
-                        if (centroid_and_distance.distance - nearest_distance).abs()
-                            <= nearest_distance * self.config.distance_threshold
-                        {
-                            accepted_centroid_ids.push(centroid_and_distance.point_id as u64);
-                        }
+            .map(|doc_id| {
+                let nearest_centroids = Self::find_nearest_centroids(
+                    self.vectors
+                        .borrow()
+                        .get_no_context(*doc_id as u32)
+                        .unwrap(),
+                    &self.centroids.borrow(),
+                    max_clusters_per_vector,
+                )
+                .expect("Nearest centroids should not be None");
+                // Find the nearest distance, ensuring that NaN values are treated as greater than any
+                // other value
+                let nearest_distance = nearest_centroids
+                    .iter()
+                    .map(|pad| pad.distance.into_inner())
+                    .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Greater))
+                    .expect("nearest_distance should not be None");
+                let mut accepted_centroid_ids = vec![];
+                for centroid_and_distance in nearest_centroids.iter() {
+                    if (centroid_and_distance.distance - nearest_distance).abs()
+                        <= nearest_distance * self.config.distance_threshold
+                    {
+                        accepted_centroid_ids.push(centroid_and_distance.point_id as u64);
                     }
-                    accepted_centroid_ids
-                },
-            )
+                }
+                accepted_centroid_ids
+            })
             .collect::<Vec<Vec<u64>>>();
 
         posting_list_per_doc
@@ -378,16 +373,13 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         let vectors = self.vectors.borrow();
         let nearest_centroids = doc_ids
             .par_iter()
-            .map_init(
-                || SearchContext::new(false),
-                |search_context, doc_id| {
-                    Self::find_nearest_centroid_inmemory(
-                        vectors.get(*doc_id as u32, search_context).unwrap(),
-                        &flattened_centroids,
-                        num_features,
-                    )
-                },
-            )
+            .map(|doc_id| {
+                Self::find_nearest_centroid_inmemory(
+                    vectors.get_no_context(*doc_id as u32).unwrap(),
+                    &flattened_centroids,
+                    num_features,
+                )
+            })
             .collect::<Vec<usize>>();
 
         for (doc_id, nearest_centroid) in doc_ids.iter().zip(nearest_centroids.iter()) {
@@ -405,14 +397,13 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
     ) -> Result<Vec<f32>> {
         let mut rng = rand::thread_rng();
         let mut flattened_dataset: Vec<f32> = vec![];
-        let mut search_context = SearchContext::new(false);
         doc_ids
             .choose_multiple(&mut rng, sample_size)
             .for_each(|doc_id| {
                 flattened_dataset.extend_from_slice(
                     self.vectors
                         .borrow()
-                        .get(*doc_id as u32, &mut search_context)
+                        .get_no_context(*doc_id as u32)
                         .unwrap(),
                 );
             });
@@ -490,14 +481,9 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             .choose_multiple(&mut rng, num_points_for_clustering)
             .cloned()
             .collect::<Vec<usize>>();
-        let mut search_context = SearchContext::new(false);
         selected.iter().for_each(|index| {
-            flattened_dataset.extend_from_slice(
-                self.vectors
-                    .borrow()
-                    .get(*index as u32, &mut search_context)
-                    .unwrap(),
-            );
+            flattened_dataset
+                .extend_from_slice(self.vectors.borrow().get_no_context(*index as u32).unwrap());
         });
 
         let result = kmeans.fit(flattened_dataset)?;
@@ -736,7 +722,6 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
                 ),
             ));
 
-        let mut search_context = SearchContext::new(false);
         for i in 0..reverse_assigned_ids.len() {
             let mapped_id = reverse_assigned_ids[i];
             // let vector = self.vectors.borrow().get(mapped_id as u32).unwrap();
@@ -745,7 +730,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
                 .append(
                     self.vectors
                         .borrow()
-                        .get(mapped_id as u32, &mut search_context)
+                        .get_no_context(mapped_id as u32)
                         .unwrap(),
                 )
                 .unwrap_or_else(|_| panic!("append failed"));
@@ -1404,7 +1389,7 @@ mod tests {
                 builder
                     .vectors
                     .borrow()
-                    .get(i as u32, &mut SearchContext::new(false))
+                    .get_no_context(i as u32)
                     .expect(&format!("Failed to retrieve vector #{}", i))[0],
                 expected_vectors[i]
             );

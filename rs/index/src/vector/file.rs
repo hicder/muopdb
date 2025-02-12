@@ -7,7 +7,6 @@ use num_traits::ToBytes;
 use utils::io::wrap_write;
 
 use super::{StorageContext, VectorStorageConfig};
-use crate::utils::SearchContext;
 
 pub struct FileBackedAppendableVectorStorage<T: ToBytes + Clone> {
     pub memory_threshold: usize,
@@ -144,7 +143,7 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
 }
 
 impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
-    pub fn get(&self, id: u32, _context: &mut impl StorageContext) -> Result<&[T]> {
+    pub fn get_no_context(&self, id: u32) -> Result<&[T]> {
         if self.resident {
             if id as usize >= self.resident_vectors.len() {
                 return Err(anyhow!("vector id out of bound"));
@@ -166,6 +165,10 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
         let mmap = &self.mmaps[file_num];
         let slice = &mmap[file_offset..file_offset + self.num_features * std::mem::size_of::<T>()];
         Ok(unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const T, self.num_features) })
+    }
+
+    pub fn get(&self, id: u32, _context: &mut impl StorageContext) -> Result<&[T]> {
+        self.get_no_context(id)
     }
 
     pub fn append(&mut self, vector: &[T]) -> Result<()> {
@@ -212,7 +215,7 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
         let mut len = 0;
         len += wrap_write(writer, &num_vectors.to_le_bytes())?;
         for i in 0..num_vectors {
-            let vector = self.get(i as u32, &mut SearchContext::new(false)).unwrap();
+            let vector = self.get_no_context(i as u32).unwrap();
             for j in 0..self.num_features {
                 len += wrap_write(writer, vector[j].to_le_bytes().as_ref())?;
             }
@@ -264,13 +267,13 @@ mod tests {
         assert!(!storage.is_resident());
         storage.flush().unwrap_or_else(|_| panic!("flush failed"));
 
-        let vec = storage.get(0, &mut SearchContext::new(false)).unwrap();
+        let vec = storage.get_no_context(0).unwrap();
         assert_eq!(vec[0], 1);
         assert_eq!(vec[1], 2);
         assert_eq!(vec[2], 3);
         assert_eq!(vec[3], 4);
 
-        let vec = storage.get(64, &mut SearchContext::new(false)).unwrap();
+        let vec = storage.get_no_context(64).unwrap();
         assert_eq!(vec[0], 5);
         assert_eq!(vec[1], 6);
         assert_eq!(vec[2], 7);
@@ -298,14 +301,8 @@ mod tests {
         storage.append(&vector2).unwrap();
 
         // Check if vectors are correctly stored and retrieved
-        assert_eq!(
-            storage.get(0, &mut SearchContext::new(false)).unwrap(),
-            &vector1
-        );
-        assert_eq!(
-            storage.get(1, &mut SearchContext::new(false)).unwrap(),
-            &vector2
-        );
+        assert_eq!(storage.get_no_context(0).unwrap(), &vector1);
+        assert_eq!(storage.get_no_context(1).unwrap(), &vector2);
         assert!(storage.is_resident());
 
         // Append more vectors to force disk usage
@@ -318,22 +315,11 @@ mod tests {
         assert!(!storage.is_resident());
 
         // Verify all vectors are still accessible
-        assert_eq!(
-            storage.get(0, &mut SearchContext::new(false)).unwrap(),
-            &vector1
-        );
-        assert_eq!(
-            storage.get(1, &mut SearchContext::new(false)).unwrap(),
-            &vector2
-        );
+        assert_eq!(storage.get_no_context(0).unwrap(), &vector1);
+        assert_eq!(storage.get_no_context(1).unwrap(), &vector2);
         for i in 0..10 {
             let expected = vec![i as f32, (i + 1) as f32, (i + 2) as f32];
-            assert_eq!(
-                storage
-                    .get((i + 2) as u32, &mut SearchContext::new(false))
-                    .unwrap(),
-                &expected
-            );
+            assert_eq!(storage.get_no_context((i + 2) as u32).unwrap(), &expected);
         }
 
         // Test length
@@ -347,6 +333,6 @@ mod tests {
         assert!(storage.append(&invalid_vector).is_err());
 
         // Test getting an out-of-bounds vector
-        assert!(storage.get(100, &mut SearchContext::new(false)).is_err());
+        assert!(storage.get_no_context(100).is_err());
     }
 }

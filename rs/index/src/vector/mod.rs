@@ -46,6 +46,13 @@ pub enum VectorStorage<T: ToBytes + Clone> {
 }
 
 impl<T: ToBytes + Clone> VectorStorage<T> {
+    pub fn get_no_context(&self, id: u32) -> Result<&[T]> {
+        match self {
+            VectorStorage::AppendableLocalFileBacked(storage) => storage.get_no_context(id),
+            VectorStorage::FixedLocalFileBacked(storage) => storage.get_no_context(id),
+        }
+    }
+
     pub fn get(&self, id: u32, context: &mut impl StorageContext) -> Result<&[T]> {
         match self {
             VectorStorage::AppendableLocalFileBacked(storage) => storage.get(id, context),

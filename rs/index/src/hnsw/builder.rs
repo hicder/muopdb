@@ -12,7 +12,7 @@ use rand::Rng;
 
 use super::index::Hnsw;
 use super::utils::{BuilderContext, GraphTraversal};
-use crate::utils::{PointAndDistance, SearchContext};
+use crate::utils::PointAndDistance;
 use crate::vector::file::FileBackedAppendableVectorStorage;
 use crate::vector::{VectorStorage, VectorStorageConfig};
 
@@ -101,7 +101,6 @@ impl<Q: Quantizer> HnswBuilder<Q> {
     ) -> Self {
         let num_layers = hnsw.get_header().num_layers as usize;
         let mut current_top_layer = (num_layers - 1) as u8;
-        let mut context = SearchContext::new(false);
 
         let mut layers = vec![];
         for _ in 0..num_layers {
@@ -122,7 +121,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
 
         // Copy over the vectors
         for i in 0..hnsw.get_doc_id_mapping_slice().len() {
-            let vector = hnsw.vector_storage.get(i as u32, &mut context).unwrap();
+            let vector = hnsw.vector_storage.get_no_context(i as u32).unwrap();
             vector_storage
                 .append(vector)
                 .unwrap_or_else(|_| panic!("append failed"));
@@ -131,8 +130,8 @@ impl<Q: Quantizer> HnswBuilder<Q> {
         loop {
             let layer = &mut layers[current_top_layer as usize];
             hnsw.visit(current_top_layer, |from: u32, to: u32| {
-                let from_v = hnsw.vector_storage.get(from as u32, &mut context).unwrap();
-                let to_v = hnsw.vector_storage.get(to as u32, &mut context).unwrap();
+                let from_v = hnsw.vector_storage.get_no_context(from as u32).unwrap();
+                let to_v = hnsw.vector_storage.get_no_context(to as u32).unwrap();
                 let distance = Q::QuantizedT::distance(from_v, to_v, &hnsw.quantizer);
                 layer
                     .edges
@@ -288,13 +287,9 @@ impl<Q: Quantizer> HnswBuilder<Q> {
                 vector_storage_config.num_features,
             ),
         ));
-        let mut search_context = SearchContext::new(false);
         for i in 0..reverse_assigned_ids.len() {
             let mapped_id = reverse_assigned_ids[i];
-            let vector = self
-                .vectors
-                .get(mapped_id as u32, &mut search_context)
-                .unwrap();
+            let vector = self.vectors.get_no_context(mapped_id as u32).unwrap();
             new_vector_storage
                 .append(vector)
                 .unwrap_or_else(|_| panic!("append failed"));
@@ -414,9 +409,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
     }
 
     fn get_vector(&self, point_id: u32) -> &[Q::QuantizedT] {
-        self.vectors
-            .get(point_id, &mut SearchContext::new(false))
-            .unwrap()
+        self.vectors.get_no_context(point_id).unwrap()
     }
 
     fn get_random_layer(&self) -> u8 {

@@ -78,7 +78,6 @@ mod tests {
     use tempdir::TempDir;
 
     use crate::multi_spann::builder::MultiSpannBuilder;
-    use crate::utils::SearchContext;
 
     #[test]
     fn test_multi_spann_builder() {
@@ -120,7 +119,7 @@ mod tests {
                             .ivf_builder
                             .vectors()
                             .borrow()
-                            .get(0, &mut SearchContext::new(false))
+                            .get_no_context(0)
                             .expect("Failed to read vector"),
                         &data_1
                     );
@@ -141,7 +140,7 @@ mod tests {
                             .ivf_builder
                             .centroids()
                             .borrow()
-                            .get(0, &mut SearchContext::new(false))
+                            .get_no_context(0)
                             .expect("Failed to read centroid"),
                         &data_1
                     );
@@ -153,7 +152,7 @@ mod tests {
                             .ivf_builder
                             .vectors()
                             .borrow()
-                            .get(0, &mut SearchContext::new(false))
+                            .get_no_context(0)
                             .expect("Failed to read vector"),
                         &data_2
                     );
@@ -174,7 +173,7 @@ mod tests {
                             .ivf_builder
                             .centroids()
                             .borrow()
-                            .get(0, &mut SearchContext::new(false))
+                            .get_no_context(0)
                             .expect("Failed to read centroid"),
                         &data_2
                     );

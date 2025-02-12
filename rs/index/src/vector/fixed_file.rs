@@ -57,6 +57,16 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         Ok(result)
     }
 
+    pub fn get_no_context(&self, id: u32) -> Result<&[T]> {
+        if id as usize >= self.num_vectors {
+            return Err(anyhow::anyhow!("index out of bounds"));
+        }
+        let start = self.offset + 8 + (id as usize) * Self::vector_size_in_bytes(self.num_features);
+        Ok(transmute_u8_to_slice::<T>(
+            &self.mmaps[start..start + Self::vector_size_in_bytes(self.num_features)],
+        ))
+    }
+
     pub fn get(&self, id: u32, context: &mut impl StorageContext) -> Result<&[T]> {
         if id as usize >= self.num_vectors {
             return Err(anyhow::anyhow!("index out of bounds"));
