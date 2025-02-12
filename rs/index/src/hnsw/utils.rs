@@ -5,6 +5,7 @@ use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 
 use crate::utils::{PointAndDistance, TraversalContext};
+use crate::vector::StorageContext;
 pub struct BuilderContext {
     visited: BitVec,
 }
@@ -25,7 +26,9 @@ impl TraversalContext for BuilderContext {
     fn set_visited(&mut self, i: u32) {
         self.visited.set(i as usize, true);
     }
+}
 
+impl StorageContext for BuilderContext {
     fn should_record_pages(&self) -> bool {
         false
     }

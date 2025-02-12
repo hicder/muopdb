@@ -5,7 +5,6 @@ use quantization::pq::pq::ProductQuantizerL2;
 use quantization::quantization::Quantizer;
 
 use super::collection::Collection;
-use crate::index::Searchable;
 use crate::segment::BoxedImmutableSegment;
 use crate::utils::{IdWithScore, SearchContext};
 
@@ -59,8 +58,8 @@ impl<Q: Quantizer + Clone> Snapshot<Q> {
 }
 
 /// Search the collection using the given query
-impl<Q: Quantizer + Clone> Searchable for Snapshot<Q> {
-    fn search_with_id(
+impl<Q: Quantizer + Clone> Snapshot<Q> {
+    pub fn search_with_id(
         &self,
         id: u128,
         query: &[f32],
@@ -82,16 +81,6 @@ impl<Q: Quantizer + Clone> Searchable for Snapshot<Q> {
         scored_results.truncate(k);
 
         Some(scored_results)
-    }
-
-    fn search(
-        &self,
-        query: &[f32],
-        k: usize,
-        ef_construction: u32,
-        context: &mut SearchContext,
-    ) -> Option<Vec<IdWithScore>> {
-        self.search_with_id(0u128, query, k, ef_construction, context)
     }
 }
 

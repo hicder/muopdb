@@ -2,8 +2,6 @@ use anyhow::{anyhow, Result};
 use quantization::quantization::Quantizer;
 
 use super::Segment;
-use crate::collection::SegmentSearchable;
-use crate::index::Searchable;
 use crate::multi_spann::index::MultiSpannIndex;
 use crate::spann::iter::SpannIter;
 
@@ -54,18 +52,8 @@ impl<Q: Quantizer> Segment for ImmutableSegment<Q> {
     }
 }
 
-impl<Q: Quantizer> Searchable for ImmutableSegment<Q> {
-    fn search(
-        &self,
-        query: &[f32],
-        k: usize,
-        ef_construction: u32,
-        context: &mut crate::utils::SearchContext,
-    ) -> Option<Vec<crate::utils::IdWithScore>> {
-        self.index.search(query, k, ef_construction, context)
-    }
-
-    fn search_with_id(
+impl<Q: Quantizer> ImmutableSegment<Q> {
+    pub fn search_with_id(
         &self,
         id: u128,
         query: &[f32],
@@ -78,7 +66,6 @@ impl<Q: Quantizer> Searchable for ImmutableSegment<Q> {
     }
 }
 
-impl<Q: Quantizer> SegmentSearchable for ImmutableSegment<Q> {}
 unsafe impl<Q: Quantizer> Send for ImmutableSegment<Q> {}
 unsafe impl<Q: Quantizer> Sync for ImmutableSegment<Q> {}
 
@@ -88,7 +75,6 @@ mod tests {
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
 
-    use crate::index::Searchable;
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::reader::MultiSpannReader;
     use crate::multi_spann::writer::MultiSpannWriter;
@@ -143,7 +129,7 @@ mod tests {
         let mut context = SearchContext::new(false);
 
         let results = immutable_segment
-            .search(&query, k, num_probes, &mut context)
+            .search_with_id(0, &query, k, num_probes, &mut context)
             .expect("Failed to search with Multi-SPANN index");
 
         assert_eq!(results.len(), k);
@@ -209,7 +195,7 @@ mod tests {
             .expect("Failed to invalidate"));
 
         let results = immutable_segment
-            .search(&query, k, num_probes, &mut context)
+            .search_with_id(0, &query, k, num_probes, &mut context)
             .expect("Failed to search with Multi-SPANN index");
 
         assert_eq!(results.len(), k);

@@ -74,7 +74,6 @@ mod tests {
     use utils::test_utils::generate_random_vector;
 
     use super::*;
-    use crate::index::Searchable;
     use crate::ivf::builder::{IvfBuilder, IvfBuilderConfig};
     use crate::ivf::writer::IvfWriter;
     use crate::posting_list::combined_file::Version;
@@ -142,12 +141,12 @@ mod tests {
             let ref_vector = builder
                 .vectors()
                 .borrow()
-                .get(i as u32)
+                .get(i as u32, &mut context)
                 .expect("Failed to read vector from FileBackedAppendableVectorStorage")
                 .to_vec();
             let read_vector = index
                 .vector_storage
-                .get(i, &mut context)
+                .get(i as u32, &mut context)
                 .expect("Failed to read vector from FixedFileVectorStorage");
             assert_eq!(ref_vector.len(), read_vector.len());
             for (val_ref, val_read) in ref_vector.iter().zip(read_vector.iter()) {
@@ -185,7 +184,7 @@ mod tests {
             let ref_vector = builder
                 .centroids()
                 .borrow()
-                .get(i as u32)
+                .get(i as u32, &mut context)
                 .expect("Failed to read centroid from FileBackedAppendableVectorStorage")
                 .to_vec();
             let read_vector = index
@@ -382,12 +381,12 @@ mod tests {
             let ref_vector = builder
                 .vectors()
                 .borrow()
-                .get(i as u32)
+                .get(i as u32, &mut context)
                 .expect("Failed to read vector from FileBackedAppendableVectorStorage")
                 .to_vec();
             let read_vector = index
                 .vector_storage
-                .get(i, &mut context)
+                .get(i as u32, &mut context)
                 .expect("Failed to read vector from FixedFileVectorStorage");
             assert_eq!(ref_vector.len(), read_vector.len());
             for (val_ref, val_read) in ref_vector.iter().zip(read_vector.iter()) {
@@ -425,7 +424,7 @@ mod tests {
             let ref_vector = builder
                 .centroids()
                 .borrow()
-                .get(i as u32)
+                .get(i as u32, &mut context)
                 .expect("Failed to read centroid from FileBackedAppendableVectorStorage")
                 .to_vec();
             let read_vector = index

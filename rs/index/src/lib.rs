@@ -3,7 +3,6 @@
 
 pub mod collection;
 pub mod hnsw;
-pub mod index;
 pub mod ivf;
 pub mod multi_spann;
 pub mod optimizers;

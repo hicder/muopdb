@@ -47,7 +47,7 @@ impl Layer {
 
 /// The actual builder
 pub struct HnswBuilder<Q: Quantizer> {
-    vectors: Box<dyn VectorStorage<Q::QuantizedT>>,
+    vectors: Box<VectorStorage<Q::QuantizedT>>,
 
     max_neighbors: usize,
     pub layers: Vec<Layer>,
@@ -71,11 +71,13 @@ impl<Q: Quantizer> HnswBuilder<Q> {
         quantizer: Q,
         base_directory: String,
     ) -> Self {
-        let vectors = Box::new(FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
-            base_directory.clone(),
-            vector_storage_memory_size,
-            vector_storage_file_size,
-            num_features,
+        let vectors = Box::new(VectorStorage::AppendableLocalFileBacked(
+            FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
+                base_directory.clone(),
+                vector_storage_memory_size,
+                vector_storage_file_size,
+                num_features,
+            ),
         ));
 
         Self {
@@ -109,16 +111,18 @@ impl<Q: Quantizer> HnswBuilder<Q> {
         }
 
         let tmp_vector_storage_dir = format!("{}/vector_storage_tmp", output_directory);
-        let mut vector_storage = Box::new(FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
-            tmp_vector_storage_dir,
-            vector_storage_config.memory_threshold,
-            vector_storage_config.file_size,
-            vector_storage_config.num_features,
+        let mut vector_storage = Box::new(VectorStorage::AppendableLocalFileBacked(
+            FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
+                tmp_vector_storage_dir,
+                vector_storage_config.memory_threshold,
+                vector_storage_config.file_size,
+                vector_storage_config.num_features,
+            ),
         ));
 
         // Copy over the vectors
         for i in 0..hnsw.get_doc_id_mapping_slice().len() {
-            let vector = hnsw.vector_storage.get(i, &mut context).unwrap();
+            let vector = hnsw.vector_storage.get(i as u32, &mut context).unwrap();
             vector_storage
                 .append(vector)
                 .unwrap_or_else(|_| panic!("append failed"));
@@ -127,11 +131,8 @@ impl<Q: Quantizer> HnswBuilder<Q> {
         loop {
             let layer = &mut layers[current_top_layer as usize];
             hnsw.visit(current_top_layer, |from: u32, to: u32| {
-                let from_v = hnsw
-                    .vector_storage
-                    .get(from as usize, &mut context)
-                    .unwrap();
-                let to_v = hnsw.vector_storage.get(to as usize, &mut context).unwrap();
+                let from_v = hnsw.vector_storage.get(from as u32, &mut context).unwrap();
+                let to_v = hnsw.vector_storage.get(to as u32, &mut context).unwrap();
                 let distance = Q::QuantizedT::distance(from_v, to_v, &hnsw.quantizer);
                 layer
                     .edges
@@ -279,17 +280,21 @@ impl<Q: Quantizer> HnswBuilder<Q> {
         }
 
         let vector_storage_config = self.vectors.config();
-        let mut new_vector_storage =
-            Box::new(FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
+        let mut new_vector_storage = Box::new(VectorStorage::AppendableLocalFileBacked(
+            FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
                 temp_dir.clone(),
                 vector_storage_config.memory_threshold,
                 vector_storage_config.file_size,
                 vector_storage_config.num_features,
-            ));
-
+            ),
+        ));
+        let mut search_context = SearchContext::new(false);
         for i in 0..reverse_assigned_ids.len() {
             let mapped_id = reverse_assigned_ids[i];
-            let vector = self.vectors.get(mapped_id as u32).unwrap();
+            let vector = self
+                .vectors
+                .get(mapped_id as u32, &mut search_context)
+                .unwrap();
             new_vector_storage
                 .append(vector)
                 .unwrap_or_else(|_| panic!("append failed"));
@@ -409,7 +414,9 @@ impl<Q: Quantizer> HnswBuilder<Q> {
     }
 
     fn get_vector(&self, point_id: u32) -> &[Q::QuantizedT] {
-        self.vectors.get(point_id).unwrap()
+        self.vectors
+            .get(point_id, &mut SearchContext::new(false))
+            .unwrap()
     }
 
     fn get_random_layer(&self) -> u8 {
@@ -471,7 +478,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
         }
     }
 
-    pub fn vectors(&mut self) -> &mut Box<dyn VectorStorage<Q::QuantizedT>> {
+    pub fn vectors(&mut self) -> &mut VectorStorage<Q::QuantizedT> {
         &mut self.vectors
     }
 
@@ -509,7 +516,7 @@ impl<Q: Quantizer> GraphTraversal<Q> for HnswBuilder<Q> {
         point_id: u32,
         _context: &mut BuilderContext,
     ) -> f32 {
-        let point = self.vectors.get(point_id).unwrap();
+        let point = self.vectors.get(point_id, _context).unwrap();
         Q::QuantizedT::distance(query, point, &self.quantizer)
     }
 
@@ -588,8 +595,8 @@ mod tests {
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
-        let mut vectors = Box::new(FileBackedAppendableVectorStorage::<u8>::new(
-            vector_dir, 1024, 4096, 5,
+        let mut vectors = Box::new(VectorStorage::AppendableLocalFileBacked(
+            FileBackedAppendableVectorStorage::<u8>::new(vector_dir, 1024, 4096, 5),
         ));
         vectors.append(&vec![0, 0, 0, 0, 0]).unwrap();
         vectors.append(&vec![1, 1, 1, 1, 1]).unwrap();

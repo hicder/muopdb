@@ -8,7 +8,6 @@ use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
 
 use super::user_index_info::HashConfig;
-use crate::index::Searchable;
 use crate::ivf::files::invalidated_ids::InvalidatedIdsStorage;
 use crate::spann::index::Spann;
 use crate::spann::iter::SpannIter;
@@ -105,20 +104,8 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             None => Ok(false),
         }
     }
-}
 
-impl<Q: Quantizer> Searchable for MultiSpannIndex<Q> {
-    fn search(
-        &self,
-        query: &[f32],
-        k: usize,
-        ef_construction: u32,
-        context: &mut SearchContext,
-    ) -> Option<Vec<IdWithScore>> {
-        self.search_with_id(0, query, k, ef_construction, context)
-    }
-
-    fn search_with_id(
+    pub fn search_with_id(
         &self,
         id: u128,
         query: &[f32],
@@ -139,7 +126,6 @@ mod tests {
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
 
-    use crate::index::Searchable;
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::reader::MultiSpannReader;
     use crate::multi_spann::writer::MultiSpannWriter;
@@ -189,7 +175,7 @@ mod tests {
         let mut context = SearchContext::new(false);
 
         let results = multi_spann_index
-            .search(&query, k, num_probes, &mut context)
+            .search_with_id(0, &query, k, num_probes, &mut context)
             .expect("Failed to search with Multi-SPANN index");
 
         assert_eq!(results.len(), k);
@@ -288,7 +274,7 @@ mod tests {
             .expect("Failed to invalidate"));
 
         let results = multi_spann_index
-            .search(&query, k, num_probes, &mut context)
+            .search_with_id(0, &query, k, num_probes, &mut context)
             .expect("Failed to search with Multi-SPANN index");
 
         assert_eq!(results.len(), k);

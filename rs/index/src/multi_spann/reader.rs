@@ -33,7 +33,6 @@ mod tests {
     use utils::distance::l2::L2DistanceCalculator;
 
     use super::*;
-    use crate::index::Searchable;
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::writer::MultiSpannWriter;
     use crate::utils::SearchContext;

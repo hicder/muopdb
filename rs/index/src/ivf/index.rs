@@ -9,7 +9,6 @@ use quantization::typing::VectorOps;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 use utils::DistanceCalculator;
 
-use crate::index::Searchable;
 use crate::posting_list::combined_file::FixedIndexFile;
 use crate::utils::{IdWithScore, PointAndDistance, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
@@ -90,14 +89,14 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
                 if self.invalid_point_ids.contains(&(idx as u32)) {
                     continue;
                 }
-                match self.vector_storage.get(idx as usize, context) {
-                    Some(vector) => {
+                match self.vector_storage.get(idx as u32, context) {
+                    Ok(vector) => {
                         let distance =
                             self.quantizer
                                 .distance(&quantized_query, vector, StreamingSIMD);
                         results.push(PointAndDistance::new(distance, idx as u32));
                     }
-                    None => {}
+                    Err(_) => {}
                 }
             }
             results
@@ -178,10 +177,8 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
     }
 }
 
-impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Searchable
-    for Ivf<Q, DC, D>
-{
-    fn search(
+impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, DC, D> {
+    pub fn search(
         &self,
         query: &[f32],
         k: usize,

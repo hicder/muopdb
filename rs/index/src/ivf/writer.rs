@@ -14,6 +14,7 @@ use utils::{CalculateSquared, DistanceCalculator};
 
 use crate::ivf::builder::IvfBuilder;
 use crate::posting_list::combined_file::{Header, Version};
+use crate::utils::SearchContext;
 
 pub struct IvfWriter<Q, E, D>
 where
@@ -139,10 +140,10 @@ where
 
         let mut bytes_written = 0;
         bytes_written += wrap_write(&mut writer, &full_vectors.borrow().len().to_le_bytes())?;
-
+        let mut search_context = SearchContext::new(false);
         for i in 0..full_vectors.borrow().len() {
             let quantized_vector = Q::QuantizedT::process_vector(
-                full_vectors.borrow().get(i as u32)?,
+                full_vectors.borrow().get(i as u32, &mut search_context)?,
                 &self.quantizer,
             );
             for j in 0..quantized_vector.len() {

@@ -14,6 +14,7 @@ use crate::hnsw::writer::HnswWriter;
 use crate::ivf::builder::IvfBuilder;
 use crate::ivf::writer::IvfWriter;
 use crate::spann::builder::SpannBuilderConfig;
+use crate::utils::SearchContext;
 
 pub struct SpannWriter {
     base_directory: String,
@@ -58,8 +59,13 @@ impl SpannWriter {
             index_writer_config.pq_num_training_rows,
         );
 
+        let mut search_context = SearchContext::new(false);
         for row_idx in sorted_random_rows {
-            let vector = ivf_builder.vectors().borrow().get(row_idx as u32)?.to_vec();
+            let vector = ivf_builder
+                .vectors()
+                .borrow()
+                .get(row_idx as u32, &mut search_context)?
+                .to_vec();
             pq_builder.add(vector);
         }
 

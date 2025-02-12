@@ -10,7 +10,6 @@ use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 
 use super::utils::GraphTraversal;
 use crate::hnsw::writer::Header;
-use crate::index::Searchable;
 use crate::utils::{IdWithScore, SearchContext};
 use crate::vector::fixed_file::FixedFileVectorStorage;
 
@@ -126,7 +125,7 @@ impl<Q: Quantizer> Hnsw<Q> {
     }
 
     fn get_vector(&self, point_id: u32, context: &mut SearchContext) -> &[Q::QuantizedT] {
-        self.vector_storage.get(point_id as usize, context).unwrap()
+        self.vector_storage.get(point_id, context).unwrap()
     }
 
     pub fn get_edges_slice(&self) -> &[u32] {
@@ -381,18 +380,6 @@ impl<Q: Quantizer> GraphTraversal<Q> for Hnsw<Q> {
                 println!("");
             }
         }
-    }
-}
-
-impl<Q: Quantizer> Searchable for Hnsw<Q> {
-    fn search(
-        &self,
-        query: &[f32],
-        k: usize,
-        ef_construction: u32,
-        context: &mut SearchContext,
-    ) -> Option<Vec<IdWithScore>> {
-        Some(self.ann_search(query, k, ef_construction, context))
     }
 }
 

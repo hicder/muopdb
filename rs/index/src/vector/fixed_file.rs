@@ -5,7 +5,7 @@ use memmap2::Mmap;
 use num_traits::ToBytes;
 use utils::mem::transmute_u8_to_slice;
 
-use crate::utils::{SearchContext, TraversalContext};
+use crate::vector::StorageContext;
 
 pub struct FixedFileVectorStorage<T> {
     _marker: PhantomData<T>,
@@ -38,11 +38,30 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         })
     }
 
-    pub fn get(&self, index: usize, context: &mut SearchContext) -> Option<&[T]> {
-        if index >= self.num_vectors {
-            return None;
+    fn get_page_id(&self, index: usize) -> usize {
+        index / 4096
+    }
+
+    fn vector_size_in_bytes(num_features: usize) -> usize {
+        num_features * std::mem::size_of::<T>()
+    }
+}
+
+impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
+    pub fn multi_get(&self, ids: &[u32], context: &mut impl StorageContext) -> Result<Vec<&[T]>> {
+        let mut result = vec![];
+        for id in ids {
+            // TODO: Handle error
+            result.push(self.get(*id, context).unwrap());
         }
-        let start = self.offset + 8 + index * Self::vector_size_in_bytes(self.num_features);
+        Ok(result)
+    }
+
+    pub fn get(&self, id: u32, context: &mut impl StorageContext) -> Result<&[T]> {
+        if id as usize >= self.num_vectors {
+            return Err(anyhow::anyhow!("index out of bounds"));
+        }
+        let start = self.offset + 8 + (id as usize) * Self::vector_size_in_bytes(self.num_features);
 
         if context.should_record_pages() {
             let page_id = format!("{}::{}", self.file_path, self.get_page_id(start));
@@ -50,15 +69,27 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         }
 
         let slice = &self.mmaps[start..start + Self::vector_size_in_bytes(self.num_features)];
-        Some(transmute_u8_to_slice::<T>(slice))
+        Ok(transmute_u8_to_slice::<T>(slice))
     }
 
-    fn get_page_id(&self, index: usize) -> usize {
-        index / 4096
+    pub fn append(&mut self, _vector: &[T]) -> Result<()> {
+        return Err(anyhow::anyhow!("Not supported"));
     }
 
-    fn vector_size_in_bytes(num_features: usize) -> usize {
-        num_features * std::mem::size_of::<T>()
+    pub fn len(&self) -> usize {
+        self.num_vectors
+    }
+
+    pub fn write(&self, _writer: &mut std::io::BufWriter<&mut std::fs::File>) -> Result<usize> {
+        return Err(anyhow::anyhow!("Not supported"));
+    }
+
+    pub fn config(&self) -> super::VectorStorageConfig {
+        super::VectorStorageConfig {
+            memory_threshold: 0,
+            file_size: 0,
+            num_features: self.num_features,
+        }
     }
 }
 
@@ -69,8 +100,8 @@ mod tests {
     use std::io::BufWriter;
 
     use super::*;
+    use crate::utils::SearchContext;
     use crate::vector::file::FileBackedAppendableVectorStorage;
-    use crate::vector::VectorStorage;
 
     #[test]
     fn test_fixed_file_vector_storage() {
@@ -135,7 +166,7 @@ mod tests {
         );
 
         // Test out of bounds access
-        assert!(storage.get(3, &mut context).is_none());
+        assert!(storage.get(3, &mut context).is_err());
     }
 
     #[test]

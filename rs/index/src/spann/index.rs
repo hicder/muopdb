@@ -7,7 +7,6 @@ use quantization::quantization::Quantizer;
 use utils::distance::l2::L2DistanceCalculator;
 
 use crate::hnsw::index::Hnsw;
-use crate::index::Searchable;
 use crate::ivf::index::Ivf;
 use crate::utils::SearchContext;
 
@@ -55,9 +54,10 @@ impl<Q: Quantizer> Spann<Q> {
         point_id: u32,
         context: &mut SearchContext,
     ) -> Option<&[Q::QuantizedT]> {
-        self.posting_lists
-            .vector_storage
-            .get(point_id as usize, context)
+        match self.posting_lists.vector_storage.get(point_id, context) {
+            Ok(v) => Some(v),
+            Err(_) => None,
+        }
     }
 
     pub fn invalidate(&self, doc_id: u128) -> bool {
@@ -65,8 +65,8 @@ impl<Q: Quantizer> Spann<Q> {
     }
 }
 
-impl<Q: Quantizer> Searchable for Spann<Q> {
-    fn search(
+impl<Q: Quantizer> Spann<Q> {
+    pub fn search(
         &self,
         query: &[f32],
         k: usize,
@@ -74,42 +74,40 @@ impl<Q: Quantizer> Searchable for Spann<Q> {
         context: &mut crate::utils::SearchContext,
     ) -> Option<Vec<crate::utils::IdWithScore>> {
         // TODO(hicder): Fully implement SPANN, which includes adjusting number of centroids
-        match self.centroids.search(query, k, ef_construction, context) {
-            Some(nearest_centroids) => {
-                if nearest_centroids.is_empty() {
-                    return None;
-                }
-
-                // Get the nearest centroid, and only search those that are within 10% of the distance of the nearest centroid
-                let nearest_distance = nearest_centroids
-                    .iter()
-                    .map(|pad| pad.score)
-                    .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Greater))
-                    .expect("nearest_distance should not be None");
-
-                let nearest_centroid_ids: Vec<usize> = nearest_centroids
-                    .iter()
-                    .filter(|centroid_and_distance| {
-                        centroid_and_distance.score - nearest_distance <= nearest_distance * 0.1
-                    })
-                    .map(|x| x.id as usize)
-                    .collect();
-
-                debug!(
-                    "Number of nearest centroids: {}",
-                    nearest_centroid_ids.len()
-                );
-
-                let results = self.posting_lists.search_with_centroids_and_remap(
-                    query,
-                    nearest_centroid_ids,
-                    k,
-                    context,
-                );
-                Some(results)
-            }
-            None => None,
+        let nearest_centroids = self
+            .centroids
+            .ann_search(query, k, ef_construction, context);
+        if nearest_centroids.is_empty() {
+            return None;
         }
+
+        // Get the nearest centroid, and only search those that are within 10% of the distance of the nearest centroid
+        let nearest_distance = nearest_centroids
+            .iter()
+            .map(|pad| pad.score)
+            .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Greater))
+            .expect("nearest_distance should not be None");
+
+        let nearest_centroid_ids: Vec<usize> = nearest_centroids
+            .iter()
+            .filter(|centroid_and_distance| {
+                centroid_and_distance.score - nearest_distance <= nearest_distance * 0.1
+            })
+            .map(|x| x.id as usize)
+            .collect();
+
+        debug!(
+            "Number of nearest centroids: {}",
+            nearest_centroid_ids.len()
+        );
+
+        let results = self.posting_lists.search_with_centroids_and_remap(
+            query,
+            nearest_centroid_ids,
+            k,
+            context,
+        );
+        Some(results)
     }
 }
 
@@ -120,7 +118,6 @@ mod tests {
     use quantization::pq::pq::ProductQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
 
-    use super::*;
     use crate::spann::builder::{SpannBuilder, SpannBuilderConfig};
     use crate::spann::reader::SpannReader;
     use crate::spann::writer::SpannWriter;
