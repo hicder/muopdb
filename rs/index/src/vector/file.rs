@@ -6,9 +6,9 @@ use anyhow::{anyhow, Result};
 use num_traits::ToBytes;
 use utils::io::wrap_write;
 
-use super::{VectorStorage, VectorStorageConfig};
+use super::{StorageContext, VectorStorageConfig};
 
-pub struct FileBackedAppendableVectorStorage<T> {
+pub struct FileBackedAppendableVectorStorage<T: ToBytes + Clone> {
     pub memory_threshold: usize,
     pub backing_file_size: usize,
     num_features: usize,
@@ -142,10 +142,8 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
     }
 }
 
-impl<T: ToBytes + Clone + std::fmt::Debug> VectorStorage<T>
-    for FileBackedAppendableVectorStorage<T>
-{
-    fn get(&self, id: u32) -> Result<&[T]> {
+impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
+    pub fn get_no_context(&self, id: u32) -> Result<&[T]> {
         if self.resident {
             if id as usize >= self.resident_vectors.len() {
                 return Err(anyhow!("vector id out of bound"));
@@ -169,7 +167,11 @@ impl<T: ToBytes + Clone + std::fmt::Debug> VectorStorage<T>
         Ok(unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const T, self.num_features) })
     }
 
-    fn append(&mut self, vector: &[T]) -> Result<()> {
+    pub fn get(&self, id: u32, _context: &mut impl StorageContext) -> Result<&[T]> {
+        self.get_no_context(id)
+    }
+
+    pub fn append(&mut self, vector: &[T]) -> Result<()> {
         if vector.len() != self.num_features {
             return Err(anyhow!(
                 "vector length mismatch: expected {}, got {}",
@@ -203,17 +205,17 @@ impl<T: ToBytes + Clone + std::fmt::Debug> VectorStorage<T>
         Ok(())
     }
 
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.size_bytes / (self.num_features * std::mem::size_of::<T>())
     }
 
     // TODO(hicder): Just copy the backed file to the output file for optimization
-    fn write(&self, writer: &mut std::io::BufWriter<&mut std::fs::File>) -> Result<usize> {
+    pub fn write(&self, writer: &mut std::io::BufWriter<&mut std::fs::File>) -> Result<usize> {
         let num_vectors = self.len() as u64;
         let mut len = 0;
         len += wrap_write(writer, &num_vectors.to_le_bytes())?;
         for i in 0..num_vectors {
-            let vector = self.get(i as u32).unwrap();
+            let vector = self.get_no_context(i as u32).unwrap();
             for j in 0..self.num_features {
                 len += wrap_write(writer, vector[j].to_le_bytes().as_ref())?;
             }
@@ -222,12 +224,20 @@ impl<T: ToBytes + Clone + std::fmt::Debug> VectorStorage<T>
         Ok(len)
     }
 
-    fn config(&self) -> VectorStorageConfig {
+    pub fn config(&self) -> VectorStorageConfig {
         VectorStorageConfig {
             memory_threshold: self.memory_threshold,
             file_size: self.backing_file_size,
             num_features: self.num_features,
         }
+    }
+
+    pub fn multi_get(&self, ids: &[u32], _context: &mut impl StorageContext) -> Result<Vec<&[T]>> {
+        let mut result = vec![];
+        for id in ids {
+            result.push(self.get(*id, _context)?);
+        }
+        Ok(result)
     }
 }
 
@@ -257,13 +267,13 @@ mod tests {
         assert!(!storage.is_resident());
         storage.flush().unwrap_or_else(|_| panic!("flush failed"));
 
-        let vec = storage.get(0).unwrap();
+        let vec = storage.get_no_context(0).unwrap();
         assert_eq!(vec[0], 1);
         assert_eq!(vec[1], 2);
         assert_eq!(vec[2], 3);
         assert_eq!(vec[3], 4);
 
-        let vec = storage.get(64).unwrap();
+        let vec = storage.get_no_context(64).unwrap();
         assert_eq!(vec[0], 5);
         assert_eq!(vec[1], 6);
         assert_eq!(vec[2], 7);
@@ -291,8 +301,8 @@ mod tests {
         storage.append(&vector2).unwrap();
 
         // Check if vectors are correctly stored and retrieved
-        assert_eq!(storage.get(0).unwrap(), &vector1);
-        assert_eq!(storage.get(1).unwrap(), &vector2);
+        assert_eq!(storage.get_no_context(0).unwrap(), &vector1);
+        assert_eq!(storage.get_no_context(1).unwrap(), &vector2);
         assert!(storage.is_resident());
 
         // Append more vectors to force disk usage
@@ -305,11 +315,11 @@ mod tests {
         assert!(!storage.is_resident());
 
         // Verify all vectors are still accessible
-        assert_eq!(storage.get(0).unwrap(), &vector1);
-        assert_eq!(storage.get(1).unwrap(), &vector2);
+        assert_eq!(storage.get_no_context(0).unwrap(), &vector1);
+        assert_eq!(storage.get_no_context(1).unwrap(), &vector2);
         for i in 0..10 {
             let expected = vec![i as f32, (i + 1) as f32, (i + 2) as f32];
-            assert_eq!(storage.get((i + 2) as u32).unwrap(), &expected);
+            assert_eq!(storage.get_no_context((i + 2) as u32).unwrap(), &expected);
         }
 
         // Test length
@@ -323,6 +333,6 @@ mod tests {
         assert!(storage.append(&invalid_vector).is_err());
 
         // Test getting an out-of-bounds vector
-        assert!(storage.get(100).is_err());
+        assert!(storage.get_no_context(100).is_err());
     }
 }

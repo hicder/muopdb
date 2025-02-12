@@ -42,8 +42,8 @@ pub struct IvfBuilderConfig {
 
 pub struct IvfBuilder<D: DistanceCalculator + CalculateSquared + Send + Sync> {
     config: IvfBuilderConfig,
-    vectors: AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>>,
-    centroids: AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>>,
+    vectors: AtomicRefCell<VectorStorage<f32>>,
+    centroids: AtomicRefCell<VectorStorage<f32>>,
     posting_lists: Box<dyn for<'a> PostingListStorage<'a>>,
     doc_id_mapping: Vec<u128>,
     _marker: PhantomData<D>,
@@ -147,24 +147,28 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         let vectors_path = format!("{}/builder_vector_storage", config.base_directory);
         create_dir(&vectors_path)?;
 
-        let vectors: AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>> =
-            AtomicRefCell::new(Box::new(FileBackedAppendableVectorStorage::<f32>::new(
-                vectors_path,
-                config.memory_size,
-                config.file_size,
-                config.num_features,
-            )));
+        let vectors: AtomicRefCell<VectorStorage<f32>> =
+            AtomicRefCell::new(VectorStorage::AppendableLocalFileBacked(
+                FileBackedAppendableVectorStorage::<f32>::new(
+                    vectors_path,
+                    config.memory_size,
+                    config.file_size,
+                    config.num_features,
+                ),
+            ));
 
         let centroids_path = format!("{}/builder_centroid_storage", config.base_directory);
         create_dir(&centroids_path)?;
 
-        let centroids: AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>> =
-            AtomicRefCell::new(Box::new(FileBackedAppendableVectorStorage::<f32>::new(
-                centroids_path,
-                config.memory_size,
-                config.file_size,
-                config.num_features,
-            )));
+        let centroids: AtomicRefCell<VectorStorage<f32>> =
+            AtomicRefCell::new(VectorStorage::AppendableLocalFileBacked(
+                FileBackedAppendableVectorStorage::<f32>::new(
+                    centroids_path,
+                    config.memory_size,
+                    config.file_size,
+                    config.num_features,
+                ),
+            ));
 
         let posting_lists_path = format!("{}/builder_posting_list_storage", config.base_directory);
         create_dir(&posting_lists_path)?;
@@ -189,7 +193,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         &self.config
     }
 
-    pub fn vectors(&self) -> &AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>> {
+    pub fn vectors(&self) -> &AtomicRefCell<VectorStorage<f32>> {
         &self.vectors
     }
 
@@ -197,7 +201,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         &*self.doc_id_mapping
     }
 
-    pub fn centroids(&self) -> &AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>> {
+    pub fn centroids(&self) -> &AtomicRefCell<VectorStorage<f32>> {
         &self.centroids
     }
 
@@ -254,13 +258,13 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
     fn find_nearest_centroids(
         vector: &[f32],
-        centroids: &dyn VectorStorage<f32>,
+        centroids: &VectorStorage<f32>,
         num_probes: usize,
     ) -> Result<Vec<PointAndDistance>> {
         let mut distances: Vec<PointAndDistance> = Vec::new();
         let num_centroids = centroids.len();
         for i in 0..num_centroids {
-            let centroid = centroids.get(i as u32)?;
+            let centroid = centroids.get_no_context(i as u32)?;
             let dist = L2DistanceCalculator::calculate_squared(&vector, &centroid);
             if dist.is_nan() {
                 println!("NAN found");
@@ -287,8 +291,11 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             .par_iter()
             .map(|doc_id| {
                 let nearest_centroids = Self::find_nearest_centroids(
-                    self.vectors.borrow().get(*doc_id as u32).unwrap(),
-                    self.centroids.borrow().as_ref(),
+                    self.vectors
+                        .borrow()
+                        .get_no_context(*doc_id as u32)
+                        .unwrap(),
+                    &self.centroids.borrow(),
                     max_clusters_per_vector,
                 )
                 .expect("Nearest centroids should not be None");
@@ -368,7 +375,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             .par_iter()
             .map(|doc_id| {
                 Self::find_nearest_centroid_inmemory(
-                    vectors.get(*doc_id as u32).unwrap(),
+                    vectors.get_no_context(*doc_id as u32).unwrap(),
                     &flattened_centroids,
                     num_features,
                 )
@@ -393,8 +400,12 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         doc_ids
             .choose_multiple(&mut rng, sample_size)
             .for_each(|doc_id| {
-                flattened_dataset
-                    .extend_from_slice(self.vectors.borrow().get(*doc_id as u32).unwrap());
+                flattened_dataset.extend_from_slice(
+                    self.vectors
+                        .borrow()
+                        .get_no_context(*doc_id as u32)
+                        .unwrap(),
+                );
             });
         Ok(flattened_dataset)
     }
@@ -471,7 +482,8 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             .cloned()
             .collect::<Vec<usize>>();
         selected.iter().for_each(|index| {
-            flattened_dataset.extend_from_slice(self.vectors.borrow().get(*index as u32).unwrap());
+            flattened_dataset
+                .extend_from_slice(self.vectors.borrow().get_no_context(*index as u32).unwrap());
         });
 
         let result = kmeans.fit(flattened_dataset)?;
@@ -700,20 +712,27 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         );
         create_dir_all(&new_vectors_path)?;
 
-        let new_vector_storage: AtomicRefCell<Box<dyn VectorStorage<f32> + Send + Sync>> =
-            AtomicRefCell::new(Box::new(FileBackedAppendableVectorStorage::<f32>::new(
-                new_vectors_path,
-                self.config.memory_size,
-                self.config.file_size,
-                self.config.num_features,
-            )));
+        let new_vector_storage: AtomicRefCell<VectorStorage<f32>> =
+            AtomicRefCell::new(VectorStorage::AppendableLocalFileBacked(
+                FileBackedAppendableVectorStorage::<f32>::new(
+                    new_vectors_path,
+                    self.config.memory_size,
+                    self.config.file_size,
+                    self.config.num_features,
+                ),
+            ));
 
         for i in 0..reverse_assigned_ids.len() {
             let mapped_id = reverse_assigned_ids[i];
             // let vector = self.vectors.borrow().get(mapped_id as u32).unwrap();
             new_vector_storage
                 .borrow_mut()
-                .append(self.vectors.borrow().get(mapped_id as u32).unwrap())
+                .append(
+                    self.vectors
+                        .borrow()
+                        .get_no_context(mapped_id as u32)
+                        .unwrap(),
+                )
                 .unwrap_or_else(|_| panic!("append failed"));
         }
 
@@ -1370,7 +1389,7 @@ mod tests {
                 builder
                     .vectors
                     .borrow()
-                    .get(i as u32)
+                    .get_no_context(i as u32)
                     .expect(&format!("Failed to retrieve vector #{}", i))[0],
                 expected_vectors[i]
             );

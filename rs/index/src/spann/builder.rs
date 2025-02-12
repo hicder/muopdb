@@ -8,6 +8,7 @@ use utils::distance::l2::L2DistanceCalculator;
 
 use crate::hnsw::builder::HnswBuilder;
 use crate::ivf::builder::{IvfBuilder, IvfBuilderConfig};
+use crate::utils::SearchContext;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SpannBuilderConfig {
@@ -184,10 +185,16 @@ impl SpannBuilder {
 
         let centroid_storage = self.ivf_builder.centroids();
         let num_centroids = centroid_storage.borrow().len();
+        let mut search_context = SearchContext::new(false);
 
         for i in 0..num_centroids {
-            self.centroid_builder
-                .insert(i as u128, &centroid_storage.borrow().get(i as u32).unwrap())?;
+            self.centroid_builder.insert(
+                i as u128,
+                &centroid_storage
+                    .borrow()
+                    .get(i as u32, &mut search_context)
+                    .unwrap(),
+            )?;
         }
         debug!("Finish building centroids");
         Ok(())

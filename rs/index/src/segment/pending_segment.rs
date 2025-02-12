@@ -7,7 +7,6 @@ use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
 
 use super::{BoxedImmutableSegment, Segment};
-use crate::index::Searchable;
 use crate::multi_spann::index::MultiSpannIndex;
 use crate::multi_spann::reader::MultiSpannReader;
 use crate::utils::{IdWithScore, SearchContext};
@@ -129,18 +128,8 @@ impl<Q: Quantizer + Clone> Segment for PendingSegment<Q> {
     }
 }
 
-impl<Q: Quantizer + Clone> Searchable for PendingSegment<Q> {
-    fn search(
-        &self,
-        query: &[f32],
-        k: usize,
-        ef_construction: u32,
-        context: &mut SearchContext,
-    ) -> Option<Vec<IdWithScore>> {
-        self.search_with_id(0, query, k, ef_construction, context)
-    }
-
-    fn search_with_id(
+impl<Q: Quantizer + Clone> PendingSegment<Q> {
+    pub fn search_with_id(
         &self,
         id: u128,
         query: &[f32],

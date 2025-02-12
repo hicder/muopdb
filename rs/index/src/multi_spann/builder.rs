@@ -119,7 +119,7 @@ mod tests {
                             .ivf_builder
                             .vectors()
                             .borrow()
-                            .get(0)
+                            .get_no_context(0)
                             .expect("Failed to read vector"),
                         &data_1
                     );
@@ -140,7 +140,7 @@ mod tests {
                             .ivf_builder
                             .centroids()
                             .borrow()
-                            .get(0)
+                            .get_no_context(0)
                             .expect("Failed to read centroid"),
                         &data_1
                     );
@@ -152,7 +152,7 @@ mod tests {
                             .ivf_builder
                             .vectors()
                             .borrow()
-                            .get(0)
+                            .get_no_context(0)
                             .expect("Failed to read vector"),
                         &data_2
                     );
@@ -173,7 +173,7 @@ mod tests {
                             .ivf_builder
                             .centroids()
                             .borrow()
-                            .get(0)
+                            .get_no_context(0)
                             .expect("Failed to read centroid"),
                         &data_2
                     );

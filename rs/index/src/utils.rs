@@ -4,6 +4,8 @@ use std::collections::HashSet;
 use ordered_float::NotNan;
 use roaring::RoaringBitmap;
 
+use crate::vector::StorageContext;
+
 pub struct SearchContext {
     pub visited: RoaringBitmap,
     pub record_pages: bool,
@@ -39,8 +41,6 @@ impl SearchContext {
 pub trait TraversalContext {
     fn visited(&self, i: u32) -> bool;
     fn set_visited(&mut self, i: u32);
-    fn should_record_pages(&self) -> bool;
-    fn record_pages(&mut self, page_id: String);
 }
 
 impl TraversalContext for SearchContext {
@@ -51,7 +51,9 @@ impl TraversalContext for SearchContext {
     fn set_visited(&mut self, i: u32) {
         self.visited.insert(i);
     }
+}
 
+impl StorageContext for SearchContext {
     fn should_record_pages(&self) -> bool {
         self.record_pages
     }

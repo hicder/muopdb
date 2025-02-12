@@ -10,7 +10,6 @@ use parking_lot::RwLock;
 use pending_segment::PendingSegment;
 use quantization::quantization::Quantizer;
 
-use crate::index::Searchable;
 use crate::spann::iter::SpannIter;
 use crate::utils::{IdWithScore, SearchContext};
 
@@ -80,18 +79,8 @@ impl<Q: Quantizer + Clone> BoxedImmutableSegment<Q> {
     }
 }
 
-impl<Q: Quantizer + Clone> Searchable for BoxedImmutableSegment<Q> {
-    fn search(
-        &self,
-        query: &[f32],
-        k: usize,
-        ef_construction: u32,
-        context: &mut crate::utils::SearchContext,
-    ) -> Option<Vec<crate::utils::IdWithScore>> {
-        self.search_with_id(0u128, query, k, ef_construction, context)
-    }
-
-    fn search_with_id(
+impl<Q: Quantizer + Clone> BoxedImmutableSegment<Q> {
+    pub fn search_with_id(
         &self,
         id: u128,
         query: &[f32],
@@ -191,8 +180,8 @@ impl MockedSegment {
 }
 
 #[allow(unused)]
-impl Searchable for MockedSegment {
-    fn search(
+impl MockedSegment {
+    pub fn search(
         &self,
         query: &[f32],
         k: usize,
@@ -202,7 +191,7 @@ impl Searchable for MockedSegment {
         todo!()
     }
 
-    fn search_with_id(
+    pub fn search_with_id(
         &self,
         id: u128,
         query: &[f32],

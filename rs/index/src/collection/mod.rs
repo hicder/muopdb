@@ -14,12 +14,7 @@ use snapshot::SnapshotWithQuantizer;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::mem::{transmute_slice_to_u8, transmute_u8_to_slice};
 
-use crate::index::Searchable;
-use crate::segment::Segment;
 use crate::wal::entry::WalOpType;
-
-pub trait SegmentSearchable: Searchable + Segment {}
-pub type BoxedSegmentSearchable = Box<dyn SegmentSearchable + Send + Sync>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TableOfContent {
