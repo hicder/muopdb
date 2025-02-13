@@ -1,10 +1,13 @@
 use std::marker::PhantomData;
 
 use anyhow::Result;
+use dashmap::DashSet;
 use memmap2::Mmap;
 use num_traits::ToBytes;
+use quantization::quantization::Quantizer;
 use utils::mem::transmute_u8_to_slice;
 
+use crate::utils::PointAndDistance;
 use crate::vector::StorageContext;
 
 pub struct FixedFileVectorStorage<T> {
@@ -92,6 +95,33 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
             file_size: 0,
             num_features: self.num_features,
         }
+    }
+
+    pub fn compute_distance_batch(
+        &self,
+        query: &[T],
+        iterator: impl Iterator<Item = u64>,
+        quantizer: &impl Quantizer<QuantizedT = T>,
+        invalidated_ids: &DashSet<u32>,
+        context: &mut impl StorageContext,
+    ) -> Result<Vec<PointAndDistance>> {
+        let mut result = vec![];
+        for id in iterator {
+            // Skip invalidated ids
+            // TODO: Use skip list for better performance
+            if invalidated_ids.contains(&(id as u32)) {
+                continue;
+            }
+
+            let vector = self.get(id as u32, context)?;
+            let distance = quantizer.distance(
+                query,
+                vector,
+                utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD,
+            );
+            result.push(PointAndDistance::new(distance, id as u32));
+        }
+        Ok(result)
     }
 }
 
