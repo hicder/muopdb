@@ -16,8 +16,8 @@ use crate::vector::VectorStorage;
 pub struct Hnsw<Q: Quantizer> {
     // Need this for mmap
     #[allow(dead_code)]
-    backing_file: File,
-    mmap: Mmap,
+    graph_index_backing_file: File,
+    graph_index_mmap: Mmap,
 
     pub vector_storage: Box<VectorStorage<Q::QuantizedT>>,
 
@@ -34,7 +34,7 @@ pub struct Hnsw<Q: Quantizer> {
 
 impl<Q: Quantizer> Hnsw<Q> {
     pub fn new(
-        backing_file: File,
+        graph_index_backing_file: File,
         vector_storage: Box<VectorStorage<Q::QuantizedT>>,
         header: Header,
         data_offset: usize,
@@ -49,11 +49,11 @@ impl<Q: Quantizer> Hnsw<Q> {
         let quantizer_directory = format!("{}/quantizer", base_directory);
 
         let quantizer = Q::read(quantizer_directory).unwrap();
-        let index_mmap = unsafe { Mmap::map(&backing_file).unwrap() };
+        let index_mmap = unsafe { Mmap::map(&graph_index_backing_file).unwrap() };
 
         Self {
-            backing_file,
-            mmap: index_mmap,
+            graph_index_backing_file,
+            graph_index_mmap: index_mmap,
             vector_storage,
             header,
             data_offset,
@@ -130,13 +130,15 @@ impl<Q: Quantizer> Hnsw<Q> {
 
     pub fn get_edges_slice(&self) -> &[u32] {
         let start = self.edges_offset;
-        utils::mem::transmute_u8_to_slice(&self.mmap[start..start + self.header.edges_len as usize])
+        utils::mem::transmute_u8_to_slice(
+            &self.graph_index_mmap[start..start + self.header.edges_len as usize],
+        )
     }
 
     pub fn get_points_slice(&self) -> &[u32] {
         let start = self.points_offset;
         utils::mem::transmute_u8_to_slice(
-            &self.mmap[start..start + self.header.points_len as usize],
+            &self.graph_index_mmap[start..start + self.header.points_len as usize],
         )
     }
 
@@ -144,21 +146,21 @@ impl<Q: Quantizer> Hnsw<Q> {
     pub fn get_edge_offsets_slice(&self) -> &[u64] {
         let start = self.edge_offsets_offset;
         utils::mem::transmute_u8_to_slice(
-            &self.mmap[start..start + self.header.edge_offsets_len as usize],
+            &self.graph_index_mmap[start..start + self.header.edge_offsets_len as usize],
         )
     }
 
     /// Returns the level offsets slice
     pub fn get_level_offsets_slice(&self) -> &[u64] {
         let start = self.level_offsets_offset;
-        let slice = &self.mmap[start..start + self.header.level_offsets_len as usize];
+        let slice = &self.graph_index_mmap[start..start + self.header.level_offsets_len as usize];
         return utils::mem::transmute_u8_to_slice(slice);
     }
 
     /// Returns the doc_id_mapping slice
     pub fn get_doc_id_mapping_slice(&self) -> &[u128] {
         let start = self.doc_id_mapping_offset;
-        let slice = &self.mmap[start..start + self.header.doc_id_mapping_len as usize];
+        let slice = &self.graph_index_mmap[start..start + self.header.doc_id_mapping_len as usize];
         return utils::mem::transmute_u8_to_slice(slice);
     }
 
