@@ -11,6 +11,7 @@ compression.workspace = true
 config.workspace = true
 dashmap.workspace = true
 env_logger.workspace = true
+futures.workspace = true
 kmeans.workspace = true
 log.workspace = true
 memmap2.workspace = true

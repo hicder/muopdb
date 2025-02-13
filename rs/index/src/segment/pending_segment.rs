@@ -129,7 +129,7 @@ impl<Q: Quantizer + Clone> Segment for PendingSegment<Q> {
 }
 
 impl<Q: Quantizer + Clone> PendingSegment<Q> {
-    pub fn search_with_id(
+    pub async fn search_with_id(
         &self,
         id: u128,
         query: &[f32],
@@ -140,7 +140,9 @@ impl<Q: Quantizer + Clone> PendingSegment<Q> {
         if !self.use_internal_index {
             let mut results = Vec::new();
             for segment in &self.inner_segments {
-                let segment_result = segment.search_with_id(id, query, k, ef_construction, context);
+                let segment_result = segment
+                    .search_with_id(id, query, k, ef_construction, context)
+                    .await;
                 if let Some(result) = segment_result {
                     results.extend(result);
                 }
@@ -149,7 +151,11 @@ impl<Q: Quantizer + Clone> PendingSegment<Q> {
         } else {
             let index = self.index.read();
             match &*index {
-                Some(index) => index.search_with_id(id, query, k, ef_construction, context),
+                Some(index) => {
+                    index
+                        .search_with_id(id, query, k, ef_construction, context)
+                        .await
+                }
                 None => None,
             }
         }
@@ -200,8 +206,8 @@ mod tests {
         Ok(index)
     }
 
-    #[test]
-    fn test_pending_segment() -> Result<()> {
+    #[tokio::test]
+    async fn test_pending_segment() -> Result<()> {
         // temp directory
         let tmp_dir = tempdir::TempDir::new("pending_segment_test").unwrap();
         let base_dir = tmp_dir.path().to_str().unwrap().to_string();
@@ -231,7 +237,9 @@ mod tests {
         );
 
         let mut context = SearchContext::new(false);
-        let results = pending_segment.search_with_id(0, &[1.0, 2.0, 3.0, 4.0], 1, 10, &mut context);
+        let results = pending_segment
+            .search_with_id(0, &[1.0, 2.0, 3.0, 4.0], 1, 10, &mut context)
+            .await;
         let res = results.unwrap();
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].id, 0);

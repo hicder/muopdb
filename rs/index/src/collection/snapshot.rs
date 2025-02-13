@@ -42,7 +42,13 @@ impl<Q: Quantizer + Clone> Snapshot<Q> {
     ) -> Option<Vec<IdWithScore>> {
         let mut results: Vec<IdWithScore> = vec![];
         for id in ids {
-            match self.search_with_id(*id, query, k, ef_construction, context) {
+            match futures::executor::block_on(self.search_with_id(
+                *id,
+                query,
+                k,
+                ef_construction,
+                context,
+            )) {
                 Some(id_results) => {
                     results.extend(id_results);
                 }
@@ -59,7 +65,7 @@ impl<Q: Quantizer + Clone> Snapshot<Q> {
 
 /// Search the collection using the given query
 impl<Q: Quantizer + Clone> Snapshot<Q> {
-    pub fn search_with_id(
+    pub async fn search_with_id(
         &self,
         id: u128,
         query: &[f32],
@@ -69,15 +75,19 @@ impl<Q: Quantizer + Clone> Snapshot<Q> {
     ) -> Option<Vec<IdWithScore>> {
         // Query each index, then take the top k results
         // TODO(hicder): Handle case where docs are deleted in later segments
-        let mut scored_results: Vec<_> = self
-            .segments
-            .iter()
-            .filter_map(|index| index.search_with_id(id, query, k, ef_construction, context))
-            .flat_map(|results| results.into_iter().map(|id_score| id_score))
-            .collect();
+
+        let mut scored_results = Vec::new();
+        for segment in &self.segments {
+            if let Some(results) = segment
+                .search_with_id(id, query, k, ef_construction, context)
+                .await
+            {
+                scored_results.extend(results);
+            }
+        }
 
         // Sort and take the top k results
-        scored_results.sort_by(|x, y| x.cmp(y));
+        scored_results.sort();
         scored_results.truncate(k);
 
         Some(scored_results)

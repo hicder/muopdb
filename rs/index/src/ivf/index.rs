@@ -44,7 +44,7 @@ pub enum IvfType<Q: Quantizer> {
 }
 
 impl<Q: Quantizer> IvfType<Q> {
-    pub fn search_with_centroids_and_remap(
+    pub async fn search_with_centroids_and_remap(
         &self,
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
@@ -54,9 +54,11 @@ impl<Q: Quantizer> IvfType<Q> {
         match self {
             IvfType::L2Plain(ivf) => {
                 ivf.search_with_centroids_and_remap(query, nearest_centroid_ids, k, context)
+                    .await
             }
             IvfType::L2EF(ivf) => {
                 ivf.search_with_centroids_and_remap(query, nearest_centroid_ids, k, context)
+                    .await
             }
         }
     }
@@ -135,7 +137,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         Ok(nearest_centroids.into_iter().map(|(idx, _)| idx).collect())
     }
 
-    fn scan_posting_list(
+    async fn scan_posting_list(
         &self,
         centroid: usize,
         query: &[f32],
@@ -163,7 +165,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         }
     }
 
-    fn search_with_centroids(
+    async fn search_with_centroids(
         &self,
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
@@ -172,7 +174,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
     ) -> Vec<PointAndDistance> {
         let mut heap = BinaryHeap::with_capacity(k);
         for &centroid in &nearest_centroid_ids {
-            let results = self.scan_posting_list(centroid, query, context);
+            let results = self.scan_posting_list(centroid, query, context).await;
             for id_with_score in results {
                 if heap.len() < k {
                     heap.push(id_with_score);
@@ -215,14 +217,16 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         None
     }
 
-    pub fn search_with_centroids_and_remap(
+    pub async fn search_with_centroids_and_remap(
         &self,
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
         k: usize,
         context: &mut SearchContext,
     ) -> Vec<IdWithScore> {
-        let point_ids = self.search_with_centroids(query, nearest_centroid_ids, k, context);
+        let point_ids = self
+            .search_with_centroids(query, nearest_centroid_ids, k, context)
+            .await;
         let doc_ids = self.map_point_id_to_doc_id(&point_ids);
         doc_ids
     }
@@ -239,7 +243,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
 }
 
 impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, DC, D> {
-    pub fn search(
+    pub async fn search(
         &self,
         query: &[f32],
         k: usize,
@@ -253,7 +257,9 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
             ef_construction as usize,
         ) {
             // Search in the posting lists of the nearest centroids.
-            let point_ids = self.search_with_centroids(query, nearest_centroids, k, context);
+            let point_ids = self
+                .search_with_centroids(query, nearest_centroids, k, context)
+                .await;
             let doc_ids = self.map_point_id_to_doc_id(&point_ids);
             Some(doc_ids)
         } else {
@@ -498,8 +504,8 @@ mod tests {
         assert_eq!(nearest[1], 0);
     }
 
-    #[test]
-    fn test_ivf_search() {
+    #[tokio::test]
+    async fn test_ivf_search() {
         let temp_dir =
             tempdir::TempDir::new("ivf_search_test").expect("Failed to create temporary directory");
         let base_dir = temp_dir
@@ -555,6 +561,7 @@ mod tests {
 
         let results = ivf
             .search(&query, k, num_probes, &mut context)
+            .await
             .expect("IVF search should return a result");
 
         assert_eq!(results.len(), k);
@@ -563,8 +570,8 @@ mod tests {
         assert!(results[0].score < results[1].score);
     }
 
-    #[test]
-    fn test_ivf_search_with_pq() {
+    #[tokio::test]
+    async fn test_ivf_search_with_pq() {
         let temp_dir = tempdir::TempDir::new("ivf_search_with_pq_test")
             .expect("Failed to create temporary directory");
         let base_dir = temp_dir
@@ -635,6 +642,7 @@ mod tests {
 
         let results = ivf
             .search(&query, k, num_probes, &mut context)
+            .await
             .expect("IVF search should return a result");
 
         assert_eq!(results.len(), k);
@@ -644,8 +652,8 @@ mod tests {
         assert_eq!(results[0].id.abs_diff(results[1].id), 3);
     }
 
-    #[test]
-    fn test_ivf_search_with_empty_result() {
+    #[tokio::test]
+    async fn test_ivf_search_with_empty_result() {
         let temp_dir = tempdir::TempDir::new("ivf_search_error_test")
             .expect("Failed to create temporary directory");
         let base_dir = temp_dir
@@ -693,14 +701,15 @@ mod tests {
 
         let results = ivf
             .search(&query, k, num_probes, &mut context)
+            .await
             .expect("IVF search should return a result");
 
         assert_eq!(results.len(), 1); // Only one result available
         assert_eq!(results[0].id, 100);
     }
 
-    #[test]
-    fn test_ivf_search_invalidated_ids() {
+    #[tokio::test]
+    async fn test_ivf_search_invalidated_ids() {
         let temp_dir = tempdir::TempDir::new("test_ivf_search_invalidated_ids")
             .expect("Failed to create temporary directory");
         let base_dir = temp_dir
@@ -758,6 +767,7 @@ mod tests {
 
         let results = ivf
             .search(&query, k, num_probes, &mut context)
+            .await
             .expect("IVF search should return a result");
 
         assert_eq!(results.len(), k - 1);

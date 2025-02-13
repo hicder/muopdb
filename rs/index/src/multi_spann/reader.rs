@@ -38,8 +38,8 @@ mod tests {
     use crate::multi_spann::writer::MultiSpannWriter;
     use crate::utils::SearchContext;
 
-    #[test]
-    fn test_multi_spann_reader() -> Result<()> {
+    #[tokio::test]
+    async fn test_multi_spann_reader() -> Result<()> {
         let temp_dir = tempdir::TempDir::new("test_multi_spann_reader")?;
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
         let mut spann_builder_config = CollectionConfig::default_test_config();
@@ -66,6 +66,7 @@ mod tests {
                 100,
                 &mut SearchContext::new(false),
             )
+            .await
             .unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 1);
@@ -78,6 +79,7 @@ mod tests {
                 100,
                 &mut SearchContext::new(false),
             )
+            .await
             .unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 3);
@@ -85,8 +87,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_multi_spann_reader_pq() -> Result<()> {
+    #[tokio::test]
+    async fn test_multi_spann_reader_pq() -> Result<()> {
         let temp_dir = tempdir::TempDir::new("test_multi_spann_reader_pq")?;
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
         let mut spann_builder_config = CollectionConfig::default_test_config();
@@ -118,6 +120,7 @@ mod tests {
                 100,
                 &mut SearchContext::new(false),
             )
+            .await
             .unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 1);
@@ -130,6 +133,7 @@ mod tests {
                 100,
                 &mut SearchContext::new(false),
             )
+            .await
             .unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 3);
