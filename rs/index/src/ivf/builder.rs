@@ -15,7 +15,6 @@ use utils::kmeans_builder::kmeans_builder::{KMeansBuilder, KMeansVariant};
 use utils::{ceil_div, CalculateSquared, DistanceCalculator};
 
 use crate::posting_list::file::FileBackedAppendablePostingListStorage;
-use crate::posting_list::PostingListStorage;
 use crate::utils::PointAndDistance;
 use crate::vector::file::FileBackedAppendableVectorStorage;
 use crate::vector::VectorStorage;
@@ -44,7 +43,7 @@ pub struct IvfBuilder<D: DistanceCalculator + CalculateSquared + Send + Sync> {
     config: IvfBuilderConfig,
     vectors: AtomicRefCell<VectorStorage<f32>>,
     centroids: AtomicRefCell<VectorStorage<f32>>,
-    posting_lists: Box<dyn for<'a> PostingListStorage<'a>>,
+    posting_lists: Box<FileBackedAppendablePostingListStorage>,
     doc_id_mapping: Vec<u128>,
     _marker: PhantomData<D>,
 }
@@ -205,12 +204,12 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         &self.centroids
     }
 
-    pub fn posting_lists(&self) -> &dyn for<'a> PostingListStorage<'a> {
-        &*self.posting_lists
+    pub fn posting_lists(&self) -> &Box<FileBackedAppendablePostingListStorage> {
+        &self.posting_lists
     }
 
-    pub fn posting_lists_mut(&mut self) -> &mut dyn for<'a> PostingListStorage<'a> {
-        &mut *self.posting_lists
+    pub fn posting_lists_mut(&mut self) -> &mut Box<FileBackedAppendablePostingListStorage> {
+        &mut self.posting_lists
     }
 
     /// Add a new vector to the dataset for training
@@ -262,7 +261,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         num_probes: usize,
     ) -> Result<Vec<PointAndDistance>> {
         let mut distances: Vec<PointAndDistance> = Vec::new();
-        let num_centroids = centroids.len();
+        let num_centroids = centroids.num_vectors();
         for i in 0..num_centroids {
             let centroid = centroids.get_no_context(i as u32)?;
             let dist = L2DistanceCalculator::calculate_squared(&vector, &centroid);
@@ -280,11 +279,11 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         debug!("Building posting lists");
 
         let mut posting_lists: Vec<Vec<u64>> =
-            vec![Vec::with_capacity(0); self.centroids.borrow().len()];
+            vec![Vec::with_capacity(0); self.centroids.borrow().num_vectors()];
         // Assign vectors to nearest centroids
         // self.assign_docs_to_cluster(doc_ids, flattened_centroids)
 
-        let doc_ids = (0..self.vectors.borrow().len()).collect::<Vec<usize>>();
+        let doc_ids = (0..self.vectors.borrow().num_vectors()).collect::<Vec<usize>>();
         // let vector_clone = self.vectors.clone();
         let max_clusters_per_vector = self.config.max_clusters_per_vector;
         let posting_list_per_doc = doc_ids
@@ -455,7 +454,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
         // First pass to get the initial centroids
         let num_clusters = self.compute_actual_num_clusters(
-            self.vectors.borrow().len(),
+            self.vectors.borrow().num_vectors(),
             self.config.num_clusters,
             self.config.max_posting_list_size,
         );
@@ -469,7 +468,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
         // Sample the dataset to build the first set of centroids
         let mut rng = rand::thread_rng();
-        let num_input_vectors = self.vectors.borrow().len();
+        let num_input_vectors = self.vectors.borrow().num_vectors();
 
         // Create a vector from 0 to num_input_vectors and then shuffle it
         let mut flattened_dataset: Vec<f32> = vec![];
@@ -645,7 +644,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
     /// Assign new ids to the vectors
     fn get_reassigned_ids(&mut self) -> Result<Vec<i32>> {
-        let vector_length = self.vectors.borrow().len();
+        let vector_length = self.vectors.borrow().num_vectors();
         let mut assigned_ids = vec![-1; vector_length];
 
         let mut cur_idx = self.assign_ids_until_last_stopping_point(&mut assigned_ids)?;
@@ -1447,8 +1446,8 @@ mod tests {
         let result = builder.build();
         assert!(result.is_ok());
 
-        assert_eq!(builder.vectors.borrow().len(), num_vectors);
-        assert_eq!(builder.centroids.borrow().len(), num_clusters);
+        assert_eq!(builder.vectors.borrow().num_vectors(), num_vectors);
+        assert_eq!(builder.centroids.borrow().num_vectors(), num_clusters);
         assert_eq!(builder.posting_lists.len(), num_clusters);
 
         // Total size of vectors is bigger than file size, check that they are flushed to disk

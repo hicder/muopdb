@@ -113,7 +113,7 @@ mod tests {
             let builder = ref_multi.value().read().unwrap();
             match user_id {
                 1 => {
-                    assert_eq!(builder.ivf_builder.vectors().borrow().len(), 1);
+                    assert_eq!(builder.ivf_builder.vectors().borrow().num_vectors(), 1);
                     assert_eq!(
                         builder
                             .ivf_builder
@@ -134,7 +134,7 @@ mod tests {
                             .unwrap(),
                         0
                     );
-                    assert_eq!(builder.ivf_builder.centroids().borrow().len(), 1);
+                    assert_eq!(builder.ivf_builder.centroids().borrow().num_vectors(), 1);
                     assert_eq!(
                         builder
                             .ivf_builder
@@ -146,7 +146,7 @@ mod tests {
                     );
                 }
                 2 => {
-                    assert_eq!(builder.ivf_builder.vectors().borrow().len(), 1);
+                    assert_eq!(builder.ivf_builder.vectors().borrow().num_vectors(), 1);
                     assert_eq!(
                         builder
                             .ivf_builder
@@ -167,7 +167,7 @@ mod tests {
                             .unwrap(),
                         0
                     );
-                    assert_eq!(builder.ivf_builder.centroids().borrow().len(), 1);
+                    assert_eq!(builder.ivf_builder.centroids().borrow().num_vectors(), 1);
                     assert_eq!(
                         builder
                             .ivf_builder

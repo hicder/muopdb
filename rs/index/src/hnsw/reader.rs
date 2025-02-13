@@ -8,6 +8,7 @@ use quantization::quantization::Quantizer;
 use crate::hnsw::index::Hnsw;
 use crate::hnsw::writer::{Header, Version};
 use crate::vector::fixed_file::FixedFileVectorStorage;
+use crate::vector::VectorStorage;
 
 pub struct HnswReader {
     base_directory: String,
@@ -43,12 +44,13 @@ impl HnswReader {
         let (header, offset) = self.read_header(&mmap);
 
         let vector_storage_path = format!("{}/hnsw/vector_storage", self.base_directory);
-        let vector_storage = FixedFileVectorStorage::<Q::QuantizedT>::new_with_offset(
-            vector_storage_path,
-            header.quantized_dimension as usize,
-            self.vector_offset,
-        )
-        .unwrap();
+        let vector_storage = Box::new(VectorStorage::FixedLocalFileBacked(
+            FixedFileVectorStorage::<Q::QuantizedT>::new_with_offset(
+                vector_storage_path,
+                header.quantized_dimension as usize,
+                self.vector_offset,
+            )?,
+        ));
         let edges_padding = (4 - (offset % 4)) % 4;
         let edges_offset = offset + edges_padding as usize;
         let points_offset = edges_offset + header.edges_len as usize;

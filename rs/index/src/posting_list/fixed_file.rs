@@ -57,7 +57,6 @@ mod tests {
 
     use super::*;
     use crate::posting_list::file::FileBackedAppendablePostingListStorage;
-    use crate::posting_list::PostingListStorage;
 
     #[test]
     fn test_fixed_file_posting_list_storage() {

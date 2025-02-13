@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result};
 use utils::io::wrap_write;
 use utils::mem::transmute_slice_to_u8;
 
-use super::{PostingList, PostingListStorage, PostingListStorageConfig};
+use super::{PostingList, PostingListStorageConfig};
 
 const PL_METADATA_LEN: usize = 2;
 
@@ -307,8 +307,8 @@ impl FileBackedAppendablePostingListStorage {
     }
 }
 
-impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
-    fn get(&'a self, id: u32) -> Result<PostingList<'a>> {
+impl<'a> FileBackedAppendablePostingListStorage {
+    pub fn get(&'a self, id: u32) -> Result<PostingList<'a>> {
         let i = id as usize;
 
         if self.resident {
@@ -347,7 +347,7 @@ impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
         )?)
     }
 
-    fn append(&mut self, posting_list: &[u64]) -> Result<()> {
+    pub fn append(&mut self, posting_list: &[u64]) -> Result<()> {
         let required_size = posting_list.len() * size_of::<u64>();
         self.size_bytes += required_size;
         let should_flush = self.resident && self.size_bytes > self.memory_threshold;
@@ -374,7 +374,7 @@ impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
         Ok(())
     }
 
-    fn write(&mut self, writer: &mut BufWriter<&mut File>) -> Result<usize> {
+    pub fn write(&mut self, writer: &mut BufWriter<&mut File>) -> Result<usize> {
         let mut total_bytes_written = wrap_write(writer, &self.len().to_le_bytes())?;
 
         // If the data is still resident in memory, flush it to disk first
@@ -395,11 +395,11 @@ impl<'a> PostingListStorage<'a> for FileBackedAppendablePostingListStorage {
         Ok(total_bytes_written)
     }
 
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.entry_count
     }
 
-    fn config(&self) -> PostingListStorageConfig {
+    pub fn config(&self) -> PostingListStorageConfig {
         PostingListStorageConfig {
             memory_threshold: self.memory_threshold,
             file_size: self.backing_file_size,

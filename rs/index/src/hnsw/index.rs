@@ -11,7 +11,7 @@ use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 use super::utils::GraphTraversal;
 use crate::hnsw::writer::Header;
 use crate::utils::{IdWithScore, SearchContext};
-use crate::vector::fixed_file::FixedFileVectorStorage;
+use crate::vector::VectorStorage;
 
 pub struct Hnsw<Q: Quantizer> {
     // Need this for mmap
@@ -19,7 +19,7 @@ pub struct Hnsw<Q: Quantizer> {
     backing_file: File,
     mmap: Mmap,
 
-    pub vector_storage: FixedFileVectorStorage<Q::QuantizedT>,
+    pub vector_storage: Box<VectorStorage<Q::QuantizedT>>,
 
     header: Header,
     data_offset: usize,
@@ -35,7 +35,7 @@ pub struct Hnsw<Q: Quantizer> {
 impl<Q: Quantizer> Hnsw<Q> {
     pub fn new(
         backing_file: File,
-        vector_storage: FixedFileVectorStorage<Q::QuantizedT>,
+        vector_storage: Box<VectorStorage<Q::QuantizedT>>,
         header: Header,
         data_offset: usize,
         edges_offset: usize,

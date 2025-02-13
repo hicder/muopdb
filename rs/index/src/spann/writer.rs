@@ -56,7 +56,7 @@ impl SpannWriter {
 
         debug!("Start training product quantizer");
         let sorted_random_rows = Self::get_sorted_random_rows(
-            ivf_builder.vectors().borrow().len(),
+            ivf_builder.vectors().borrow().num_vectors(),
             index_writer_config.pq_num_training_rows,
         );
 

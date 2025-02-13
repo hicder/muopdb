@@ -86,7 +86,7 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         return Err(anyhow::anyhow!("Not supported"));
     }
 
-    pub fn len(&self) -> usize {
+    pub fn num_vectors(&self) -> usize {
         self.num_vectors
     }
 
