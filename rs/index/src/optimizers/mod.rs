@@ -7,6 +7,6 @@ use quantization::quantization::Quantizer;
 
 use crate::segment::pending_segment::PendingSegment;
 
-pub trait SegmentOptimizer<Q: Quantizer + Clone> {
+pub trait SegmentOptimizer<Q: Quantizer + Clone + Send + Sync> {
     fn optimize(&self, segment: &PendingSegment<Q>) -> Result<()>;
 }

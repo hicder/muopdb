@@ -11,7 +11,7 @@ pub struct MergeOptimizer<Q: Quantizer + Clone> {
     _marker: std::marker::PhantomData<Q>,
 }
 
-impl<Q: Quantizer + Clone> MergeOptimizer<Q> {
+impl<Q: Quantizer + Clone + Send + Sync> MergeOptimizer<Q> {
     pub fn new() -> Self {
         Self {
             _marker: std::marker::PhantomData,
@@ -19,7 +19,7 @@ impl<Q: Quantizer + Clone> MergeOptimizer<Q> {
     }
 }
 
-impl<Q: Quantizer + Clone> SegmentOptimizer<Q> for MergeOptimizer<Q> {
+impl<Q: Quantizer + Clone + Send + Sync> SegmentOptimizer<Q> for MergeOptimizer<Q> {
     #[allow(unused)]
     default fn optimize(&self, segment: &PendingSegment<Q>) -> Result<()> {
         Err(anyhow::anyhow!("not supported"))
@@ -62,8 +62,8 @@ mod tests {
     use crate::collection::reader::CollectionReader;
     use crate::utils::SearchContext;
 
-    #[test]
-    fn test_merge_optimizer() -> Result<()> {
+    #[tokio::test]
+    async fn test_merge_optimizer() -> Result<()> {
         let tmp_dir = tempdir::TempDir::new("test_merge_optimizer")?;
         // Create directory if it doesn't exist
         std::fs::create_dir_all(&tmp_dir)?;
@@ -111,6 +111,7 @@ mod tests {
         let mut context = SearchContext::new(false);
         let result = snapshot
             .search_for_ids(&[0], &[100.0, 101.0, 102.0], 3, 10, &mut context)
+            .await
             .unwrap();
         assert_eq!(result.len(), 3);
 
@@ -120,6 +121,7 @@ mod tests {
 
         let result = snapshot
             .search_for_ids(&[0], &[1.0, 2.0, 3.0], 3, 10, &mut context)
+            .await
             .unwrap();
         assert_eq!(result.len(), 3);
         let mut result_ids = result.iter().map(|id| id.id).collect::<Vec<_>>();
@@ -129,8 +131,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_merge_optimizer_with_multiple_users() -> Result<()> {
+    #[tokio::test]
+    async fn test_merge_optimizer_with_multiple_users() -> Result<()> {
         let tmp_dir = tempdir::TempDir::new("test_merge_optimizer")?;
         // Create directory if it doesn't exist
         std::fs::create_dir_all(&tmp_dir)?;
@@ -178,6 +180,7 @@ mod tests {
         let mut context = SearchContext::new(false);
         let result = snapshot
             .search_for_ids(&[0], &[1.0, 2.0, 3.0], 3, 10, &mut context)
+            .await
             .unwrap();
         assert_eq!(result.len(), 3);
 
@@ -187,6 +190,7 @@ mod tests {
 
         let result = snapshot
             .search_for_ids(&[1], &[10.0, 11.0, 12.0], 3, 10, &mut context)
+            .await
             .unwrap();
         assert_eq!(result.len(), 3);
 

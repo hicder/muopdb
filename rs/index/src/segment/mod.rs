@@ -35,7 +35,7 @@ pub trait Segment {
 }
 
 #[derive(Clone)]
-pub enum BoxedImmutableSegment<Q: Quantizer + Clone> {
+pub enum BoxedImmutableSegment<Q: Quantizer + Clone + Send + Sync> {
     FinalizedSegment(Arc<RwLock<ImmutableSegment<Q>>>),
     PendingSegment(Arc<RwLock<PendingSegment<Q>>>),
 
@@ -43,7 +43,7 @@ pub enum BoxedImmutableSegment<Q: Quantizer + Clone> {
     MockedNoQuantizationSegment(Arc<RwLock<MockedSegment>>),
 }
 
-impl<Q: Quantizer + Clone> BoxedImmutableSegment<Q> {
+impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
     pub fn user_ids(&self) -> Vec<u128> {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
@@ -79,7 +79,7 @@ impl<Q: Quantizer + Clone> BoxedImmutableSegment<Q> {
     }
 }
 
-impl<Q: Quantizer + Clone> BoxedImmutableSegment<Q> {
+impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
     pub fn search_with_id<'a>(
         &'a self,
         id: u128,
@@ -87,7 +87,12 @@ impl<Q: Quantizer + Clone> BoxedImmutableSegment<Q> {
         k: usize,
         ef_construction: u32,
         context: &'a mut SearchContext,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<Vec<IdWithScore>>> + 'a>> {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Option<Vec<IdWithScore>>> + Send + Sync + 'a>,
+    >
+    where
+        <Q as Quantizer>::QuantizedT: Send + Sync,
+    {
         Box::pin(async move {
             match self {
                 BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
@@ -113,7 +118,7 @@ impl<Q: Quantizer + Clone> BoxedImmutableSegment<Q> {
     }
 }
 
-impl<Q: Quantizer + Clone> Segment for BoxedImmutableSegment<Q> {
+impl<Q: Quantizer + Clone + Send + Sync> Segment for BoxedImmutableSegment<Q> {
     fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
@@ -169,8 +174,8 @@ impl<Q: Quantizer + Clone> Segment for BoxedImmutableSegment<Q> {
     }
 }
 
-unsafe impl<Q: Quantizer + Clone> Send for BoxedImmutableSegment<Q> {}
-unsafe impl<Q: Quantizer + Clone> Sync for BoxedImmutableSegment<Q> {}
+unsafe impl<Q: Quantizer + Clone + Send + Sync> Send for BoxedImmutableSegment<Q> {}
+unsafe impl<Q: Quantizer + Clone + Send + Sync> Sync for BoxedImmutableSegment<Q> {}
 
 pub struct MockedSegment {
     name: String,

@@ -9,13 +9,13 @@ use crate::segment::BoxedImmutableSegment;
 use crate::utils::{IdWithScore, SearchContext};
 
 /// Snapshot provides a view of the collection at a given point in time
-pub struct Snapshot<Q: Quantizer + Clone> {
+pub struct Snapshot<Q: Quantizer + Clone + Send + Sync> {
     pub segments: Vec<BoxedImmutableSegment<Q>>,
     pub version: u64,
     pub collection: Arc<Collection<Q>>,
 }
 
-impl<Q: Quantizer + Clone> Snapshot<Q> {
+impl<Q: Quantizer + Clone + Send + Sync> Snapshot<Q> {
     pub fn new(
         segments: Vec<BoxedImmutableSegment<Q>>,
         version: u64,
@@ -32,23 +32,23 @@ impl<Q: Quantizer + Clone> Snapshot<Q> {
         self.version
     }
 
-    pub fn search_for_ids(
+    pub async fn search_for_ids(
         &self,
         ids: &[u128],
         query: &[f32],
         k: usize,
         ef_construction: u32,
         context: &mut SearchContext,
-    ) -> Option<Vec<IdWithScore>> {
+    ) -> Option<Vec<IdWithScore>>
+    where
+        <Q as Quantizer>::QuantizedT: Send + Sync,
+    {
         let mut results: Vec<IdWithScore> = vec![];
         for id in ids {
-            match futures::executor::block_on(self.search_with_id(
-                *id,
-                query,
-                k,
-                ef_construction,
-                context,
-            )) {
+            match self
+                .search_with_id(*id, query, k, ef_construction, context)
+                .await
+            {
                 Some(id_results) => {
                     results.extend(id_results);
                 }
@@ -64,7 +64,7 @@ impl<Q: Quantizer + Clone> Snapshot<Q> {
 }
 
 /// Search the collection using the given query
-impl<Q: Quantizer + Clone> Snapshot<Q> {
+impl<Q: Quantizer + Clone + Send + Sync> Snapshot<Q> {
     pub async fn search_with_id(
         &self,
         id: u128,
@@ -72,7 +72,10 @@ impl<Q: Quantizer + Clone> Snapshot<Q> {
         k: usize,
         ef_construction: u32,
         context: &mut SearchContext,
-    ) -> Option<Vec<IdWithScore>> {
+    ) -> Option<Vec<IdWithScore>>
+    where
+        <Q as Quantizer>::QuantizedT: Send + Sync,
+    {
         // Query each index, then take the top k results
         // TODO(hicder): Handle case where docs are deleted in later segments
 
@@ -94,7 +97,7 @@ impl<Q: Quantizer + Clone> Snapshot<Q> {
     }
 }
 
-impl<Q: Quantizer + Clone> Drop for Snapshot<Q> {
+impl<Q: Quantizer + Clone + Send + Sync> Drop for Snapshot<Q> {
     fn drop(&mut self) {
         self.collection.release_version(self.version);
     }
@@ -114,7 +117,7 @@ impl SnapshotWithQuantizer {
         Self::SnapshotProductQuantizer(snapshot)
     }
 
-    pub fn search_for_ids(
+    pub async fn search_for_ids(
         &self,
         ids: &[u128],
         query: &[f32],
@@ -124,10 +127,14 @@ impl SnapshotWithQuantizer {
     ) -> Option<Vec<IdWithScore>> {
         match self {
             Self::SnapshotNoQuantizer(snapshot) => {
-                snapshot.search_for_ids(ids, query, k, ef_construction, context)
+                snapshot
+                    .search_for_ids(ids, query, k, ef_construction, context)
+                    .await
             }
             Self::SnapshotProductQuantizer(snapshot) => {
-                snapshot.search_for_ids(ids, query, k, ef_construction, context)
+                snapshot
+                    .search_for_ids(ids, query, k, ef_construction, context)
+                    .await
             }
         }
     }

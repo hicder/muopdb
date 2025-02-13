@@ -165,13 +165,15 @@ impl IndexServer for IndexServerImpl {
         if let Some(collection) = collection_opt {
             let mut search_context = SearchContext::new(record_metrics);
             if let Ok(snapshot) = collection.get_snapshot() {
-                let result = snapshot.search_for_ids(
-                    &user_ids,
-                    &vec,
-                    k as usize,
-                    ef_construction,
-                    &mut search_context,
-                );
+                let result = snapshot
+                    .search_for_ids(
+                        &user_ids,
+                        &vec,
+                        k as usize,
+                        ef_construction,
+                        &mut search_context,
+                    )
+                    .await;
 
                 match result {
                     Some(result) => {

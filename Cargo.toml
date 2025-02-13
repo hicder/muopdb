@@ -45,7 +45,7 @@ ndarray-rand = "0.14.0"
 num-traits = "0.2.19"
 odht = "0.3.1"
 ordered-float = "4.3.0"
-parking_lot = "0.12.3"
+parking_lot = {version = "0.12.3", features = ["send_guard"]}
 prost = "0.13.4"
 proto = {path='./rs/proto'}
 quantization = {path='./rs/quantization'}

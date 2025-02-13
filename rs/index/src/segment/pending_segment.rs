@@ -11,7 +11,7 @@ use crate::multi_spann::index::MultiSpannIndex;
 use crate::multi_spann::reader::MultiSpannReader;
 use crate::utils::{IdWithScore, SearchContext};
 
-pub struct PendingSegment<Q: Quantizer + Clone> {
+pub struct PendingSegment<Q: Quantizer + Clone + Send + Sync> {
     inner_segments: Vec<BoxedImmutableSegment<Q>>,
     inner_segments_names: Vec<String>,
     name: String,
@@ -27,7 +27,7 @@ pub struct PendingSegment<Q: Quantizer + Clone> {
     collection_config: CollectionConfig,
 }
 
-impl<Q: Quantizer + Clone> PendingSegment<Q> {
+impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
     pub fn new(
         inner_segments: Vec<BoxedImmutableSegment<Q>>,
         data_directory: String,
@@ -110,7 +110,7 @@ impl<Q: Quantizer + Clone> PendingSegment<Q> {
 }
 
 #[allow(unused)]
-impl<Q: Quantizer + Clone> Segment for PendingSegment<Q> {
+impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
     fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
         Err(anyhow::anyhow!("Pending segment does not support insert"))
     }
@@ -128,7 +128,7 @@ impl<Q: Quantizer + Clone> Segment for PendingSegment<Q> {
     }
 }
 
-impl<Q: Quantizer + Clone> PendingSegment<Q> {
+impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
     pub async fn search_with_id(
         &self,
         id: u128,
@@ -136,7 +136,10 @@ impl<Q: Quantizer + Clone> PendingSegment<Q> {
         k: usize,
         ef_construction: u32,
         context: &mut SearchContext,
-    ) -> Option<Vec<IdWithScore>> {
+    ) -> Option<Vec<IdWithScore>>
+    where
+        <Q as Quantizer>::QuantizedT: Send + Sync,
+    {
         if !self.use_internal_index {
             let mut results = Vec::new();
             for segment in &self.inner_segments {
