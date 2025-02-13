@@ -1,6 +1,3 @@
-use std::fs::File;
-use std::io::BufWriter;
-
 use anyhow::Result;
 use num_traits::ops::bytes::ToBytes;
 
@@ -42,21 +39,9 @@ impl<T: ToBytes + Clone> VectorStorage<T> {
         }
     }
 
-    pub fn append(&mut self, vector: &[T]) -> Result<()> {
-        match self {
-            VectorStorage::FixedLocalFileBacked(storage) => storage.append(vector),
-        }
-    }
-
     pub fn num_vectors(&self) -> usize {
         match self {
             VectorStorage::FixedLocalFileBacked(storage) => storage.num_vectors(),
-        }
-    }
-
-    pub fn write(&self, writer: &mut BufWriter<&mut File>) -> Result<usize> {
-        match self {
-            VectorStorage::FixedLocalFileBacked(storage) => storage.write(writer),
         }
     }
 
