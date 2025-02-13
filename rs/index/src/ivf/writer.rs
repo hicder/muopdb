@@ -139,10 +139,7 @@ where
         let mut writer = BufWriter::with_capacity(min(1 << 30, capacity), &mut file);
 
         let mut bytes_written = 0;
-        bytes_written += wrap_write(
-            &mut writer,
-            &full_vectors.num_vectors().to_le_bytes(),
-        )?;
+        bytes_written += wrap_write(&mut writer, &full_vectors.num_vectors().to_le_bytes())?;
         let mut search_context = SearchContext::new(false);
         for i in 0..full_vectors.num_vectors() {
             let quantized_vector = Q::QuantizedT::process_vector(

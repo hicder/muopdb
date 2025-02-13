@@ -266,7 +266,8 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
     pub fn build_posting_lists(&mut self) -> Result<()> {
         debug!("Building posting lists");
 
-        let mut posting_lists: Vec<Vec<u64>> = vec![Vec::with_capacity(0); self.centroids.num_vectors()];
+        let mut posting_lists: Vec<Vec<u64>> =
+            vec![Vec::with_capacity(0); self.centroids.num_vectors()];
         // Assign vectors to nearest centroids
         // self.assign_docs_to_cluster(doc_ids, flattened_centroids)
 
@@ -382,9 +383,8 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         doc_ids
             .choose_multiple(&mut rng, sample_size)
             .for_each(|doc_id| {
-                flattened_dataset.extend_from_slice(
-                    self.vectors.get_no_context(*doc_id as u32).unwrap(),
-                );
+                flattened_dataset
+                    .extend_from_slice(self.vectors.get_no_context(*doc_id as u32).unwrap());
             });
         Ok(flattened_dataset)
     }
@@ -702,11 +702,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             let mapped_id = reverse_assigned_ids[i];
             // let vector = self.vectors.borrow().get(mapped_id as u32).unwrap();
             new_vector_storage
-                .append(
-                    self.vectors
-                        .get_no_context(mapped_id as u32)
-                        .unwrap(),
-                )
+                .append(self.vectors.get_no_context(mapped_id as u32).unwrap())
                 .unwrap_or_else(|_| panic!("append failed"));
         }
 
