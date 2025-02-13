@@ -69,7 +69,7 @@ impl<Q: Quantizer> Spann<Q> {
 }
 
 impl<Q: Quantizer> Spann<Q> {
-    pub fn search(
+    pub async fn search(
         &self,
         query: &[f32],
         k: usize,
@@ -79,7 +79,8 @@ impl<Q: Quantizer> Spann<Q> {
         // TODO(hicder): Fully implement SPANN, which includes adjusting number of centroids
         let nearest_centroids = self
             .centroids
-            .ann_search(query, k, ef_construction, context);
+            .ann_search(query, k, ef_construction, context)
+            .await;
         if nearest_centroids.is_empty() {
             return None;
         }
@@ -104,12 +105,10 @@ impl<Q: Quantizer> Spann<Q> {
             nearest_centroid_ids.len()
         );
 
-        let results = self.posting_lists.search_with_centroids_and_remap(
-            query,
-            nearest_centroid_ids,
-            k,
-            context,
-        );
+        let results = self
+            .posting_lists
+            .search_with_centroids_and_remap(query, nearest_centroid_ids, k, context)
+            .await;
         Some(results)
     }
 }
@@ -126,8 +125,8 @@ mod tests {
     use crate::spann::writer::SpannWriter;
     use crate::utils::SearchContext;
 
-    #[test]
-    fn test_spann_search() {
+    #[tokio::test]
+    async fn test_spann_search() {
         let temp_dir = tempdir::TempDir::new("spann_search_test")
             .expect("Failed to create temporary directory");
         let base_dir = temp_dir
@@ -191,6 +190,7 @@ mod tests {
 
         let results = spann
             .search(&query, k, num_probes, &mut context)
+            .await
             .expect("IVF search should return a result");
 
         assert_eq!(results.len(), k);
@@ -198,8 +198,8 @@ mod tests {
         assert_eq!(results[1].id, 3); // Next is [3.0, 3.0, 3.0, 3.0]
     }
 
-    #[test]
-    fn test_spann_search_with_invalidation() {
+    #[tokio::test]
+    async fn test_spann_search_with_invalidation() {
         let temp_dir = tempdir::TempDir::new("spann_search_with_invalidation_test")
             .expect("Failed to create temporary directory");
         let base_dir = temp_dir
@@ -264,6 +264,7 @@ mod tests {
         assert!(spann.invalidate(4));
         let results = spann
             .search(&query, k, num_probes, &mut context)
+            .await
             .expect("IVF search should return a result");
 
         assert_eq!(results.len(), k);
@@ -271,8 +272,8 @@ mod tests {
         assert_eq!(results[1].id, 5); // Next is [5.0, 5.0, 5.0, 5.0]
     }
 
-    #[test]
-    fn test_spann_search_with_pq() {
+    #[tokio::test]
+    async fn test_spann_search_with_pq() {
         let temp_dir = tempdir::TempDir::new("spann_search_with_pq_test")
             .expect("Failed to create temporary directory");
         let base_dir = temp_dir
@@ -336,6 +337,7 @@ mod tests {
 
         let results = spann
             .search(&query, k, num_probes, &mut context)
+            .await
             .expect("IVF search should return a result");
 
         assert_eq!(results.len(), k);

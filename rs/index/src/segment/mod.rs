@@ -80,25 +80,36 @@ impl<Q: Quantizer + Clone> BoxedImmutableSegment<Q> {
 }
 
 impl<Q: Quantizer + Clone> BoxedImmutableSegment<Q> {
-    pub fn search_with_id(
-        &self,
+    pub fn search_with_id<'a>(
+        &'a self,
         id: u128,
-        query: &[f32],
+        query: &'a [f32],
         k: usize,
         ef_construction: u32,
-        context: &mut SearchContext,
-    ) -> Option<Vec<IdWithScore>> {
-        match self {
-            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => immutable_segment
-                .read()
-                .search_with_id(id, query, k, ef_construction, context),
-            BoxedImmutableSegment::PendingSegment(pending_segment) => pending_segment
-                .read()
-                .search_with_id(id, query, k, ef_construction, context),
-            BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => mocked_segment
-                .read()
-                .search_with_id(id, query, k, ef_construction, context),
-        }
+        context: &'a mut SearchContext,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<Vec<IdWithScore>>> + 'a>> {
+        Box::pin(async move {
+            match self {
+                BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                    immutable_segment
+                        .read()
+                        .search_with_id(id, query, k, ef_construction, context)
+                        .await
+                }
+                BoxedImmutableSegment::PendingSegment(pending_segment) => {
+                    pending_segment
+                        .read()
+                        .search_with_id(id, query, k, ef_construction, context)
+                        .await
+                }
+                BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
+                    mocked_segment
+                        .read()
+                        .search_with_id(id, query, k, ef_construction, context)
+                        .await
+                }
+            }
+        })
     }
 }
 
@@ -191,7 +202,7 @@ impl MockedSegment {
         todo!()
     }
 
-    pub fn search_with_id(
+    pub async fn search_with_id(
         &self,
         id: u128,
         query: &[f32],

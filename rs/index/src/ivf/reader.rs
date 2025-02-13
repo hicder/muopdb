@@ -221,8 +221,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_ivf_reader_read_elias_fano_encoding() {
+    #[tokio::test]
+    async fn test_ivf_reader_read_elias_fano_encoding() {
         // Create reference index (using PlainEncoder/Decoder)
         let temp_dir_ref = TempDir::new("test_ivf_reader_read_elias_fano_encoding_ref")
             .expect("Failed to create ref temporary directory");
@@ -310,9 +310,11 @@ mod tests {
             let query = generate_random_vector(num_features);
             let results_ref = index_ref
                 .search(&query, k, num_probes, &mut context)
+                .await
                 .expect("IVF search ref should return a result");
             let results = index
                 .search(&query, k, num_probes, &mut context)
+                .await
                 .expect("IVF search should return a result");
             assert_eq!(results_ref, results);
         }

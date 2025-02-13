@@ -113,7 +113,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         }
     }
 
-    pub fn search_with_id(
+    pub async fn search_with_id(
         &self,
         id: u128,
         query: &[f32],
@@ -122,7 +122,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         context: &mut SearchContext,
     ) -> Option<Vec<IdWithScore>> {
         match self.get_or_create_index(id) {
-            Ok(index) => index.search(query, k, ef_construction, context),
+            Ok(index) => index.search(query, k, ef_construction, context).await,
             Err(_) => None,
         }
     }
@@ -140,8 +140,8 @@ mod tests {
     use crate::multi_spann::writer::MultiSpannWriter;
     use crate::utils::SearchContext;
 
-    #[test]
-    fn test_multi_spann_search() {
+    #[tokio::test]
+    async fn test_multi_spann_search() {
         let temp_dir = tempdir::TempDir::new("multi_spann_search_test")
             .expect("Failed to create temporary directory");
         let base_directory = temp_dir
@@ -185,6 +185,7 @@ mod tests {
 
         let results = multi_spann_index
             .search_with_id(0, &query, k, num_probes, &mut context)
+            .await
             .expect("Failed to search with Multi-SPANN index");
 
         assert_eq!(results.len(), k);
@@ -235,8 +236,8 @@ mod tests {
         assert!(size_in_bytes >= 2000);
     }
 
-    #[test]
-    fn test_multi_spann_search_with_invalidation() {
+    #[tokio::test]
+    async fn test_multi_spann_search_with_invalidation() {
         let temp_dir = tempdir::TempDir::new("multi_spann_search_with_invalidation_test")
             .expect("Failed to create temporary directory");
         let base_directory = temp_dir
@@ -284,6 +285,7 @@ mod tests {
 
         let results = multi_spann_index
             .search_with_id(0, &query, k, num_probes, &mut context)
+            .await
             .expect("Failed to search with Multi-SPANN index");
 
         assert_eq!(results.len(), k);

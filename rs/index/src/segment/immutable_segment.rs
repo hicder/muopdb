@@ -53,7 +53,7 @@ impl<Q: Quantizer> Segment for ImmutableSegment<Q> {
 }
 
 impl<Q: Quantizer> ImmutableSegment<Q> {
-    pub fn search_with_id(
+    pub async fn search_with_id(
         &self,
         id: u128,
         query: &[f32],
@@ -63,6 +63,7 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
     ) -> Option<Vec<crate::utils::IdWithScore>> {
         self.index
             .search_with_id(id, query, k, ef_construction, context)
+            .await
     }
 }
 
@@ -82,8 +83,8 @@ mod tests {
     use crate::segment::{ImmutableSegment, Segment};
     use crate::utils::SearchContext;
 
-    #[test]
-    fn test_immutable_segment_search() {
+    #[tokio::test]
+    async fn test_immutable_segment_search() {
         let temp_dir = tempdir::TempDir::new("immutable_segment_search_test")
             .expect("Failed to create temporary directory");
         let base_directory = temp_dir
@@ -131,6 +132,7 @@ mod tests {
 
         let results = immutable_segment
             .search_with_id(0, &query, k, num_probes, &mut context)
+            .await
             .expect("Failed to search with Multi-SPANN index");
 
         assert_eq!(results.len(), k);
@@ -139,8 +141,8 @@ mod tests {
         assert_eq!(results[2].id, 2);
     }
 
-    #[test]
-    fn test_immutable_segment_search_with_invalidation() {
+    #[tokio::test]
+    async fn test_immutable_segment_search_with_invalidation() {
         let temp_dir = tempdir::TempDir::new("immutable_segment_search_with_invalidation_test")
             .expect("Failed to create temporary directory");
         let base_directory = temp_dir
@@ -197,6 +199,7 @@ mod tests {
 
         let results = immutable_segment
             .search_with_id(0, &query, k, num_probes, &mut context)
+            .await
             .expect("Failed to search with Multi-SPANN index");
 
         assert_eq!(results.len(), k);

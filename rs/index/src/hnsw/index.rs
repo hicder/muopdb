@@ -74,7 +74,7 @@ impl<Q: Quantizer> Hnsw<Q> {
             .collect()
     }
 
-    pub fn ann_search(
+    pub async fn ann_search(
         &self,
         query: &[f32],
         k: usize,

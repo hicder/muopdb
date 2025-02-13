@@ -1316,6 +1316,7 @@ dependencies = [
  "dashmap",
  "env_logger",
  "fs_extra",
+ "futures",
  "kmeans",
  "lock_api",
  "log",
