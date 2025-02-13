@@ -1,5 +1,9 @@
 use anyhow::Result;
+use dashmap::DashSet;
 use num_traits::ops::bytes::ToBytes;
+use quantization::quantization::Quantizer;
+
+use crate::utils::PointAndDistance;
 
 pub mod file;
 pub mod fixed_file;
@@ -48,6 +52,23 @@ impl<T: ToBytes + Clone> VectorStorage<T> {
     pub fn config(&self) -> VectorStorageConfig {
         match self {
             VectorStorage::FixedLocalFileBacked(storage) => storage.config(),
+        }
+    }
+
+    /// Compute the distance between a query and a batch of vectors.
+    /// Use this to avoid overhead of dynamic dispatching.
+    pub fn compute_distance_batch(
+        &self,
+        query: &[T],
+        iterator: impl Iterator<Item = u64>,
+        quantizer: &impl Quantizer<QuantizedT = T>,
+        invalidated_ids: &DashSet<u32>,
+        context: &mut impl StorageContext,
+    ) -> Result<Vec<PointAndDistance>> {
+        match self {
+            VectorStorage::FixedLocalFileBacked(storage) => {
+                storage.compute_distance_batch(query, iterator, quantizer, invalidated_ids, context)
+            }
         }
     }
 }

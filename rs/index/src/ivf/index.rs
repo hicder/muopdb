@@ -9,7 +9,6 @@ use dashmap::DashSet;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use utils::distance::l2::L2DistanceCalculator;
-use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 use utils::DistanceCalculator;
 
 use crate::posting_list::storage::PostingListStorage;
@@ -144,24 +143,21 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
     ) -> Vec<PointAndDistance> {
         if let Ok(byte_slice) = self.posting_list_storage.get_posting_list(centroid) {
             let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
-            let mut results: Vec<PointAndDistance> = Vec::new();
             let decoder =
                 D::new_decoder(byte_slice).expect("Failed to create posting list decoder");
-            for idx in decoder.get_iterator(byte_slice) {
-                if self.invalid_point_ids.contains(&(idx as u32)) {
-                    continue;
-                }
-                match self.vector_storage.get(idx as u32, context) {
-                    Ok(vector) => {
-                        let distance =
-                            self.quantizer
-                                .distance(&quantized_query, vector, StreamingSIMD);
-                        results.push(PointAndDistance::new(distance, idx as u32));
-                    }
-                    Err(_) => {}
-                }
-            }
-            results
+
+            let mut points_and_distances = self
+                .vector_storage
+                .compute_distance_batch(
+                    &quantized_query,
+                    decoder.get_iterator(byte_slice),
+                    &self.quantizer,
+                    &self.invalid_point_ids,
+                    context,
+                )
+                .unwrap();
+            points_and_distances.sort_by(|a, b| a.distance.total_cmp(&b.distance));
+            points_and_distances
         } else {
             vec![]
         }
