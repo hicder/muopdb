@@ -82,16 +82,8 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         Ok(transmute_u8_to_slice::<T>(slice))
     }
 
-    pub fn append(&mut self, _vector: &[T]) -> Result<()> {
-        return Err(anyhow::anyhow!("Not supported"));
-    }
-
     pub fn num_vectors(&self) -> usize {
         self.num_vectors
-    }
-
-    pub fn write(&self, _writer: &mut std::io::BufWriter<&mut std::fs::File>) -> Result<usize> {
-        return Err(anyhow::anyhow!("Not supported"));
     }
 
     pub fn config(&self) -> super::VectorStorageConfig {
