@@ -14,7 +14,7 @@ use super::index::Hnsw;
 use super::utils::{BuilderContext, GraphTraversal};
 use crate::utils::PointAndDistance;
 use crate::vector::file::FileBackedAppendableVectorStorage;
-use crate::vector::{VectorStorage, VectorStorageConfig};
+use crate::vector::VectorStorageConfig;
 
 /// TODO(hicder): support bare vector in addition to quantized one.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,7 +47,7 @@ impl Layer {
 
 /// The actual builder
 pub struct HnswBuilder<Q: Quantizer> {
-    vectors: Box<VectorStorage<Q::QuantizedT>>,
+    vectors: FileBackedAppendableVectorStorage<Q::QuantizedT>,
 
     max_neighbors: usize,
     pub layers: Vec<Layer>,
@@ -71,14 +71,12 @@ impl<Q: Quantizer> HnswBuilder<Q> {
         quantizer: Q,
         base_directory: String,
     ) -> Self {
-        let vectors = Box::new(VectorStorage::AppendableLocalFileBacked(
-            FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
-                base_directory.clone(),
-                vector_storage_memory_size,
-                vector_storage_file_size,
-                num_features,
-            ),
-        ));
+        let vectors = FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
+            base_directory.clone(),
+            vector_storage_memory_size,
+            vector_storage_file_size,
+            num_features,
+        );
 
         Self {
             vectors,
@@ -110,14 +108,12 @@ impl<Q: Quantizer> HnswBuilder<Q> {
         }
 
         let tmp_vector_storage_dir = format!("{}/vector_storage_tmp", output_directory);
-        let mut vector_storage = Box::new(VectorStorage::AppendableLocalFileBacked(
-            FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
-                tmp_vector_storage_dir,
-                vector_storage_config.memory_threshold,
-                vector_storage_config.file_size,
-                vector_storage_config.num_features,
-            ),
-        ));
+        let mut vector_storage = FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
+            tmp_vector_storage_dir,
+            vector_storage_config.memory_threshold,
+            vector_storage_config.file_size,
+            vector_storage_config.num_features,
+        );
 
         // Copy over the vectors
         for i in 0..hnsw.get_doc_id_mapping_slice().len() {
@@ -279,14 +275,12 @@ impl<Q: Quantizer> HnswBuilder<Q> {
         }
 
         let vector_storage_config = self.vectors.config();
-        let mut new_vector_storage = Box::new(VectorStorage::AppendableLocalFileBacked(
-            FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
-                temp_dir.clone(),
-                vector_storage_config.memory_threshold,
-                vector_storage_config.file_size,
-                vector_storage_config.num_features,
-            ),
-        ));
+        let mut new_vector_storage = FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
+            temp_dir.clone(),
+            vector_storage_config.memory_threshold,
+            vector_storage_config.file_size,
+            vector_storage_config.num_features,
+        );
         for i in 0..reverse_assigned_ids.len() {
             let mapped_id = reverse_assigned_ids[i];
             let vector = self.vectors.get_no_context(mapped_id as u32).unwrap();
@@ -471,7 +465,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
         }
     }
 
-    pub fn vectors(&mut self) -> &mut VectorStorage<Q::QuantizedT> {
+    pub fn vectors(&mut self) -> &mut FileBackedAppendableVectorStorage<Q::QuantizedT> {
         &mut self.vectors
     }
 
@@ -588,9 +582,7 @@ mod tests {
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
-        let mut vectors = Box::new(VectorStorage::AppendableLocalFileBacked(
-            FileBackedAppendableVectorStorage::<u8>::new(vector_dir, 1024, 4096, 5),
-        ));
+        let mut vectors = FileBackedAppendableVectorStorage::<u8>::new(vector_dir, 1024, 4096, 5);
         vectors.append(&vec![0, 0, 0, 0, 0]).unwrap();
         vectors.append(&vec![1, 1, 1, 1, 1]).unwrap();
         vectors.append(&vec![2, 2, 2, 2, 2]).unwrap();

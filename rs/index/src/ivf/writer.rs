@@ -53,8 +53,8 @@ where
         }
 
         let num_features = ivf_builder.config().num_features;
-        let num_clusters = ivf_builder.centroids().borrow().num_vectors();
-        let num_vectors = ivf_builder.vectors().borrow().num_vectors();
+        let num_clusters = ivf_builder.centroids().num_vectors();
+        let num_vectors = ivf_builder.vectors().num_vectors();
 
         // Write vectors
         let vectors_len = self
@@ -133,20 +133,17 @@ where
         // Write quantized vectors
         let path = format!("{}/vectors", self.base_directory);
         let mut file = File::create(path)?;
-        let capacity = full_vectors.borrow().num_vectors()
+        let capacity = full_vectors.num_vectors()
             * self.quantizer.quantized_dimension()
             * std::mem::size_of::<Q::QuantizedT>();
         let mut writer = BufWriter::with_capacity(min(1 << 30, capacity), &mut file);
 
         let mut bytes_written = 0;
-        bytes_written += wrap_write(
-            &mut writer,
-            &full_vectors.borrow().num_vectors().to_le_bytes(),
-        )?;
+        bytes_written += wrap_write(&mut writer, &full_vectors.num_vectors().to_le_bytes())?;
         let mut search_context = SearchContext::new(false);
-        for i in 0..full_vectors.borrow().num_vectors() {
+        for i in 0..full_vectors.num_vectors() {
             let quantized_vector = Q::QuantizedT::process_vector(
-                full_vectors.borrow().get(i as u32, &mut search_context)?,
+                full_vectors.get(i as u32, &mut search_context)?,
                 &self.quantizer,
             );
             for j in 0..quantized_vector.len() {
@@ -179,7 +176,7 @@ where
         let mut file = File::create(path)?;
         let mut writer = BufWriter::new(&mut file);
 
-        let bytes_written = ivf_builder.centroids().borrow().write(&mut writer)?;
+        let bytes_written = ivf_builder.centroids().write(&mut writer)?;
         Ok(bytes_written)
     }
 

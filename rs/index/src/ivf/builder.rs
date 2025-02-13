@@ -5,7 +5,6 @@ use std::io::ErrorKind;
 use std::marker::PhantomData;
 
 use anyhow::{anyhow, Result};
-use atomic_refcell::AtomicRefCell;
 use log::debug;
 use rand::seq::SliceRandom;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -17,7 +16,6 @@ use utils::{ceil_div, CalculateSquared, DistanceCalculator};
 use crate::posting_list::file::FileBackedAppendablePostingListStorage;
 use crate::utils::PointAndDistance;
 use crate::vector::file::FileBackedAppendableVectorStorage;
-use crate::vector::VectorStorage;
 
 pub struct IvfBuilderConfig {
     pub max_iteration: usize,
@@ -41,9 +39,9 @@ pub struct IvfBuilderConfig {
 
 pub struct IvfBuilder<D: DistanceCalculator + CalculateSquared + Send + Sync> {
     config: IvfBuilderConfig,
-    vectors: AtomicRefCell<VectorStorage<f32>>,
-    centroids: AtomicRefCell<VectorStorage<f32>>,
-    posting_lists: Box<FileBackedAppendablePostingListStorage>,
+    vectors: FileBackedAppendableVectorStorage<f32>,
+    centroids: FileBackedAppendableVectorStorage<f32>,
+    posting_lists: FileBackedAppendablePostingListStorage,
     doc_id_mapping: Vec<u128>,
     _marker: PhantomData<D>,
 }
@@ -146,37 +144,31 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         let vectors_path = format!("{}/builder_vector_storage", config.base_directory);
         create_dir(&vectors_path)?;
 
-        let vectors: AtomicRefCell<VectorStorage<f32>> =
-            AtomicRefCell::new(VectorStorage::AppendableLocalFileBacked(
-                FileBackedAppendableVectorStorage::<f32>::new(
-                    vectors_path,
-                    config.memory_size,
-                    config.file_size,
-                    config.num_features,
-                ),
-            ));
+        let vectors = FileBackedAppendableVectorStorage::<f32>::new(
+            vectors_path,
+            config.memory_size,
+            config.file_size,
+            config.num_features,
+        );
 
         let centroids_path = format!("{}/builder_centroid_storage", config.base_directory);
         create_dir(&centroids_path)?;
 
-        let centroids: AtomicRefCell<VectorStorage<f32>> =
-            AtomicRefCell::new(VectorStorage::AppendableLocalFileBacked(
-                FileBackedAppendableVectorStorage::<f32>::new(
-                    centroids_path,
-                    config.memory_size,
-                    config.file_size,
-                    config.num_features,
-                ),
-            ));
+        let centroids = FileBackedAppendableVectorStorage::<f32>::new(
+            centroids_path,
+            config.memory_size,
+            config.file_size,
+            config.num_features,
+        );
 
         let posting_lists_path = format!("{}/builder_posting_list_storage", config.base_directory);
         create_dir(&posting_lists_path)?;
 
-        let posting_lists = Box::new(FileBackedAppendablePostingListStorage::new(
+        let posting_lists = FileBackedAppendablePostingListStorage::new(
             posting_lists_path,
             config.memory_size,
             config.file_size,
-        ));
+        );
 
         Ok(Self {
             config,
@@ -192,7 +184,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         &self.config
     }
 
-    pub fn vectors(&self) -> &AtomicRefCell<VectorStorage<f32>> {
+    pub fn vectors(&self) -> &FileBackedAppendableVectorStorage<f32> {
         &self.vectors
     }
 
@@ -200,28 +192,28 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         &*self.doc_id_mapping
     }
 
-    pub fn centroids(&self) -> &AtomicRefCell<VectorStorage<f32>> {
+    pub fn centroids(&self) -> &FileBackedAppendableVectorStorage<f32> {
         &self.centroids
     }
 
-    pub fn posting_lists(&self) -> &Box<FileBackedAppendablePostingListStorage> {
+    pub fn posting_lists(&self) -> &FileBackedAppendablePostingListStorage {
         &self.posting_lists
     }
 
-    pub fn posting_lists_mut(&mut self) -> &mut Box<FileBackedAppendablePostingListStorage> {
+    pub fn posting_lists_mut(&mut self) -> &mut FileBackedAppendablePostingListStorage {
         &mut self.posting_lists
     }
 
     /// Add a new vector to the dataset for training
     pub fn add_vector(&mut self, doc_id: u128, data: &[f32]) -> Result<()> {
-        self.vectors.borrow_mut().append(&data)?;
+        self.vectors.append(&data)?;
         self.generate_id(doc_id)?;
         Ok(())
     }
 
     /// Add a new centroid
-    pub fn add_centroid(&self, centroid: &[f32]) -> Result<()> {
-        self.centroids.borrow_mut().append(centroid)?;
+    pub fn add_centroid(&mut self, centroid: &[f32]) -> Result<()> {
+        self.centroids.append(centroid)?;
         Ok(())
     }
 
@@ -257,17 +249,13 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
     fn find_nearest_centroids(
         vector: &[f32],
-        centroids: &VectorStorage<f32>,
+        centroids: &FileBackedAppendableVectorStorage<f32>,
         num_probes: usize,
     ) -> Result<Vec<PointAndDistance>> {
         let mut distances: Vec<PointAndDistance> = Vec::new();
-        let num_centroids = centroids.num_vectors();
-        for i in 0..num_centroids {
+        for i in 0..centroids.num_vectors() {
             let centroid = centroids.get_no_context(i as u32)?;
             let dist = L2DistanceCalculator::calculate_squared(&vector, &centroid);
-            if dist.is_nan() {
-                println!("NAN found");
-            }
             distances.push(PointAndDistance::new(dist, i as u32));
         }
         distances.select_nth_unstable_by(num_probes - 1, |a, b| a.distance.total_cmp(&b.distance));
@@ -279,22 +267,19 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         debug!("Building posting lists");
 
         let mut posting_lists: Vec<Vec<u64>> =
-            vec![Vec::with_capacity(0); self.centroids.borrow().num_vectors()];
+            vec![Vec::with_capacity(0); self.centroids.num_vectors()];
         // Assign vectors to nearest centroids
         // self.assign_docs_to_cluster(doc_ids, flattened_centroids)
 
-        let doc_ids = (0..self.vectors.borrow().num_vectors()).collect::<Vec<usize>>();
+        let doc_ids = (0..self.vectors.num_vectors()).collect::<Vec<usize>>();
         // let vector_clone = self.vectors.clone();
         let max_clusters_per_vector = self.config.max_clusters_per_vector;
         let posting_list_per_doc = doc_ids
             .par_iter()
             .map(|doc_id| {
                 let nearest_centroids = Self::find_nearest_centroids(
-                    self.vectors
-                        .borrow()
-                        .get_no_context(*doc_id as u32)
-                        .unwrap(),
-                    &self.centroids.borrow(),
+                    self.vectors.get_no_context(*doc_id as u32).unwrap(),
+                    &self.centroids,
                     max_clusters_per_vector,
                 )
                 .expect("Nearest centroids should not be None");
@@ -332,11 +317,11 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         );
         create_dir(&posting_list_storage_location).unwrap_or_else(|_| {});
 
-        self.posting_lists = Box::new(FileBackedAppendablePostingListStorage::new(
+        self.posting_lists = FileBackedAppendablePostingListStorage::new(
             posting_list_storage_location,
             self.config.memory_size,
             self.config.file_size,
-        ));
+        );
 
         // Move ownership of each posting list to the posting list storage
         for posting_list in posting_lists.into_iter() {
@@ -369,12 +354,11 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         }
 
         let num_features = self.config.num_features;
-        let vectors = self.vectors.borrow();
         let nearest_centroids = doc_ids
             .par_iter()
             .map(|doc_id| {
                 Self::find_nearest_centroid_inmemory(
-                    vectors.get_no_context(*doc_id as u32).unwrap(),
+                    self.vectors.get_no_context(*doc_id as u32).unwrap(),
                     &flattened_centroids,
                     num_features,
                 )
@@ -399,12 +383,8 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         doc_ids
             .choose_multiple(&mut rng, sample_size)
             .for_each(|doc_id| {
-                flattened_dataset.extend_from_slice(
-                    self.vectors
-                        .borrow()
-                        .get_no_context(*doc_id as u32)
-                        .unwrap(),
-                );
+                flattened_dataset
+                    .extend_from_slice(self.vectors.get_no_context(*doc_id as u32).unwrap());
             });
         Ok(flattened_dataset)
     }
@@ -454,7 +434,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
         // First pass to get the initial centroids
         let num_clusters = self.compute_actual_num_clusters(
-            self.vectors.borrow().num_vectors(),
+            self.vectors.num_vectors(),
             self.config.num_clusters,
             self.config.max_posting_list_size,
         );
@@ -468,7 +448,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
         // Sample the dataset to build the first set of centroids
         let mut rng = rand::thread_rng();
-        let num_input_vectors = self.vectors.borrow().num_vectors();
+        let num_input_vectors = self.vectors.num_vectors();
 
         // Create a vector from 0 to num_input_vectors and then shuffle it
         let mut flattened_dataset: Vec<f32> = vec![];
@@ -482,7 +462,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             .collect::<Vec<usize>>();
         selected.iter().for_each(|index| {
             flattened_dataset
-                .extend_from_slice(self.vectors.borrow().get_no_context(*index as u32).unwrap());
+                .extend_from_slice(self.vectors.get_no_context(*index as u32).unwrap());
         });
 
         let result = kmeans.fit(flattened_dataset)?;
@@ -644,7 +624,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
     /// Assign new ids to the vectors
     fn get_reassigned_ids(&mut self) -> Result<Vec<i32>> {
-        let vector_length = self.vectors.borrow().num_vectors();
+        let vector_length = self.vectors.num_vectors();
         let mut assigned_ids = vec![-1; vector_length];
 
         let mut cur_idx = self.assign_ids_until_last_stopping_point(&mut assigned_ids)?;
@@ -672,11 +652,11 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         );
         create_dir_all(&new_posting_lists_path)?;
 
-        let mut new_posting_list_storage = Box::new(FileBackedAppendablePostingListStorage::new(
+        let mut new_posting_list_storage = FileBackedAppendablePostingListStorage::new(
             new_posting_lists_path,
             self.config.memory_size,
             self.config.file_size,
-        ));
+        );
 
         for list_index in 0..self.posting_lists.len() {
             let posting_list = self.posting_lists.get(list_index as u32)?;
@@ -711,27 +691,18 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         );
         create_dir_all(&new_vectors_path)?;
 
-        let new_vector_storage: AtomicRefCell<VectorStorage<f32>> =
-            AtomicRefCell::new(VectorStorage::AppendableLocalFileBacked(
-                FileBackedAppendableVectorStorage::<f32>::new(
-                    new_vectors_path,
-                    self.config.memory_size,
-                    self.config.file_size,
-                    self.config.num_features,
-                ),
-            ));
+        let mut new_vector_storage = FileBackedAppendableVectorStorage::<f32>::new(
+            new_vectors_path,
+            self.config.memory_size,
+            self.config.file_size,
+            self.config.num_features,
+        );
 
         for i in 0..reverse_assigned_ids.len() {
             let mapped_id = reverse_assigned_ids[i];
             // let vector = self.vectors.borrow().get(mapped_id as u32).unwrap();
             new_vector_storage
-                .borrow_mut()
-                .append(
-                    self.vectors
-                        .borrow()
-                        .get_no_context(mapped_id as u32)
-                        .unwrap(),
-                )
+                .append(self.vectors.get_no_context(mapped_id as u32).unwrap())
                 .unwrap_or_else(|_| panic!("append failed"));
         }
 
@@ -1387,7 +1358,6 @@ mod tests {
             assert_eq!(
                 builder
                     .vectors
-                    .borrow()
                     .get_no_context(i as u32)
                     .expect(&format!("Failed to retrieve vector #{}", i))[0],
                 expected_vectors[i]
@@ -1446,8 +1416,8 @@ mod tests {
         let result = builder.build();
         assert!(result.is_ok());
 
-        assert_eq!(builder.vectors.borrow().num_vectors(), num_vectors);
-        assert_eq!(builder.centroids.borrow().num_vectors(), num_clusters);
+        assert_eq!(builder.vectors.num_vectors(), num_vectors);
+        assert_eq!(builder.centroids.num_vectors(), num_clusters);
         assert_eq!(builder.posting_lists.len(), num_clusters);
 
         // Total size of vectors is bigger than file size, check that they are flushed to disk
