@@ -146,7 +146,6 @@ mod tests {
         for i in 0..num_vectors {
             let ref_vector = builder
                 .vectors()
-                .borrow()
                 .get(i as u32, &mut context)
                 .expect("Failed to read vector from FileBackedAppendableVectorStorage")
                 .to_vec();
@@ -192,7 +191,6 @@ mod tests {
         for i in 0..num_clusters {
             let ref_vector = builder
                 .centroids()
-                .borrow()
                 .get(i as u32, &mut context)
                 .expect("Failed to read centroid from FileBackedAppendableVectorStorage")
                 .to_vec();
@@ -389,7 +387,6 @@ mod tests {
         for i in 0..num_vectors {
             let ref_vector = builder
                 .vectors()
-                .borrow()
                 .get(i as u32, &mut context)
                 .expect("Failed to read vector from FileBackedAppendableVectorStorage")
                 .to_vec();
@@ -435,7 +432,6 @@ mod tests {
         for i in 0..num_clusters {
             let ref_vector = builder
                 .centroids()
-                .borrow()
                 .get(i as u32, &mut context)
                 .expect("Failed to read centroid from FileBackedAppendableVectorStorage")
                 .to_vec();

@@ -15,7 +15,6 @@ use crate::hnsw::writer::HnswWriter;
 use crate::ivf::builder::IvfBuilder;
 use crate::ivf::writer::IvfWriter;
 use crate::spann::builder::SpannBuilderConfig;
-use crate::utils::SearchContext;
 
 pub struct SpannWriter {
     base_directory: String,
@@ -56,16 +55,14 @@ impl SpannWriter {
 
         debug!("Start training product quantizer");
         let sorted_random_rows = Self::get_sorted_random_rows(
-            ivf_builder.vectors().borrow().num_vectors(),
+            ivf_builder.vectors().num_vectors(),
             index_writer_config.pq_num_training_rows,
         );
 
-        let mut search_context = SearchContext::new(false);
         for row_idx in sorted_random_rows {
             let vector = ivf_builder
                 .vectors()
-                .borrow()
-                .get(row_idx as u32, &mut search_context)?
+                .get_no_context(row_idx as u32)?
                 .to_vec();
             pq_builder.add(vector);
         }

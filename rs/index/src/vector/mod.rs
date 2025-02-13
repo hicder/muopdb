@@ -20,56 +20,48 @@ pub trait StorageContext {
 }
 
 pub enum VectorStorage<T: ToBytes + Clone> {
-    AppendableLocalFileBacked(file::FileBackedAppendableVectorStorage<T>),
     FixedLocalFileBacked(fixed_file::FixedFileVectorStorage<T>),
 }
 
 impl<T: ToBytes + Clone> VectorStorage<T> {
     pub fn get_no_context(&self, id: u32) -> Result<&[T]> {
         match self {
-            VectorStorage::AppendableLocalFileBacked(storage) => storage.get_no_context(id),
             VectorStorage::FixedLocalFileBacked(storage) => storage.get_no_context(id),
         }
     }
 
     pub fn get(&self, id: u32, context: &mut impl StorageContext) -> Result<&[T]> {
         match self {
-            VectorStorage::AppendableLocalFileBacked(storage) => storage.get(id, context),
             VectorStorage::FixedLocalFileBacked(storage) => storage.get(id, context),
         }
     }
 
     pub fn multi_get(&self, ids: &[u32], context: &mut impl StorageContext) -> Result<Vec<&[T]>> {
         match self {
-            VectorStorage::AppendableLocalFileBacked(storage) => storage.multi_get(ids, context),
             VectorStorage::FixedLocalFileBacked(storage) => storage.multi_get(ids, context),
         }
     }
 
     pub fn append(&mut self, vector: &[T]) -> Result<()> {
         match self {
-            VectorStorage::AppendableLocalFileBacked(storage) => storage.append(vector),
             VectorStorage::FixedLocalFileBacked(storage) => storage.append(vector),
         }
     }
 
     pub fn num_vectors(&self) -> usize {
         match self {
-            VectorStorage::AppendableLocalFileBacked(storage) => storage.num_vectors(),
             VectorStorage::FixedLocalFileBacked(storage) => storage.num_vectors(),
         }
     }
 
     pub fn write(&self, writer: &mut BufWriter<&mut File>) -> Result<usize> {
         match self {
-            VectorStorage::AppendableLocalFileBacked(storage) => storage.write(writer),
             VectorStorage::FixedLocalFileBacked(storage) => storage.write(writer),
         }
     }
 
     pub fn config(&self) -> VectorStorageConfig {
         match self {
-            VectorStorage::AppendableLocalFileBacked(storage) => storage.config(),
             VectorStorage::FixedLocalFileBacked(storage) => storage.config(),
         }
     }

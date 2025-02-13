@@ -113,12 +113,11 @@ mod tests {
             let builder = ref_multi.value().read().unwrap();
             match user_id {
                 1 => {
-                    assert_eq!(builder.ivf_builder.vectors().borrow().num_vectors(), 1);
+                    assert_eq!(builder.ivf_builder.vectors().num_vectors(), 1);
                     assert_eq!(
                         builder
                             .ivf_builder
                             .vectors()
-                            .borrow()
                             .get_no_context(0)
                             .expect("Failed to read vector"),
                         &data_1
@@ -134,24 +133,22 @@ mod tests {
                             .unwrap(),
                         0
                     );
-                    assert_eq!(builder.ivf_builder.centroids().borrow().num_vectors(), 1);
+                    assert_eq!(builder.ivf_builder.centroids().num_vectors(), 1);
                     assert_eq!(
                         builder
                             .ivf_builder
                             .centroids()
-                            .borrow()
                             .get_no_context(0)
                             .expect("Failed to read centroid"),
                         &data_1
                     );
                 }
                 2 => {
-                    assert_eq!(builder.ivf_builder.vectors().borrow().num_vectors(), 1);
+                    assert_eq!(builder.ivf_builder.vectors().num_vectors(), 1);
                     assert_eq!(
                         builder
                             .ivf_builder
                             .vectors()
-                            .borrow()
                             .get_no_context(0)
                             .expect("Failed to read vector"),
                         &data_2
@@ -167,12 +164,11 @@ mod tests {
                             .unwrap(),
                         0
                     );
-                    assert_eq!(builder.ivf_builder.centroids().borrow().num_vectors(), 1);
+                    assert_eq!(builder.ivf_builder.centroids().num_vectors(), 1);
                     assert_eq!(
                         builder
                             .ivf_builder
                             .centroids()
-                            .borrow()
                             .get_no_context(0)
                             .expect("Failed to read centroid"),
                         &data_2
