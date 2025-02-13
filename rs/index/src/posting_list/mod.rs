@@ -1,5 +1,3 @@
-use std::fs::File;
-use std::io::BufWriter;
 use std::mem::size_of;
 
 use anyhow::{anyhow, Result};
@@ -7,6 +5,7 @@ use anyhow::{anyhow, Result};
 pub mod combined_file;
 pub mod file;
 pub mod fixed_file;
+pub mod storage;
 
 /// Config for posting list storage.
 pub struct PostingListStorageConfig {
@@ -90,21 +89,4 @@ impl<'a> Iterator for PostingListIterator<'a> {
         }
         None
     }
-}
-
-/// Trait that defines the interface for posting list storage
-/// This storage owns the actual vectors, and will return a reference to it
-pub trait PostingListStorage<'a> {
-    fn get(&'a self, id: u32) -> Result<PostingList<'a>>;
-
-    fn append(&mut self, vector: &[u64]) -> Result<()>;
-
-    // Number of posting lists in the storage
-    fn len(&self) -> usize;
-
-    // Return number of bytes written.
-    fn write(&mut self, writer: &mut BufWriter<&mut File>) -> Result<usize>;
-
-    // Return the config for this posting list storage. Useful when we want duplicate.
-    fn config(&self) -> PostingListStorageConfig;
 }

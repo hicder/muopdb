@@ -184,7 +184,7 @@ impl SpannBuilder {
         debug!("Finish building IVF index");
 
         let centroid_storage = self.ivf_builder.centroids();
-        let num_centroids = centroid_storage.borrow().len();
+        let num_centroids = centroid_storage.borrow().num_vectors();
         let mut search_context = SearchContext::new(false);
 
         for i in 0..num_centroids {

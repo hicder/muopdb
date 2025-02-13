@@ -12,13 +12,13 @@ use utils::distance::l2::L2DistanceCalculator;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 use utils::DistanceCalculator;
 
-use crate::posting_list::combined_file::FixedIndexFile;
+use crate::posting_list::storage::PostingListStorage;
 use crate::utils::{IdWithScore, PointAndDistance, SearchContext};
-use crate::vector::fixed_file::FixedFileVectorStorage;
+use crate::vector::VectorStorage;
 
 pub struct Ivf<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> {
     // The dataset.
-    pub vector_storage: FixedFileVectorStorage<Q::QuantizedT>,
+    pub vector_storage: Box<VectorStorage<Q::QuantizedT>>,
 
     // Each cluster is represented by a centroid vector.
     // This stores the list of centroids, along with a posting list
@@ -26,7 +26,7 @@ pub struct Ivf<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64
     // that it represents. The mapping is a list such that:
     //   index: centroid index to the list of centroids
     //   value: list of vector indices in `vector_storage`
-    pub index_storage: FixedIndexFile,
+    pub posting_list_storage: Box<PostingListStorage>,
 
     // Number of clusters.
     pub num_clusters: usize,
@@ -69,17 +69,17 @@ impl<Q: Quantizer> IvfType<Q> {
         }
     }
 
-    pub fn get_vector_storage(&self) -> &FixedFileVectorStorage<Q::QuantizedT> {
+    pub fn get_vector_storage(&self) -> &Box<VectorStorage<Q::QuantizedT>> {
         match self {
             IvfType::L2Plain(ivf) => &ivf.vector_storage,
             IvfType::L2EF(ivf) => &ivf.vector_storage,
         }
     }
 
-    pub fn get_index_storage(&self) -> &FixedIndexFile {
+    pub fn get_index_storage(&self) -> &PostingListStorage {
         match self {
-            IvfType::L2Plain(ivf) => &ivf.index_storage,
-            IvfType::L2EF(ivf) => &ivf.index_storage,
+            IvfType::L2Plain(ivf) => &ivf.posting_list_storage,
+            IvfType::L2EF(ivf) => &ivf.posting_list_storage,
         }
     }
 
@@ -100,14 +100,14 @@ impl<Q: Quantizer> IvfType<Q> {
 
 impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, DC, D> {
     pub fn new(
-        vector_storage: FixedFileVectorStorage<Q::QuantizedT>,
-        index_storage: FixedIndexFile,
+        vector_storage: Box<VectorStorage<Q::QuantizedT>>,
+        index_storage: Box<PostingListStorage>,
         num_clusters: usize,
         quantizer: Q,
     ) -> Self {
         Self {
             vector_storage,
-            index_storage,
+            posting_list_storage: index_storage,
             num_clusters,
             quantizer,
             invalid_point_ids: DashSet::new(),
@@ -118,7 +118,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
 
     pub fn find_nearest_centroids(
         vector: &Vec<f32>,
-        index_storage: &FixedIndexFile,
+        index_storage: &PostingListStorage,
         num_probes: usize,
     ) -> Result<Vec<usize>> {
         let mut distances: Vec<(usize, f32)> = Vec::new();
@@ -142,7 +142,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         query: &[f32],
         context: &mut SearchContext,
     ) -> Vec<PointAndDistance> {
-        if let Ok(byte_slice) = self.index_storage.get_posting_list(centroid) {
+        if let Ok(byte_slice) = self.posting_list_storage.get_posting_list(centroid) {
             let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
             let mut results: Vec<PointAndDistance> = Vec::new();
             let decoder =
@@ -199,15 +199,18 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         point_ids
             .iter()
             .map(|x| IdWithScore {
-                id: self.index_storage.get_doc_id(x.point_id as usize).unwrap(),
+                id: self
+                    .posting_list_storage
+                    .get_doc_id(x.point_id as usize)
+                    .unwrap(),
                 score: *x.distance,
             })
             .collect()
     }
 
     pub fn get_point_id(&self, doc_id: u128) -> Option<u32> {
-        for point_id in 0..self.vector_storage.num_vectors {
-            if let Ok(stored_doc_id) = self.index_storage.get_doc_id(point_id) {
+        for point_id in 0..self.vector_storage.num_vectors() {
+            if let Ok(stored_doc_id) = self.posting_list_storage.get_doc_id(point_id) {
                 if stored_doc_id == doc_id {
                     return Some(point_id as u32);
                 }
@@ -250,7 +253,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         // Find the nearest centroids to the query.
         if let Ok(nearest_centroids) = Self::find_nearest_centroids(
             &query.to_vec(),
-            &self.index_storage,
+            &self.posting_list_storage,
             ef_construction as usize,
         ) {
             // Search in the posting lists of the nearest centroids.
@@ -278,6 +281,8 @@ mod tests {
     use utils::mem::{transmute_slice_to_u8, transmute_u8_to_slice};
 
     use super::*;
+    use crate::posting_list::combined_file::FixedIndexFile;
+    use crate::vector::fixed_file::FixedFileVectorStorage;
 
     fn create_fixed_file_vector_storage<T: ToBytes>(
         file_path: &String,
@@ -426,14 +431,15 @@ mod tests {
             &posting_lists
         )
         .is_ok());
-        let index_storage =
-            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
+        let index_storage = Box::new(PostingListStorage::FixedLocalFile(
+            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created"),
+        ));
 
         let num_clusters = 2;
 
         let quantizer = NoQuantizer::<L2DistanceCalculator>::new(3);
         let ivf = Ivf::<_, L2DistanceCalculator, PlainDecoder>::new(
-            storage,
+            Box::new(VectorStorage::FixedLocalFileBacked(storage)),
             index_storage,
             num_clusters,
             quantizer,
@@ -441,12 +447,12 @@ mod tests {
 
         assert_eq!(ivf.num_clusters, num_clusters);
         let cluster_0 = transmute_u8_to_slice::<u64>(
-            ivf.index_storage
+            ivf.posting_list_storage
                 .get_posting_list(0)
                 .expect("Failed to get posting list"),
         );
         let cluster_1 = transmute_u8_to_slice::<u64>(
-            ivf.index_storage
+            ivf.posting_list_storage
                 .get_posting_list(1)
                 .expect("Failed to get posting list"),
         );
@@ -479,8 +485,9 @@ mod tests {
             &posting_lists
         )
         .is_ok());
-        let index_storage =
-            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
+        let index_storage = Box::new(PostingListStorage::FixedLocalFile(
+            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created"),
+        ));
         let num_probes = 2;
 
         let nearest =
@@ -528,8 +535,9 @@ mod tests {
             &posting_lists
         )
         .is_ok());
-        let index_storage =
-            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
+        let index_storage = Box::new(PostingListStorage::FixedLocalFile(
+            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created"),
+        ));
 
         let doc_ids_mapping = index_storage.get_doc_id(0).unwrap();
         println!("{:?}", doc_ids_mapping);
@@ -538,8 +546,12 @@ mod tests {
         let num_probes = 2;
 
         let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
-        let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> =
-            Ivf::new(storage, index_storage, num_clusters, quantizer);
+        let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> = Ivf::new(
+            Box::new(VectorStorage::FixedLocalFileBacked(storage)),
+            index_storage,
+            num_clusters,
+            quantizer,
+        );
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
@@ -607,14 +619,19 @@ mod tests {
             &posting_lists
         )
         .is_ok());
-        let index_storage =
-            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
+        let index_storage = Box::new(PostingListStorage::FixedLocalFile(
+            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created"),
+        ));
 
         let num_clusters = 2;
         let num_probes = 2;
 
-        let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> =
-            Ivf::new(storage, index_storage, num_clusters, quantizer);
+        let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> = Ivf::new(
+            Box::new(VectorStorage::FixedLocalFileBacked(storage)),
+            index_storage,
+            num_clusters,
+            quantizer,
+        );
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
@@ -659,15 +676,20 @@ mod tests {
             &posting_lists
         )
         .is_ok());
-        let index_storage =
-            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
+        let index_storage = Box::new(PostingListStorage::FixedLocalFile(
+            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created"),
+        ));
 
         let num_clusters = 1;
         let num_probes = 1;
 
         let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
-        let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> =
-            Ivf::new(storage, index_storage, num_clusters, quantizer);
+        let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> = Ivf::new(
+            Box::new(VectorStorage::FixedLocalFileBacked(storage)),
+            index_storage,
+            num_clusters,
+            quantizer,
+        );
 
         let query = vec![1.0, 2.0, 3.0];
         let k = 5; // More than available results
@@ -714,8 +736,9 @@ mod tests {
             &posting_lists
         )
         .is_ok());
-        let index_storage =
-            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created");
+        let index_storage = Box::new(PostingListStorage::FixedLocalFile(
+            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created"),
+        ));
 
         let doc_ids_mapping = index_storage.get_doc_id(0).unwrap();
         println!("{:?}", doc_ids_mapping);
@@ -724,8 +747,12 @@ mod tests {
         let num_probes = 2;
 
         let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
-        let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> =
-            Ivf::new(storage, index_storage, num_clusters, quantizer);
+        let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> = Ivf::new(
+            Box::new(VectorStorage::FixedLocalFileBacked(storage)),
+            index_storage,
+            num_clusters,
+            quantizer,
+        );
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 4;

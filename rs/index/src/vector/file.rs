@@ -205,13 +205,13 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
         Ok(())
     }
 
-    pub fn len(&self) -> usize {
+    pub fn num_vectors(&self) -> usize {
         self.size_bytes / (self.num_features * std::mem::size_of::<T>())
     }
 
     // TODO(hicder): Just copy the backed file to the output file for optimization
     pub fn write(&self, writer: &mut std::io::BufWriter<&mut std::fs::File>) -> Result<usize> {
-        let num_vectors = self.len() as u64;
+        let num_vectors = self.num_vectors() as u64;
         let mut len = 0;
         len += wrap_write(writer, &num_vectors.to_le_bytes())?;
         for i in 0..num_vectors {
@@ -323,7 +323,7 @@ mod tests {
         }
 
         // Test length
-        assert_eq!(storage.len(), 12);
+        assert_eq!(storage.num_vectors(), 12);
 
         // Test flush
         assert!(storage.flush().is_ok());

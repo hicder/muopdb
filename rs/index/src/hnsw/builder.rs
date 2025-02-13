@@ -230,7 +230,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
 
     /// Assign new ids to the vectors based on BFS on all layers
     fn get_reassigned_ids(&mut self) -> Result<Vec<i32>> {
-        let vector_length = self.vectors.len();
+        let vector_length = self.vectors.num_vectors();
         let mut assigned_ids = vec![-1; vector_length];
         let mut current_id = 0;
         let num_layers = self.layers.len();

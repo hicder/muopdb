@@ -5,7 +5,9 @@ use utils::DistanceCalculator;
 
 use crate::ivf::index::Ivf;
 use crate::posting_list::combined_file::FixedIndexFile;
+use crate::posting_list::storage::PostingListStorage;
 use crate::vector::fixed_file::FixedFileVectorStorage;
+use crate::vector::VectorStorage;
 
 pub struct IvfReader {
     base_directory: String,
@@ -33,17 +35,21 @@ impl IvfReader {
     pub fn read<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>>(
         &self,
     ) -> Result<Ivf<Q, DC, D>> {
-        let index_storage = FixedIndexFile::new_with_offset(
-            format!("{}/index", self.base_directory),
-            self.index_offset,
-        )?;
+        let index_storage = Box::new(PostingListStorage::FixedLocalFile(
+            FixedIndexFile::new_with_offset(
+                format!("{}/index", self.base_directory),
+                self.index_offset,
+            )?,
+        ));
 
         let vector_storage_path = format!("{}/vectors", self.base_directory);
-        let vector_storage = FixedFileVectorStorage::<Q::QuantizedT>::new_with_offset(
-            vector_storage_path,
-            index_storage.header().quantized_dimension as usize,
-            self.vector_offset,
-        )?;
+        let vector_storage = Box::new(VectorStorage::FixedLocalFileBacked(
+            FixedFileVectorStorage::<Q::QuantizedT>::new_with_offset(
+                vector_storage_path,
+                index_storage.header().quantized_dimension as usize,
+                self.vector_offset,
+            )?,
+        ));
 
         let num_clusters = index_storage.header().num_clusters as usize;
 
@@ -156,25 +162,28 @@ mod tests {
 
         // Verify index file content
         // Verify header
-        assert_eq!(index.index_storage.header().version, Version::V0);
+        assert_eq!(index.posting_list_storage.header().version, Version::V0);
         assert_eq!(
-            index.index_storage.header().num_features,
+            index.posting_list_storage.header().num_features,
             num_features as u32
         );
         assert_eq!(
-            index.index_storage.header().num_clusters,
+            index.posting_list_storage.header().num_clusters,
             num_clusters as u32
         );
-        assert_eq!(index.index_storage.header().num_vectors, num_vectors as u64);
         assert_eq!(
-            index.index_storage.header().centroids_len,
+            index.posting_list_storage.header().num_vectors,
+            num_vectors as u64
+        );
+        assert_eq!(
+            index.posting_list_storage.header().centroids_len,
             (num_clusters * num_features * size_of::<f32>() + size_of::<u64>()) as u64
         );
         // Verify doc_id_mapping content
         for i in 0..num_vectors {
             let ref_id = builder.doc_id_mapping()[i];
             let read_id = index
-                .index_storage
+                .posting_list_storage
                 .get_doc_id(i)
                 .expect("Failed to read doc_id from FixedFileVectorStorage");
             assert_eq!(ref_id, read_id);
@@ -188,7 +197,7 @@ mod tests {
                 .expect("Failed to read centroid from FileBackedAppendableVectorStorage")
                 .to_vec();
             let read_vector = index
-                .index_storage
+                .posting_list_storage
                 .get_centroid(i)
                 .expect("Failed to read centroid from FixedFileVectorStorage");
             assert_eq!(ref_vector.len(), read_vector.len());
@@ -203,7 +212,7 @@ mod tests {
                 .get(i as u32)
                 .expect("Failed to read vector from FileBackedAppendablePostingListStorage");
             let byte_slice = index
-                .index_storage
+                .posting_list_storage
                 .get_posting_list(i)
                 .expect("Failed to read vector from FixedIndexFile");
             let decoder = EliasFanoDecoder::new_decoder(byte_slice)
@@ -396,25 +405,28 @@ mod tests {
 
         // Verify index file content
         // Verify header
-        assert_eq!(index.index_storage.header().version, Version::V0);
+        assert_eq!(index.posting_list_storage.header().version, Version::V0);
         assert_eq!(
-            index.index_storage.header().num_features,
+            index.posting_list_storage.header().num_features,
             num_features as u32
         );
         assert_eq!(
-            index.index_storage.header().num_clusters,
+            index.posting_list_storage.header().num_clusters,
             num_clusters as u32
         );
-        assert_eq!(index.index_storage.header().num_vectors, num_vectors as u64);
         assert_eq!(
-            index.index_storage.header().centroids_len,
+            index.posting_list_storage.header().num_vectors,
+            num_vectors as u64
+        );
+        assert_eq!(
+            index.posting_list_storage.header().centroids_len,
             (num_clusters * num_features * size_of::<f32>() + size_of::<u64>()) as u64
         );
         // Verify doc_id_mapping content
         for i in 0..num_vectors {
             let ref_id = builder.doc_id_mapping()[i];
             let read_id = index
-                .index_storage
+                .posting_list_storage
                 .get_doc_id(i)
                 .expect("Failed to read doc_id from FixedFileVectorStorage");
             assert_eq!(ref_id, read_id);
@@ -428,7 +440,7 @@ mod tests {
                 .expect("Failed to read centroid from FileBackedAppendableVectorStorage")
                 .to_vec();
             let read_vector = index
-                .index_storage
+                .posting_list_storage
                 .get_centroid(i)
                 .expect("Failed to read centroid from FixedFileVectorStorage");
             assert_eq!(ref_vector.len(), read_vector.len());
@@ -444,7 +456,7 @@ mod tests {
                 .expect("Failed to read vector from FileBackedAppendablePostingListStorage");
             let read_vector = transmute_u8_to_slice::<u64>(
                 index
-                    .index_storage
+                    .posting_list_storage
                     .get_posting_list(i)
                     .expect("Failed to read vector from FixedIndexFile"),
             );
@@ -513,7 +525,7 @@ mod tests {
 
         for i in 0..num_centroids {
             // Assert that posting lists size is less than or equal to max_posting_list_size
-            let posting_list_byte_arr = index.index_storage.get_posting_list(i);
+            let posting_list_byte_arr = index.posting_list_storage.get_posting_list(i);
             assert!(posting_list_byte_arr.is_ok());
             let posting_list = transmute_u8_to_slice::<u64>(posting_list_byte_arr.unwrap());
 

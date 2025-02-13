@@ -154,7 +154,7 @@ mod tests {
         let posting_lists = spann.get_posting_lists();
         assert_eq!(
             posting_lists.num_clusters(),
-            centroids.vector_storage.num_vectors
+            centroids.vector_storage.num_vectors()
         );
     }
 
@@ -215,7 +215,7 @@ mod tests {
         let posting_lists = spann.get_posting_lists();
         assert_eq!(
             posting_lists.num_clusters(),
-            centroids.vector_storage.num_vectors
+            centroids.vector_storage.num_vectors()
         );
         // Verify posting list content
         for i in 0..num_clusters {
