@@ -34,7 +34,7 @@ pub struct SegmentInfoAndVersion {
 }
 
 /// Collection is thread-safe. All pub fn are thread-safe.
-pub struct Collection<Q: Quantizer + Clone> {
+pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
     pub versions: DashMap<u64, TableOfContent>,
     all_segments: DashMap<String, BoxedImmutableSegment<Q>>,
     versions_info: RwLock<VersionsInfo>,
@@ -53,7 +53,7 @@ pub struct Collection<Q: Quantizer + Clone> {
     flushing: Mutex<()>,
 }
 
-impl<Q: Quantizer + Clone> Collection<Q> {
+impl<Q: Quantizer + Clone + Send + Sync> Collection<Q> {
     pub fn new(base_directory: String, segment_config: CollectionConfig) -> Result<Self> {
         let versions: DashMap<u64, TableOfContent> = DashMap::new();
         versions.insert(0, TableOfContent::new(vec![]));
@@ -935,8 +935,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_collection_optimizer() -> Result<()> {
+    #[tokio::test]
+    async fn test_collection_optimizer() -> Result<()> {
         let temp_dir = TempDir::new("test_collection")?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let segment_config = CollectionConfig::default_test_config();
@@ -962,6 +962,7 @@ mod tests {
         let mut context = SearchContext::new(false);
         let result = snapshot
             .search_for_ids(&[0], &[1.0, 2.0, 3.0, 4.0], 10, 10, &mut context)
+            .await
             .unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 1);
@@ -980,8 +981,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_collection_multi_thread_optimizer() -> Result<()> {
+    #[tokio::test]
+    async fn test_collection_multi_thread_optimizer() -> Result<()> {
         let temp_dir = TempDir::new("test_collection")?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let segment_config = CollectionConfig::default_test_config();
@@ -998,7 +999,7 @@ mod tests {
 
         let stopped = Arc::new(AtomicBool::new(false));
         let stopped_cpy_for_optimizer = stopped.clone();
-        std::thread::spawn(move || {
+        tokio::spawn(async move {
             while !stopped_cpy_for_optimizer.load(std::sync::atomic::Ordering::Relaxed) {
                 let c = collection_cpy_for_optimizer.clone();
                 let snapshot = c.get_snapshot().unwrap();
@@ -1026,13 +1027,14 @@ mod tests {
 
         // A thread to query the collection
         let stopped_cpy_for_query = stopped.clone();
-        std::thread::spawn(move || {
+        tokio::spawn(async move {
             while !stopped_cpy_for_query.load(std::sync::atomic::Ordering::Relaxed) {
                 let c = collection_cpy_for_query.clone();
                 let snapshot = c.get_snapshot().unwrap();
                 let mut context = SearchContext::new(false);
                 let result = snapshot
                     .search_for_ids(&[0], &[1.0, 2.0, 3.0, 4.0], 10, 10, &mut context)
+                    .await
                     .unwrap();
                 assert_eq!(result.len(), 1);
                 assert_eq!(result[0].id, 1);

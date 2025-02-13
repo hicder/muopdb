@@ -14,11 +14,11 @@ pub enum OptimizingType {
     Noop,
 }
 
-pub struct OptimizerEngine<Q: Quantizer + Clone> {
+pub struct OptimizerEngine<Q: Quantizer + Clone + Send + Sync> {
     collection: Arc<Collection<Q>>,
 }
 
-impl<Q: Quantizer + Clone> OptimizerEngine<Q> {
+impl<Q: Quantizer + Clone + Send + Sync> OptimizerEngine<Q> {
     pub fn new(collection: Arc<Collection<Q>>) -> Self {
         Self { collection }
     }
