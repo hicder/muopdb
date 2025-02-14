@@ -7,7 +7,7 @@ use quantization::quantization::Quantizer;
 use super::Segment;
 use crate::multi_spann::index::MultiSpannIndex;
 use crate::spann::iter::SpannIter;
-use crate::utils::SearchContext;
+use crate::vector::StorageContext;
 
 /// This is an immutable segment. This usually contains a single index.
 pub struct ImmutableSegment<Q: Quantizer> {
@@ -63,7 +63,7 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<SearchContext>>,
+        context: Arc<Mutex<impl StorageContext>>,
     ) -> Option<Vec<crate::utils::IdWithScore>> {
         self.index
             .search_with_id(id, query, k, ef_construction, context)

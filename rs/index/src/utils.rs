@@ -38,21 +38,6 @@ impl SearchContext {
     }
 }
 
-pub trait TraversalContext {
-    fn visited(&self, i: u32) -> bool;
-    fn set_visited(&mut self, i: u32);
-}
-
-impl TraversalContext for SearchContext {
-    fn visited(&self, i: u32) -> bool {
-        self.visited.contains(i)
-    }
-
-    fn set_visited(&mut self, i: u32) {
-        self.visited.insert(i);
-    }
-}
-
 impl StorageContext for SearchContext {
     fn should_record_pages(&self) -> bool {
         self.record_pages
@@ -65,6 +50,21 @@ impl StorageContext for SearchContext {
             }
             None => {}
         }
+    }
+    
+    fn num_pages_accessed(&self) -> usize {
+        0
+    }
+    
+    fn reset_pages_accessed(&mut self) {
+    }
+    
+    fn set_visited(&mut self, _id: u32) {
+        self.visited.insert(_id);
+    }
+    
+    fn visited(&self, _id: u32) -> bool {
+        self.visited.contains(_id)
     }
 }
 

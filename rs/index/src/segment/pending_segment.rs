@@ -10,7 +10,8 @@ use quantization::quantization::Quantizer;
 use super::{BoxedImmutableSegment, Segment};
 use crate::multi_spann::index::MultiSpannIndex;
 use crate::multi_spann::reader::MultiSpannReader;
-use crate::utils::{IdWithScore, SearchContext};
+use crate::utils::IdWithScore;
+use crate::vector::StorageContext;
 
 pub struct PendingSegment<Q: Quantizer + Clone + Send + Sync> {
     inner_segments: Vec<BoxedImmutableSegment<Q>>,
@@ -136,7 +137,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<SearchContext>>,
+        context: Arc<Mutex<impl StorageContext + Send + Sync + 'static>>,
     ) -> Option<Vec<IdWithScore>>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
@@ -180,6 +181,7 @@ mod tests {
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::writer::MultiSpannWriter;
     use crate::segment::immutable_segment::ImmutableSegment;
+    use crate::utils::SearchContext;
 
     fn build_segment(base_directory: String, starting_doc_id: u128) -> Result<()> {
         let mut starting_doc_id = starting_doc_id;

@@ -11,7 +11,8 @@ use pending_segment::PendingSegment;
 use quantization::quantization::Quantizer;
 
 use crate::spann::iter::SpannIter;
-use crate::utils::{IdWithScore, SearchContext};
+use crate::utils::IdWithScore;
+use crate::vector::StorageContext;
 
 /// A segment is a partial index: users can insert some documents, then flush
 /// the containing collection, to effectively create a segment.
@@ -86,7 +87,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<SearchContext>>,
+        context: Arc<Mutex<impl StorageContext + Send + Sync + 'static>>,
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Option<Vec<IdWithScore>>> + Send + Sync>,
     >
@@ -202,7 +203,7 @@ impl MockedSegment {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<SearchContext>>,
+        context: Arc<Mutex<impl StorageContext>>,
     ) -> Option<Vec<crate::utils::IdWithScore>> {
         todo!()
     }
@@ -213,7 +214,7 @@ impl MockedSegment {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<SearchContext>>,
+        context: Arc<Mutex<impl StorageContext>>,
     ) -> Option<Vec<crate::utils::IdWithScore>> {
         todo!()
     }

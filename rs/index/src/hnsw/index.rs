@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::sync::Arc;
 
-use log::debug;
 use memmap2::Mmap;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
@@ -13,7 +12,7 @@ use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 use super::utils::GraphTraversal;
 use crate::hnsw::writer::Header;
 use crate::utils::{IdWithScore, SearchContext};
-use crate::vector::VectorStorage;
+use crate::vector::{StorageContext, VectorStorage};
 
 pub struct Hnsw<Q: Quantizer> {
     // Need this for mmap
@@ -81,7 +80,7 @@ impl<Q: Quantizer> Hnsw<Q> {
         query: &[f32],
         k: usize,
         ef: u32,
-        context: Arc<Mutex<SearchContext>>,
+        context: Arc<Mutex<impl StorageContext>>,
     ) -> Vec<IdWithScore> {
         let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
         let mut current_layer: i32 = self.header.num_layers as i32 - 1;
@@ -103,11 +102,6 @@ impl<Q: Quantizer> Hnsw<Q> {
         let point_ids: Vec<u32> = working_set.iter().map(|x| x.point_id).collect();
         let doc_ids = self.map_point_id_to_doc_id(&point_ids);
 
-        debug!(
-            "[ANN] number of pages accessed: {:?}",
-            context.lock().num_pages_accessed()
-        );
-
         working_set
             .into_iter()
             .zip(doc_ids)
@@ -126,7 +120,7 @@ impl<Q: Quantizer> Hnsw<Q> {
         self.data_offset
     }
 
-    fn get_vector(&self, point_id: u32, context: Arc<Mutex<SearchContext>>) -> &[Q::QuantizedT] {
+    fn get_vector(&self, point_id: u32, context: Arc<Mutex<impl StorageContext>>) -> &[Q::QuantizedT] {
         self.vector_storage.get(point_id, context.clone()).unwrap()
     }
 
@@ -277,7 +271,7 @@ impl<Q: Quantizer> Hnsw<Q> {
 impl<Q: Quantizer> GraphTraversal<Q> for Hnsw<Q> {
     type ContextT = SearchContext;
 
-    fn distance(&self, query: &[Q::QuantizedT], point_id: u32, context: Arc<Mutex<SearchContext>>) -> f32 {
+    fn distance(&self, query: &[Q::QuantizedT], point_id: u32, context: Arc<Mutex<impl StorageContext>>) -> f32 {
         let point = self.get_vector(point_id, context.clone());
         self.quantizer.distance(query, point, StreamingSIMD)
     }

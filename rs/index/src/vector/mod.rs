@@ -21,6 +21,10 @@ pub struct VectorStorageConfig {
 pub trait StorageContext {
     fn should_record_pages(&self) -> bool;
     fn record_pages(&mut self, page_id: String);
+    fn num_pages_accessed(&self) -> usize;
+    fn reset_pages_accessed(&mut self);
+    fn set_visited(&mut self, id: u32);
+    fn visited(&self, id: u32) -> bool;
 }
 
 pub enum VectorStorage<T: ToBytes + Clone> {

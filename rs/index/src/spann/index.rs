@@ -10,6 +10,7 @@ use utils::distance::l2::L2DistanceCalculator;
 use crate::hnsw::index::Hnsw;
 use crate::ivf::index::IvfType;
 use crate::utils::SearchContext;
+use crate::vector::StorageContext;
 
 pub struct Spann<Q: Quantizer> {
     centroids: Hnsw<NoQuantizer<L2DistanceCalculator>>,
@@ -76,7 +77,7 @@ impl<Q: Quantizer> Spann<Q> {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<SearchContext>>,
+        context: Arc<Mutex<impl StorageContext>>,
     ) -> Option<Vec<crate::utils::IdWithScore>> {
         // TODO(hicder): Fully implement SPANN, which includes adjusting number of centroids
         let nearest_centroids = self

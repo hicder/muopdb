@@ -14,8 +14,8 @@ use utils::distance::l2::L2DistanceCalculator;
 use utils::DistanceCalculator;
 
 use crate::posting_list::storage::PostingListStorage;
-use crate::utils::{IdWithScore, PointAndDistance, SearchContext};
-use crate::vector::VectorStorage;
+use crate::utils::{IdWithScore, PointAndDistance};
+use crate::vector::{StorageContext, VectorStorage};
 
 pub struct Ivf<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> {
     // The dataset.
@@ -51,7 +51,7 @@ impl<Q: Quantizer> IvfType<Q> {
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
         k: usize,
-        context: Arc<Mutex<SearchContext>>,
+        context: Arc<Mutex<impl StorageContext>>,
     ) -> Vec<IdWithScore> {
         match self {
             IvfType::L2Plain(ivf) => {
@@ -143,7 +143,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         &self,
         centroid: usize,
         query: &[f32],
-        context: Arc<Mutex<SearchContext>>,
+        context: Arc<Mutex<impl StorageContext>>,
     ) -> Vec<PointAndDistance> {
         if let Ok(byte_slice) = self.posting_list_storage.get_posting_list(centroid) {
             let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
@@ -172,7 +172,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
         k: usize,
-        context: Arc<Mutex<SearchContext>>,
+        context: Arc<Mutex<impl StorageContext>>,
     ) -> Vec<PointAndDistance> {
         let mut heap = BinaryHeap::with_capacity(k);
         for &centroid in &nearest_centroid_ids {
@@ -224,7 +224,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
         k: usize,
-        context: Arc<Mutex<SearchContext>>,
+        context: Arc<Mutex<impl StorageContext>>,
     ) -> Vec<IdWithScore> {
         let point_ids = self
             .search_with_centroids(query, nearest_centroid_ids, k, context)
@@ -250,7 +250,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         query: &[f32],
         k: usize,
         ef_construction: u32, // Number of probed centroids
-        context: Arc<Mutex<SearchContext>>,
+        context: Arc<Mutex<impl StorageContext>>,
     ) -> Option<Vec<IdWithScore>> {
         // Find the nearest centroids to the query.
         if let Ok(nearest_centroids) = Self::find_nearest_centroids(
@@ -286,6 +286,7 @@ mod tests {
 
     use super::*;
     use crate::posting_list::combined_file::FixedIndexFile;
+    use crate::utils::SearchContext;
     use crate::vector::fixed_file::FixedFileVectorStorage;
 
     fn create_fixed_file_vector_storage<T: ToBytes>(

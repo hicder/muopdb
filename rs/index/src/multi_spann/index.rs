@@ -13,7 +13,8 @@ use crate::ivf::files::invalidated_ids::InvalidatedIdsStorage;
 use crate::spann::index::Spann;
 use crate::spann::iter::SpannIter;
 use crate::spann::reader::SpannReader;
-use crate::utils::{IdWithScore, SearchContext};
+use crate::utils::IdWithScore;
+use crate::vector::StorageContext;
 
 pub struct MultiSpannIndex<Q: Quantizer> {
     base_directory: String,
@@ -119,7 +120,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<SearchContext>>,
+        context: Arc<Mutex<impl StorageContext>>,
     ) -> Option<Vec<IdWithScore>> {
         match self.get_or_create_index(id) {
             Ok(index) => index.search(query, k, ef_construction, context).await,
