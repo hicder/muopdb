@@ -101,6 +101,8 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         }
     }
 
+    // This can avoid repeatedly calling `get` by the caller, reducing vtable lookup
+    // cost if the caller is an instance of Box<VectorStorage>
     pub async fn compute_distance_batch_async(
         &self,
         query: &[T],
