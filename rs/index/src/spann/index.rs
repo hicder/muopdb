@@ -7,7 +7,7 @@ use utils::distance::l2::L2DistanceCalculator;
 
 use crate::hnsw::index::Hnsw;
 use crate::ivf::index::IvfType;
-use crate::utils::SearchContext;
+use crate::utils::SearchResult;
 
 pub struct Spann<Q: Quantizer> {
     centroids: Hnsw<NoQuantizer<L2DistanceCalculator>>,
@@ -48,15 +48,11 @@ impl<Q: Quantizer> Spann<Q> {
         self.posting_lists.get_point_id(doc_id)
     }
 
-    pub fn get_vector(
-        &self,
-        point_id: u32,
-        context: &mut SearchContext,
-    ) -> Option<&[Q::QuantizedT]> {
+    pub fn get_vector(&self, point_id: u32) -> Option<&[Q::QuantizedT]> {
         match self
             .posting_lists
             .get_vector_storage()
-            .get(point_id, context)
+            .get_no_context(point_id)
         {
             Ok(v) => Some(v),
             Err(_) => None,
@@ -71,28 +67,30 @@ impl<Q: Quantizer> Spann<Q> {
 impl<Q: Quantizer> Spann<Q> {
     pub async fn search(
         &self,
-        query: &[f32],
+        query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: &mut crate::utils::SearchContext,
-    ) -> Option<Vec<crate::utils::IdWithScore>> {
+        record_pages: bool,
+    ) -> Option<SearchResult> {
         // TODO(hicder): Fully implement SPANN, which includes adjusting number of centroids
         let nearest_centroids = self
             .centroids
-            .ann_search(query, k, ef_construction, context)
+            .ann_search(&query, k, ef_construction, record_pages)
             .await;
-        if nearest_centroids.is_empty() {
+        let centroid_search_stats = nearest_centroids.stats;
+        let nearest_centroid_ids = nearest_centroids.id_with_scores;
+        if nearest_centroid_ids.is_empty() {
             return None;
         }
 
         // Get the nearest centroid, and only search those that are within 10% of the distance of the nearest centroid
-        let nearest_distance = nearest_centroids
+        let nearest_distance = nearest_centroid_ids
             .iter()
             .map(|pad| pad.score)
             .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Greater))
             .expect("nearest_distance should not be None");
 
-        let nearest_centroid_ids: Vec<usize> = nearest_centroids
+        let nearest_centroid_ids: Vec<usize> = nearest_centroid_ids
             .iter()
             .filter(|centroid_and_distance| {
                 centroid_and_distance.score - nearest_distance <= nearest_distance * 0.1
@@ -105,10 +103,11 @@ impl<Q: Quantizer> Spann<Q> {
             nearest_centroid_ids.len()
         );
 
-        let results = self
+        let mut results = self
             .posting_lists
-            .search_with_centroids_and_remap(query, nearest_centroid_ids, k, context)
+            .search_with_centroids_and_remap(&query, nearest_centroid_ids, k, record_pages)
             .await;
+        results.stats.merge(&centroid_search_stats);
         Some(results)
     }
 }
@@ -123,7 +122,6 @@ mod tests {
     use crate::spann::builder::{SpannBuilder, SpannBuilderConfig};
     use crate::spann::reader::SpannReader;
     use crate::spann::writer::SpannWriter;
-    use crate::utils::SearchContext;
 
     #[tokio::test]
     async fn test_spann_search() {
@@ -186,16 +184,15 @@ mod tests {
         let query = vec![2.4, 3.4, 4.4, 5.4];
         let k = 2;
         let num_probes = 2;
-        let mut context = SearchContext::new(false);
 
         let results = spann
-            .search(&query, k, num_probes, &mut context)
+            .search(query, k, num_probes, false)
             .await
             .expect("IVF search should return a result");
 
-        assert_eq!(results.len(), k);
-        assert_eq!(results[0].id, 4); // Closest to [4.0, 4.0, 4.0, 4.0]
-        assert_eq!(results[1].id, 3); // Next is [3.0, 3.0, 3.0, 3.0]
+        assert_eq!(results.id_with_scores.len(), k);
+        assert_eq!(results.id_with_scores[0].id, 4); // Closest to [4.0, 4.0, 4.0, 4.0]
+        assert_eq!(results.id_with_scores[1].id, 3); // Next is [3.0, 3.0, 3.0, 3.0]
     }
 
     #[tokio::test]
@@ -259,17 +256,16 @@ mod tests {
         let query = vec![2.4, 3.4, 4.4, 5.4];
         let k = 2;
         let num_probes = 2;
-        let mut context = SearchContext::new(false);
 
         assert!(spann.invalidate(4));
         let results = spann
-            .search(&query, k, num_probes, &mut context)
+            .search(query, k, num_probes, false)
             .await
             .expect("IVF search should return a result");
 
-        assert_eq!(results.len(), k);
-        assert_eq!(results[0].id, 3); // Closest to [3.0, 3.0, 3.0, 3.0]
-        assert_eq!(results[1].id, 5); // Next is [5.0, 5.0, 5.0, 5.0]
+        assert_eq!(results.id_with_scores.len(), k);
+        assert_eq!(results.id_with_scores[0].id, 3); // Closest to [3.0, 3.0, 3.0, 3.0]
+        assert_eq!(results.id_with_scores[1].id, 5); // Next is [5.0, 5.0, 5.0, 5.0]
     }
 
     #[tokio::test]
@@ -333,19 +329,18 @@ mod tests {
         let query = vec![2.4, 3.4, 4.4, 5.4];
         let k = 5;
         let num_probes = 2;
-        let mut context = SearchContext::new(false);
 
         let results = spann
-            .search(&query, k, num_probes, &mut context)
+            .search(query, k, num_probes, false)
             .await
             .expect("IVF search should return a result");
 
-        assert_eq!(results.len(), k);
+        assert_eq!(results.id_with_scores.len(), k);
         // subvector_dimension = 2 so very lossy!
-        assert_eq!(results[0].score, 0.0);
-        assert_eq!(results[1].score, 0.0);
-        assert_eq!(results[2].score, 0.0);
-        assert_eq!(results[3].score, 0.0);
-        assert_eq!(results[4].score, 0.0);
+        assert_eq!(results.id_with_scores[0].score, 0.0);
+        assert_eq!(results.id_with_scores[1].score, 0.0);
+        assert_eq!(results.id_with_scores[2].score, 0.0);
+        assert_eq!(results.id_with_scores[3].score, 0.0);
+        assert_eq!(results.id_with_scores[4].score, 0.0);
     }
 }

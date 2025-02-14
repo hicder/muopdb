@@ -1,6 +1,5 @@
 use std::fs::File;
 
-use log::debug;
 use memmap2::Mmap;
 use num_traits::ToPrimitive;
 use quantization::quantization::Quantizer;
@@ -10,8 +9,8 @@ use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 
 use super::utils::GraphTraversal;
 use crate::hnsw::writer::Header;
-use crate::utils::{IdWithScore, SearchContext};
-use crate::vector::VectorStorage;
+use crate::utils::{IdWithScore, SearchContext, SearchResult, SearchStats};
+use crate::vector::{StorageContext, VectorStorage};
 
 pub struct Hnsw<Q: Quantizer> {
     // Need this for mmap
@@ -79,14 +78,16 @@ impl<Q: Quantizer> Hnsw<Q> {
         query: &[f32],
         k: usize,
         ef: u32,
-        context: &mut SearchContext,
-    ) -> Vec<IdWithScore> {
+        record_pages: bool,
+    ) -> SearchResult {
         let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
         let mut current_layer: i32 = self.header.num_layers as i32 - 1;
         let mut ep = self.get_entry_point_top_layer();
         let mut working_set;
+        let mut context = SearchContext::new(record_pages);
         while current_layer > 0 {
-            working_set = self.search_layer(context, &quantized_query, ep, ef, current_layer as u8);
+            working_set =
+                self.search_layer(&mut context, &quantized_query, ep, ef, current_layer as u8);
             ep = working_set
                 .iter()
                 .min_by(|x, y| x.distance.cmp(&y.distance))
@@ -95,25 +96,25 @@ impl<Q: Quantizer> Hnsw<Q> {
             current_layer -= 1;
         }
 
-        working_set = self.search_layer(context, &quantized_query, ep, ef, 0);
+        working_set = self.search_layer(&mut context, &quantized_query, ep, ef, 0);
         working_set.sort_by(|x, y| x.distance.cmp(&y.distance));
         working_set.truncate(k);
         let point_ids: Vec<u32> = working_set.iter().map(|x| x.point_id).collect();
         let doc_ids = self.map_point_id_to_doc_id(&point_ids);
 
-        debug!(
-            "[ANN] number of pages accessed: {:?}",
-            context.num_pages_accessed()
-        );
-
-        working_set
+        let id_with_scores: Vec<IdWithScore> = working_set
             .into_iter()
             .zip(doc_ids)
             .map(|(x, y)| IdWithScore {
                 id: y,
                 score: x.distance.to_f32().unwrap(),
             })
-            .collect()
+            .collect();
+
+        SearchResult {
+            id_with_scores,
+            stats: SearchStats::new(),
+        }
     }
 
     pub fn get_header(&self) -> &Header {
@@ -124,7 +125,7 @@ impl<Q: Quantizer> Hnsw<Q> {
         self.data_offset
     }
 
-    fn get_vector(&self, point_id: u32, context: &mut SearchContext) -> &[Q::QuantizedT] {
+    fn get_vector(&self, point_id: u32, context: &mut impl StorageContext) -> &[Q::QuantizedT] {
         self.vector_storage.get(point_id, context).unwrap()
     }
 
@@ -275,7 +276,12 @@ impl<Q: Quantizer> Hnsw<Q> {
 impl<Q: Quantizer> GraphTraversal<Q> for Hnsw<Q> {
     type ContextT = SearchContext;
 
-    fn distance(&self, query: &[Q::QuantizedT], point_id: u32, context: &mut SearchContext) -> f32 {
+    fn distance(
+        &self,
+        query: &[Q::QuantizedT],
+        point_id: u32,
+        context: &mut impl StorageContext,
+    ) -> f32 {
         let point = self.get_vector(point_id, context);
         self.quantizer.distance(query, point, StreamingSIMD)
     }

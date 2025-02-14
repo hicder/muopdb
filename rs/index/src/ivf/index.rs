@@ -12,7 +12,7 @@ use utils::distance::l2::L2DistanceCalculator;
 use utils::DistanceCalculator;
 
 use crate::posting_list::storage::PostingListStorage;
-use crate::utils::{IdWithScore, PointAndDistance, SearchContext};
+use crate::utils::{IdWithScore, IntermediateResult, PointAndDistance, SearchResult, SearchStats};
 use crate::vector::VectorStorage;
 
 pub struct Ivf<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> {
@@ -49,15 +49,15 @@ impl<Q: Quantizer> IvfType<Q> {
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
         k: usize,
-        context: &mut SearchContext,
-    ) -> Vec<IdWithScore> {
+        record_pages: bool,
+    ) -> SearchResult {
         match self {
             IvfType::L2Plain(ivf) => {
-                ivf.search_with_centroids_and_remap(query, nearest_centroid_ids, k, context)
+                ivf.search_with_centroids_and_remap(query, nearest_centroid_ids, k, record_pages)
                     .await
             }
             IvfType::L2EF(ivf) => {
-                ivf.search_with_centroids_and_remap(query, nearest_centroid_ids, k, context)
+                ivf.search_with_centroids_and_remap(query, nearest_centroid_ids, k, record_pages)
                     .await
             }
         }
@@ -141,27 +141,33 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         &self,
         centroid: usize,
         query: &[f32],
-        context: &mut SearchContext,
-    ) -> Vec<PointAndDistance> {
+        record_pages: bool,
+    ) -> IntermediateResult {
         if let Ok(byte_slice) = self.posting_list_storage.get_posting_list(centroid) {
             let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
             let decoder =
                 D::new_decoder(byte_slice).expect("Failed to create posting list decoder");
 
-            let mut points_and_distances = self
+            let mut results = self
                 .vector_storage
-                .compute_distance_batch(
+                .compute_distance_batch_async(
                     &quantized_query,
                     decoder.get_iterator(byte_slice),
                     &self.quantizer,
                     &self.invalid_point_ids,
-                    context,
+                    record_pages,
                 )
+                .await
                 .unwrap();
-            points_and_distances.sort_by(|a, b| a.distance.total_cmp(&b.distance));
-            points_and_distances
+            results
+                .point_and_distances
+                .sort_by(|a, b| a.distance.total_cmp(&b.distance));
+            results
         } else {
-            vec![]
+            IntermediateResult {
+                point_and_distances: vec![],
+                stats: SearchStats::new(),
+            }
         }
     }
 
@@ -170,12 +176,13 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
         k: usize,
-        context: &mut SearchContext,
-    ) -> Vec<PointAndDistance> {
+        record_pages: bool,
+    ) -> IntermediateResult {
         let mut heap = BinaryHeap::with_capacity(k);
+        let mut final_stats = SearchStats::new();
         for &centroid in &nearest_centroid_ids {
-            let results = self.scan_posting_list(centroid, query, context).await;
-            for id_with_score in results {
+            let results = self.scan_posting_list(centroid, query, record_pages).await;
+            for id_with_score in results.point_and_distances {
                 if heap.len() < k {
                     heap.push(id_with_score);
                 } else if let Some(max) = heap.peek() {
@@ -185,12 +192,17 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
                     }
                 }
             }
+            final_stats.merge(&results.stats);
         }
 
         // Convert heap to a sorted vector in ascending order.
         let mut results: Vec<PointAndDistance> = heap.into_vec();
         results.sort();
-        results
+
+        IntermediateResult {
+            point_and_distances: results,
+            stats: final_stats,
+        }
     }
 
     fn map_point_id_to_doc_id(&self, point_ids: &[PointAndDistance]) -> Vec<IdWithScore> {
@@ -222,13 +234,16 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
         k: usize,
-        context: &mut SearchContext,
-    ) -> Vec<IdWithScore> {
-        let point_ids = self
-            .search_with_centroids(query, nearest_centroid_ids, k, context)
+        record_pages: bool,
+    ) -> SearchResult {
+        let results = self
+            .search_with_centroids(query, nearest_centroid_ids, k, record_pages)
             .await;
-        let doc_ids = self.map_point_id_to_doc_id(&point_ids);
-        doc_ids
+        let doc_ids = self.map_point_id_to_doc_id(&results.point_and_distances);
+        SearchResult {
+            id_with_scores: doc_ids,
+            stats: results.stats,
+        }
     }
 
     pub fn invalidate(&self, doc_id: u128) -> bool {
@@ -248,8 +263,8 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         query: &[f32],
         k: usize,
         ef_construction: u32, // Number of probed centroids
-        context: &mut SearchContext,
-    ) -> Option<Vec<IdWithScore>> {
+        record_pages: bool,
+    ) -> Option<SearchResult> {
         // Find the nearest centroids to the query.
         if let Ok(nearest_centroids) = Self::find_nearest_centroids(
             &query.to_vec(),
@@ -257,11 +272,13 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
             ef_construction as usize,
         ) {
             // Search in the posting lists of the nearest centroids.
-            let point_ids = self
-                .search_with_centroids(query, nearest_centroids, k, context)
+            let results = self
+                .search_with_centroids(query, nearest_centroids, k, record_pages)
                 .await;
-            let doc_ids = self.map_point_id_to_doc_id(&point_ids);
-            Some(doc_ids)
+            Some(SearchResult {
+                id_with_scores: self.map_point_id_to_doc_id(&results.point_and_distances),
+                stats: results.stats,
+            })
         } else {
             println!("Error finding nearest centroids");
             return None;
@@ -557,17 +574,16 @@ mod tests {
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
-        let mut context = SearchContext::new(false);
 
         let results = ivf
-            .search(&query, k, num_probes, &mut context)
+            .search(&query, k, num_probes, false)
             .await
             .expect("IVF search should return a result");
 
-        assert_eq!(results.len(), k);
-        assert_eq!(results[0].id, 103); // Closest to [2.0, 3.0, 4.0]
-        assert_eq!(results[1].id, 100); // Second closest to [2.0, 3.0, 4.0]
-        assert!(results[0].score < results[1].score);
+        assert_eq!(results.id_with_scores.len(), k);
+        assert_eq!(results.id_with_scores[0].id, 103); // Closest to [2.0, 3.0, 4.0]
+        assert_eq!(results.id_with_scores[1].id, 100); // Second closest to [2.0, 3.0, 4.0]
+        assert!(results.id_with_scores[0].score < results.id_with_scores[1].score);
     }
 
     #[tokio::test]
@@ -638,18 +654,25 @@ mod tests {
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
-        let mut context = SearchContext::new(false);
 
         let results = ivf
-            .search(&query, k, num_probes, &mut context)
+            .search(&query, k, num_probes, false)
             .await
             .expect("IVF search should return a result");
 
-        assert_eq!(results.len(), k);
+        assert_eq!(results.id_with_scores.len(), k);
         // This demonstrates the accuracy loss due to quantization
-        assert!(results[0].score == results[1].score);
-        assert_eq!(results[0].id + results[1].id, 203);
-        assert_eq!(results[0].id.abs_diff(results[1].id), 3);
+        assert!(results.id_with_scores[0].score == results.id_with_scores[1].score);
+        assert_eq!(
+            results.id_with_scores[0].id + results.id_with_scores[1].id,
+            203
+        );
+        assert_eq!(
+            results.id_with_scores[0]
+                .id
+                .abs_diff(results.id_with_scores[1].id),
+            3
+        );
     }
 
     #[tokio::test]
@@ -697,15 +720,14 @@ mod tests {
 
         let query = vec![1.0, 2.0, 3.0];
         let k = 5; // More than available results
-        let mut context = SearchContext::new(false);
 
         let results = ivf
-            .search(&query, k, num_probes, &mut context)
+            .search(&query, k, num_probes, false)
             .await
             .expect("IVF search should return a result");
 
-        assert_eq!(results.len(), 1); // Only one result available
-        assert_eq!(results[0].id, 100);
+        assert_eq!(results.id_with_scores.len(), 1); // Only one result available
+        assert_eq!(results.id_with_scores[0].id, 100);
     }
 
     #[tokio::test]
@@ -761,19 +783,18 @@ mod tests {
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 4;
-        let mut context = SearchContext::new(false);
 
         assert!(ivf.invalidate(103));
 
         let results = ivf
-            .search(&query, k, num_probes, &mut context)
+            .search(&query, k, num_probes, false)
             .await
             .expect("IVF search should return a result");
 
-        assert_eq!(results.len(), k - 1);
+        assert_eq!(results.id_with_scores.len(), k - 1);
         // doc id 103 is not in result
-        assert_eq!(results[0].id, 100);
-        assert_eq!(results[1].id, 101);
-        assert_eq!(results[2].id, 102);
+        assert_eq!(results.id_with_scores[0].id, 100);
+        assert_eq!(results.id_with_scores[1].id, 101);
+        assert_eq!(results.id_with_scores[2].id, 102);
     }
 }

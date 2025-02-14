@@ -55,12 +55,13 @@ impl SegmentOptimizer<NoQuantizerL2> for MergeOptimizer<NoQuantizerL2> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use config::collection::CollectionConfig;
 
     use super::*;
     use crate::collection::collection::Collection;
     use crate::collection::reader::CollectionReader;
-    use crate::utils::SearchContext;
 
     #[tokio::test]
     async fn test_merge_optimizer() -> Result<()> {
@@ -108,23 +109,31 @@ mod tests {
         assert_eq!(segments.len(), 1);
 
         let snapshot = collection.get_snapshot()?;
-        let mut context = SearchContext::new(false);
+        let snapshot = Arc::new(snapshot);
         let result = snapshot
-            .search_for_ids(&[0], &[100.0, 101.0, 102.0], 3, 10, &mut context)
+            .search_with_id(0, vec![100.0, 101.0, 102.0], 3, 10, false)
             .await
             .unwrap();
-        assert_eq!(result.len(), 3);
+        assert_eq!(result.id_with_scores.len(), 3);
 
-        let mut result_ids = result.iter().map(|id| id.id).collect::<Vec<_>>();
+        let mut result_ids = result
+            .id_with_scores
+            .iter()
+            .map(|id| id.id)
+            .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![4, 5, 6]);
 
         let result = snapshot
-            .search_for_ids(&[0], &[1.0, 2.0, 3.0], 3, 10, &mut context)
+            .search_with_id(0, vec![1.0, 2.0, 3.0], 3, 10, false)
             .await
             .unwrap();
-        assert_eq!(result.len(), 3);
-        let mut result_ids = result.iter().map(|id| id.id).collect::<Vec<_>>();
+        assert_eq!(result.id_with_scores.len(), 3);
+        let mut result_ids = result
+            .id_with_scores
+            .iter()
+            .map(|id| id.id)
+            .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![1, 2, 3]);
 
@@ -177,24 +186,31 @@ mod tests {
         assert_eq!(segments.len(), 1);
 
         let snapshot = collection.get_snapshot()?;
-        let mut context = SearchContext::new(false);
         let result = snapshot
-            .search_for_ids(&[0], &[1.0, 2.0, 3.0], 3, 10, &mut context)
+            .search_with_id(0, vec![1.0, 2.0, 3.0], 3, 10, false)
             .await
             .unwrap();
-        assert_eq!(result.len(), 3);
+        assert_eq!(result.id_with_scores.len(), 3);
 
-        let mut result_ids = result.iter().map(|id| id.id).collect::<Vec<_>>();
+        let mut result_ids = result
+            .id_with_scores
+            .iter()
+            .map(|id| id.id)
+            .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![1, 2, 3]);
 
         let result = snapshot
-            .search_for_ids(&[1], &[10.0, 11.0, 12.0], 3, 10, &mut context)
+            .search_with_id(1, vec![10.0, 11.0, 12.0], 3, 10, false)
             .await
             .unwrap();
-        assert_eq!(result.len(), 3);
+        assert_eq!(result.id_with_scores.len(), 3);
 
-        let mut result_ids = result.iter().map(|id| id.id).collect::<Vec<_>>();
+        let mut result_ids = result
+            .id_with_scores
+            .iter()
+            .map(|id| id.id)
+            .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![4, 5, 6]);
 

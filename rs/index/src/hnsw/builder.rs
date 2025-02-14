@@ -14,7 +14,7 @@ use super::index::Hnsw;
 use super::utils::{BuilderContext, GraphTraversal};
 use crate::utils::PointAndDistance;
 use crate::vector::file::FileBackedAppendableVectorStorage;
-use crate::vector::VectorStorageConfig;
+use crate::vector::{StorageContext, VectorStorageConfig};
 
 /// TODO(hicder): support bare vector in addition to quantized one.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -501,9 +501,9 @@ impl<Q: Quantizer> GraphTraversal<Q> for HnswBuilder<Q> {
         &self,
         query: &[Q::QuantizedT],
         point_id: u32,
-        _context: &mut BuilderContext,
+        context: &mut impl StorageContext,
     ) -> f32 {
-        let point = self.vectors.get(point_id, _context).unwrap();
+        let point = self.vectors.get(point_id, context).unwrap();
         Q::QuantizedT::distance(query, point, &self.quantizer)
     }
 

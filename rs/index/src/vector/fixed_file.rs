@@ -7,7 +7,7 @@ use num_traits::ToBytes;
 use quantization::quantization::Quantizer;
 use utils::mem::transmute_u8_to_slice;
 
-use crate::utils::PointAndDistance;
+use crate::utils::{IntermediateResult, PointAndDistance, SearchContext, SearchStats};
 use crate::vector::StorageContext;
 
 pub struct FixedFileVectorStorage<T> {
@@ -85,6 +85,10 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         Ok(transmute_u8_to_slice::<T>(slice))
     }
 
+    pub async fn get_async(&self, id: u32, context: &mut impl StorageContext) -> Result<&[T]> {
+        self.get(id, context)
+    }
+
     pub fn num_vectors(&self) -> usize {
         self.num_vectors
     }
@@ -97,15 +101,17 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         }
     }
 
-    pub fn compute_distance_batch(
+    pub async fn compute_distance_batch_async(
         &self,
         query: &[T],
         iterator: impl Iterator<Item = u64>,
         quantizer: &impl Quantizer<QuantizedT = T>,
         invalidated_ids: &DashSet<u32>,
-        context: &mut impl StorageContext,
-    ) -> Result<Vec<PointAndDistance>> {
+        record_pages: bool,
+    ) -> Result<IntermediateResult> {
         let mut result = vec![];
+        let mut context = SearchContext::new(record_pages);
+        let mut stats = SearchStats::new();
         for id in iterator {
             // Skip invalidated ids
             // TODO: Use skip list for better performance
@@ -113,7 +119,7 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
                 continue;
             }
 
-            let vector = self.get(id as u32, context)?;
+            let vector = self.get_async(id as u32, &mut context).await?;
             let distance = quantizer.distance(
                 query,
                 vector,
@@ -121,7 +127,11 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
             );
             result.push(PointAndDistance::new(distance, id as u32));
         }
-        Ok(result)
+        stats.num_pages_accessed = context.num_pages_accessed();
+        Ok(IntermediateResult {
+            point_and_distances: result,
+            stats,
+        })
     }
 }
 

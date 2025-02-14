@@ -27,6 +27,7 @@ impl MultiSpannReader {
 
 #[cfg(test)]
 mod tests {
+
     use config::collection::CollectionConfig;
     use config::enums::QuantizerType;
     use quantization::noq::noq::NoQuantizer;
@@ -36,7 +37,6 @@ mod tests {
     use super::*;
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::writer::MultiSpannWriter;
-    use crate::utils::SearchContext;
 
     #[tokio::test]
     async fn test_multi_spann_reader() -> Result<()> {
@@ -59,30 +59,18 @@ mod tests {
             .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)?;
 
         let result = multi_spann_index
-            .search_with_id(
-                0,
-                &[1.0, 2.0, 3.0, 4.0],
-                3,
-                100,
-                &mut SearchContext::new(false),
-            )
+            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], 3, 100, false)
             .await
             .unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].id, 1);
+        assert_eq!(result.id_with_scores.len(), 1);
+        assert_eq!(result.id_with_scores[0].id, 1);
 
         let result = multi_spann_index
-            .search_with_id(
-                1,
-                &[1.0, 2.0, 3.0, 4.0],
-                3,
-                100,
-                &mut SearchContext::new(false),
-            )
+            .search_with_id(1, vec![1.0, 2.0, 3.0, 4.0], 3, 100, false)
             .await
             .unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].id, 3);
+        assert_eq!(result.id_with_scores.len(), 1);
+        assert_eq!(result.id_with_scores[0].id, 3);
 
         Ok(())
     }
@@ -113,30 +101,18 @@ mod tests {
             .read::<ProductQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)?;
 
         let result = multi_spann_index
-            .search_with_id(
-                0,
-                &[1.0, 2.0, 3.0, 4.0],
-                3,
-                100,
-                &mut SearchContext::new(false),
-            )
+            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], 3, 100, false)
             .await
             .unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].id, 1);
+        assert_eq!(result.id_with_scores.len(), 1);
+        assert_eq!(result.id_with_scores[0].id, 1);
 
         let result = multi_spann_index
-            .search_with_id(
-                1,
-                &[1.0, 2.0, 3.0, 4.0],
-                3,
-                100,
-                &mut SearchContext::new(false),
-            )
+            .search_with_id(1, vec![1.0, 2.0, 3.0, 4.0], 3, 100, false)
             .await
             .unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].id, 3);
+        assert_eq!(result.id_with_scores.len(), 1);
+        assert_eq!(result.id_with_scores[0].id, 3);
 
         Ok(())
     }

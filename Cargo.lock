@@ -1350,6 +1350,7 @@ dependencies = [
  "index",
  "index_writer",
  "log",
+ "parking_lot",
  "prost",
  "proto",
  "quantization",

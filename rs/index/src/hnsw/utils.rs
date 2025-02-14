@@ -4,7 +4,7 @@ use bit_vec::BitVec;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 
-use crate::utils::{PointAndDistance, TraversalContext};
+use crate::utils::PointAndDistance;
 use crate::vector::StorageContext;
 pub struct BuilderContext {
     visited: BitVec,
@@ -18,38 +18,46 @@ impl BuilderContext {
     }
 }
 
-impl TraversalContext for BuilderContext {
-    fn visited(&self, i: u32) -> bool {
-        self.visited.get(i as usize).unwrap_or(false)
-    }
-
-    fn set_visited(&mut self, i: u32) {
-        self.visited.set(i as usize, true);
-    }
-}
-
 impl StorageContext for BuilderContext {
     fn should_record_pages(&self) -> bool {
         false
     }
 
     fn record_pages(&mut self, _page_id: String) {}
+
+    fn num_pages_accessed(&self) -> usize {
+        0
+    }
+
+    fn reset_pages_accessed(&mut self) {}
+
+    fn set_visited(&mut self, id: u32) {
+        self.visited.set(id as usize, true);
+    }
+
+    fn visited(&self, id: u32) -> bool {
+        self.visited.get(id as usize).unwrap_or(false)
+    }
 }
 
 /// Move the traversal logic out, since it's used in both indexing and query path
 pub trait GraphTraversal<Q: Quantizer> {
-    type ContextT: TraversalContext;
+    type ContextT: StorageContext;
 
     /// Distance between the query and point_id
-    fn distance(&self, query: &[Q::QuantizedT], point_id: u32, context: &mut Self::ContextT)
-        -> f32;
+    fn distance(
+        &self,
+        query: &[Q::QuantizedT],
+        point_id: u32,
+        context: &mut impl StorageContext,
+    ) -> f32;
 
     /// Get the edges for a point
     fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>>;
 
     fn search_layer(
         &self,
-        context: &mut Self::ContextT,
+        context: &mut impl StorageContext,
         query: &[Q::QuantizedT],
         entry_point: u32,
         ef_construction: u32,

@@ -11,7 +11,7 @@ use pending_segment::PendingSegment;
 use quantization::quantization::Quantizer;
 
 use crate::spann::iter::SpannIter;
-use crate::utils::{IdWithScore, SearchContext};
+use crate::utils::SearchResult;
 
 /// A segment is a partial index: users can insert some documents, then flush
 /// the containing collection, to effectively create a segment.
@@ -79,38 +79,36 @@ impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
     }
 }
 
-impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
-    pub fn search_with_id<'a>(
-        &'a self,
+impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
+    pub fn search_with_id(
+        s: BoxedImmutableSegment<Q>,
         id: u128,
-        query: &'a [f32],
+        query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: &'a mut SearchContext,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Option<Vec<IdWithScore>>> + Send + Sync + 'a>,
-    >
+        record_pages: bool,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<SearchResult>> + Send>>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
     {
         Box::pin(async move {
-            match self {
+            match s {
                 BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                     immutable_segment
                         .read()
-                        .search_with_id(id, query, k, ef_construction, context)
+                        .search_with_id(id, query.clone(), k, ef_construction, record_pages)
                         .await
                 }
                 BoxedImmutableSegment::PendingSegment(pending_segment) => {
                     pending_segment
                         .read()
-                        .search_with_id(id, query, k, ef_construction, context)
+                        .search_with_id(id, query.clone(), k, ef_construction, record_pages)
                         .await
                 }
                 BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
                     mocked_segment
                         .read()
-                        .search_with_id(id, query, k, ef_construction, context)
+                        .search_with_id(id, query.clone(), k, ef_construction, record_pages)
                         .await
                 }
             }
@@ -199,22 +197,22 @@ impl MockedSegment {
 impl MockedSegment {
     pub fn search(
         &self,
-        query: &[f32],
+        query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: &mut crate::utils::SearchContext,
-    ) -> Option<Vec<crate::utils::IdWithScore>> {
+        record_pages: bool,
+    ) -> Option<SearchResult> {
         todo!()
     }
 
     pub async fn search_with_id(
         &self,
         id: u128,
-        query: &[f32],
+        query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: &mut crate::utils::SearchContext,
-    ) -> Option<Vec<crate::utils::IdWithScore>> {
+        record_pages: bool,
+    ) -> Option<SearchResult> {
         todo!()
     }
 }

@@ -9,7 +9,7 @@ use quantization::quantization::Quantizer;
 use super::{BoxedImmutableSegment, Segment};
 use crate::multi_spann::index::MultiSpannIndex;
 use crate::multi_spann::reader::MultiSpannReader;
-use crate::utils::{IdWithScore, SearchContext};
+use crate::utils::SearchResult;
 
 pub struct PendingSegment<Q: Quantizer + Clone + Send + Sync> {
     inner_segments: Vec<BoxedImmutableSegment<Q>>,
@@ -128,26 +128,34 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
     }
 }
 
-impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
+impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
     pub async fn search_with_id(
         &self,
         id: u128,
-        query: &[f32],
+        query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: &mut SearchContext,
-    ) -> Option<Vec<IdWithScore>>
+        record_pages: bool,
+    ) -> Option<SearchResult>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
     {
         if !self.use_internal_index {
-            let mut results = Vec::new();
+            let mut results = SearchResult::new();
             for segment in &self.inner_segments {
-                let segment_result = segment
-                    .search_with_id(id, query, k, ef_construction, context)
-                    .await;
+                let s = segment.clone();
+                let segment_result = BoxedImmutableSegment::search_with_id(
+                    s,
+                    id,
+                    query.clone(),
+                    k,
+                    ef_construction,
+                    record_pages,
+                )
+                .await;
                 if let Some(result) = segment_result {
-                    results.extend(result);
+                    results.id_with_scores.extend(result.id_with_scores);
+                    results.stats.merge(&result.stats);
                 }
             }
             Some(results)
@@ -156,7 +164,7 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
             match &*index {
                 Some(index) => {
                     index
-                        .search_with_id(id, query, k, ef_construction, context)
+                        .search_with_id(id, query.clone(), k, ef_construction, record_pages)
                         .await
                 }
                 None => None,
@@ -239,13 +247,12 @@ mod tests {
             CollectionConfig::default_test_config(),
         );
 
-        let mut context = SearchContext::new(false);
         let results = pending_segment
-            .search_with_id(0, &[1.0, 2.0, 3.0, 4.0], 1, 10, &mut context)
+            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], 1, 10, false)
             .await;
         let res = results.unwrap();
-        assert_eq!(res.len(), 1);
-        assert_eq!(res[0].id, 0);
+        assert_eq!(res.id_with_scores.len(), 1);
+        assert_eq!(res.id_with_scores[0].id, 0);
 
         Ok(())
     }
