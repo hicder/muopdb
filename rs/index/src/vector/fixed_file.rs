@@ -1,15 +1,13 @@
 use std::marker::PhantomData;
-use std::sync::Arc;
 
 use anyhow::Result;
 use dashmap::DashSet;
 use memmap2::Mmap;
 use num_traits::ToBytes;
-use parking_lot::Mutex;
 use quantization::quantization::Quantizer;
 use utils::mem::transmute_u8_to_slice;
 
-use crate::utils::PointAndDistance;
+use crate::utils::{IntermediateResult, PointAndDistance, SearchContext, SearchStats};
 use crate::vector::StorageContext;
 
 pub struct FixedFileVectorStorage<T> {
@@ -103,16 +101,17 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         }
     }
 
-    pub fn compute_distance_batch(
+    pub async fn compute_distance_batch_async(
         &self,
         query: &[T],
         iterator: impl Iterator<Item = u64>,
         quantizer: &impl Quantizer<QuantizedT = T>,
         invalidated_ids: &DashSet<u32>,
-        context: Arc<Mutex<impl StorageContext>>,
-    ) -> Result<Vec<PointAndDistance>> {
+        record_pages: bool,
+    ) -> Result<IntermediateResult> {
         let mut result = vec![];
-        let mut context = context.lock();
+        let mut context = SearchContext::new(record_pages);
+        let mut stats = SearchStats::new();
         for id in iterator {
             // Skip invalidated ids
             // TODO: Use skip list for better performance
@@ -120,7 +119,7 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
                 continue;
             }
 
-            let vector = self.get(id as u32, &mut *context)?;
+            let vector = self.get_async(id as u32, &mut context).await?;
             let distance = quantizer.distance(
                 query,
                 vector,
@@ -128,7 +127,11 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
             );
             result.push(PointAndDistance::new(distance, id as u32));
         }
-        Ok(result)
+        stats.num_pages_accessed = context.num_pages_accessed();
+        Ok(IntermediateResult {
+            point_and_distances: result,
+            stats,
+        })
     }
 }
 
@@ -160,14 +163,14 @@ mod tests {
             .write(&mut vectors_buffer_writer)
             .unwrap();
 
-        let context = Arc::new(Mutex::new(SearchContext::new(true)));
+        let mut context = SearchContext::new(true);
         let storage = FixedFileVectorStorage::<u32>::new(vectors_path, 4).unwrap();
-        assert_eq!(storage.get(0, &mut *context.lock()).unwrap(), &[0, 0, 0, 0]);
+        assert_eq!(storage.get(0, &mut context).unwrap(), &[0, 0, 0, 0]);
         assert_eq!(
-            storage.get(256, &mut *context.lock()).unwrap(),
+            storage.get(256, &mut context).unwrap(),
             &[256, 256, 256, 256]
         );
-        assert_eq!(context.lock().num_pages_accessed(), 2);
+        assert_eq!(context.num_pages_accessed(), 2);
     }
 
     #[test]
@@ -194,24 +197,18 @@ mod tests {
             .write(&mut vectors_buffer_writer)
             .unwrap();
 
-        let context = Arc::new(Mutex::new(SearchContext::new(false)));
+        let mut context = SearchContext::new(false);
         let storage = FixedFileVectorStorage::<f32>::new(vectors_path, 4).unwrap();
         assert_eq!(storage.num_vectors, 3);
+        assert_eq!(storage.get(0, &mut context).unwrap(), &[1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(storage.get(1, &mut context).unwrap(), &[5.0, 6.0, 7.0, 8.0]);
         assert_eq!(
-            storage.get(0, &mut *context.lock()).unwrap(),
-            &[1.0, 2.0, 3.0, 4.0]
-        );
-        assert_eq!(
-            storage.get(1, &mut *context.lock()).unwrap(),
-            &[5.0, 6.0, 7.0, 8.0]
-        );
-        assert_eq!(
-            storage.get(2, &mut *context.lock()).unwrap(),
+            storage.get(2, &mut context).unwrap(),
             &[9.0, 10.0, 11.0, 12.0]
         );
 
         // Test out of bounds access
-        assert!(storage.get(3, &mut *context.lock()).is_err());
+        assert!(storage.get(3, &mut context).is_err());
     }
 
     #[test]

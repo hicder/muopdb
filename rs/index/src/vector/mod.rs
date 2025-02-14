@@ -1,12 +1,9 @@
-use std::sync::Arc;
-
 use anyhow::Result;
 use dashmap::DashSet;
 use num_traits::ops::bytes::ToBytes;
-use parking_lot::Mutex;
 use quantization::quantization::Quantizer;
 
-use crate::utils::PointAndDistance;
+use crate::utils::IntermediateResult;
 
 pub mod file;
 pub mod fixed_file;
@@ -62,19 +59,25 @@ impl<T: ToBytes + Clone> VectorStorage<T> {
         }
     }
 
-    /// Compute the distance between a query and a batch of vectors.
-    /// Use this to avoid overhead of dynamic dispatching.
-    pub fn compute_distance_batch(
+    pub async fn compute_distance_batch_async(
         &self,
         query: &[T],
         iterator: impl Iterator<Item = u64>,
         quantizer: &impl Quantizer<QuantizedT = T>,
         invalidated_ids: &DashSet<u32>,
-        context: Arc<Mutex<impl StorageContext>>,
-    ) -> Result<Vec<PointAndDistance>> {
+        record_pages: bool,
+    ) -> Result<IntermediateResult> {
         match self {
             VectorStorage::FixedLocalFileBacked(storage) => {
-                storage.compute_distance_batch(query, iterator, quantizer, invalidated_ids, context)
+                storage
+                    .compute_distance_batch_async(
+                        query,
+                        iterator,
+                        quantizer,
+                        invalidated_ids,
+                        record_pages,
+                    )
+                    .await
             }
         }
     }

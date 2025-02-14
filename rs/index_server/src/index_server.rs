@@ -3,7 +3,6 @@ use std::vec;
 
 use config::collection::CollectionConfig;
 use index::collection::snapshot::SnapshotWithQuantizer;
-use index::utils::SearchContext;
 use log::info;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
@@ -164,8 +163,6 @@ impl IndexServer for IndexServerImpl {
             .get_collection(&collection_name)
             .await;
         if let Some(collection) = collection_opt {
-            let search_context =
-                Arc::new(parking_lot::Mutex::new(SearchContext::new(record_metrics)));
             if let Ok(snapshot) = collection.get_snapshot() {
                 let result = SnapshotWithQuantizer::search_for_ids(
                     snapshot,
@@ -173,7 +170,7 @@ impl IndexServer for IndexServerImpl {
                     vec,
                     k as usize,
                     ef_construction,
-                    search_context.clone(),
+                    record_metrics,
                 )
                 .await;
 
@@ -182,7 +179,7 @@ impl IndexServer for IndexServerImpl {
                         let mut low_ids = vec![];
                         let mut high_ids = vec![];
                         let mut scores = vec![];
-                        for id_with_score in result {
+                        for id_with_score in result.id_with_scores {
                             // TODO(hicder): Support u128
                             low_ids.push(id_with_score.id as u64);
                             high_ids.push((id_with_score.id >> 64) as u64);
@@ -198,7 +195,7 @@ impl IndexServer for IndexServerImpl {
                             low_ids,
                             high_ids,
                             scores,
-                            num_pages_accessed: search_context.lock().num_pages_accessed() as u64,
+                            num_pages_accessed: result.stats.num_pages_accessed as u64,
                         }));
                     }
                     None => {

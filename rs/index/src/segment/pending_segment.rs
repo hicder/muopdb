@@ -1,17 +1,15 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use anyhow::{Ok, Result};
 use config::collection::CollectionConfig;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
 
 use super::{BoxedImmutableSegment, Segment};
 use crate::multi_spann::index::MultiSpannIndex;
 use crate::multi_spann::reader::MultiSpannReader;
-use crate::utils::IdWithScore;
-use crate::vector::StorageContext;
+use crate::utils::SearchResult;
 
 pub struct PendingSegment<Q: Quantizer + Clone + Send + Sync> {
     inner_segments: Vec<BoxedImmutableSegment<Q>>,
@@ -137,13 +135,13 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<impl StorageContext + Send + Sync + 'static>>,
-    ) -> Option<Vec<IdWithScore>>
+        record_pages: bool,
+    ) -> Option<SearchResult>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
     {
         if !self.use_internal_index {
-            let mut results = Vec::new();
+            let mut results = SearchResult::new();
             for segment in &self.inner_segments {
                 let s = segment.clone();
                 let segment_result = BoxedImmutableSegment::search_with_id(
@@ -152,11 +150,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
                     query.clone(),
                     k,
                     ef_construction,
-                    context.clone(),
+                    record_pages,
                 )
                 .await;
                 if let Some(result) = segment_result {
-                    results.extend(result);
+                    results.id_with_scores.extend(result.id_with_scores);
+                    results.stats.merge(&result.stats);
                 }
             }
             Some(results)
@@ -165,7 +164,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
             match &*index {
                 Some(index) => {
                     index
-                        .search_with_id(id, query.clone(), k, ef_construction, context.clone())
+                        .search_with_id(id, query.clone(), k, ef_construction, record_pages)
                         .await
                 }
                 None => None,
@@ -188,7 +187,6 @@ mod tests {
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::writer::MultiSpannWriter;
     use crate::segment::immutable_segment::ImmutableSegment;
-    use crate::utils::SearchContext;
 
     fn build_segment(base_directory: String, starting_doc_id: u128) -> Result<()> {
         let mut starting_doc_id = starting_doc_id;
@@ -249,19 +247,12 @@ mod tests {
             CollectionConfig::default_test_config(),
         );
 
-        let context = SearchContext::new(false);
         let results = pending_segment
-            .search_with_id(
-                0,
-                vec![1.0, 2.0, 3.0, 4.0],
-                1,
-                10,
-                Arc::new(Mutex::new(context)),
-            )
+            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], 1, 10, false)
             .await;
         let res = results.unwrap();
-        assert_eq!(res.len(), 1);
-        assert_eq!(res[0].id, 0);
+        assert_eq!(res.id_with_scores.len(), 1);
+        assert_eq!(res.id_with_scores[0].id, 0);
 
         Ok(())
     }

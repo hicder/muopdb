@@ -6,13 +6,12 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use immutable_segment::ImmutableSegment;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use pending_segment::PendingSegment;
 use quantization::quantization::Quantizer;
 
 use crate::spann::iter::SpannIter;
-use crate::utils::IdWithScore;
-use crate::vector::StorageContext;
+use crate::utils::SearchResult;
 
 /// A segment is a partial index: users can insert some documents, then flush
 /// the containing collection, to effectively create a segment.
@@ -87,8 +86,8 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<impl StorageContext + Send + Sync + 'static>>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<Vec<IdWithScore>>> + Send + Sync>>
+        record_pages: bool,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<SearchResult>> + Send>>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
     {
@@ -97,19 +96,19 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
                 BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                     immutable_segment
                         .read()
-                        .search_with_id(id, query.clone(), k, ef_construction, context)
+                        .search_with_id(id, query.clone(), k, ef_construction, record_pages)
                         .await
                 }
                 BoxedImmutableSegment::PendingSegment(pending_segment) => {
                     pending_segment
                         .read()
-                        .search_with_id(id, query.clone(), k, ef_construction, context)
+                        .search_with_id(id, query.clone(), k, ef_construction, record_pages)
                         .await
                 }
                 BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
                     mocked_segment
                         .read()
-                        .search_with_id(id, query.clone(), k, ef_construction, context)
+                        .search_with_id(id, query.clone(), k, ef_construction, record_pages)
                         .await
                 }
             }
@@ -201,8 +200,8 @@ impl MockedSegment {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<impl StorageContext>>,
-    ) -> Option<Vec<crate::utils::IdWithScore>> {
+        record_pages: bool,
+    ) -> Option<SearchResult> {
         todo!()
     }
 
@@ -212,8 +211,8 @@ impl MockedSegment {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<impl StorageContext>>,
-    ) -> Option<Vec<crate::utils::IdWithScore>> {
+        record_pages: bool,
+    ) -> Option<SearchResult> {
         todo!()
     }
 }

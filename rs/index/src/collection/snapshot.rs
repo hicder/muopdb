@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use parking_lot::Mutex;
 use quantization::noq::noq::NoQuantizerL2;
 use quantization::pq::pq::ProductQuantizerL2;
 use quantization::quantization::Quantizer;
 
 use super::collection::Collection;
 use crate::segment::BoxedImmutableSegment;
-use crate::utils::{IdWithScore, SearchContext};
+use crate::utils::SearchResult;
 
 /// Snapshot provides a view of the collection at a given point in time
 pub struct Snapshot<Q: Quantizer + Clone + Send + Sync + 'static> {
@@ -39,26 +38,27 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<SearchContext>>,
-    ) -> Option<Vec<IdWithScore>>
+        record_pages: bool,
+    ) -> Option<SearchResult>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
     {
-        let mut results: Vec<IdWithScore> = vec![];
+        let mut results = SearchResult::new();
         for id in ids {
             match snapshot
-                .search_with_id(*id, query.clone(), k, ef_construction, context.clone())
+                .search_with_id(*id, query.clone(), k, ef_construction, record_pages)
                 .await
             {
                 Some(id_results) => {
-                    results.extend(id_results);
+                    results.id_with_scores.extend(id_results.id_with_scores);
+                    results.stats.merge(&id_results.stats);
                 }
                 None => {}
             }
         }
 
-        results.sort();
-        results.truncate(k);
+        results.id_with_scores.sort();
+        results.id_with_scores.truncate(k);
 
         Some(results)
     }
@@ -72,30 +72,30 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<SearchContext>>,
-    ) -> Option<Vec<IdWithScore>>
+        record_pages: bool,
+    ) -> Option<SearchResult>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
     {
         // Query each index, then take the top k results
         // TODO(hicder): Handle case where docs are deleted in later segments
 
-        let mut scored_results = Vec::new();
+        let mut scored_results = SearchResult::new();
         for segment in &self.segments {
             let s = segment.clone();
             let q = query.clone();
-            let context = context.clone();
             if let Some(results) =
-                BoxedImmutableSegment::search_with_id(s, id, q, k, ef_construction, context.clone())
+                BoxedImmutableSegment::search_with_id(s, id, q, k, ef_construction, record_pages)
                     .await
             {
-                scored_results.extend(results);
+                scored_results.id_with_scores.extend(results.id_with_scores);
+                scored_results.stats.merge(&results.stats);
             }
         }
 
         // Sort and take the top k results
-        scored_results.sort();
-        scored_results.truncate(k);
+        scored_results.id_with_scores.sort();
+        scored_results.id_with_scores.truncate(k);
 
         Some(scored_results)
     }
@@ -127,8 +127,8 @@ impl SnapshotWithQuantizer {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<SearchContext>>,
-    ) -> Option<Vec<IdWithScore>> {
+        record_pages: bool,
+    ) -> Option<SearchResult> {
         match snapshot {
             Self::SnapshotNoQuantizer(snapshot) => {
                 Snapshot::<NoQuantizerL2>::search_for_ids(
@@ -137,7 +137,7 @@ impl SnapshotWithQuantizer {
                     query.clone(),
                     k,
                     ef_construction,
-                    context,
+                    record_pages,
                 )
                 .await
             }
@@ -148,7 +148,7 @@ impl SnapshotWithQuantizer {
                     query.clone(),
                     k,
                     ef_construction,
-                    context,
+                    record_pages,
                 )
                 .await
             }

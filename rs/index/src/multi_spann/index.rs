@@ -5,7 +5,7 @@ use config::enums::IntSeqEncodingType;
 use dashmap::DashMap;
 use memmap2::Mmap;
 use odht::HashTableOwned;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
 
 use super::user_index_info::HashConfig;
@@ -13,8 +13,7 @@ use crate::ivf::files::invalidated_ids::InvalidatedIdsStorage;
 use crate::spann::index::Spann;
 use crate::spann::iter::SpannIter;
 use crate::spann::reader::SpannReader;
-use crate::utils::IdWithScore;
-use crate::vector::StorageContext;
+use crate::utils::SearchResult;
 
 pub struct MultiSpannIndex<Q: Quantizer> {
     base_directory: String,
@@ -120,10 +119,10 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<impl StorageContext>>,
-    ) -> Option<Vec<IdWithScore>> {
+        record_pages: bool,
+    ) -> Option<SearchResult> {
         match self.get_or_create_index(id) {
-            Ok(index) => index.search(query, k, ef_construction, context).await,
+            Ok(index) => index.search(query, k, ef_construction, record_pages).await,
             Err(_) => None,
         }
     }
@@ -131,18 +130,14 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use config::collection::CollectionConfig;
     use config::enums::IntSeqEncodingType;
-    use parking_lot::Mutex;
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
 
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::reader::MultiSpannReader;
     use crate::multi_spann::writer::MultiSpannWriter;
-    use crate::utils::SearchContext;
 
     #[tokio::test]
     async fn test_multi_spann_search() {
@@ -185,17 +180,16 @@ mod tests {
         let query = vec![1.4, 2.4, 3.4, 4.4];
         let k = 3;
         let num_probes = 2;
-        let context = Arc::new(Mutex::new(SearchContext::new(false)));
 
         let results = multi_spann_index
-            .search_with_id(0, query, k, num_probes, context.clone())
+            .search_with_id(0, query, k, num_probes, false)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
-        assert_eq!(results.len(), k);
-        assert_eq!(results[0].id, num_vectors);
-        assert_eq!(results[1].id, 3);
-        assert_eq!(results[2].id, 2);
+        assert_eq!(results.id_with_scores.len(), k);
+        assert_eq!(results.id_with_scores[0].id, num_vectors);
+        assert_eq!(results.id_with_scores[1].id, 3);
+        assert_eq!(results.id_with_scores[2].id, 2);
     }
 
     #[test]
@@ -281,20 +275,19 @@ mod tests {
         let query = vec![1.4, 2.4, 3.4, 4.4];
         let k = 3;
         let num_probes = 2;
-        let context = Arc::new(Mutex::new(SearchContext::new(false)));
 
         assert!(multi_spann_index
             .invalidate(0, num_vectors as u128)
             .expect("Failed to invalidate"));
 
         let results = multi_spann_index
-            .search_with_id(0, query, k, num_probes, context.clone())
+            .search_with_id(0, query, k, num_probes, false)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
-        assert_eq!(results.len(), k);
-        assert_eq!(results[0].id, 3);
-        assert_eq!(results[1].id, 2);
-        assert_eq!(results[2].id, 4);
+        assert_eq!(results.id_with_scores.len(), k);
+        assert_eq!(results.id_with_scores[0].id, 3);
+        assert_eq!(results.id_with_scores[1].id, 2);
+        assert_eq!(results.id_with_scores[2].id, 4);
     }
 }

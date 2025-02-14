@@ -1,13 +1,11 @@
 use std::cmp::min;
 use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
-use std::sync::Arc;
 use std::vec;
 
 use anyhow::{anyhow, Context, Result};
 use bit_vec::BitVec;
 use log::debug;
 use ordered_float::NotNan;
-use parking_lot::Mutex;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use rand::Rng;
@@ -299,7 +297,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
     pub fn insert(&mut self, doc_id: u128, vector: &[f32]) -> Result<()> {
         let quantized_query = Q::QuantizedT::process_vector(vector, &self.quantizer);
         let point_id = self.generate_id(doc_id);
-        let context = Arc::new(Mutex::new(BuilderContext::new(point_id + 1)));
+        let mut context = BuilderContext::new(point_id + 1);
 
         let empty_graph = point_id == 0;
         self.vectors.append(&quantized_query)?;
@@ -321,7 +319,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
         if layer < self.current_top_layer {
             for l in ((layer + 1)..=self.current_top_layer).rev() {
                 let nearest_elements =
-                    self.search_layer(context.clone(), &quantized_query, entry_point, 1, l);
+                    self.search_layer(&mut context, &quantized_query, entry_point, 1, l);
                 entry_point = nearest_elements[0].point_id as u32;
             }
         } else if layer > self.current_top_layer {
@@ -335,7 +333,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
 
         for l in (0..=min(layer, self.current_top_layer)).rev() {
             let nearest_elements = self.search_layer(
-                context.clone(),
+                &mut context,
                 &quantized_query,
                 entry_point,
                 self.ef_contruction,
@@ -503,9 +501,9 @@ impl<Q: Quantizer> GraphTraversal<Q> for HnswBuilder<Q> {
         &self,
         query: &[Q::QuantizedT],
         point_id: u32,
-        context: Arc<Mutex<impl StorageContext>>,
+        context: &mut impl StorageContext,
     ) -> f32 {
-        let point = self.vectors.get(point_id, context.clone()).unwrap();
+        let point = self.vectors.get(point_id, context).unwrap();
         Q::QuantizedT::distance(query, point, &self.quantizer)
     }
 

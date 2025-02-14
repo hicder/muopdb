@@ -772,7 +772,7 @@ mod tests {
 
     use anyhow::{Ok, Result};
     use config::collection::CollectionConfig;
-    use parking_lot::{Mutex, RwLock};
+    use parking_lot::RwLock;
     use quantization::noq::noq::NoQuantizerL2;
     use rand::Rng;
     use tempdir::TempDir;
@@ -782,7 +782,6 @@ mod tests {
     use crate::collection::snapshot::Snapshot;
     use crate::optimizers::noop::NoopOptimizer;
     use crate::segment::{BoxedImmutableSegment, MockedSegment, Segment};
-    use crate::utils::SearchContext;
 
     #[test]
     fn test_collection() -> Result<()> {
@@ -961,19 +960,12 @@ mod tests {
         let segment_name = snapshot.segments[0].name();
         assert_eq!(segment_name, pending_segment);
 
-        let context = SearchContext::new(false);
-        let result = Snapshot::search_for_ids(
-            snapshot,
-            &[0],
-            vec![1.0, 2.0, 3.0, 4.0],
-            10,
-            10,
-            Arc::new(Mutex::new(context)),
-        )
-        .await
-        .unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].id, 1);
+        let result =
+            Snapshot::search_for_ids(snapshot, &[0], vec![1.0, 2.0, 3.0, 4.0], 10, 10, false)
+                .await
+                .unwrap();
+        assert_eq!(result.id_with_scores.len(), 1);
+        assert_eq!(result.id_with_scores[0].id, 1);
 
         let optimizer = NoopOptimizer::new();
         collection.run_optimizer(&optimizer, &pending_segment)?;
@@ -1039,7 +1031,6 @@ mod tests {
             while !stopped_cpy_for_query.load(std::sync::atomic::Ordering::Relaxed) {
                 let c = collection_cpy_for_query.clone();
                 let snapshot = c.get_snapshot().unwrap();
-                let context = SearchContext::new(false);
                 let snapshot = Arc::new(snapshot);
                 let result = Snapshot::search_for_ids(
                     snapshot,
@@ -1047,12 +1038,13 @@ mod tests {
                     vec![1.0, 2.0, 3.0, 4.0],
                     10,
                     10,
-                    Arc::new(Mutex::new(context)),
+                    false,
                 )
                 .await
                 .unwrap();
-                assert_eq!(result.len(), 1);
-                assert_eq!(result[0].id, 1);
+
+                assert_eq!(result.id_with_scores.len(), 1);
+                assert_eq!(result.id_with_scores[0].id, 1);
 
                 // Sleep randomly between 100ms and 200ms
                 let sleep_duration = rand::thread_rng().gen_range(100..200);

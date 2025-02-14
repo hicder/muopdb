@@ -82,24 +82,6 @@ impl PointAndDistance {
     }
 }
 
-// impl Ord for PointAndDistance {
-//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-//         if self.distance == other.distance {
-//             return self.point_id.cmp(&other.point_id);
-//         }
-//         self.distance.cmp(&other.distance)
-//     }
-// }
-
-// impl PartialOrd for PointAndDistance {
-//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-//         if self.distance == other.distance {
-//             return self.point_id.partial_cmp(&other.point_id);
-//         }
-//         self.distance.partial_cmp(&other.distance)
-//     }
-// }
-
 #[derive(Debug)]
 pub struct IdWithScore {
     pub id: u128,
@@ -141,9 +123,45 @@ impl PartialEq for IdWithScore {
 
 impl Eq for IdWithScore {}
 
-#[cfg(test)]
+pub struct SearchStats {
+    pub num_pages_accessed: usize,
+}
+
+impl SearchStats {
+    pub fn new() -> Self {
+        Self {
+            num_pages_accessed: 0,
+        }
+    }
+
+    pub fn merge(&mut self, other: &Self) {
+        self.num_pages_accessed += other.num_pages_accessed;
+    }
+}
+
+pub struct SearchResult {
+    pub id_with_scores: Vec<IdWithScore>,
+    pub stats: SearchStats,
+}
+
+unsafe impl Send for SearchResult {}
+
+impl SearchResult {
+    pub fn new() -> Self {
+        Self {
+            id_with_scores: Vec::new(),
+            stats: SearchStats::new(),
+        }
+    }
+}
+pub struct IntermediateResult {
+    pub point_and_distances: Vec<PointAndDistance>,
+    pub stats: SearchStats,
+}
+
 mod tests {
-    use super::*;
+    #[cfg(test)]
+    use crate::utils::IdWithScore;
 
     #[test]
     fn test_id_with_score_ord() {

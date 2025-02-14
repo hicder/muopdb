@@ -1,13 +1,10 @@
-use std::sync::Arc;
-
 use anyhow::{anyhow, Result};
-use parking_lot::Mutex;
 use quantization::quantization::Quantizer;
 
 use super::Segment;
 use crate::multi_spann::index::MultiSpannIndex;
 use crate::spann::iter::SpannIter;
-use crate::vector::StorageContext;
+use crate::utils::SearchResult;
 
 /// This is an immutable segment. This usually contains a single index.
 pub struct ImmutableSegment<Q: Quantizer> {
@@ -63,10 +60,10 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: Arc<Mutex<impl StorageContext>>,
-    ) -> Option<Vec<crate::utils::IdWithScore>> {
+        record_pages: bool,
+    ) -> Option<SearchResult> {
         self.index
-            .search_with_id(id, query, k, ef_construction, context)
+            .search_with_id(id, query, k, ef_construction, record_pages)
             .await
     }
 }
@@ -76,11 +73,8 @@ unsafe impl<Q: Quantizer> Sync for ImmutableSegment<Q> {}
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use config::collection::CollectionConfig;
     use config::enums::IntSeqEncodingType;
-    use parking_lot::Mutex;
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
 
@@ -88,7 +82,6 @@ mod tests {
     use crate::multi_spann::reader::MultiSpannReader;
     use crate::multi_spann::writer::MultiSpannWriter;
     use crate::segment::{ImmutableSegment, Segment};
-    use crate::utils::SearchContext;
 
     #[tokio::test]
     async fn test_immutable_segment_search() {
@@ -135,23 +128,16 @@ mod tests {
         let query = vec![1.4, 2.4, 3.4, 4.4];
         let k = 3;
         let num_probes = 2;
-        let context = SearchContext::new(false);
 
         let results = immutable_segment
-            .search_with_id(
-                0,
-                query.clone(),
-                k,
-                num_probes,
-                Arc::new(Mutex::new(context)),
-            )
+            .search_with_id(0, query.clone(), k, num_probes, false)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
-        assert_eq!(results.len(), k);
-        assert_eq!(results[0].id, num_vectors);
-        assert_eq!(results[1].id, 3);
-        assert_eq!(results[2].id, 2);
+        assert_eq!(results.id_with_scores.len(), k);
+        assert_eq!(results.id_with_scores[0].id, num_vectors);
+        assert_eq!(results.id_with_scores[1].id, 3);
+        assert_eq!(results.id_with_scores[2].id, 2);
     }
 
     #[tokio::test]
@@ -204,27 +190,20 @@ mod tests {
         let query = vec![1.4, 2.4, 3.4, 4.4];
         let k = 3;
         let num_probes = 2;
-        let context = SearchContext::new(false);
 
         assert!(immutable_segment
             .remove(0, num_vectors as u128)
             .expect("Failed to invalidate"));
 
         let results = immutable_segment
-            .search_with_id(
-                0,
-                query.clone(),
-                k,
-                num_probes,
-                Arc::new(Mutex::new(context)),
-            )
+            .search_with_id(0, query.clone(), k, num_probes, false)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
-        assert_eq!(results.len(), k);
-        assert_eq!(results[0].id, 3);
-        assert_eq!(results[1].id, 2);
-        assert_eq!(results[2].id, 4);
+        assert_eq!(results.id_with_scores.len(), k);
+        assert_eq!(results.id_with_scores[0].id, 3);
+        assert_eq!(results.id_with_scores[1].id, 2);
+        assert_eq!(results.id_with_scores[2].id, 4);
 
         assert!(!immutable_segment
             .remove(1, num_vectors as u128)

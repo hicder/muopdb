@@ -1,9 +1,7 @@
 use std::collections::BinaryHeap;
-use std::sync::Arc;
 
 use bit_vec::BitVec;
 use ordered_float::NotNan;
-use parking_lot::Mutex;
 use quantization::quantization::Quantizer;
 
 use crate::utils::PointAndDistance;
@@ -51,7 +49,7 @@ pub trait GraphTraversal<Q: Quantizer> {
         &self,
         query: &[Q::QuantizedT],
         point_id: u32,
-        context: Arc<Mutex<impl StorageContext>>,
+        context: &mut impl StorageContext,
     ) -> f32;
 
     /// Get the edges for a point
@@ -59,14 +57,14 @@ pub trait GraphTraversal<Q: Quantizer> {
 
     fn search_layer(
         &self,
-        context: Arc<Mutex<impl StorageContext>>,
+        context: &mut impl StorageContext,
         query: &[Q::QuantizedT],
         entry_point: u32,
         ef_construction: u32,
         layer: u8,
     ) -> Vec<PointAndDistance> {
         // Mark the entry point as visited so that we don't visit it again
-        context.lock().set_visited(entry_point);
+        context.set_visited(entry_point);
 
         // candidate is min heap while working list is max heap
         // TODO(hicder): Probably use the comparator instead of this hack?
@@ -75,11 +73,11 @@ pub trait GraphTraversal<Q: Quantizer> {
 
         candidates.push(PointAndDistance {
             point_id: entry_point,
-            distance: NotNan::new(-self.distance(query, entry_point, context.clone())).unwrap(),
+            distance: NotNan::new(-self.distance(query, entry_point, context)).unwrap(),
         });
         working_list.push(PointAndDistance {
             point_id: entry_point,
-            distance: NotNan::new(self.distance(query, entry_point, context.clone())).unwrap(),
+            distance: NotNan::new(self.distance(query, entry_point, context)).unwrap(),
         });
 
         while !candidates.is_empty() {
@@ -99,12 +97,12 @@ pub trait GraphTraversal<Q: Quantizer> {
             }
 
             for e in edges.unwrap().iter() {
-                if context.lock().visited(*e) {
+                if context.visited(*e) {
                     continue;
                 }
-                context.lock().set_visited(*e);
+                context.set_visited(*e);
                 furthest_element_from_working_list = working_list.peek().unwrap();
-                let distance_e_q = self.distance(query, *e, context.clone());
+                let distance_e_q = self.distance(query, *e, context);
                 if distance_e_q < *furthest_element_from_working_list.distance
                     || working_list.len() < ef_construction as usize
                 {
