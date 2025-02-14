@@ -144,16 +144,15 @@ mod tests {
         assert!(fs::metadata(format!("{}/index", base_directory)).is_ok());
 
         // Verify vectors file content
-        let context = Arc::new(Mutex::new(SearchContext::new(true)));
         for i in 0..num_vectors {
             let ref_vector = builder
                 .vectors()
-                .get(i as u32, context.clone())
+                .get_no_context(i as u32)
                 .expect("Failed to read vector from FileBackedAppendableVectorStorage")
                 .to_vec();
             let read_vector = index
                 .vector_storage
-                .get(i as u32, context.clone())
+                .get_no_context(i as u32)
                 .expect("Failed to read vector from FixedFileVectorStorage");
             assert_eq!(ref_vector.len(), read_vector.len());
             for (val_ref, val_read) in ref_vector.iter().zip(read_vector.iter()) {
@@ -193,7 +192,7 @@ mod tests {
         for i in 0..num_clusters {
             let ref_vector = builder
                 .centroids()
-                .get(i as u32, context.clone())
+                .get_no_context(i as u32)
                 .expect("Failed to read centroid from FileBackedAppendableVectorStorage")
                 .to_vec();
             let read_vector = index
@@ -387,16 +386,15 @@ mod tests {
         assert!(fs::metadata(format!("{}/index", base_directory)).is_ok());
 
         // Verify vectors file content
-        let context = Arc::new(Mutex::new(SearchContext::new(true)));
         for i in 0..num_vectors {
             let ref_vector = builder
                 .vectors()
-                .get(i as u32, context.clone())
+                .get_no_context(i as u32)
                 .expect("Failed to read vector from FileBackedAppendableVectorStorage")
                 .to_vec();
             let read_vector = index
                 .vector_storage
-                .get(i as u32, context.clone())
+                .get_no_context(i as u32)
                 .expect("Failed to read vector from FixedFileVectorStorage");
             assert_eq!(ref_vector.len(), read_vector.len());
             for (val_ref, val_read) in ref_vector.iter().zip(read_vector.iter()) {
@@ -436,7 +434,7 @@ mod tests {
         for i in 0..num_clusters {
             let ref_vector = builder
                 .centroids()
-                .get(i as u32, context.clone())
+                .get_no_context(i as u32)
                 .expect("Failed to read centroid from FileBackedAppendableVectorStorage")
                 .to_vec();
             let read_vector = index

@@ -138,7 +138,13 @@ mod tests {
         let context = SearchContext::new(false);
 
         let results = immutable_segment
-            .search_with_id(0, query.clone(), k, num_probes, Arc::new(Mutex::new(context)))
+            .search_with_id(
+                0,
+                query.clone(),
+                k,
+                num_probes,
+                Arc::new(Mutex::new(context)),
+            )
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -205,7 +211,13 @@ mod tests {
             .expect("Failed to invalidate"));
 
         let results = immutable_segment
-            .search_with_id(0, query.clone(), k, num_probes, Arc::new(Mutex::new(context)))
+            .search_with_id(
+                0,
+                query.clone(),
+                k,
+                num_probes,
+                Arc::new(Mutex::new(context)),
+            )
             .await
             .expect("Failed to search with Multi-SPANN index");
 

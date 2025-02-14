@@ -88,9 +88,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
         k: usize,
         ef_construction: u32,
         context: Arc<Mutex<impl StorageContext + Send + Sync + 'static>>,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Option<Vec<IdWithScore>>> + Send + Sync>,
-    >
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<Vec<IdWithScore>>> + Send + Sync>>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
     {

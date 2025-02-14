@@ -146,8 +146,15 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
             let mut results = Vec::new();
             for segment in &self.inner_segments {
                 let s = segment.clone();
-                let segment_result = BoxedImmutableSegment::search_with_id(s, id, query.clone(), k, ef_construction, context.clone())
-                    .await;
+                let segment_result = BoxedImmutableSegment::search_with_id(
+                    s,
+                    id,
+                    query.clone(),
+                    k,
+                    ef_construction,
+                    context.clone(),
+                )
+                .await;
                 if let Some(result) = segment_result {
                     results.extend(result);
                 }
@@ -244,7 +251,13 @@ mod tests {
 
         let context = SearchContext::new(false);
         let results = pending_segment
-            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], 1, 10, Arc::new(Mutex::new(context)))
+            .search_with_id(
+                0,
+                vec![1.0, 2.0, 3.0, 4.0],
+                1,
+                10,
+                Arc::new(Mutex::new(context)),
+            )
             .await;
         let res = results.unwrap();
         assert_eq!(res.len(), 1);

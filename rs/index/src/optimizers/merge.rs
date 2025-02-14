@@ -113,7 +113,8 @@ mod tests {
         let snapshot = collection.get_snapshot()?;
         let snapshot = Arc::new(snapshot);
         let context = Arc::new(Mutex::new(SearchContext::new(false)));
-        let result = snapshot.search_with_id(0, vec![100.0, 101.0, 102.0], 3, 10, context.clone())
+        let result = snapshot
+            .search_with_id(0, vec![100.0, 101.0, 102.0], 3, 10, context.clone())
             .await
             .unwrap();
         assert_eq!(result.len(), 3);

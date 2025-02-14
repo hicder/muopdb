@@ -1,5 +1,6 @@
-use std::{fs::OpenOptions, sync::Arc};
+use std::fs::OpenOptions;
 use std::io::Write;
+use std::sync::Arc;
 use std::vec;
 
 use anyhow::{anyhow, Result};
@@ -233,7 +234,11 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
         }
     }
 
-    pub fn multi_get(&self, ids: &[u32], _context: Arc<Mutex<impl StorageContext>>) -> Result<Vec<&[T]>> {
+    pub fn multi_get(
+        &self,
+        ids: &[u32],
+        _context: Arc<Mutex<impl StorageContext>>,
+    ) -> Result<Vec<&[T]>> {
         let mut result = vec![];
         for id in ids {
             result.push(self.get(*id, _context.clone())?);

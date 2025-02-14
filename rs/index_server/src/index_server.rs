@@ -164,7 +164,8 @@ impl IndexServer for IndexServerImpl {
             .get_collection(&collection_name)
             .await;
         if let Some(collection) = collection_opt {
-            let search_context = Arc::new(parking_lot::Mutex::new(SearchContext::new(record_metrics)));
+            let search_context =
+                Arc::new(parking_lot::Mutex::new(SearchContext::new(record_metrics)));
             if let Ok(snapshot) = collection.get_snapshot() {
                 let result = SnapshotWithQuantizer::search_for_ids(
                     snapshot,

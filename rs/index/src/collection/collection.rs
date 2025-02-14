@@ -962,9 +962,16 @@ mod tests {
         assert_eq!(segment_name, pending_segment);
 
         let context = SearchContext::new(false);
-        let result = Snapshot::search_for_ids(snapshot, &[0], vec![1.0, 2.0, 3.0, 4.0], 10, 10, Arc::new(Mutex::new(context)))
-            .await
-            .unwrap();
+        let result = Snapshot::search_for_ids(
+            snapshot,
+            &[0],
+            vec![1.0, 2.0, 3.0, 4.0],
+            10,
+            10,
+            Arc::new(Mutex::new(context)),
+        )
+        .await
+        .unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 1);
 
@@ -1034,9 +1041,16 @@ mod tests {
                 let snapshot = c.get_snapshot().unwrap();
                 let context = SearchContext::new(false);
                 let snapshot = Arc::new(snapshot);
-                let result = Snapshot::search_for_ids(snapshot, &[0], vec![1.0, 2.0, 3.0, 4.0], 10, 10, Arc::new(Mutex::new(context)))
-                    .await
-                    .unwrap();
+                let result = Snapshot::search_for_ids(
+                    snapshot,
+                    &[0],
+                    vec![1.0, 2.0, 3.0, 4.0],
+                    10,
+                    10,
+                    Arc::new(Mutex::new(context)),
+                )
+                .await
+                .unwrap();
                 assert_eq!(result.len(), 1);
                 assert_eq!(result[0].id, 1);
 

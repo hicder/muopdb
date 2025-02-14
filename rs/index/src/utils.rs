@@ -51,18 +51,17 @@ impl StorageContext for SearchContext {
             None => {}
         }
     }
-    
+
     fn num_pages_accessed(&self) -> usize {
         0
     }
-    
-    fn reset_pages_accessed(&mut self) {
-    }
-    
+
+    fn reset_pages_accessed(&mut self) {}
+
     fn set_visited(&mut self, _id: u32) {
         self.visited.insert(_id);
     }
-    
+
     fn visited(&self, _id: u32) -> bool {
         self.visited.contains(_id)
     }

@@ -26,7 +26,7 @@ impl StorageContext for BuilderContext {
     }
 
     fn record_pages(&mut self, _page_id: String) {}
-    
+
     fn num_pages_accessed(&self) -> usize {
         0
     }
@@ -47,8 +47,12 @@ pub trait GraphTraversal<Q: Quantizer> {
     type ContextT: StorageContext;
 
     /// Distance between the query and point_id
-    fn distance(&self, query: &[Q::QuantizedT], point_id: u32, context: Arc<Mutex<impl StorageContext>>)
-        -> f32;
+    fn distance(
+        &self,
+        query: &[Q::QuantizedT],
+        point_id: u32,
+        context: Arc<Mutex<impl StorageContext>>,
+    ) -> f32;
 
     /// Get the edges for a point
     fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>>;

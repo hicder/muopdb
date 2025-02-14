@@ -65,7 +65,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
 }
 
 /// Search the collection using the given query
-impl<Q: Quantizer + Clone + Send + Sync+ 'static> Snapshot<Q> {
+impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
     pub async fn search_with_id(
         &self,
         id: u128,
@@ -85,9 +85,9 @@ impl<Q: Quantizer + Clone + Send + Sync+ 'static> Snapshot<Q> {
             let s = segment.clone();
             let q = query.clone();
             let context = context.clone();
-            if let Some(results) = 
-            BoxedImmutableSegment::search_with_id(s, id, q, k, ef_construction, context.clone())
-                .await
+            if let Some(results) =
+                BoxedImmutableSegment::search_with_id(s, id, q, k, ef_construction, context.clone())
+                    .await
             {
                 scored_results.extend(results);
             }
@@ -131,12 +131,26 @@ impl SnapshotWithQuantizer {
     ) -> Option<Vec<IdWithScore>> {
         match snapshot {
             Self::SnapshotNoQuantizer(snapshot) => {
-                Snapshot::<NoQuantizerL2>::search_for_ids(snapshot, ids, query.clone(), k, ef_construction, context)
-                    .await
+                Snapshot::<NoQuantizerL2>::search_for_ids(
+                    snapshot,
+                    ids,
+                    query.clone(),
+                    k,
+                    ef_construction,
+                    context,
+                )
+                .await
             }
             Self::SnapshotProductQuantizer(snapshot) => {
-                Snapshot::<ProductQuantizerL2>::search_for_ids(snapshot, ids, query.clone(), k, ef_construction, context)
-                    .await
+                Snapshot::<ProductQuantizerL2>::search_for_ids(
+                    snapshot,
+                    ids,
+                    query.clone(),
+                    k,
+                    ef_construction,
+                    context,
+                )
+                .await
             }
         }
     }

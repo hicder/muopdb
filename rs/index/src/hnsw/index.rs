@@ -87,7 +87,13 @@ impl<Q: Quantizer> Hnsw<Q> {
         let mut ep = self.get_entry_point_top_layer();
         let mut working_set;
         while current_layer > 0 {
-            working_set = self.search_layer(context.clone(), &quantized_query, ep, ef, current_layer as u8);
+            working_set = self.search_layer(
+                context.clone(),
+                &quantized_query,
+                ep,
+                ef,
+                current_layer as u8,
+            );
             ep = working_set
                 .iter()
                 .min_by(|x, y| x.distance.cmp(&y.distance))
@@ -120,8 +126,14 @@ impl<Q: Quantizer> Hnsw<Q> {
         self.data_offset
     }
 
-    fn get_vector(&self, point_id: u32, context: Arc<Mutex<impl StorageContext>>) -> &[Q::QuantizedT] {
-        self.vector_storage.get(point_id, context.clone()).unwrap()
+    fn get_vector(
+        &self,
+        point_id: u32,
+        context: Arc<Mutex<impl StorageContext>>,
+    ) -> &[Q::QuantizedT] {
+        self.vector_storage
+            .get(point_id, &mut *context.lock())
+            .unwrap()
     }
 
     pub fn get_edges_slice(&self) -> &[u32] {
@@ -271,7 +283,12 @@ impl<Q: Quantizer> Hnsw<Q> {
 impl<Q: Quantizer> GraphTraversal<Q> for Hnsw<Q> {
     type ContextT = SearchContext;
 
-    fn distance(&self, query: &[Q::QuantizedT], point_id: u32, context: Arc<Mutex<impl StorageContext>>) -> f32 {
+    fn distance(
+        &self,
+        query: &[Q::QuantizedT],
+        point_id: u32,
+        context: Arc<Mutex<impl StorageContext>>,
+    ) -> f32 {
         let point = self.get_vector(point_id, context.clone());
         self.quantizer.distance(query, point, StreamingSIMD)
     }

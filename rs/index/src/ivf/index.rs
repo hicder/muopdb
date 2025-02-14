@@ -176,7 +176,9 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
     ) -> Vec<PointAndDistance> {
         let mut heap = BinaryHeap::with_capacity(k);
         for &centroid in &nearest_centroid_ids {
-            let results = self.scan_posting_list(centroid, query, context.clone()).await;
+            let results = self
+                .scan_posting_list(centroid, query, context.clone())
+                .await;
             for id_with_score in results {
                 if heap.len() < k {
                     heap.push(id_with_score);

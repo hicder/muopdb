@@ -53,11 +53,11 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
 }
 
 impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
-    pub fn multi_get(&self, ids: &[u32], context: Arc<Mutex<impl StorageContext>>) -> Result<Vec<&[T]>> {
+    pub fn multi_get(&self, ids: &[u32], context: &mut impl StorageContext) -> Result<Vec<&[T]>> {
         let mut result = vec![];
         for id in ids {
             // TODO: Handle error
-            result.push(self.get(*id, context.clone()).unwrap());
+            result.push(self.get(*id, context).unwrap());
         }
         Ok(result)
     }
@@ -72,19 +72,23 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         ))
     }
 
-    pub fn get(&self, id: u32, context: Arc<Mutex<impl StorageContext>>) -> Result<&[T]> {
+    pub fn get(&self, id: u32, context: &mut impl StorageContext) -> Result<&[T]> {
         if id as usize >= self.num_vectors {
             return Err(anyhow::anyhow!("index out of bounds"));
         }
         let start = self.offset + 8 + (id as usize) * Self::vector_size_in_bytes(self.num_features);
 
-        if context.lock().should_record_pages() {
+        if context.should_record_pages() {
             let page_id = format!("{}::{}", self.file_path, self.get_page_id(start));
-            context.lock().record_pages(page_id);
+            context.record_pages(page_id);
         }
 
         let slice = &self.mmaps[start..start + Self::vector_size_in_bytes(self.num_features)];
         Ok(transmute_u8_to_slice::<T>(slice))
+    }
+
+    pub async fn get_async(&self, id: u32, context: &mut impl StorageContext) -> Result<&[T]> {
+        self.get(id, context)
     }
 
     pub fn num_vectors(&self) -> usize {
@@ -108,6 +112,7 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         context: Arc<Mutex<impl StorageContext>>,
     ) -> Result<Vec<PointAndDistance>> {
         let mut result = vec![];
+        let mut context = context.lock();
         for id in iterator {
             // Skip invalidated ids
             // TODO: Use skip list for better performance
@@ -115,7 +120,7 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
                 continue;
             }
 
-            let vector = self.get(id as u32, context.clone())?;
+            let vector = self.get(id as u32, &mut *context)?;
             let distance = quantizer.distance(
                 query,
                 vector,
@@ -157,9 +162,9 @@ mod tests {
 
         let context = Arc::new(Mutex::new(SearchContext::new(true)));
         let storage = FixedFileVectorStorage::<u32>::new(vectors_path, 4).unwrap();
-        assert_eq!(storage.get(0, context.clone()).unwrap(), &[0, 0, 0, 0]);
+        assert_eq!(storage.get(0, &mut *context.lock()).unwrap(), &[0, 0, 0, 0]);
         assert_eq!(
-            storage.get(256, context.clone()).unwrap(),
+            storage.get(256, &mut *context.lock()).unwrap(),
             &[256, 256, 256, 256]
         );
         assert_eq!(context.lock().num_pages_accessed(), 2);
@@ -192,15 +197,21 @@ mod tests {
         let context = Arc::new(Mutex::new(SearchContext::new(false)));
         let storage = FixedFileVectorStorage::<f32>::new(vectors_path, 4).unwrap();
         assert_eq!(storage.num_vectors, 3);
-        assert_eq!(storage.get(0, context.clone()).unwrap(), &[1.0, 2.0, 3.0, 4.0]);
-        assert_eq!(storage.get(1, context.clone()).unwrap(), &[5.0, 6.0, 7.0, 8.0]);
         assert_eq!(
-            storage.get(2, context.clone()).unwrap(),
+            storage.get(0, &mut *context.lock()).unwrap(),
+            &[1.0, 2.0, 3.0, 4.0]
+        );
+        assert_eq!(
+            storage.get(1, &mut *context.lock()).unwrap(),
+            &[5.0, 6.0, 7.0, 8.0]
+        );
+        assert_eq!(
+            storage.get(2, &mut *context.lock()).unwrap(),
             &[9.0, 10.0, 11.0, 12.0]
         );
 
         // Test out of bounds access
-        assert!(storage.get(3, context.clone()).is_err());
+        assert!(storage.get(3, &mut *context.lock()).is_err());
     }
 
     #[test]

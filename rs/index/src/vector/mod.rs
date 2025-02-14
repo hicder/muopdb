@@ -38,13 +38,13 @@ impl<T: ToBytes + Clone> VectorStorage<T> {
         }
     }
 
-    pub fn get(&self, id: u32, context: Arc<Mutex<impl StorageContext>>) -> Result<&[T]> {
+    pub fn get(&self, id: u32, context: &mut impl StorageContext) -> Result<&[T]> {
         match self {
             VectorStorage::FixedLocalFileBacked(storage) => storage.get(id, context),
         }
     }
 
-    pub fn multi_get(&self, ids: &[u32], context: Arc<Mutex<impl StorageContext>>) -> Result<Vec<&[T]>> {
+    pub fn multi_get(&self, ids: &[u32], context: &mut impl StorageContext) -> Result<Vec<&[T]>> {
         match self {
             VectorStorage::FixedLocalFileBacked(storage) => storage.multi_get(ids, context),
         }
