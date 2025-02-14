@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use immutable_segment::ImmutableSegment;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use pending_segment::PendingSegment;
 use quantization::quantization::Quantizer;
 
@@ -79,38 +79,38 @@ impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
     }
 }
 
-impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
-    pub fn search_with_id<'a>(
-        &'a self,
+impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
+    pub fn search_with_id(
+        s: BoxedImmutableSegment<Q>,
         id: u128,
-        query: &'a [f32],
+        query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: &'a mut SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Option<Vec<IdWithScore>>> + Send + Sync + 'a>,
+        Box<dyn std::future::Future<Output = Option<Vec<IdWithScore>>> + Send + Sync>,
     >
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
     {
         Box::pin(async move {
-            match self {
+            match s {
                 BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                     immutable_segment
                         .read()
-                        .search_with_id(id, query, k, ef_construction, context)
+                        .search_with_id(id, query.clone(), k, ef_construction, context)
                         .await
                 }
                 BoxedImmutableSegment::PendingSegment(pending_segment) => {
                     pending_segment
                         .read()
-                        .search_with_id(id, query, k, ef_construction, context)
+                        .search_with_id(id, query.clone(), k, ef_construction, context)
                         .await
                 }
                 BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
                     mocked_segment
                         .read()
-                        .search_with_id(id, query, k, ef_construction, context)
+                        .search_with_id(id, query.clone(), k, ef_construction, context)
                         .await
                 }
             }
@@ -199,10 +199,10 @@ impl MockedSegment {
 impl MockedSegment {
     pub fn search(
         &self,
-        query: &[f32],
+        query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: &mut crate::utils::SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Option<Vec<crate::utils::IdWithScore>> {
         todo!()
     }
@@ -210,10 +210,10 @@ impl MockedSegment {
     pub async fn search_with_id(
         &self,
         id: u128,
-        query: &[f32],
+        query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: &mut crate::utils::SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Option<Vec<crate::utils::IdWithScore>> {
         todo!()
     }

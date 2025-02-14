@@ -1,8 +1,10 @@
 use std::fs::File;
+use std::sync::Arc;
 
 use log::debug;
 use memmap2::Mmap;
 use num_traits::ToPrimitive;
+use parking_lot::Mutex;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use rand::Rng;
@@ -79,14 +81,14 @@ impl<Q: Quantizer> Hnsw<Q> {
         query: &[f32],
         k: usize,
         ef: u32,
-        context: &mut SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Vec<IdWithScore> {
         let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
         let mut current_layer: i32 = self.header.num_layers as i32 - 1;
         let mut ep = self.get_entry_point_top_layer();
         let mut working_set;
         while current_layer > 0 {
-            working_set = self.search_layer(context, &quantized_query, ep, ef, current_layer as u8);
+            working_set = self.search_layer(context.clone(), &quantized_query, ep, ef, current_layer as u8);
             ep = working_set
                 .iter()
                 .min_by(|x, y| x.distance.cmp(&y.distance))
@@ -95,7 +97,7 @@ impl<Q: Quantizer> Hnsw<Q> {
             current_layer -= 1;
         }
 
-        working_set = self.search_layer(context, &quantized_query, ep, ef, 0);
+        working_set = self.search_layer(context.clone(), &quantized_query, ep, ef, 0);
         working_set.sort_by(|x, y| x.distance.cmp(&y.distance));
         working_set.truncate(k);
         let point_ids: Vec<u32> = working_set.iter().map(|x| x.point_id).collect();
@@ -103,7 +105,7 @@ impl<Q: Quantizer> Hnsw<Q> {
 
         debug!(
             "[ANN] number of pages accessed: {:?}",
-            context.num_pages_accessed()
+            context.lock().num_pages_accessed()
         );
 
         working_set
@@ -124,8 +126,8 @@ impl<Q: Quantizer> Hnsw<Q> {
         self.data_offset
     }
 
-    fn get_vector(&self, point_id: u32, context: &mut SearchContext) -> &[Q::QuantizedT] {
-        self.vector_storage.get(point_id, context).unwrap()
+    fn get_vector(&self, point_id: u32, context: Arc<Mutex<SearchContext>>) -> &[Q::QuantizedT] {
+        self.vector_storage.get(point_id, context.clone()).unwrap()
     }
 
     pub fn get_edges_slice(&self) -> &[u32] {
@@ -275,8 +277,8 @@ impl<Q: Quantizer> Hnsw<Q> {
 impl<Q: Quantizer> GraphTraversal<Q> for Hnsw<Q> {
     type ContextT = SearchContext;
 
-    fn distance(&self, query: &[Q::QuantizedT], point_id: u32, context: &mut SearchContext) -> f32 {
-        let point = self.get_vector(point_id, context);
+    fn distance(&self, query: &[Q::QuantizedT], point_id: u32, context: Arc<Mutex<SearchContext>>) -> f32 {
+        let point = self.get_vector(point_id, context.clone());
         self.quantizer.distance(query, point, StreamingSIMD)
     }
 

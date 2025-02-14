@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use anyhow::{Ok, Result};
 use config::collection::CollectionConfig;
 use config::enums::{IntSeqEncodingType, QuantizerType};
 use log::debug;
+use parking_lot::Mutex;
 use quantization::noq::noq::NoQuantizer;
 use serde::{Deserialize, Serialize};
 use utils::distance::l2::L2DistanceCalculator;
@@ -185,12 +188,12 @@ impl SpannBuilder {
 
         let centroid_storage = self.ivf_builder.centroids();
         let num_centroids = centroid_storage.num_vectors();
-        let mut search_context = SearchContext::new(false);
+        let search_context = Arc::new(Mutex::new(SearchContext::new(false)));
 
         for i in 0..num_centroids {
             self.centroid_builder.insert(
                 i as u128,
-                &centroid_storage.get(i as u32, &mut search_context).unwrap(),
+                &centroid_storage.get(i as u32, search_context.clone()).unwrap(),
             )?;
         }
         debug!("Finish building centroids");

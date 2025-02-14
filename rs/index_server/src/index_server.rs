@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::vec;
 
 use config::collection::CollectionConfig;
+use index::collection::snapshot::SnapshotWithQuantizer;
 use index::utils::SearchContext;
 use log::info;
 use proto::muopdb::index_server_server::IndexServer;
@@ -163,17 +164,17 @@ impl IndexServer for IndexServerImpl {
             .get_collection(&collection_name)
             .await;
         if let Some(collection) = collection_opt {
-            let mut search_context = SearchContext::new(record_metrics);
+            let search_context = Arc::new(parking_lot::Mutex::new(SearchContext::new(record_metrics)));
             if let Ok(snapshot) = collection.get_snapshot() {
-                let result = snapshot
-                    .search_for_ids(
-                        &user_ids,
-                        &vec,
-                        k as usize,
-                        ef_construction,
-                        &mut search_context,
-                    )
-                    .await;
+                let result = SnapshotWithQuantizer::search_for_ids(
+                    snapshot,
+                    &user_ids,
+                    vec,
+                    k as usize,
+                    ef_construction,
+                    search_context.clone(),
+                )
+                .await;
 
                 match result {
                     Some(result) => {
@@ -196,7 +197,7 @@ impl IndexServer for IndexServerImpl {
                             low_ids,
                             high_ids,
                             scores,
-                            num_pages_accessed: search_context.num_pages_accessed() as u64,
+                            num_pages_accessed: search_context.lock().num_pages_accessed() as u64,
                         }));
                     }
                     None => {

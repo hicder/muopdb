@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
+use std::sync::Arc;
 
 use log::debug;
+use parking_lot::Mutex;
 use quantization::noq::noq::NoQuantizer;
 use quantization::quantization::Quantizer;
 use utils::distance::l2::L2DistanceCalculator;
@@ -51,12 +53,12 @@ impl<Q: Quantizer> Spann<Q> {
     pub fn get_vector(
         &self,
         point_id: u32,
-        context: &mut SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Option<&[Q::QuantizedT]> {
         match self
             .posting_lists
             .get_vector_storage()
-            .get(point_id, context)
+            .get(point_id, context.clone())
         {
             Ok(v) => Some(v),
             Err(_) => None,
@@ -71,15 +73,15 @@ impl<Q: Quantizer> Spann<Q> {
 impl<Q: Quantizer> Spann<Q> {
     pub async fn search(
         &self,
-        query: &[f32],
+        query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: &mut crate::utils::SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Option<Vec<crate::utils::IdWithScore>> {
         // TODO(hicder): Fully implement SPANN, which includes adjusting number of centroids
         let nearest_centroids = self
             .centroids
-            .ann_search(query, k, ef_construction, context)
+            .ann_search(&query, k, ef_construction, context.clone())
             .await;
         if nearest_centroids.is_empty() {
             return None;
@@ -107,7 +109,7 @@ impl<Q: Quantizer> Spann<Q> {
 
         let results = self
             .posting_lists
-            .search_with_centroids_and_remap(query, nearest_centroid_ids, k, context)
+            .search_with_centroids_and_remap(&query, nearest_centroid_ids, k, context.clone())
             .await;
         Some(results)
     }
@@ -115,7 +117,10 @@ impl<Q: Quantizer> Spann<Q> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use config::enums::{IntSeqEncodingType, QuantizerType};
+    use parking_lot::Mutex;
     use quantization::noq::noq::NoQuantizer;
     use quantization::pq::pq::ProductQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
@@ -186,10 +191,10 @@ mod tests {
         let query = vec![2.4, 3.4, 4.4, 5.4];
         let k = 2;
         let num_probes = 2;
-        let mut context = SearchContext::new(false);
+        let context = Arc::new(Mutex::new(SearchContext::new(false)));
 
         let results = spann
-            .search(&query, k, num_probes, &mut context)
+            .search(query, k, num_probes, context.clone())
             .await
             .expect("IVF search should return a result");
 
@@ -259,11 +264,11 @@ mod tests {
         let query = vec![2.4, 3.4, 4.4, 5.4];
         let k = 2;
         let num_probes = 2;
-        let mut context = SearchContext::new(false);
+        let context = Arc::new(Mutex::new(SearchContext::new(false)));
 
         assert!(spann.invalidate(4));
         let results = spann
-            .search(&query, k, num_probes, &mut context)
+            .search(query, k, num_probes, context.clone())
             .await
             .expect("IVF search should return a result");
 
@@ -333,10 +338,10 @@ mod tests {
         let query = vec![2.4, 3.4, 4.4, 5.4];
         let k = 5;
         let num_probes = 2;
-        let mut context = SearchContext::new(false);
+        let context = Arc::new(Mutex::new(SearchContext::new(false)));
 
         let results = spann
-            .search(&query, k, num_probes, &mut context)
+            .search(query, k, num_probes, context.clone())
             .await
             .expect("IVF search should return a result");
 

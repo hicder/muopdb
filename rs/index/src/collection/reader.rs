@@ -22,7 +22,7 @@ impl CollectionReader {
         Self { path }
     }
 
-    pub fn read<Q: Quantizer + Clone + Send + Sync>(&self) -> Result<Arc<Collection<Q>>> {
+    pub fn read<Q: Quantizer + Clone + Send + Sync + 'static>(&self) -> Result<Arc<Collection<Q>>> {
         // Read the SpannBuilderConfig
         let spann_builder_config_path = format!("{}/collection_config.json", self.path);
         let collection_config: CollectionConfig =

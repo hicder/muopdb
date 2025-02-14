@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use parking_lot::Mutex;
 use quantization::noq::noq::NoQuantizerL2;
 use quantization::pq::pq::ProductQuantizerL2;
 use quantization::quantization::Quantizer;
@@ -9,13 +10,13 @@ use crate::segment::BoxedImmutableSegment;
 use crate::utils::{IdWithScore, SearchContext};
 
 /// Snapshot provides a view of the collection at a given point in time
-pub struct Snapshot<Q: Quantizer + Clone + Send + Sync> {
+pub struct Snapshot<Q: Quantizer + Clone + Send + Sync + 'static> {
     pub segments: Vec<BoxedImmutableSegment<Q>>,
     pub version: u64,
     pub collection: Arc<Collection<Q>>,
 }
 
-impl<Q: Quantizer + Clone + Send + Sync> Snapshot<Q> {
+impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
     pub fn new(
         segments: Vec<BoxedImmutableSegment<Q>>,
         version: u64,
@@ -33,20 +34,20 @@ impl<Q: Quantizer + Clone + Send + Sync> Snapshot<Q> {
     }
 
     pub async fn search_for_ids(
-        &self,
+        snapshot: Arc<Snapshot<Q>>,
         ids: &[u128],
-        query: &[f32],
+        query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: &mut SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Option<Vec<IdWithScore>>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
     {
         let mut results: Vec<IdWithScore> = vec![];
         for id in ids {
-            match self
-                .search_with_id(*id, query, k, ef_construction, context)
+            match snapshot
+                .search_with_id(*id, query.clone(), k, ef_construction, context.clone())
                 .await
             {
                 Some(id_results) => {
@@ -64,14 +65,14 @@ impl<Q: Quantizer + Clone + Send + Sync> Snapshot<Q> {
 }
 
 /// Search the collection using the given query
-impl<Q: Quantizer + Clone + Send + Sync> Snapshot<Q> {
+impl<Q: Quantizer + Clone + Send + Sync+ 'static> Snapshot<Q> {
     pub async fn search_with_id(
         &self,
         id: u128,
-        query: &[f32],
+        query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: &mut SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Option<Vec<IdWithScore>>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
@@ -81,8 +82,11 @@ impl<Q: Quantizer + Clone + Send + Sync> Snapshot<Q> {
 
         let mut scored_results = Vec::new();
         for segment in &self.segments {
-            if let Some(results) = segment
-                .search_with_id(id, query, k, ef_construction, context)
+            let s = segment.clone();
+            let q = query.clone();
+            let context = context.clone();
+            if let Some(results) = 
+            BoxedImmutableSegment::search_with_id(s, id, q, k, ef_construction, context.clone())
                 .await
             {
                 scored_results.extend(results);
@@ -97,43 +101,41 @@ impl<Q: Quantizer + Clone + Send + Sync> Snapshot<Q> {
     }
 }
 
-impl<Q: Quantizer + Clone + Send + Sync> Drop for Snapshot<Q> {
+impl<Q: Quantizer + Clone + Send + Sync + 'static> Drop for Snapshot<Q> {
     fn drop(&mut self) {
         self.collection.release_version(self.version);
     }
 }
 
 pub enum SnapshotWithQuantizer {
-    SnapshotNoQuantizer(Snapshot<NoQuantizerL2>),
-    SnapshotProductQuantizer(Snapshot<ProductQuantizerL2>),
+    SnapshotNoQuantizer(Arc<Snapshot<NoQuantizerL2>>),
+    SnapshotProductQuantizer(Arc<Snapshot<ProductQuantizerL2>>),
 }
 
 impl SnapshotWithQuantizer {
     pub fn new_with_no_quantizer(snapshot: Snapshot<NoQuantizerL2>) -> Self {
-        Self::SnapshotNoQuantizer(snapshot)
+        Self::SnapshotNoQuantizer(Arc::new(snapshot))
     }
 
     pub fn new_with_product_quantizer(snapshot: Snapshot<ProductQuantizerL2>) -> Self {
-        Self::SnapshotProductQuantizer(snapshot)
+        Self::SnapshotProductQuantizer(Arc::new(snapshot))
     }
 
     pub async fn search_for_ids(
-        &self,
+        snapshot: SnapshotWithQuantizer,
         ids: &[u128],
-        query: &[f32],
+        query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: &mut SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Option<Vec<IdWithScore>> {
-        match self {
+        match snapshot {
             Self::SnapshotNoQuantizer(snapshot) => {
-                snapshot
-                    .search_for_ids(ids, query, k, ef_construction, context)
+                Snapshot::<NoQuantizerL2>::search_for_ids(snapshot, ids, query.clone(), k, ef_construction, context)
                     .await
             }
             Self::SnapshotProductQuantizer(snapshot) => {
-                snapshot
-                    .search_for_ids(ids, query, k, ef_construction, context)
+                Snapshot::<ProductQuantizerL2>::search_for_ids(snapshot, ids, query.clone(), k, ef_construction, context)
                     .await
             }
         }

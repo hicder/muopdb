@@ -27,8 +27,11 @@ impl MultiSpannReader {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use config::collection::CollectionConfig;
     use config::enums::QuantizerType;
+    use parking_lot::Mutex;
     use quantization::noq::noq::NoQuantizer;
     use quantization::pq::pq::ProductQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
@@ -61,10 +64,10 @@ mod tests {
         let result = multi_spann_index
             .search_with_id(
                 0,
-                &[1.0, 2.0, 3.0, 4.0],
+                vec![1.0, 2.0, 3.0, 4.0],
                 3,
                 100,
-                &mut SearchContext::new(false),
+                Arc::new(Mutex::new(SearchContext::new(false))),
             )
             .await
             .unwrap();
@@ -74,10 +77,10 @@ mod tests {
         let result = multi_spann_index
             .search_with_id(
                 1,
-                &[1.0, 2.0, 3.0, 4.0],
+                vec![1.0, 2.0, 3.0, 4.0],
                 3,
                 100,
-                &mut SearchContext::new(false),
+                Arc::new(Mutex::new(SearchContext::new(false))),
             )
             .await
             .unwrap();
@@ -115,10 +118,10 @@ mod tests {
         let result = multi_spann_index
             .search_with_id(
                 0,
-                &[1.0, 2.0, 3.0, 4.0],
+                vec![1.0, 2.0, 3.0, 4.0],
                 3,
                 100,
-                &mut SearchContext::new(false),
+                Arc::new(Mutex::new(SearchContext::new(false))),
             )
             .await
             .unwrap();
@@ -128,10 +131,10 @@ mod tests {
         let result = multi_spann_index
             .search_with_id(
                 1,
-                &[1.0, 2.0, 3.0, 4.0],
+                vec![1.0, 2.0, 3.0, 4.0],
                 3,
                 100,
-                &mut SearchContext::new(false),
+                Arc::new(Mutex::new(SearchContext::new(false))),
             )
             .await
             .unwrap();

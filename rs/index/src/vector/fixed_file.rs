@@ -1,9 +1,11 @@
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use anyhow::Result;
 use dashmap::DashSet;
 use memmap2::Mmap;
 use num_traits::ToBytes;
+use parking_lot::Mutex;
 use quantization::quantization::Quantizer;
 use utils::mem::transmute_u8_to_slice;
 
@@ -51,11 +53,11 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
 }
 
 impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
-    pub fn multi_get(&self, ids: &[u32], context: &mut impl StorageContext) -> Result<Vec<&[T]>> {
+    pub fn multi_get(&self, ids: &[u32], context: Arc<Mutex<impl StorageContext>>) -> Result<Vec<&[T]>> {
         let mut result = vec![];
         for id in ids {
             // TODO: Handle error
-            result.push(self.get(*id, context).unwrap());
+            result.push(self.get(*id, context.clone()).unwrap());
         }
         Ok(result)
     }
@@ -70,15 +72,15 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         ))
     }
 
-    pub fn get(&self, id: u32, context: &mut impl StorageContext) -> Result<&[T]> {
+    pub fn get(&self, id: u32, context: Arc<Mutex<impl StorageContext>>) -> Result<&[T]> {
         if id as usize >= self.num_vectors {
             return Err(anyhow::anyhow!("index out of bounds"));
         }
         let start = self.offset + 8 + (id as usize) * Self::vector_size_in_bytes(self.num_features);
 
-        if context.should_record_pages() {
+        if context.lock().should_record_pages() {
             let page_id = format!("{}::{}", self.file_path, self.get_page_id(start));
-            context.record_pages(page_id);
+            context.lock().record_pages(page_id);
         }
 
         let slice = &self.mmaps[start..start + Self::vector_size_in_bytes(self.num_features)];
@@ -103,7 +105,7 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         iterator: impl Iterator<Item = u64>,
         quantizer: &impl Quantizer<QuantizedT = T>,
         invalidated_ids: &DashSet<u32>,
-        context: &mut impl StorageContext,
+        context: Arc<Mutex<impl StorageContext>>,
     ) -> Result<Vec<PointAndDistance>> {
         let mut result = vec![];
         for id in iterator {
@@ -113,7 +115,7 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
                 continue;
             }
 
-            let vector = self.get(id as u32, context)?;
+            let vector = self.get(id as u32, context.clone())?;
             let distance = quantizer.distance(
                 query,
                 vector,
@@ -153,14 +155,14 @@ mod tests {
             .write(&mut vectors_buffer_writer)
             .unwrap();
 
-        let mut context = SearchContext::new(true);
+        let context = Arc::new(Mutex::new(SearchContext::new(true)));
         let storage = FixedFileVectorStorage::<u32>::new(vectors_path, 4).unwrap();
-        assert_eq!(storage.get(0, &mut context).unwrap(), &[0, 0, 0, 0]);
+        assert_eq!(storage.get(0, context.clone()).unwrap(), &[0, 0, 0, 0]);
         assert_eq!(
-            storage.get(256, &mut context).unwrap(),
+            storage.get(256, context.clone()).unwrap(),
             &[256, 256, 256, 256]
         );
-        assert_eq!(context.num_pages_accessed(), 2);
+        assert_eq!(context.lock().num_pages_accessed(), 2);
     }
 
     #[test]
@@ -187,18 +189,18 @@ mod tests {
             .write(&mut vectors_buffer_writer)
             .unwrap();
 
-        let mut context = SearchContext::new(false);
+        let context = Arc::new(Mutex::new(SearchContext::new(false)));
         let storage = FixedFileVectorStorage::<f32>::new(vectors_path, 4).unwrap();
         assert_eq!(storage.num_vectors, 3);
-        assert_eq!(storage.get(0, &mut context).unwrap(), &[1.0, 2.0, 3.0, 4.0]);
-        assert_eq!(storage.get(1, &mut context).unwrap(), &[5.0, 6.0, 7.0, 8.0]);
+        assert_eq!(storage.get(0, context.clone()).unwrap(), &[1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(storage.get(1, context.clone()).unwrap(), &[5.0, 6.0, 7.0, 8.0]);
         assert_eq!(
-            storage.get(2, &mut context).unwrap(),
+            storage.get(2, context.clone()).unwrap(),
             &[9.0, 10.0, 11.0, 12.0]
         );
 
         // Test out of bounds access
-        assert!(storage.get(3, &mut context).is_err());
+        assert!(storage.get(3, context.clone()).is_err());
     }
 
     #[test]

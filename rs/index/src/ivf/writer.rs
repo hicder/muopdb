@@ -2,11 +2,13 @@ use std::cmp::min;
 use std::fs::{create_dir_all, remove_dir_all, remove_file, File};
 use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use compression::compression::IntSeqEncoder;
 use log::debug;
 use num_traits::ToBytes;
+use parking_lot::Mutex;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use utils::io::{append_file_to_writer, wrap_write, write_pad};
@@ -140,10 +142,10 @@ where
 
         let mut bytes_written = 0;
         bytes_written += wrap_write(&mut writer, &full_vectors.num_vectors().to_le_bytes())?;
-        let mut search_context = SearchContext::new(false);
+        let search_context = Arc::new(Mutex::new(SearchContext::new(false)));
         for i in 0..full_vectors.num_vectors() {
             let quantized_vector = Q::QuantizedT::process_vector(
-                full_vectors.get(i as u32, &mut search_context)?,
+                full_vectors.get(i as u32, search_context.clone())?,
                 &self.quantizer,
             );
             for j in 0..quantized_vector.len() {

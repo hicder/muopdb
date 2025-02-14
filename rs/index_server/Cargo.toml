@@ -10,6 +10,7 @@ env_logger.workspace = true
 futures.workspace = true
 index.workspace = true
 log.workspace = true
+parking_lot.workspace = true
 prost.workspace = true
 proto.workspace = true
 rand.workspace = true

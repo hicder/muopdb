@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::{Ok, Result};
 use config::collection::CollectionConfig;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use quantization::quantization::Quantizer;
 
 use super::{BoxedImmutableSegment, Segment};
@@ -128,14 +129,14 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
     }
 }
 
-impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
+impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
     pub async fn search_with_id(
         &self,
         id: u128,
-        query: &[f32],
+        query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: &mut SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Option<Vec<IdWithScore>>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
@@ -143,8 +144,8 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
         if !self.use_internal_index {
             let mut results = Vec::new();
             for segment in &self.inner_segments {
-                let segment_result = segment
-                    .search_with_id(id, query, k, ef_construction, context)
+                let s = segment.clone();
+                let segment_result = BoxedImmutableSegment::search_with_id(s, id, query.clone(), k, ef_construction, context.clone())
                     .await;
                 if let Some(result) = segment_result {
                     results.extend(result);
@@ -156,7 +157,7 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
             match &*index {
                 Some(index) => {
                     index
-                        .search_with_id(id, query, k, ef_construction, context)
+                        .search_with_id(id, query.clone(), k, ef_construction, context.clone())
                         .await
                 }
                 None => None,
@@ -239,9 +240,9 @@ mod tests {
             CollectionConfig::default_test_config(),
         );
 
-        let mut context = SearchContext::new(false);
+        let context = SearchContext::new(false);
         let results = pending_segment
-            .search_with_id(0, &[1.0, 2.0, 3.0, 4.0], 1, 10, &mut context)
+            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], 1, 10, Arc::new(Mutex::new(context)))
             .await;
         let res = results.unwrap();
         assert_eq!(res.len(), 1);

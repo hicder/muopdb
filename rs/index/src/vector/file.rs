@@ -1,9 +1,10 @@
-use std::fs::OpenOptions;
+use std::{fs::OpenOptions, sync::Arc};
 use std::io::Write;
 use std::vec;
 
 use anyhow::{anyhow, Result};
 use num_traits::ToBytes;
+use parking_lot::Mutex;
 use utils::io::wrap_write;
 
 use super::{StorageContext, VectorStorageConfig};
@@ -167,7 +168,7 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
         Ok(unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const T, self.num_features) })
     }
 
-    pub fn get(&self, id: u32, _context: &mut impl StorageContext) -> Result<&[T]> {
+    pub fn get(&self, id: u32, _context: Arc<Mutex<impl StorageContext>>) -> Result<&[T]> {
         self.get_no_context(id)
     }
 
@@ -232,10 +233,10 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
         }
     }
 
-    pub fn multi_get(&self, ids: &[u32], _context: &mut impl StorageContext) -> Result<Vec<&[T]>> {
+    pub fn multi_get(&self, ids: &[u32], _context: Arc<Mutex<impl StorageContext>>) -> Result<Vec<&[T]>> {
         let mut result = vec![];
         for id in ids {
-            result.push(self.get(*id, _context)?);
+            result.push(self.get(*id, _context.clone())?);
         }
         Ok(result)
     }

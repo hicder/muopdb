@@ -5,7 +5,7 @@ use config::enums::IntSeqEncodingType;
 use dashmap::DashMap;
 use memmap2::Mmap;
 use odht::HashTableOwned;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use quantization::quantization::Quantizer;
 
 use super::user_index_info::HashConfig;
@@ -116,10 +116,10 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
     pub async fn search_with_id(
         &self,
         id: u128,
-        query: &[f32],
+        query: Vec<f32>,
         k: usize,
         ef_construction: u32,
-        context: &mut SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Option<Vec<IdWithScore>> {
         match self.get_or_create_index(id) {
             Ok(index) => index.search(query, k, ef_construction, context).await,
@@ -130,8 +130,11 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use config::collection::CollectionConfig;
     use config::enums::IntSeqEncodingType;
+    use parking_lot::Mutex;
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
 
@@ -181,10 +184,10 @@ mod tests {
         let query = vec![1.4, 2.4, 3.4, 4.4];
         let k = 3;
         let num_probes = 2;
-        let mut context = SearchContext::new(false);
+        let context = Arc::new(Mutex::new(SearchContext::new(false)));
 
         let results = multi_spann_index
-            .search_with_id(0, &query, k, num_probes, &mut context)
+            .search_with_id(0, query, k, num_probes, context.clone())
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -277,14 +280,14 @@ mod tests {
         let query = vec![1.4, 2.4, 3.4, 4.4];
         let k = 3;
         let num_probes = 2;
-        let mut context = SearchContext::new(false);
+        let context = Arc::new(Mutex::new(SearchContext::new(false)));
 
         assert!(multi_spann_index
             .invalidate(0, num_vectors as u128)
             .expect("Failed to invalidate"));
 
         let results = multi_spann_index
-            .search_with_id(0, &query, k, num_probes, &mut context)
+            .search_with_id(0, query, k, num_probes, context.clone())
             .await
             .expect("Failed to search with Multi-SPANN index");
 

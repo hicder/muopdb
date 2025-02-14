@@ -1,11 +1,13 @@
 use std::collections::BinaryHeap;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use compression::compression::IntSeqDecoder;
 use compression::elias_fano::ef::EliasFanoDecoder;
 use compression::noc::noc::PlainDecoder;
 use dashmap::DashSet;
+use parking_lot::Mutex;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use utils::distance::l2::L2DistanceCalculator;
@@ -49,7 +51,7 @@ impl<Q: Quantizer> IvfType<Q> {
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
         k: usize,
-        context: &mut SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Vec<IdWithScore> {
         match self {
             IvfType::L2Plain(ivf) => {
@@ -141,7 +143,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         &self,
         centroid: usize,
         query: &[f32],
-        context: &mut SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Vec<PointAndDistance> {
         if let Ok(byte_slice) = self.posting_list_storage.get_posting_list(centroid) {
             let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
@@ -170,11 +172,11 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
         k: usize,
-        context: &mut SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Vec<PointAndDistance> {
         let mut heap = BinaryHeap::with_capacity(k);
         for &centroid in &nearest_centroid_ids {
-            let results = self.scan_posting_list(centroid, query, context).await;
+            let results = self.scan_posting_list(centroid, query, context.clone()).await;
             for id_with_score in results {
                 if heap.len() < k {
                     heap.push(id_with_score);
@@ -222,7 +224,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         query: &[f32],
         nearest_centroid_ids: Vec<usize>,
         k: usize,
-        context: &mut SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Vec<IdWithScore> {
         let point_ids = self
             .search_with_centroids(query, nearest_centroid_ids, k, context)
@@ -248,7 +250,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         query: &[f32],
         k: usize,
         ef_construction: u32, // Number of probed centroids
-        context: &mut SearchContext,
+        context: Arc<Mutex<SearchContext>>,
     ) -> Option<Vec<IdWithScore>> {
         // Find the nearest centroids to the query.
         if let Ok(nearest_centroids) = Self::find_nearest_centroids(
@@ -557,10 +559,10 @@ mod tests {
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
-        let mut context = SearchContext::new(false);
+        let context = Arc::new(Mutex::new(SearchContext::new(false)));
 
         let results = ivf
-            .search(&query, k, num_probes, &mut context)
+            .search(&query, k, num_probes, context.clone())
             .await
             .expect("IVF search should return a result");
 
@@ -638,10 +640,10 @@ mod tests {
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 2;
-        let mut context = SearchContext::new(false);
+        let context = Arc::new(Mutex::new(SearchContext::new(false)));
 
         let results = ivf
-            .search(&query, k, num_probes, &mut context)
+            .search(&query, k, num_probes, context.clone())
             .await
             .expect("IVF search should return a result");
 
@@ -697,10 +699,10 @@ mod tests {
 
         let query = vec![1.0, 2.0, 3.0];
         let k = 5; // More than available results
-        let mut context = SearchContext::new(false);
+        let context = Arc::new(Mutex::new(SearchContext::new(false)));
 
         let results = ivf
-            .search(&query, k, num_probes, &mut context)
+            .search(&query, k, num_probes, context.clone())
             .await
             .expect("IVF search should return a result");
 
@@ -761,12 +763,12 @@ mod tests {
 
         let query = vec![2.0, 3.0, 4.0];
         let k = 4;
-        let mut context = SearchContext::new(false);
+        let context = Arc::new(Mutex::new(SearchContext::new(false)));
 
         assert!(ivf.invalidate(103));
 
         let results = ivf
-            .search(&query, k, num_probes, &mut context)
+            .search(&query, k, num_probes, context.clone())
             .await
             .expect("IVF search should return a result");
 

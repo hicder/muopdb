@@ -53,7 +53,7 @@ pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
     flushing: Mutex<()>,
 }
 
-impl<Q: Quantizer + Clone + Send + Sync> Collection<Q> {
+impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     pub fn new(base_directory: String, segment_config: CollectionConfig) -> Result<Self> {
         let versions: DashMap<u64, TableOfContent> = DashMap::new();
         versions.insert(0, TableOfContent::new(vec![]));
@@ -772,13 +772,14 @@ mod tests {
 
     use anyhow::{Ok, Result};
     use config::collection::CollectionConfig;
-    use parking_lot::RwLock;
+    use parking_lot::{Mutex, RwLock};
     use quantization::noq::noq::NoQuantizerL2;
     use rand::Rng;
     use tempdir::TempDir;
 
     use crate::collection::collection::Collection;
     use crate::collection::reader::CollectionReader;
+    use crate::collection::snapshot::Snapshot;
     use crate::optimizers::noop::NoopOptimizer;
     use crate::segment::{BoxedImmutableSegment, MockedSegment, Segment};
     use crate::utils::SearchContext;
@@ -954,14 +955,14 @@ mod tests {
         let pending_segment = collection.init_optimizing(&segment_names)?;
 
         let snapshot = collection.clone().get_snapshot()?;
+        let snapshot = Arc::new(snapshot);
         assert_eq!(snapshot.segments.len(), 1);
         assert_eq!(snapshot.version(), 2);
         let segment_name = snapshot.segments[0].name();
         assert_eq!(segment_name, pending_segment);
 
-        let mut context = SearchContext::new(false);
-        let result = snapshot
-            .search_for_ids(&[0], &[1.0, 2.0, 3.0, 4.0], 10, 10, &mut context)
+        let context = SearchContext::new(false);
+        let result = Snapshot::search_for_ids(snapshot, &[0], vec![1.0, 2.0, 3.0, 4.0], 10, 10, Arc::new(Mutex::new(context)))
             .await
             .unwrap();
         assert_eq!(result.len(), 1);
@@ -1031,9 +1032,9 @@ mod tests {
             while !stopped_cpy_for_query.load(std::sync::atomic::Ordering::Relaxed) {
                 let c = collection_cpy_for_query.clone();
                 let snapshot = c.get_snapshot().unwrap();
-                let mut context = SearchContext::new(false);
-                let result = snapshot
-                    .search_for_ids(&[0], &[1.0, 2.0, 3.0, 4.0], 10, 10, &mut context)
+                let context = SearchContext::new(false);
+                let snapshot = Arc::new(snapshot);
+                let result = Snapshot::search_for_ids(snapshot, &[0], vec![1.0, 2.0, 3.0, 4.0], 10, 10, Arc::new(Mutex::new(context)))
                     .await
                     .unwrap();
                 assert_eq!(result.len(), 1);
