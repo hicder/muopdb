@@ -740,11 +740,11 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 let mut pending_segment = pending_segment.upgradable_read();
                 optimizer.optimize(&pending_segment)?;
                 pending_segment.build_index()?;
-                pending_segment.try_with_upgraded(|pending_segment_write| {
+                pending_segment.with_upgraded(|pending_segment_write| {
                     pending_segment_write.apply_pending_deletions()?;
                     pending_segment_write.switch_to_internal_index();
                     Ok(())
-                });
+                })?;
             }
             _ => {}
         }
