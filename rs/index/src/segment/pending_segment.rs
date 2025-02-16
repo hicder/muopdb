@@ -167,7 +167,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
                         .search_with_id(id, query.clone(), k, ef_construction, record_pages)
                         .await
                 }
-                None => None,
+                None => unreachable!("Index should not be None if use_internal_index is set"),
             }
         }
     }
