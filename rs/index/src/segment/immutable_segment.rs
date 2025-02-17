@@ -37,7 +37,7 @@ impl<Q: Quantizer> Segment for ImmutableSegment<Q> {
         Err(anyhow!("ImmutableSegment does not support insertion"))
     }
 
-    /// ImmutableSegment does not support removal.
+    /// ImmutableSegment does not support actual removal, we are just invalidating documents.
     fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         self.index.invalidate(user_id, doc_id)
     }
