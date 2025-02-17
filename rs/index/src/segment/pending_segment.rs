@@ -116,7 +116,21 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
     }
 
     fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
-        todo!()
+        if !self.use_internal_index {
+            let mut result = false;
+            for segment in &self.inner_segments {
+                result |= segment.remove(user_id, doc_id)?;
+            }
+            Ok(result)
+        } else {
+            let index = self.index.read();
+            match &*index {
+                Some(index) => {
+                    index.invalidate(user_id, doc_id)
+                }
+                None => unreachable!("Index should not be None if use_internal_index is set"),
+            }
+        }
     }
 
     fn may_contains(&self, _doc_id: u128) -> bool {
@@ -192,6 +206,7 @@ mod tests {
         let mut starting_doc_id = starting_doc_id;
         let mut spann_builder_config = CollectionConfig::default_test_config();
         spann_builder_config.num_features = 4;
+        spann_builder_config.initial_num_centroids = 1;
         let mut multi_spann_builder =
             MultiSpannBuilder::new(spann_builder_config, base_directory.clone())?;
 
@@ -253,6 +268,48 @@ mod tests {
         let res = results.unwrap();
         assert_eq!(res.id_with_scores.len(), 1);
         assert_eq!(res.id_with_scores[0].id, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_pending_segment_remove() -> Result<()> {
+        // temp directory
+        let tmp_dir = tempdir::TempDir::new("pending_segment_remove_test").unwrap();
+        let base_dir = tmp_dir.path().to_str().unwrap().to_string();
+
+        // Create dir for segment1
+        let segment1_dir = format!("{}/segment_1", base_dir);
+        std::fs::create_dir_all(segment1_dir.clone()).unwrap();
+        build_segment(segment1_dir.clone(), 0)?;
+        let segment1 = read_segment(segment1_dir.clone())?;
+        let segment1 =
+            BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(Arc::new(
+                RwLock::new(ImmutableSegment::new(segment1, "segment_1".to_string())),
+            ));
+
+        let random_name = format!(
+            "pending_segment_{}",
+            rand::thread_rng().gen_range(0..1000000)
+        );
+        let pending_dir = format!("{}/{}", base_dir, random_name);
+        std::fs::create_dir_all(pending_dir.clone()).unwrap();
+
+        // Create a pending segment
+        let pending_segment = PendingSegment::<NoQuantizer<L2DistanceCalculator>>::new(
+            vec![segment1],
+            pending_dir.clone(),
+            CollectionConfig::default_test_config(),
+        );
+
+        assert!(pending_segment.remove(0, 0)?);
+
+        let results = pending_segment
+            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], 1, 10, false)
+            .await;
+        let res = results.unwrap();
+        assert_eq!(res.id_with_scores.len(), 1);
+        assert_eq!(res.id_with_scores[0].id, 2);
 
         Ok(())
     }
