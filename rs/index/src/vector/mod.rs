@@ -1,5 +1,6 @@
+use std::collections::HashSet;
+use std::sync::RwLock;
 use anyhow::Result;
-use dashmap::DashSet;
 use num_traits::ops::bytes::ToBytes;
 use quantization::quantization::Quantizer;
 
@@ -64,7 +65,7 @@ impl<T: ToBytes + Clone> VectorStorage<T> {
         query: &[T],
         iterator: impl Iterator<Item = u64>,
         quantizer: &impl Quantizer<QuantizedT = T>,
-        invalidated_ids: &DashSet<u32>,
+        invalidated_ids: &RwLock<HashSet<u32>>,
         record_pages: bool,
     ) -> Result<IntermediateResult> {
         match self {

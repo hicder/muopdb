@@ -1,7 +1,7 @@
+use std::collections::HashSet;
 use std::marker::PhantomData;
-
+use std::sync::RwLock;
 use anyhow::Result;
-use dashmap::DashSet;
 use memmap2::Mmap;
 use num_traits::ToBytes;
 use quantization::quantization::Quantizer;
@@ -108,7 +108,7 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         query: &[T],
         iterator: impl Iterator<Item = u64>,
         quantizer: &impl Quantizer<QuantizedT = T>,
-        invalidated_ids: &DashSet<u32>,
+        invalidated_ids: &RwLock<HashSet<u32>>,
         record_pages: bool,
     ) -> Result<IntermediateResult> {
         let mut result = vec![];
@@ -117,7 +117,12 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         for id in iterator {
             // Skip invalidated ids
             // TODO: Use skip list for better performance
-            if invalidated_ids.contains(&(id as u32)) {
+            let is_invalid_id = {
+                let guard = invalidated_ids.read().unwrap();
+                guard.contains(&(id as u32))
+            };
+
+            if is_invalid_id {
                 continue;
             }
 
