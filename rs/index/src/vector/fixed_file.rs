@@ -114,18 +114,17 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         let mut result = vec![];
         let mut context = SearchContext::new(record_pages);
         let mut stats = SearchStats::new();
-        for id in iterator {
+
+        // collect valid ids
+        let valid_ids: Vec<u64> = {
+            let guard = invalidated_ids.read().unwrap();
+            iterator
+                .filter(|&id| !guard.contains(&(id as u32)))
+                .collect()
+        };
+
+        for id in valid_ids {
             // Skip invalidated ids
-            // TODO: Use skip list for better performance
-            let is_invalid_id = {
-                let guard = invalidated_ids.read().unwrap();
-                guard.contains(&(id as u32))
-            };
-
-            if is_invalid_id {
-                continue;
-            }
-
             let vector = self.get_async(id as u32, &mut context).await?;
             let distance = quantizer.distance(
                 query,
