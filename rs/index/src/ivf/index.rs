@@ -1,11 +1,10 @@
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, HashSet};
 use std::marker::PhantomData;
-
+use std::sync::RwLock;
 use anyhow::{Context, Result};
 use compression::compression::IntSeqDecoder;
 use compression::elias_fano::ef::EliasFanoDecoder;
 use compression::noc::noc::PlainDecoder;
-use dashmap::DashSet;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use utils::distance::l2::L2DistanceCalculator;
@@ -32,7 +31,7 @@ pub struct Ivf<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64
 
     pub quantizer: Q,
 
-    pub invalid_point_ids: DashSet<u32>,
+    pub invalid_point_ids: RwLock<HashSet<u32>>,
 
     _distance_calculator_marker: PhantomData<DC>,
     _decoder_marker: PhantomData<D>,
@@ -111,7 +110,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
             posting_list_storage: index_storage,
             num_clusters,
             quantizer,
-            invalid_point_ids: DashSet::new(),
+            invalid_point_ids: RwLock::new(HashSet::new()),
             _distance_calculator_marker: PhantomData,
             _decoder_marker: PhantomData,
         }
@@ -249,7 +248,10 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
     pub fn invalidate(&self, doc_id: u128) -> bool {
         match self.get_point_id(doc_id) {
             Some(point_id) => {
-                self.invalid_point_ids.insert(point_id as u32);
+                self.invalid_point_ids
+                    .write()
+                    .unwrap()
+                    .insert(point_id as u32);
                 true
             }
             None => false,
