@@ -14,7 +14,7 @@ pub struct InvalidatedIdsStorage {
     current_offset: usize,
 }
 
-pub struct InvalidatedId {
+pub struct InvalidatedUserDocId {
     pub user_id: u128,
     pub doc_id: u128,
 }
@@ -25,12 +25,13 @@ pub struct InvalidatedIdsIterator {
     current_offset: usize,
 }
 
+const BYTES_PER_INVALIDATION: usize = size_of::<u128>() + size_of::<u128>();
+
 impl InvalidatedIdsStorage {
     const DEFAULT_BACKING_FILE_SIZE: usize = 8192;
     pub fn new(base_directory: &str, backing_file_size: usize) -> Self {
-        let bytes_per_invalidation = size_of::<u128>() + size_of::<u128>();
         let rounded_backing_file_size =
-            backing_file_size / bytes_per_invalidation * bytes_per_invalidation;
+            backing_file_size / BYTES_PER_INVALIDATION * BYTES_PER_INVALIDATION;
         Self {
             base_directory: base_directory.to_string(),
             backing_file_size: rounded_backing_file_size,
@@ -88,15 +89,13 @@ impl InvalidatedIdsStorage {
             first_file_size
         };
 
-        //  let files: Vec<File> = vec![OpenOptions::new().append(true).open(last_file)?];
         let files: Vec<File> = invalidated_ids_files
             .iter()
             .filter_map(|file_path| OpenOptions::new().append(true).open(file_path).ok())
             .collect();
 
-        let bytes_per_invalidation = size_of::<u128>() + size_of::<u128>();
         let rounded_backing_file_size =
-            backing_file_size / bytes_per_invalidation * bytes_per_invalidation;
+            backing_file_size / BYTES_PER_INVALIDATION * BYTES_PER_INVALIDATION;
         Ok(Self {
             base_directory: base_directory.to_string(),
             backing_file_size: rounded_backing_file_size,
@@ -125,8 +124,7 @@ impl InvalidatedIdsStorage {
 
         let file = &mut self.files[self.current_backing_id as usize];
 
-        let bytes_written = size_of::<u128>() + size_of::<u128>();
-        let mut buffer = Vec::with_capacity(bytes_written);
+        let mut buffer = Vec::with_capacity(BYTES_PER_INVALIDATION);
 
         // Write user_id and doc_id into the buffer
         buffer.extend_from_slice(&user_id.to_le_bytes());
@@ -137,7 +135,7 @@ impl InvalidatedIdsStorage {
 
         // Ensure all written data is flushed to disk
         file.sync_all()?;
-        self.current_offset += bytes_written;
+        self.current_offset += BYTES_PER_INVALIDATION;
 
         Ok(())
     }
@@ -159,11 +157,9 @@ impl InvalidatedIdsStorage {
 }
 
 impl Iterator for InvalidatedIdsIterator {
-    type Item = InvalidatedId;
+    type Item = InvalidatedUserDocId;
 
     fn next(&mut self) -> Option<Self::Item> {
-        const INVALIDATED_ID_SIZE: usize = size_of::<u128>() + size_of::<u128>();
-
         while self.current_file_idx < self.files.len() {
             let file = &mut self.files[self.current_file_idx];
 
@@ -177,18 +173,24 @@ impl Iterator for InvalidatedIdsIterator {
                 continue;
             }
 
+            if self.current_offset > file_size - BYTES_PER_INVALIDATION {
+                panic!("Incomplete invalidation record at end of file");
+            }
+
             file.seek(SeekFrom::Start(self.current_offset as u64))
                 .unwrap();
 
-            let mut buffer = [0u8; INVALIDATED_ID_SIZE];
+            let mut buffer = [0u8; BYTES_PER_INVALIDATION];
+            // FIXME: this incurs one syscall per iteration. but hopefully this file is small and
+            // we only do it at the start. mmap will probably help here. Update is necessary.
             file.read_exact(&mut buffer).unwrap();
 
             let user_id = u128::from_le_bytes(buffer[..16].try_into().unwrap());
             let doc_id = u128::from_le_bytes(buffer[16..].try_into().unwrap());
 
-            self.current_offset += INVALIDATED_ID_SIZE;
+            self.current_offset += BYTES_PER_INVALIDATION;
 
-            return Some(InvalidatedId { user_id, doc_id });
+            return Some(InvalidatedUserDocId { user_id, doc_id });
         }
         None
     }
@@ -335,11 +337,10 @@ mod tests {
             size_of::<u128>() + size_of::<u128>()
         );
 
-        let bytes_per_invalidation = size_of::<u128>() + size_of::<u128>();
         assert_eq!(
             read_back_storage.backing_file_size,
-            InvalidatedIdsStorage::DEFAULT_BACKING_FILE_SIZE / bytes_per_invalidation
-                * bytes_per_invalidation
+            InvalidatedIdsStorage::DEFAULT_BACKING_FILE_SIZE / BYTES_PER_INVALIDATION
+                * BYTES_PER_INVALIDATION
         );
 
         // Test iterator
@@ -365,8 +366,6 @@ mod tests {
             .to_str()
             .expect("Failed to convert temporary directory path to string")
             .to_string();
-        //let base_dir = "/tmp/test";
-        //fs::create_dir(base_dir);
         let mut storage = InvalidatedIdsStorage::new(&base_dir, 64); // Small size for testing
 
         // Write multiple invalidations to trigger new backing files
@@ -393,7 +392,7 @@ mod tests {
         );
 
         // Test iterator
-        let iter_data: Vec<InvalidatedId> = read_back_storage.iter().collect();
+        let iter_data: Vec<InvalidatedUserDocId> = read_back_storage.iter().collect();
         assert_eq!(iter_data.len(), expected_data.len());
         for (expected, actual) in expected_data.iter().zip(iter_data.iter()) {
             assert_eq!(expected.0, actual.user_id);
@@ -408,7 +407,7 @@ mod tests {
         );
 
         // Test iterator again after adding a new item
-        let iter_data_after_add: Vec<InvalidatedId> = read_back_storage.iter().collect();
+        let iter_data_after_add: Vec<InvalidatedUserDocId> = read_back_storage.iter().collect();
         assert_eq!(iter_data_after_add.len(), expected_data.len() + 1);
         assert_eq!(iter_data_after_add.last().unwrap().user_id, 31);
         assert_eq!(iter_data_after_add.last().unwrap().doc_id, 31);
