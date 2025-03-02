@@ -15,10 +15,8 @@ pub struct InvalidatedIdsStorage {
 }
 
 pub struct InvalidatedId {
-    #[allow(dead_code)]
-    user_id: u128,
-    #[allow(dead_code)]
-    point_id: u32,
+    pub user_id: u128,
+    pub doc_id: u128,
 }
 
 pub struct InvalidatedIdsIterator {
@@ -30,7 +28,7 @@ pub struct InvalidatedIdsIterator {
 impl InvalidatedIdsStorage {
     const DEFAULT_BACKING_FILE_SIZE: usize = 8192;
     pub fn new(base_directory: &str, backing_file_size: usize) -> Self {
-        let bytes_per_invalidation = size_of::<u128>() + size_of::<u32>();
+        let bytes_per_invalidation = size_of::<u128>() + size_of::<u128>();
         let rounded_backing_file_size =
             backing_file_size / bytes_per_invalidation * bytes_per_invalidation;
         Self {
@@ -96,7 +94,7 @@ impl InvalidatedIdsStorage {
             .filter_map(|file_path| OpenOptions::new().append(true).open(file_path).ok())
             .collect();
 
-        let bytes_per_invalidation = size_of::<u128>() + size_of::<u32>();
+        let bytes_per_invalidation = size_of::<u128>() + size_of::<u128>();
         let rounded_backing_file_size =
             backing_file_size / bytes_per_invalidation * bytes_per_invalidation;
         Ok(Self {
@@ -120,19 +118,19 @@ impl InvalidatedIdsStorage {
         Ok(())
     }
 
-    pub fn invalidate(&mut self, user_id: u128, point_id: u32) -> Result<()> {
+    pub fn invalidate(&mut self, user_id: u128, doc_id: u128) -> Result<()> {
         if self.current_offset == self.backing_file_size {
             self.new_backing_file()?;
         }
 
         let file = &mut self.files[self.current_backing_id as usize];
 
-        let bytes_written = size_of::<u128>() + size_of::<u32>();
+        let bytes_written = size_of::<u128>() + size_of::<u128>();
         let mut buffer = Vec::with_capacity(bytes_written);
 
-        // Write user_id and point_id into the buffer
+        // Write user_id and doc_id into the buffer
         buffer.extend_from_slice(&user_id.to_le_bytes());
-        buffer.extend_from_slice(&point_id.to_le_bytes());
+        buffer.extend_from_slice(&doc_id.to_le_bytes());
 
         // Perform a single atomic write
         file.write_all(&buffer)?;
@@ -164,7 +162,7 @@ impl Iterator for InvalidatedIdsIterator {
     type Item = InvalidatedId;
 
     fn next(&mut self) -> Option<Self::Item> {
-        const INVALIDATED_ID_SIZE: usize = 16 + 4; // 16 bytes for u128, 4 bytes for u32
+        const INVALIDATED_ID_SIZE: usize = size_of::<u128>() + size_of::<u128>();
 
         while self.current_file_idx < self.files.len() {
             let file = &mut self.files[self.current_file_idx];
@@ -186,11 +184,11 @@ impl Iterator for InvalidatedIdsIterator {
             file.read_exact(&mut buffer).unwrap();
 
             let user_id = u128::from_le_bytes(buffer[..16].try_into().unwrap());
-            let point_id = u32::from_le_bytes(buffer[16..].try_into().unwrap());
+            let doc_id = u128::from_le_bytes(buffer[16..].try_into().unwrap());
 
             self.current_offset += INVALIDATED_ID_SIZE;
 
-            return Some(InvalidatedId { user_id, point_id });
+            return Some(InvalidatedId { user_id, doc_id });
         }
         None
     }
@@ -215,30 +213,33 @@ mod tests {
             .to_string();
         let mut storage = InvalidatedIdsStorage::new(&base_dir, 1024);
 
-        // Invalidate a user ID and point ID
+        // Invalidate a user ID and doc ID
         let user_id: u128 = 123456789012345678901234567890123456;
-        let point_id: u32 = 987654321;
-        assert!(storage.invalidate(user_id, point_id).is_ok());
+        let doc_id: u128 = 987654321;
+        assert!(storage.invalidate(user_id, doc_id).is_ok());
 
         // Verify state after invalidation
         assert_eq!(storage.current_backing_id, 0);
-        assert_eq!(storage.current_offset, size_of::<u128>() + size_of::<u32>());
+        assert_eq!(
+            storage.current_offset,
+            size_of::<u128>() + size_of::<u128>()
+        );
 
         // Verify data written to the file
         let expected_file_path = format!("{}/invalidated_ids.bin.0", base_dir);
         let mut file = fs::File::open(expected_file_path).expect("Failed to open backing file");
 
         // Read the data back
-        let mut buffer = vec![0u8; size_of::<u128>() + size_of::<u32>()];
+        let mut buffer = vec![0u8; size_of::<u128>() + size_of::<u128>()];
         file.read_exact(&mut buffer)
             .expect("Failed to read from file");
 
-        // Extract user_id and point_id from the buffer
+        // Extract user_id and doc_id from the buffer
         let user_id_bytes = &buffer[0..size_of::<u128>()];
-        let point_id_bytes = &buffer[size_of::<u128>()..size_of::<u128>() + size_of::<u32>()];
+        let doc_id_bytes = &buffer[size_of::<u128>()..size_of::<u128>() + size_of::<u128>()];
 
         assert_eq!(user_id_bytes, &user_id.to_le_bytes());
-        assert_eq!(point_id_bytes, &point_id.to_le_bytes());
+        assert_eq!(doc_id_bytes, &doc_id.to_le_bytes());
     }
 
     #[test]
@@ -257,16 +258,16 @@ mod tests {
         let mut expected_data = Vec::new();
         for i in 0..num_invalidations {
             let user_id = i as u128;
-            let point_id = i as u32;
-            assert!(storage.invalidate(user_id, point_id).is_ok());
-            expected_data.push((user_id, point_id));
+            let doc_id = i as u128;
+            assert!(storage.invalidate(user_id, doc_id).is_ok());
+            expected_data.push((user_id, doc_id));
         }
 
         // Verify that multiple backing files were created
         assert!(storage.current_backing_id > 0);
 
         // Verify contents of each file
-        let bytes_per_entry = size_of::<u128>() + size_of::<u32>();
+        let bytes_per_entry = size_of::<u128>() + size_of::<u128>();
         let entries_per_file = storage.backing_file_size / bytes_per_entry;
 
         for backing_id in 0..=storage.current_backing_id {
@@ -286,22 +287,21 @@ mod tests {
                 .expect("Failed to read from backing file");
 
             // Verify each entry in the file
-            for (i, &(expected_user_id, expected_point_id)) in expected_entries.iter().enumerate() {
+            for (i, &(expected_user_id, expected_doc_id)) in expected_entries.iter().enumerate() {
                 let offset = i * bytes_per_entry;
 
-                // Extract user_id and point_id from the file data
+                // Extract user_id and doc_id from the file data
                 let user_id_bytes = &file_data[offset..offset + size_of::<u128>()];
-                let point_id_bytes =
-                    &file_data[offset + size_of::<u128>()..offset + bytes_per_entry];
+                let doc_id_bytes = &file_data[offset + size_of::<u128>()..offset + bytes_per_entry];
 
                 let actual_user_id =
                     u128::from_le_bytes(user_id_bytes.try_into().expect("Invalid user ID bytes"));
-                let actual_point_id =
-                    u32::from_le_bytes(point_id_bytes.try_into().expect("Invalid point ID bytes"));
+                let actual_doc_id =
+                    u128::from_le_bytes(doc_id_bytes.try_into().expect("Invalid doc ID bytes"));
 
                 // Compare with expected values
                 assert_eq!(actual_user_id, expected_user_id);
-                assert_eq!(actual_point_id, expected_point_id);
+                assert_eq!(actual_doc_id, expected_doc_id);
             }
         }
 
@@ -320,10 +320,10 @@ mod tests {
             .to_string();
         let mut storage = InvalidatedIdsStorage::new(&base_dir, 1024);
 
-        // Invalidate a user ID and point ID
+        // Invalidate a user ID and doc ID
         let user_id: u128 = 123456789012345678901234567890123456;
-        let point_id: u32 = 987654321;
-        assert!(storage.invalidate(user_id, point_id).is_ok());
+        let doc_id: u128 = 987654321;
+        assert!(storage.invalidate(user_id, doc_id).is_ok());
 
         let mut read_back_storage = InvalidatedIdsStorage::read(&base_dir)
             .expect("Failed to read back invalidated ids storage");
@@ -332,10 +332,10 @@ mod tests {
         assert_eq!(read_back_storage.current_backing_id, 0);
         assert_eq!(
             read_back_storage.current_offset,
-            size_of::<u128>() + size_of::<u32>()
+            size_of::<u128>() + size_of::<u128>()
         );
 
-        let bytes_per_invalidation = size_of::<u128>() + size_of::<u32>();
+        let bytes_per_invalidation = size_of::<u128>() + size_of::<u128>();
         assert_eq!(
             read_back_storage.backing_file_size,
             InvalidatedIdsStorage::DEFAULT_BACKING_FILE_SIZE / bytes_per_invalidation
@@ -346,12 +346,12 @@ mod tests {
         let invalidated_id = read_back_storage.iter().next();
         assert!(invalidated_id.as_ref().is_some());
         assert_eq!(invalidated_id.as_ref().unwrap().user_id, user_id);
-        assert_eq!(invalidated_id.as_ref().unwrap().point_id, point_id);
+        assert_eq!(invalidated_id.as_ref().unwrap().doc_id, doc_id);
 
         // Test invalidating read back storage
-        assert!(read_back_storage.invalidate(user_id, point_id + 1).is_ok());
+        assert!(read_back_storage.invalidate(user_id, doc_id + 1).is_ok());
         assert_eq!(
-            storage.current_offset + size_of::<u128>() + size_of::<u32>(),
+            storage.current_offset + size_of::<u128>() + size_of::<u128>(),
             read_back_storage.current_offset
         );
     }
@@ -374,9 +374,9 @@ mod tests {
         let mut expected_data = Vec::new();
         for i in 0..num_invalidations {
             let user_id = i as u128;
-            let point_id = i as u32;
-            assert!(storage.invalidate(user_id, point_id).is_ok());
-            expected_data.push((user_id, point_id));
+            let doc_id = i as u128;
+            assert!(storage.invalidate(user_id, doc_id).is_ok());
+            expected_data.push((user_id, doc_id));
         }
 
         let mut read_back_storage = InvalidatedIdsStorage::read(&base_dir)
@@ -397,13 +397,13 @@ mod tests {
         assert_eq!(iter_data.len(), expected_data.len());
         for (expected, actual) in expected_data.iter().zip(iter_data.iter()) {
             assert_eq!(expected.0, actual.user_id);
-            assert_eq!(expected.1, actual.point_id);
+            assert_eq!(expected.1, actual.doc_id);
         }
 
         // Test invalidating read back storage
         assert!(read_back_storage.invalidate(31, 31).is_ok());
         assert_eq!(
-            storage.current_offset + size_of::<u128>() + size_of::<u32>(),
+            storage.current_offset + size_of::<u128>() + size_of::<u128>(),
             read_back_storage.current_offset
         );
 
@@ -411,6 +411,6 @@ mod tests {
         let iter_data_after_add: Vec<InvalidatedId> = read_back_storage.iter().collect();
         assert_eq!(iter_data_after_add.len(), expected_data.len() + 1);
         assert_eq!(iter_data_after_add.last().unwrap().user_id, 31);
-        assert_eq!(iter_data_after_add.last().unwrap().point_id, 31);
+        assert_eq!(iter_data_after_add.last().unwrap().doc_id, 31);
     }
 }
