@@ -57,6 +57,7 @@ message CreateCollectionRequest {
 }
 
 message CreateCollectionResponse {
+   string message = 1;
 }
 
 message SearchRequest {
