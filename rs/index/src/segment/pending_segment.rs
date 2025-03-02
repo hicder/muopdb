@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use anyhow::{Ok, Result};
@@ -7,6 +7,7 @@ use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
 
 use super::{BoxedImmutableSegment, Segment};
+use crate::ivf::files::invalidated_ids::InvalidatedIdsStorage;
 use crate::multi_spann::index::MultiSpannIndex;
 use crate::multi_spann::reader::MultiSpannReader;
 use crate::utils::SearchResult;
@@ -20,6 +21,10 @@ pub struct PendingSegment<Q: Quantizer + Clone + Send + Sync> {
     // Whether to use the internal index instead of passing the query to inner segments.
     // Invariant: use_internal_index is true if and only if index is Some.
     use_internal_index: bool,
+
+    // Temporary invalidated ids management, only used when use_internal_index is false.
+    temp_invalidated_ids_storage: RwLock<InvalidatedIdsStorage>,
+    temp_invalidated_ids: RwLock<HashMap<u128, Vec<u128>>>,
 
     // The internal index.
     index: RwLock<Option<MultiSpannIndex<Q>>>,
@@ -44,6 +49,20 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
             .map(|segment| segment.name())
             .collect();
 
+        let temp_invalidated_ids_directory =
+            format!("{}/temp_invalidated_ids_storage", data_directory);
+        // TODO(tyb) avoid unwrap here
+        let mut temp_invalidated_ids_storage =
+            InvalidatedIdsStorage::read(&temp_invalidated_ids_directory).unwrap();
+
+        let mut temp_invalidated_ids = HashMap::new();
+        for invalidated_id in temp_invalidated_ids_storage.iter() {
+            temp_invalidated_ids
+                .entry(invalidated_id.user_id)
+                .or_insert_with(Vec::new)
+                .push(invalidated_id.doc_id);
+        }
+
         Self {
             inner_segments,
             inner_segments_names,
@@ -51,6 +70,9 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
             parent_directory,
             index: RwLock::new(None),
             use_internal_index: false,
+            // TODO(tyb): avoid unwrap here
+            temp_invalidated_ids_storage: RwLock::new(temp_invalidated_ids_storage),
+            temp_invalidated_ids: RwLock::new(temp_invalidated_ids),
             collection_config,
         }
     }
@@ -117,17 +139,33 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
 
     fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         if !self.use_internal_index {
-            let mut result = false;
-            for segment in &self.inner_segments {
-                result |= segment.remove(user_id, doc_id)?;
+            // No need to check inner segments to avoid complexity when a doc_id is removed from
+            // one of the segment but not the other, e.g.
+            // - invalidate doc_id from segment A,
+            // - insert doc_id back, flush, creating segment B,
+            // (doc_id is valid in B but invalidated in A)
+            //
+            // Adding invalidation to the temporary map + storage guarantees to always be correct.
+
+            // Inner segments are being used to build the internal index, so they should not be
+            // changed. Use temporary storage and hash map instead.
+            self.temp_invalidated_ids_storage
+                .write()
+                .invalidate(user_id, doc_id)?;
+
+            // Acquire the write lock
+            let mut temp_invalidated_ids = self.temp_invalidated_ids.write();
+            let entry = temp_invalidated_ids.entry(user_id).or_insert_with(Vec::new);
+            if entry.contains(&doc_id) {
+                Ok(false)
+            } else {
+                entry.push(doc_id);
+                Ok(true)
             }
-            Ok(result)
         } else {
             let index = self.index.read();
             match &*index {
-                Some(index) => {
-                    index.invalidate(user_id, doc_id)
-                }
+                Some(index) => index.invalidate(user_id, doc_id),
                 None => unreachable!("Index should not be None if use_internal_index is set"),
             }
         }
@@ -156,18 +194,31 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
     {
         if !self.use_internal_index {
             let mut results = SearchResult::new();
+            // The invalidated ids vector should be very small, we can just clone it
+            let invalidated_ids = self
+                .temp_invalidated_ids
+                .read()
+                .get(&id)
+                .filter(|vec| !vec.is_empty())
+                .cloned()
+                .unwrap_or_default();
             for segment in &self.inner_segments {
                 let s = segment.clone();
                 let segment_result = BoxedImmutableSegment::search_with_id(
                     s,
                     id,
                     query.clone(),
-                    k,
+                    k + invalidated_ids.len(),
                     ef_construction,
                     record_pages,
                 )
                 .await;
-                if let Some(result) = segment_result {
+                if let Some(mut result) = segment_result {
+                    // Filter out invalidated IDs
+                    result
+                        .id_with_scores
+                        .retain(|id_with_score| !invalidated_ids.contains(&id_with_score.id));
+
                     results.id_with_scores.extend(result.id_with_scores);
                     results.stats.merge(&result.stats);
                 }
@@ -303,6 +354,54 @@ mod tests {
         );
 
         assert!(pending_segment.remove(0, 0)?);
+
+        let results = pending_segment
+            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], 1, 10, false)
+            .await;
+        let res = results.unwrap();
+        assert_eq!(res.id_with_scores.len(), 1);
+        assert_eq!(res.id_with_scores[0].id, 2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_pending_segment_invalidated() -> Result<()> {
+        // temp directory
+        let tmp_dir = tempdir::TempDir::new("pending_segment_invalidated_test").unwrap();
+        let base_dir = tmp_dir.path().to_str().unwrap().to_string();
+
+        // Create dir for segment1
+        let segment1_dir = format!("{}/segment_1", base_dir);
+        std::fs::create_dir_all(segment1_dir.clone()).unwrap();
+        build_segment(segment1_dir.clone(), 0)?;
+        let segment1 = read_segment(segment1_dir.clone())?;
+        let segment1 =
+            BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(Arc::new(
+                RwLock::new(ImmutableSegment::new(segment1, "segment_1".to_string())),
+            ));
+
+        let random_name = format!(
+            "pending_segment_{}",
+            rand::thread_rng().gen_range(0..1000000)
+        );
+        let pending_dir = format!("{}/{}", base_dir, random_name);
+
+        let invalidated_ids_dir = format!("{}/temp_invalidated_ids_storage", pending_dir);
+
+        assert!(std::fs::create_dir_all(&invalidated_ids_dir).is_ok());
+
+        let mut storage = InvalidatedIdsStorage::new(&invalidated_ids_dir, 1024);
+
+        // Invalidate a user ID and doc ID
+        assert!(storage.invalidate(0, 0).is_ok());
+
+        // Create a pending segment
+        let pending_segment = PendingSegment::<NoQuantizer<L2DistanceCalculator>>::new(
+            vec![segment1],
+            pending_dir.clone(),
+            CollectionConfig::default_test_config(),
+        );
 
         let results = pending_segment
             .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], 1, 10, false)

@@ -62,6 +62,10 @@ impl<Q: Quantizer> Spann<Q> {
     pub fn invalidate(&self, doc_id: u128) -> bool {
         self.posting_lists.invalidate(doc_id)
     }
+
+    pub fn is_invalidated(&self, doc_id: u128) -> bool {
+        self.posting_lists.is_invalidated(doc_id)
+    }
 }
 
 impl<Q: Quantizer> Spann<Q> {
@@ -258,6 +262,8 @@ mod tests {
         let num_probes = 2;
 
         assert!(spann.invalidate(4));
+        assert!(spann.is_invalidated(4));
+
         let results = spann
             .search(query, k, num_probes, false)
             .await

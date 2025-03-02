@@ -90,6 +90,13 @@ impl<Q: Quantizer> IvfType<Q> {
         }
     }
 
+    pub fn is_invalidated(&self, doc_id: u128) -> bool {
+        match self {
+            IvfType::L2Plain(ivf) => ivf.is_invalidated(doc_id),
+            IvfType::L2EF(ivf) => ivf.is_invalidated(doc_id),
+        }
+    }
+
     pub fn num_clusters(&self) -> usize {
         match self {
             IvfType::L2Plain(ivf) => ivf.num_clusters,
@@ -253,6 +260,15 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
                     .unwrap()
                     .insert(point_id as u32);
                 true
+            }
+            None => false,
+        }
+    }
+
+    pub fn is_invalidated(&self, doc_id: u128) -> bool {
+        match self.get_point_id(doc_id) {
+            Some(point_id) => {
+                self.invalid_point_ids.read().unwrap().contains(&point_id)
             }
             None => false,
         }
@@ -787,6 +803,7 @@ mod tests {
         let k = 4;
 
         assert!(ivf.invalidate(103));
+        assert!(ivf.is_invalidated(103));
 
         let results = ivf
             .search(&query, k, num_probes, false)
