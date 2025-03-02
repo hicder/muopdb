@@ -135,7 +135,9 @@ impl IndexServer for IndexServerImpl {
             .await
         {
             Ok(_) => {
-                return Ok(tonic::Response::new(CreateCollectionResponse {}));
+                return Ok(tonic::Response::new(CreateCollectionResponse {
+                    message: format!("Collection {} created", collection_name),
+                }));
             }
             Err(e) => {
                 return Err(tonic::Status::new(tonic::Code::Internal, e.to_string()));
