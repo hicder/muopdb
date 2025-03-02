@@ -1,6 +1,6 @@
 use std::cmp::max;
 use std::fs::{create_dir_all, metadata, read_dir, File, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::mem::size_of;
 use std::path::Path;
 
@@ -12,7 +12,19 @@ pub struct InvalidatedIdsStorage {
     files: Vec<File>,
     current_backing_id: i32,
     current_offset: usize,
-    backing_id_offset: usize,
+}
+
+pub struct InvalidatedId {
+    #[allow(dead_code)]
+    user_id: u128,
+    #[allow(dead_code)]
+    point_id: u32,
+}
+
+pub struct InvalidatedIdsIterator {
+    files: Vec<File>,
+    current_file_idx: usize,
+    current_offset: usize,
 }
 
 impl InvalidatedIdsStorage {
@@ -27,7 +39,6 @@ impl InvalidatedIdsStorage {
             files: vec![],
             current_backing_id: -1,
             current_offset: rounded_backing_file_size,
-            backing_id_offset: 0,
         }
     }
 
@@ -79,7 +90,11 @@ impl InvalidatedIdsStorage {
             first_file_size
         };
 
-        let files: Vec<File> = vec![OpenOptions::new().append(true).open(last_file)?];
+        //  let files: Vec<File> = vec![OpenOptions::new().append(true).open(last_file)?];
+        let files: Vec<File> = invalidated_ids_files
+            .iter()
+            .filter_map(|file_path| OpenOptions::new().append(true).open(file_path).ok())
+            .collect();
 
         let bytes_per_invalidation = size_of::<u128>() + size_of::<u32>();
         let rounded_backing_file_size =
@@ -90,9 +105,6 @@ impl InvalidatedIdsStorage {
             files,
             current_backing_id: invalidated_ids_files.len() as i32 - 1,
             current_offset,
-            // Since we did not add all the files that are already complete, we need an id offset
-            // to make indexing to self.files in bound
-            backing_id_offset: invalidated_ids_files.len() - 1,
         })
     }
 
@@ -113,7 +125,7 @@ impl InvalidatedIdsStorage {
             self.new_backing_file()?;
         }
 
-        let file = &mut self.files[self.current_backing_id as usize - self.backing_id_offset];
+        let file = &mut self.files[self.current_backing_id as usize];
 
         let bytes_written = size_of::<u128>() + size_of::<u32>();
         let mut buffer = Vec::with_capacity(bytes_written);
@@ -130,6 +142,57 @@ impl InvalidatedIdsStorage {
         self.current_offset += bytes_written;
 
         Ok(())
+    }
+
+    pub fn iter(&mut self) -> InvalidatedIdsIterator {
+        InvalidatedIdsIterator {
+            files: (0..self.files.len())
+                .filter_map(|i| {
+                    OpenOptions::new()
+                        .read(true)
+                        .open(format!("{}/invalidated_ids.bin.{}", self.base_directory, i))
+                        .ok()
+                })
+                .collect(),
+            current_file_idx: 0,
+            current_offset: 0,
+        }
+    }
+}
+
+impl Iterator for InvalidatedIdsIterator {
+    type Item = InvalidatedId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        const INVALIDATED_ID_SIZE: usize = 16 + 4; // 16 bytes for u128, 4 bytes for u32
+
+        while self.current_file_idx < self.files.len() {
+            let file = &mut self.files[self.current_file_idx];
+
+            // Get the current file size
+            let file_size = file.metadata().unwrap().len() as usize;
+
+            if self.current_offset >= file_size {
+                // Move to the next file if we've reached the end of the current file
+                self.current_file_idx += 1;
+                self.current_offset = 0;
+                continue;
+            }
+
+            file.seek(SeekFrom::Start(self.current_offset as u64))
+                .unwrap();
+
+            let mut buffer = [0u8; INVALIDATED_ID_SIZE];
+            file.read_exact(&mut buffer).unwrap();
+
+            let user_id = u128::from_le_bytes(buffer[..16].try_into().unwrap());
+            let point_id = u32::from_le_bytes(buffer[16..].try_into().unwrap());
+
+            self.current_offset += INVALIDATED_ID_SIZE;
+
+            return Some(InvalidatedId { user_id, point_id });
+        }
+        None
     }
 }
 
@@ -279,6 +342,12 @@ mod tests {
                 * bytes_per_invalidation
         );
 
+        // Test iterator
+        let invalidated_id = read_back_storage.iter().next();
+        assert!(invalidated_id.as_ref().is_some());
+        assert_eq!(invalidated_id.as_ref().unwrap().user_id, user_id);
+        assert_eq!(invalidated_id.as_ref().unwrap().point_id, point_id);
+
         // Test invalidating read back storage
         assert!(read_back_storage.invalidate(user_id, point_id + 1).is_ok());
         assert_eq!(
@@ -296,6 +365,8 @@ mod tests {
             .to_str()
             .expect("Failed to convert temporary directory path to string")
             .to_string();
+        //let base_dir = "/tmp/test";
+        //fs::create_dir(base_dir);
         let mut storage = InvalidatedIdsStorage::new(&base_dir, 64); // Small size for testing
 
         // Write multiple invalidations to trigger new backing files
@@ -321,11 +392,25 @@ mod tests {
             read_back_storage.backing_file_size
         );
 
+        // Test iterator
+        let iter_data: Vec<InvalidatedId> = read_back_storage.iter().collect();
+        assert_eq!(iter_data.len(), expected_data.len());
+        for (expected, actual) in expected_data.iter().zip(iter_data.iter()) {
+            assert_eq!(expected.0, actual.user_id);
+            assert_eq!(expected.1, actual.point_id);
+        }
+
         // Test invalidating read back storage
         assert!(read_back_storage.invalidate(31, 31).is_ok());
         assert_eq!(
             storage.current_offset + size_of::<u128>() + size_of::<u32>(),
             read_back_storage.current_offset
         );
+
+        // Test iterator again after adding a new item
+        let iter_data_after_add: Vec<InvalidatedId> = read_back_storage.iter().collect();
+        assert_eq!(iter_data_after_add.len(), expected_data.len() + 1);
+        assert_eq!(iter_data_after_add.last().unwrap().user_id, 31);
+        assert_eq!(iter_data_after_add.last().unwrap().point_id, 31);
     }
 }
