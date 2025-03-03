@@ -122,6 +122,11 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         Ok(index.invalidate(doc_id))
     }
 
+    pub fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+        let index = self.get_or_create_index(user_id)?;
+        Ok(index.is_invalidated(doc_id))
+    }
+
     pub async fn search_with_id(
         &self,
         id: u128,
@@ -290,6 +295,9 @@ mod tests {
         assert!(multi_spann_index
             .invalidate(0, num_vectors as u128)
             .expect("Failed to invalidate"));
+        assert!(multi_spann_index
+            .is_invalidated(0, num_vectors as u128)
+            .expect("Failed to query invalidation"));
 
         let results = multi_spann_index
             .search_with_id(0, query, k, num_probes, false)

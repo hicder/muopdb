@@ -67,6 +67,15 @@ impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
         }
     }
 
+    pub fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+        match self {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                immutable_segment.read().is_invalidated(user_id, doc_id)
+            }
+            _ => Ok(false),
+        }
+    }
+
     /// Only get the size of the index from immutable segments for now
     pub fn size_in_bytes_immutable_segments(&self) -> u64 {
         match self {

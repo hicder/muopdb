@@ -28,6 +28,10 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
     pub fn size_in_bytes(&self) -> u64 {
         self.index.size_in_bytes()
     }
+
+    pub fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+        self.index.is_invalidated(user_id, doc_id)
+    }
 }
 
 /// This is the implementation of Segment for ImmutableSegment.
