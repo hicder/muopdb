@@ -9,6 +9,10 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # Install hdf5 protobuf openblas clang
 RUN apt-get install -y libhdf5-dev libprotobuf-dev libopenblas-dev clang protobuf-compiler pkg-config
 
+# Install nightly toolchain
+RUN rustup install nightly-x86_64-unknown-linux-gnu && \
+    rustup default nightly-x86_64-unknown-linux-gnu
+
 # Copy stuff
 COPY . /muopdb
 WORKDIR /muopdb
