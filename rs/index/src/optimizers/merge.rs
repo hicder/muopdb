@@ -62,6 +62,7 @@ mod tests {
     use super::*;
     use crate::collection::collection::Collection;
     use crate::collection::reader::CollectionReader;
+    use crate::segment::Segment;
 
     #[tokio::test]
     async fn test_merge_optimizer() -> Result<()> {
@@ -141,8 +142,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_merge_invalidated_optimizer() -> Result<()> {
+        let tmp_dir = tempdir::TempDir::new("test_merge_invalidated_optimizer")?;
+        // Create directory if it doesn't exist
+        std::fs::create_dir_all(&tmp_dir)?;
+
+        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
+        let mut config = CollectionConfig::default_test_config();
+        config.num_features = 3;
+        // Don't use WAL for this test
+        // Also, don't flush automatically
+        config.wal_file_size = 0;
+        config.max_time_to_flush_ms = 0;
+        config.max_pending_ops = 0;
+        config.initial_num_centroids = 1;
+
+        Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
+
+        let reader = CollectionReader::new(base_directory.clone());
+        let collection = reader.read::<NoQuantizerL2>()?;
+
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0)?;
+        collection.insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1)?;
+        collection.insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2)?;
+
+        collection.flush()?;
+
+        collection.insert_for_users(&[0], 4, &[100.0, 101.0, 102.0], 3)?;
+        collection.insert_for_users(&[0], 5, &[103.0, 104.0, 105.0], 4)?;
+        collection.insert_for_users(&[0], 6, &[106.0, 107.0, 108.0], 5)?;
+
+        collection.flush()?;
+
+        // Now we have 2 segments, let's merge them
+
+        let segments = collection.get_current_toc().toc.clone();
+        assert_eq!(segments.len(), 2);
+
+        // Remove a doc from the first segment
+        assert!(collection.all_segments().get(&segments[0]).unwrap().value().remove(0, 1).is_ok());
+
+        let pending_segment = collection.init_optimizing(&segments)?;
+
+        let optimizer = MergeOptimizer::<NoQuantizerL2>::new();
+        collection.run_optimizer(&optimizer, &pending_segment)?;
+
+        let segments = collection.get_current_toc().toc.clone();
+        assert_eq!(segments.len(), 1);
+
+        let snapshot = collection.get_snapshot()?;
+        let snapshot = Arc::new(snapshot);
+
+        let result = snapshot
+            .search_with_id(0, vec![1.0, 2.0, 3.0], 3, 10, false)
+            .await
+            .unwrap();
+        assert_eq!(result.id_with_scores.len(), 3);
+        let mut result_ids = result
+            .id_with_scores
+            .iter()
+            .map(|id| id.id)
+            .collect::<Vec<_>>();
+        result_ids.sort();
+        assert_eq!(result_ids, vec![2, 3, 4]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_merge_optimizer_with_multiple_users() -> Result<()> {
-        let tmp_dir = tempdir::TempDir::new("test_merge_optimizer")?;
+        let tmp_dir = tempdir::TempDir::new("test_merge_optimizer_with_multiple_users")?;
         // Create directory if it doesn't exist
         std::fs::create_dir_all(&tmp_dir)?;
 
@@ -173,7 +242,7 @@ mod tests {
 
         collection.flush()?;
 
-        // Now we have 2 segments, let merge them
+        // Now we have 2 segments, let's merge them
 
         let segments = collection.get_current_toc().toc.clone();
         assert_eq!(segments.len(), 2);
@@ -213,6 +282,73 @@ mod tests {
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![4, 5, 6]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_merge_invalidated_optimizer_with_multiple_users() -> Result<()> {
+        let tmp_dir = tempdir::TempDir::new("test_merge_invalidated_optimizer_with_multiple_users")?;
+        // Create directory if it doesn't exist
+        std::fs::create_dir_all(&tmp_dir)?;
+
+        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
+        let mut config = CollectionConfig::default_test_config();
+        config.num_features = 3;
+        config.initial_num_centroids = 1;
+        // Don't use WAL for this test
+        // Also, don't flush automatically
+        config.wal_file_size = 0;
+        config.max_time_to_flush_ms = 0;
+        config.max_pending_ops = 0;
+
+        Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
+
+        let reader = CollectionReader::new(base_directory.clone());
+        let collection = reader.read::<NoQuantizerL2>()?;
+
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0)?;
+        collection.insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1)?;
+        collection.insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2)?;
+
+        collection.flush()?;
+
+        collection.insert_for_users(&[1], 4, &[10.0, 11.0, 12.0], 3)?;
+        collection.insert_for_users(&[1], 5, &[13.0, 14.0, 15.0], 4)?;
+        collection.insert_for_users(&[1], 6, &[16.0, 17.0, 18.0], 5)?;
+
+        collection.flush()?;
+
+        // Now we have 2 segments, let's merge them
+
+        let segments = collection.get_current_toc().toc.clone();
+        assert_eq!(segments.len(), 2);
+
+        // Remove a doc from the first segment
+        assert!(collection.all_segments().get(&segments[0]).unwrap().value().remove(0, 1).is_ok());
+
+        let pending_segment = collection.init_optimizing(&segments)?;
+
+        let optimizer = MergeOptimizer::<NoQuantizerL2>::new();
+        collection.run_optimizer(&optimizer, &pending_segment)?;
+
+        let segments = collection.get_current_toc().toc.clone();
+        assert_eq!(segments.len(), 1);
+
+        let snapshot = collection.get_snapshot()?;
+        let result = snapshot
+            .search_with_id(0, vec![1.0, 2.0, 3.0], 3, 10, false)
+            .await
+            .unwrap();
+        assert_eq!(result.id_with_scores.len(), 2);
+
+        let mut result_ids = result
+            .id_with_scores
+            .iter()
+            .map(|id| id.id)
+            .collect::<Vec<_>>();
+        result_ids.sort();
+        assert_eq!(result_ids, vec![2, 3]);
 
         Ok(())
     }
