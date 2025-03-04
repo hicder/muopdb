@@ -761,6 +761,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         }
         Ok(())
     }
+
+    pub fn all_segments(&self) -> &DashMap<String, BoxedImmutableSegment<Q>> {
+        &self.all_segments
+    }
 }
 
 // Test

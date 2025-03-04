@@ -18,12 +18,17 @@ impl<Q: Quantizer> SpannIter<Q> {
     }
 
     pub fn next(&mut self) -> Option<(u128, &[Q::QuantizedT])> {
-        if let Some(doc_id) = self.index.get_doc_id(self.next_point_id) {
-            let vector = self.index.get_vector(self.next_point_id).unwrap();
+        loop {
+            if let Some(doc_id) = self.index.get_doc_id(self.next_point_id) {
+                if !self.index.is_invalidated(doc_id) {
+                    let vector = self.index.get_vector(self.next_point_id).unwrap();
+                    self.next_point_id += 1;
+                    return Some((doc_id, vector));
+                }
+            } else {
+                return None;
+            }
             self.next_point_id += 1;
-            Some((doc_id, vector))
-        } else {
-            None
         }
     }
 }
