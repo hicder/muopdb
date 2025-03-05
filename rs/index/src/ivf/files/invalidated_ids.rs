@@ -7,7 +7,7 @@ use std::path::Path;
 use anyhow::Result;
 
 pub struct InvalidatedIdsStorage {
-    base_directory: String,
+    pub base_directory: String,
     backing_file_size: usize,
     files: Vec<File>,
     current_backing_id: i32,
