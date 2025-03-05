@@ -53,8 +53,6 @@ impl Aggregator for AggregatorServerImpl {
                 tonic::Status::internal(format!("No nodes found for index: {}", index_name))
             })?;
         let ef_construction = req.ef_construction;
-        let low_user_ids = req.low_user_ids;
-        let high_user_ids = req.high_user_ids;
 
         let node_infos = self
             .node_manager
@@ -98,22 +96,19 @@ impl Aggregator for AggregatorServerImpl {
                     top_k: req.top_k,
                     record_metrics: req.record_metrics,
                     ef_construction,
-                    low_user_ids: low_user_ids.clone(),
-                    high_user_ids: high_user_ids.clone(),
+                    user_ids: req.user_ids.clone(),
                 }))
                 .await
                 .map_err(|e| tonic::Status::internal(format!("Search request failed: {}", e)))?;
 
             let inner = ret.into_inner();
             inner
-                .low_ids
-                .iter()
-                .zip(inner.high_ids.iter())
+                .doc_ids.iter()
                 .zip(inner.scores.iter())
                 .for_each(|(id, score)| {
                     vecs_and_scores.push(IdAndScore {
-                        low_id: *id.0,
-                        high_id: *id.1,
+                        low_id: id.low_id,
+                        high_id: id.high_id,
                         score: *score,
                     });
                     num_pages_accessed += inner.num_pages_accessed as usize;
