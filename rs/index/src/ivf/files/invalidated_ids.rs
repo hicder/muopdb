@@ -117,6 +117,8 @@ impl InvalidatedIdsStorage {
         Ok(())
     }
 
+    // TODO(tyb): have a invalidate_batch function that does not fsync on every invalidation, and
+    // fsync once at the end for performance.
     pub fn invalidate(&mut self, user_id: u128, doc_id: u128) -> Result<()> {
         if self.current_offset == self.backing_file_size {
             self.new_backing_file()?;
@@ -153,6 +155,10 @@ impl InvalidatedIdsStorage {
             current_file_idx: 0,
             current_offset: 0,
         }
+    }
+
+    pub fn base_directory(&self) -> &str {
+        &self.base_directory
     }
 }
 
