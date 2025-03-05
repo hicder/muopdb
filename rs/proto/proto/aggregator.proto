@@ -15,7 +15,7 @@ message GetRequest {
 
   // For metrics, don't set by default
   bool record_metrics = 4;
-  repeated muopdb.IdUint128 user_ids = 6;
+  repeated muopdb.Id user_ids = 6;
 }
 
 message GetResponse {

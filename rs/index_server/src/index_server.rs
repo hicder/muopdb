@@ -6,12 +6,12 @@ use index::collection::snapshot::SnapshotWithQuantizer;
 use log::info;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
-    CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse, IdUint128,
+    CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse, Id,
     InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, SearchRequest,
     SearchResponse,
 };
 use tokio::sync::{Mutex, RwLock};
-use utils::mem::{lows_and_highs_to_u128s, merge_id_to_u128s, transmute_u8_to_slice};
+use utils::mem::{ids_to_u128s, transmute_u8_to_slice, bytes_to_u128s};
 
 use crate::collection_catalog::CollectionCatalog;
 use crate::collection_manager::CollectionManager;
@@ -156,7 +156,7 @@ impl IndexServer for IndexServerImpl {
         let k = req.top_k;
         let record_metrics = req.record_metrics;
         let ef_construction = req.ef_construction;
-        let user_ids = merge_id_to_u128s(&req.user_ids);
+        let user_ids = ids_to_u128s(&req.user_ids);
 
         let collection_opt = self
             .collection_catalog
@@ -182,7 +182,7 @@ impl IndexServer for IndexServerImpl {
                         let mut scores = vec![];
                         for id_with_score in result.id_with_scores {
                             // TODO(hicder): Support u128
-                            doc_ids.push(IdUint128 {
+                            doc_ids.push(Id {
                                 low_id: id_with_score.id as u64,
                                 high_id: (id_with_score.id >> 64) as u64,
                             });
@@ -229,9 +229,9 @@ impl IndexServer for IndexServerImpl {
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
-        let ids = merge_id_to_u128s(&req.doc_ids);
+        let ids = ids_to_u128s(&req.doc_ids);
         let vectors = req.vectors;
-        let user_ids = merge_id_to_u128s(&req.user_ids);
+        let user_ids = ids_to_u128s(&req.user_ids);
         let collection_opt = self
             .collection_catalog
             .lock()
@@ -330,14 +330,10 @@ impl IndexServer for IndexServerImpl {
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
-        let doc_ids_in_bytes = req.doc_ids.unwrap();
-        let doc_ids = lows_and_highs_to_u128s(
-            transmute_u8_to_slice(&doc_ids_in_bytes.low_ids),
-            transmute_u8_to_slice(&doc_ids_in_bytes.high_ids),
-        );
+        let doc_ids = bytes_to_u128s(&req.doc_ids);
         let num_docs = doc_ids.len();
         let vectors_buffer = req.vectors;
-        let user_ids = merge_id_to_u128s(&req.user_ids);
+        let user_ids = ids_to_u128s(&req.user_ids);
 
         let collection_opt = self
             .collection_catalog

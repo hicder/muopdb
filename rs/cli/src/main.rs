@@ -4,7 +4,7 @@ use log::info;
 use proto::aggregator::aggregator_client::AggregatorClient;
 use proto::aggregator::GetRequest;
 use proto::muopdb::index_server_client::IndexServerClient;
-use proto::muopdb::{IdUint128, SearchRequest};
+use proto::muopdb::{Id, SearchRequest};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -43,7 +43,7 @@ async fn main() -> Result<()> {
                 top_k: 10,
                 record_metrics: true,
                 ef_construction: 100,
-                user_ids: vec![IdUint128 {
+                user_ids: vec![Id {
                     low_id: 0,
                     high_id: 0
                 }]
@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
                 top_k: 10,
                 record_metrics: true,
                 ef_construction: 100,
-                user_ids: vec![IdUint128 {
+                user_ids: vec![Id {
                     low_id: 0,
                     high_id: 0
                 }]

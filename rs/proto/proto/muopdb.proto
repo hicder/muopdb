@@ -61,14 +61,12 @@ message CreateCollectionResponse {
    string message = 1;
 }
 
-message IdUint128 {
+message Id {
+  // The lower 64 bits of the id.
   uint64 low_id = 1;
-  uint64 high_id = 2;
-}
 
-message IdBytes128 {
-  bytes low_ids = 1;
-  bytes high_ids = 2;
+  // The lower 64 bits of the id.
+  uint64 high_id = 2;
 }
 
 message SearchRequest {
@@ -84,11 +82,11 @@ message SearchRequest {
   // In MuopDB, we support 128-bit ids (which is what most UUIDs are).
   // However, in protobuf, there is no uint128 type, so we have to break
   // the ids into two 64-bit parts.
-  repeated IdUint128 user_ids = 6;
+  repeated Id user_ids = 6;
 }
 
 message SearchResponse {
-  repeated IdUint128 doc_ids = 1;
+  repeated Id doc_ids = 1;
 
   repeated float scores = 2;
 
@@ -99,14 +97,14 @@ message SearchResponse {
 message InsertRequest {
   string collection_name = 1;
 
-  repeated IdUint128 doc_ids = 2;
+  repeated Id doc_ids = 2;
 
   // Flattened vector. If the dimension is 10, 
   // and the number of vectors is 5,
   // then this list should have 50 elements.
   repeated float vectors = 3;
 
-  repeated IdUint128 user_ids = 4;
+  repeated Id user_ids = 4;
 }
 
 message InsertResponse {
@@ -127,15 +125,15 @@ message FlushResponse {
 message InsertPackedRequest {
   string collection_name = 1;
 
-  // These ids should be packed with 8 bytes per number.
-  IdBytes128 doc_ids = 2;
+  // the ids must be 16 bytes each, packed with little endian order
+  bytes doc_ids = 2;
 
   // Packed flattened vector. If the dimension is 10, 
   // and the number of vectors is 5, then this list should 
   // have 50 elements, packed with 8 bytes per number.
   bytes vectors = 3;
 
-  repeated IdUint128 user_ids = 4;
+  repeated Id user_ids = 4;
 }
 
 message InsertPackedResponse {
