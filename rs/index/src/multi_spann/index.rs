@@ -16,7 +16,7 @@ use crate::spann::reader::SpannReader;
 use crate::utils::SearchResult;
 
 pub struct MultiSpannIndex<Q: Quantizer> {
-    base_directory: String,
+    pub base_directory: String,
     user_to_spann: DashMap<u128, Arc<Spann<Q>>>,
     #[allow(dead_code)]
     user_index_info_mmap: Mmap,
