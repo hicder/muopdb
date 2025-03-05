@@ -1,3 +1,5 @@
+use proto::muopdb::IdUint128;
+
 pub fn transmute_u8_to_slice<T>(data: &[u8]) -> &[T] {
     unsafe {
         std::slice::from_raw_parts(
@@ -49,6 +51,16 @@ pub fn lows_and_highs_to_u128s(lows: &[u64], highs: &[u64]) -> Vec<u128> {
     result
 }
 
+pub fn merge_id_to_u128s(ids: &Vec<IdUint128>) -> Vec<u128> {
+    let mut result = Vec::with_capacity(ids.len());
+
+    for id in ids {
+        result.push(id.low_id as u128 | (id.high_id as u128) << 64);
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,6 +106,41 @@ mod tests {
         let highs = vec![0x4312, 0x4312, 0x4312, 0x4312, 0x4312];
 
         let ids = lows_and_highs_to_u128s(&lows, &highs);
+
+        assert_eq!(
+            ids,
+            vec![
+                0x4312123456789abcdef0,
+                0x4312123456789abcdef1,
+                0x4312123456789abcdef2,
+                0x4312123456789abcdef3,
+                0x4312123456789abcdef4
+            ]
+        );
+    }
+
+    #[test]
+    fn test_merge_id_to_u128s() {
+        let lows = vec![
+            0x123456789abcdef0,
+            0x123456789abcdef1,
+            0x123456789abcdef2,
+            0x123456789abcdef3,
+            0x123456789abcdef4,
+        ];
+        let highs = vec![0x4312, 0x4312, 0x4312, 0x4312, 0x4312];
+
+        let id_proto :Vec<IdUint128>=
+            lows.iter()
+                .zip(highs.iter())
+                .map(|(&low_id, &high_id)| {
+            IdUint128 {
+                low_id,
+                high_id
+            }
+        }).collect();
+
+        let ids = merge_id_to_u128s(&id_proto);
 
         assert_eq!(
             ids,

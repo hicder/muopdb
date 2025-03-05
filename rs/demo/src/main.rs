@@ -5,7 +5,7 @@ use hdf5::File;
 use log::{info, LevelFilter};
 use ndarray::s;
 use proto::muopdb::index_server_client::IndexServerClient;
-use proto::muopdb::{FlushRequest, InsertPackedRequest};
+use proto::muopdb::{FlushRequest, IdBytes128, IdUint128, InsertPackedRequest};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -51,11 +51,15 @@ async fn main() -> Result<()> {
         // Create and send insert request
         let request = tonic::Request::new(InsertPackedRequest {
             collection_name: "test-collection-1".to_string(),
-            low_ids: id_buffer.to_vec(),
-            high_ids: vec![0u8; id_buffer.len()],
+            doc_ids: Some(IdBytes128 {
+                low_ids: id_buffer.to_vec(),
+                high_ids: vec![0u8; id_buffer.len()],
+            }),
             vectors: vector_buffer.to_vec(),
-            low_user_ids: vec![0],
-            high_user_ids: vec![0],
+            user_ids: vec![IdUint128 {
+                low_id: 0,
+                high_id: 0,
+            }],
         });
 
         client.insert_packed(request).await?;

@@ -1,6 +1,8 @@
 syntax = "proto3";
 package aggregator;
 
+import "muopdb.proto";
+
 service Aggregator {
   rpc Get(GetRequest) returns (GetResponse) {}
 }
@@ -13,8 +15,7 @@ message GetRequest {
 
   // For metrics, don't set by default
   bool record_metrics = 4;
-  repeated uint64 low_user_ids = 6;
-  repeated uint64 high_user_ids = 7;
+  repeated muopdb.IdUint128 user_ids = 6;
 }
 
 message GetResponse {

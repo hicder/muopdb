@@ -4,7 +4,9 @@ use anyhow::{Context, Result};
 use log::{info, LevelFilter};
 use proto::muopdb::index_server_client::IndexServerClient;
 use proto::muopdb::SearchRequest;
+use proto::muopdb::IdUint128;
 use serde_json::{json, json_internal};
+use utils::mem::merge_id_to_u128s;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -55,8 +57,10 @@ async fn main() -> Result<()> {
         top_k: 5,
         ef_construction: 100,
         record_metrics: false,
-        low_user_ids: vec![0],
-        high_user_ids: vec![0],
+        user_ids: vec![IdUint128 {
+            low_id: 0,
+            high_id: 0,
+        }],
     });
 
     let start = Instant::now();
@@ -66,12 +70,7 @@ async fn main() -> Result<()> {
     let search_response = response.into_inner();
     info!("Search completed in {:?}", duration);
     info!("Search results:");
-    let ids: Vec<u128> = search_response
-        .low_ids
-        .iter()
-        .zip(search_response.high_ids.iter())
-        .map(|x| *x.0 as u128 | (*x.1 as u128) << 64)
-        .collect();
+    let ids: Vec<u128> = merge_id_to_u128s(&search_response.doc_ids);
     for (id, score) in ids.iter().zip(search_response.scores.iter()) {
         info!("ID: {}, Score: {}", id, score);
     }
