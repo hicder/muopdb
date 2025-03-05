@@ -5,7 +5,7 @@ use hdf5::File;
 use log::{info, LevelFilter};
 use ndarray::s;
 use proto::muopdb::index_server_client::IndexServerClient;
-use proto::muopdb::{FlushRequest, IdBytes128, IdUint128, InsertPackedRequest};
+use proto::muopdb::{FlushRequest, Id, InsertPackedRequest};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -44,19 +44,16 @@ async fn main() -> Result<()> {
         }
 
         // Generate IDs
-        let ids: Vec<u64> = (start_idx + 1..=end_idx).map(|i| i as u64).collect();
+        let ids: Vec<u128> = (start_idx + 1..=end_idx).map(|i| i as u128).collect();
         let id_buffer = utils::mem::transmute_slice_to_u8(&ids);
         let vector_buffer = utils::mem::transmute_slice_to_u8(&vectors);
 
         // Create and send insert request
         let request = tonic::Request::new(InsertPackedRequest {
             collection_name: "test-collection-1".to_string(),
-            doc_ids: Some(IdBytes128 {
-                low_ids: id_buffer.to_vec(),
-                high_ids: vec![0u8; id_buffer.len()],
-            }),
+            doc_ids: id_buffer.to_vec(),
             vectors: vector_buffer.to_vec(),
-            user_ids: vec![IdUint128 {
+            user_ids: vec![Id {
                 low_id: 0,
                 high_id: 0,
             }],
