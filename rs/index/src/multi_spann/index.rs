@@ -116,10 +116,13 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
 
     pub fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         let index = self.get_or_create_index(user_id)?;
-        self.invalidated_ids_storage
-            .write()
-            .invalidate(user_id, doc_id)?;
-        Ok(index.invalidate(doc_id))
+        let invalidated = index.invalidate(doc_id);
+        if invalidated {
+            self.invalidated_ids_storage
+                .write()
+                .invalidate(user_id, doc_id)?;
+        }
+        Ok(invalidated)
     }
 
     pub fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
@@ -369,5 +372,52 @@ mod tests {
         assert_eq!(results.id_with_scores[0].id, 3);
         assert_eq!(results.id_with_scores[1].id, 2);
         assert_eq!(results.id_with_scores[2].id, 4);
+    }
+
+    #[tokio::test]
+    async fn test_multi_spann_invalidate() {
+        let temp_dir = tempdir::TempDir::new("multi_spann_invalidate_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_vectors = 10;
+        let num_features = 4;
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        // Generate 10 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            assert!(multi_spann_builder
+                .insert(0, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .is_ok());
+        }
+
+        assert!(multi_spann_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
+            .expect("Failed to read Multi-SPANN index");
+
+        assert!(multi_spann_index
+            .invalidate(0, 0 as u128)
+            .expect("Failed to invalidate"));
+        assert_eq!(multi_spann_index.invalidated_ids_storage.write().iter().collect::<Vec<_>>().len(), 1);
+
+        assert!(!multi_spann_index
+            .invalidate(0, num_vectors as u128)
+            .expect("Failed to invalidate"));
+        assert_eq!(multi_spann_index.invalidated_ids_storage.write().iter().collect::<Vec<_>>().len(), 1);
     }
 }
