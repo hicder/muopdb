@@ -125,9 +125,7 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
         } else {
             let index = self.index.read();
             match &*index {
-                Some(index) => {
-                    index.invalidate(user_id, doc_id)
-                }
+                Some(index) => index.invalidate(user_id, doc_id),
                 None => unreachable!("Index should not be None if use_internal_index is set"),
             }
         }

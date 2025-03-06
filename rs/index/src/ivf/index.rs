@@ -1,6 +1,7 @@
 use std::collections::{BinaryHeap, HashSet};
 use std::marker::PhantomData;
 use std::sync::RwLock;
+
 use anyhow::{Context, Result};
 use compression::compression::IntSeqDecoder;
 use compression::elias_fano::ef::EliasFanoDecoder;

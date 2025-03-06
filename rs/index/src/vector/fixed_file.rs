@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::sync::RwLock;
+
 use anyhow::Result;
 use memmap2::Mmap;
 use num_traits::ToBytes;
@@ -124,10 +125,10 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
         };
 
         for id in iterator {
-            if invalidate_ids_clone.as_ref().map_or(
-                false,
-                |ids| ids.contains(&(id as u32))
-            ) {
+            if invalidate_ids_clone
+                .as_ref()
+                .map_or(false, |ids| ids.contains(&(id as u32)))
+            {
                 continue;
             }
 
