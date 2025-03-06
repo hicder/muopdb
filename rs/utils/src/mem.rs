@@ -1,3 +1,5 @@
+use proto::muopdb::Id;
+
 pub fn transmute_u8_to_slice<T>(data: &[u8]) -> &[T] {
     unsafe {
         std::slice::from_raw_parts(
@@ -39,12 +41,24 @@ pub fn u128s_to_lows_highs(ids: &[u128]) -> LowsAndHighs {
     result
 }
 
-pub fn lows_and_highs_to_u128s(lows: &[u64], highs: &[u64]) -> Vec<u128> {
-    let mut result = Vec::with_capacity(lows.len());
+pub fn bytes_to_u128s(bytes: &[u8]) -> Vec<u128> {
+    bytes.chunks_exact(16)
+        .map(|chunk| {
+            let mut value: u128 = 0;
+            for (i, &byte) in chunk.iter().enumerate() {
+                value |= (byte as u128) << (i * 8);
+            }
+            value
+        })
+        .collect()
+}
 
-    lows.iter().zip(highs).for_each(|(low, high)| {
-        result.push(*low as u128 | (*high as u128) << 64);
-    });
+pub fn ids_to_u128s(ids: &[Id]) -> Vec<u128> {
+    let mut result = Vec::with_capacity(ids.len());
+
+    for id in ids {
+        result.push(id.low_id as u128 | (id.high_id as u128) << 64);
+    }
 
     result
 }
@@ -83,7 +97,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lows_and_highs_to_u128s() {
+    fn test_id_to_u128s() {
         let lows = vec![
             0x123456789abcdef0,
             0x123456789abcdef1,
@@ -93,7 +107,13 @@ mod tests {
         ];
         let highs = vec![0x4312, 0x4312, 0x4312, 0x4312, 0x4312];
 
-        let ids = lows_and_highs_to_u128s(&lows, &highs);
+        let id_proto: Vec<Id> = lows
+            .iter()
+            .zip(highs.iter())
+            .map(|(&low_id, &high_id)| Id { low_id, high_id })
+            .collect();
+
+        let ids = ids_to_u128s(&id_proto);
 
         assert_eq!(
             ids,
@@ -103,6 +123,37 @@ mod tests {
                 0x4312123456789abcdef2,
                 0x4312123456789abcdef3,
                 0x4312123456789abcdef4
+            ]
+        );
+    }
+
+    #[test]
+    fn test_bytes_to_u128s() {
+        let mut bytes = Vec::new();
+
+        bytes.extend_from_slice(&[
+            0xf0, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
+            0x12, 0x43, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]);
+
+        bytes.extend_from_slice(&[
+            0xf1, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
+            0x12, 0x43, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]);
+
+        bytes.extend_from_slice(&[
+            0xf2, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
+            0x12, 0x43, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]);
+
+        let ids = bytes_to_u128s(&bytes);
+
+        assert_eq!(
+            ids,
+            vec![
+                0x4312123456789abcdef0,
+                0x4312123456789abcdef1,
+                0x4312123456789abcdef2,
             ]
         );
     }

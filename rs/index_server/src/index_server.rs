@@ -6,12 +6,12 @@ use index::collection::snapshot::SnapshotWithQuantizer;
 use log::info;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
-    CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse,
+    CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse, Id,
     InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, SearchRequest,
     SearchResponse,
 };
 use tokio::sync::{Mutex, RwLock};
-use utils::mem::{lows_and_highs_to_u128s, transmute_u8_to_slice};
+use utils::mem::{ids_to_u128s, transmute_u8_to_slice, bytes_to_u128s};
 
 use crate::collection_catalog::CollectionCatalog;
 use crate::collection_manager::CollectionManager;
@@ -156,7 +156,7 @@ impl IndexServer for IndexServerImpl {
         let k = req.top_k;
         let record_metrics = req.record_metrics;
         let ef_construction = req.ef_construction;
-        let user_ids = lows_and_highs_to_u128s(&req.low_user_ids, &req.high_user_ids);
+        let user_ids = ids_to_u128s(&req.user_ids);
 
         let collection_opt = self
             .collection_catalog
@@ -178,13 +178,15 @@ impl IndexServer for IndexServerImpl {
 
                 match result {
                     Some(result) => {
-                        let mut low_ids = vec![];
-                        let mut high_ids = vec![];
+                        let mut doc_ids = vec![];
                         let mut scores = vec![];
                         for id_with_score in result.id_with_scores {
                             // TODO(hicder): Support u128
-                            low_ids.push(id_with_score.id as u64);
-                            high_ids.push((id_with_score.id >> 64) as u64);
+                            doc_ids.push(Id {
+                                low_id: id_with_score.id as u64,
+                                high_id: (id_with_score.id >> 64) as u64,
+                            });
+
                             scores.push(id_with_score.score);
                         }
                         let end = std::time::Instant::now();
@@ -194,16 +196,14 @@ impl IndexServer for IndexServerImpl {
                             collection_name, duration
                         );
                         return Ok(tonic::Response::new(SearchResponse {
-                            low_ids,
-                            high_ids,
+                            doc_ids,
                             scores,
                             num_pages_accessed: result.stats.num_pages_accessed as u64,
                         }));
                     }
                     None => {
                         return Ok(tonic::Response::new(SearchResponse {
-                            low_ids: vec![],
-                            high_ids: vec![],
+                            doc_ids: vec![],
                             scores: vec![],
                             num_pages_accessed: 0,
                         }));
@@ -229,9 +229,9 @@ impl IndexServer for IndexServerImpl {
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
-        let ids = lows_and_highs_to_u128s(&req.low_ids, &req.high_ids);
+        let ids = ids_to_u128s(&req.doc_ids);
         let vectors = req.vectors;
-        let user_ids = lows_and_highs_to_u128s(&req.low_user_ids, &req.high_user_ids);
+        let user_ids = ids_to_u128s(&req.user_ids);
         let collection_opt = self
             .collection_catalog
             .lock()
@@ -330,13 +330,10 @@ impl IndexServer for IndexServerImpl {
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
-        let doc_ids = lows_and_highs_to_u128s(
-            transmute_u8_to_slice(&req.low_ids),
-            transmute_u8_to_slice(&req.high_ids),
-        );
+        let doc_ids = bytes_to_u128s(&req.doc_ids);
         let num_docs = doc_ids.len();
         let vectors_buffer = req.vectors;
-        let user_ids = lows_and_highs_to_u128s(&req.low_user_ids, &req.high_user_ids);
+        let user_ids = ids_to_u128s(&req.user_ids);
 
         let collection_opt = self
             .collection_catalog
