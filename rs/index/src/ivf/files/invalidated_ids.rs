@@ -154,6 +154,10 @@ impl InvalidatedIdsStorage {
             current_offset: 0,
         }
     }
+
+    pub fn base_directory(&self) -> &String {
+        &self.base_directory
+    }
 }
 
 impl Iterator for InvalidatedIdsIterator {
