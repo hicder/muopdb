@@ -149,9 +149,6 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
 
             // Inner segments are being used to build the internal index, so they should not be
             // changed. Use temporary storage and hash map instead.
-            self.temp_invalidated_ids_storage
-                .write()
-                .invalidate(user_id, doc_id)?;
 
             // Acquire the write lock
             let mut temp_invalidated_ids = self.temp_invalidated_ids.write();
@@ -160,6 +157,10 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
                 Ok(false)
             } else {
                 entry.push(doc_id);
+                // Only write to storage if doc_id is found
+                self.temp_invalidated_ids_storage
+                    .write()
+                    .invalidate(user_id, doc_id)?;
                 Ok(true)
             }
         } else {
