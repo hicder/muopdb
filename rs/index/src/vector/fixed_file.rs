@@ -123,23 +123,36 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
                 Some(guard.clone())
             }
         };
-
-        for id in iterator {
-            if invalidate_ids_clone
-                .as_ref()
-                .map_or(false, |ids| ids.contains(&(id as u32)))
-            {
-                continue;
+        
+        match invalidate_ids_clone {
+            None => {
+                for id in iterator {
+                    let vector = self.get_async(id as u32, &mut context).await?;
+                    let distance = quantizer.distance(
+                        query,
+                        vector,
+                        utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD,
+                    );
+                    result.push(PointAndDistance::new(distance, id as u32));
+                }
             }
+            Some(invalidated_ids) => {
+                for id in iterator {
+                    if invalidated_ids.contains(&(id as u32)) {
+                        continue;
+                    }
 
-            let vector = self.get_async(id as u32, &mut context).await?;
-            let distance = quantizer.distance(
-                query,
-                vector,
-                utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD,
-            );
-            result.push(PointAndDistance::new(distance, id as u32));
+                    let vector = self.get_async(id as u32, &mut context).await?;
+                    let distance = quantizer.distance(
+                        query,
+                        vector,
+                        utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD,
+                    );
+                    result.push(PointAndDistance::new(distance, id as u32));
+                }
+            }
         }
+        
         stats.num_pages_accessed = context.num_pages_accessed();
         Ok(IntermediateResult {
             point_and_distances: result,
