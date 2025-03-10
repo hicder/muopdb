@@ -253,14 +253,15 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         }
     }
 
+    /// Invalidates a doc_id. Returns true if the doc_id is effectively invalidated, false
+    /// otherwise (i.e. doc_id not found or had already been invalidated)
     pub fn invalidate(&self, doc_id: u128) -> bool {
         match self.get_point_id(doc_id) {
             Some(point_id) => {
                 self.invalid_point_ids
                     .write()
                     .unwrap()
-                    .insert(point_id as u32);
-                true
+                    .insert(point_id as u32)
             }
             None => false,
         }

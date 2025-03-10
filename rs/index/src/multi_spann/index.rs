@@ -143,6 +143,10 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             Err(_) => None,
         }
     }
+
+    pub fn base_directory(&self) -> &String {
+        &self.base_directory
+    }
 }
 
 #[cfg(test)]

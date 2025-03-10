@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use anyhow::{Ok, Result};
+use anyhow::{anyhow, Ok, Result};
 use config::collection::CollectionConfig;
 use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
@@ -81,7 +81,7 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
     pub fn build_index(&self) -> Result<()> {
         if self.use_internal_index {
             // We shouldn't build the index if it already exists.
-            return Err(anyhow::anyhow!("Index already exists"));
+            return Err(anyhow!("Index already exists"));
         }
 
         let current_directory = format!("{}/{}", self.parent_directory, self.name);
@@ -93,8 +93,37 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
 
     // Caller must hold the write lock before calling this function.
     pub fn apply_pending_deletions(&self) -> Result<()> {
-        // TODO(hicder): Implement this once we support deletions.
-        Ok(())
+        let internal_index = self.index.read();
+        match &*internal_index {
+            Some(index) => {
+                let invalidated_ids_directory =
+                    PathBuf::from(format!("{}/invalidated_ids_storage", index.base_directory()));
+                if !invalidated_ids_directory.exists() {
+                    return Err(anyhow!("Invalidated ids directory does not exist"));
+                }
+                if !invalidated_ids_directory.is_dir() {
+                    return Err(anyhow!("Invalidated ids path is not a directory"));
+                }
+
+                // At this point there should be no invalidated ids recorded in internal index.
+                let is_empty = std::fs::read_dir(&invalidated_ids_directory)?.next().is_none();
+                if !is_empty {
+                    return Err(anyhow!("Invalidated ids directory for internal index is not empty"));
+                }
+
+                // TODO(tyb): hard link the storage? But still need to invalidate in the hash set
+                for (user_id, doc_ids) in self.temp_invalidated_ids.read().iter() {
+                    for doc_id in doc_ids {
+                        // doc_id may have been removed during optimizer run (e.g. we don't add
+                        // invalidated docs when merging), so we just need to make sure
+                        // invalidating doesn't result in error.
+                        let _ = index.invalidate(*user_id, *doc_id)?;
+                    }
+                }
+                Ok(())
+            }
+            None => Err(anyhow!("Internal index does not exist")),
+        }
     }
 
     // Caller must hold the write lock before calling this function.
@@ -128,6 +157,10 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
             user_ids.extend(segment.user_ids());
         }
         user_ids.into_iter().collect()
+    }
+
+    pub fn temp_invalidated_ids_storage_directory(&self) -> String {
+        self.temp_invalidated_ids_storage.read().base_directory().to_string()
     }
 }
 
