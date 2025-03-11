@@ -101,7 +101,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let consumer = QueueConsumer::new(&arg.brokers, &wal_topic_name, &group_id);
     let consumer_handle = spawn(async move {
-        consumer.consume_messages().await;
+        loop {
+            let processed_ops = consumer.consume_messages().await.unwrap();
+            debug!("Consumer processed {} ops", processed_ops);
+
+            // if there is no ops to process, sleep for 1 second
+            if processed_ops == 0 {
+                sleep(std::time::Duration::from_secs(1)).await;
+            }
+        }
     });
 
 

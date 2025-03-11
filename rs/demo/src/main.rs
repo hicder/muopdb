@@ -36,7 +36,6 @@ async fn main() -> Result<()> {
     // Insert embeddings in batches into MuopDB
     let batch_size = 100_000;
     let total_embeddings = embeddings.nrows();
-    let mut request_msgs = vec![];
     let mut start_idx = 0;
 
     let mut start = Instant::now();
@@ -74,7 +73,7 @@ async fn main() -> Result<()> {
             topic: topic.to_string(),
         };
 
-        request_msgs.push(msg);
+        producer.send_message(&msg).await;
 
         client.insert_packed(request).await?;
         start_idx = end_idx;
@@ -83,9 +82,6 @@ async fn main() -> Result<()> {
     let mut duration = start.elapsed();
     info!("Inserted all documents in {:?}", duration);
 
-    for msg in &request_msgs {
-        producer.send_message(msg).await;
-    }
 
     // Done inserting, now start indexing.
     info!("Start indexing documents...");

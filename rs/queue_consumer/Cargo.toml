@@ -8,3 +8,4 @@ serde_json.workspace = true
 serde.workspace = true
 rdkafka.workspace = true
 tokio-stream.workspace = true
+anyhow.workspace = true

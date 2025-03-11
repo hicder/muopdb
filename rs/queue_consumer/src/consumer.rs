@@ -3,6 +3,7 @@ use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::Message;
 use serde::{Deserialize, Serialize};
 use tokio_stream::StreamExt;
+use anyhow::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueueMessage<T> {
@@ -33,11 +34,13 @@ impl QueueConsumer {
         }
     }
 
-    pub async fn consume_messages(&self) {
+    pub async fn consume_messages(&self) -> Result<usize> {
         // get the stream
         let mut stream = self.inner.stream();
+        let mut processed_ops = 0;
 
         while let Some(result) = stream.next().await {
+            processed_ops += 1;
             match result {
                 Ok(message) => {
                     let payload = match message.payload_view::<str>() {
@@ -76,6 +79,8 @@ impl QueueConsumer {
                 }
             }
         }
+
+        Ok(processed_ops)
     }
 }
 
