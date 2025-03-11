@@ -25,13 +25,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> OptimizerEngine<Q> {
     }
 
     pub fn run(&self, segments: Vec<String>, optimizing_type: OptimizingType) -> Result<String> {
-        if segments.len() < 2 && optimizing_type == OptimizingType::Merge {
-            return Ok("".to_string());
-        }
-        if segments.len() > 1 && optimizing_type == OptimizingType::Vacuum {
-            return Ok("".to_string());
-        }
-
         let pending_segment = self.collection.init_optimizing(&segments)?;
         match optimizing_type {
             OptimizingType::Vacuum => {

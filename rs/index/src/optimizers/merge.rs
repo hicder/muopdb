@@ -29,11 +29,14 @@ impl<Q: Quantizer + Clone + Send + Sync> SegmentOptimizer<Q> for MergeOptimizer<
 impl SegmentOptimizer<NoQuantizerL2> for MergeOptimizer<NoQuantizerL2> {
     fn optimize(&self, pending_segment: &PendingSegment<NoQuantizerL2>) -> Result<()> {
         let inner_segments = pending_segment.inner_segments();
-        let all_user_ids = pending_segment.all_user_ids();
+        if inner_segments.len() < 2 {
+            return Ok(());
+        }
 
         let config = pending_segment.collection_config();
         let mut builder = MultiSpannBuilder::new(config.clone(), pending_segment.base_directory())?;
-
+        let all_user_ids = pending_segment.all_user_ids();
+        
         for user_id in all_user_ids {
             for inner_segment in inner_segments {
                 let iter = inner_segment.iter_for_user(user_id);

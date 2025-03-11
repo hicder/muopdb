@@ -29,35 +29,34 @@ impl<Q: Quantizer + Clone + Send + Sync> SegmentOptimizer<Q> for VacuumOptimizer
 impl SegmentOptimizer<NoQuantizerL2> for VacuumOptimizer<NoQuantizerL2> {
     fn optimize(&self, pending_segment: &PendingSegment<NoQuantizerL2>) -> Result<()> {
         let inner_segments = pending_segment.inner_segments();
+        if inner_segments.len() != 1 {
+            return Ok(());
+        }
+
         let config = pending_segment.collection_config();
         let mut builder = MultiSpannBuilder::new(config.clone(), pending_segment.base_directory())?;
+        let inner_segment = &inner_segments[0];
+        let all_user_ids = pending_segment.all_user_ids();
 
-        if inner_segments.len() == 1 {
-            let inner_segment = &inner_segments[0];
-            let all_user_ids = pending_segment.all_user_ids();
-
-            for user_id in all_user_ids {
-                let iter = inner_segment.iter_for_user(user_id);
-                if let Some(iter) = iter {
-                    let mut iter = iter;
-                    while let Some((doc_id, vector)) = iter.next() {
-                        builder.insert(user_id, doc_id, vector)?;
-                    }
+        for user_id in all_user_ids {
+            let iter = inner_segment.iter_for_user(user_id);
+            if let Some(iter) = iter {
+                let mut iter = iter;
+                while let Some((doc_id, vector)) = iter.next() {
+                    builder.insert(user_id, doc_id, vector)?;
                 }
             }
         }
-
         builder.build()?;
         let writer = MultiSpannWriter::new(pending_segment.base_directory().clone());
         writer.write(&mut builder)?;
+
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use config::collection::CollectionConfig;
 
     use super::*;
