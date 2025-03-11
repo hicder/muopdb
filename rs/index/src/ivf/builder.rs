@@ -224,9 +224,9 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
     }
 
     fn generate_id(&mut self, doc_id: u128) -> Result<u32> {
-        let generated_id = self.doc_id_mapping.len() as u32;
+        let generated_point_id = self.doc_id_mapping.len() as u32;
         self.doc_id_mapping.push(doc_id);
-        Ok(generated_id)
+        Ok(generated_point_id)
     }
 
     fn find_nearest_centroid_inmemory(
@@ -268,17 +268,15 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
         let mut posting_lists: Vec<Vec<u64>> =
             vec![Vec::with_capacity(0); self.centroids.num_vectors()];
-        // Assign vectors to nearest centroids
-        // self.assign_docs_to_cluster(doc_ids, flattened_centroids)
 
-        let doc_ids = (0..self.vectors.num_vectors()).collect::<Vec<usize>>();
-        // let vector_clone = self.vectors.clone();
+        // Assign vectors to nearest centroids
+        let point_ids = (0..self.vectors.num_vectors()).collect::<Vec<usize>>();
         let max_clusters_per_vector = self.config.max_clusters_per_vector;
-        let posting_list_per_doc = doc_ids
+        let posting_list_per_doc = point_ids
             .par_iter()
-            .map(|doc_id| {
+            .map(|point_id| {
                 let nearest_centroids = Self::find_nearest_centroids(
-                    self.vectors.get_no_context(*doc_id as u32).unwrap(),
+                    self.vectors.get_no_context(*point_id as u32).unwrap(),
                     &self.centroids,
                     max_clusters_per_vector,
                 )
@@ -338,11 +336,11 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
     fn assign_docs_to_cluster(
         &self,
-        doc_ids: Vec<usize>,
+        point_ids: Vec<usize>,
         flattened_centroids: &[f32],
     ) -> Result<Vec<PostingListInfo>> {
         let mut posting_list_infos: Vec<PostingListInfo> = Vec::new();
-        posting_list_infos.reserve(doc_ids.len());
+        posting_list_infos.reserve(point_ids.len());
         for i in 0..flattened_centroids.len() / self.config.num_features {
             let centroid = flattened_centroids
                 [i * self.config.num_features..(i + 1) * self.config.num_features]
@@ -354,47 +352,47 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         }
 
         let num_features = self.config.num_features;
-        let nearest_centroids = doc_ids
+        let nearest_centroids = point_ids
             .par_iter()
-            .map(|doc_id| {
+            .map(|point_id| {
                 Self::find_nearest_centroid_inmemory(
-                    self.vectors.get_no_context(*doc_id as u32).unwrap(),
+                    self.vectors.get_no_context(*point_id as u32).unwrap(),
                     &flattened_centroids,
                     num_features,
                 )
             })
             .collect::<Vec<usize>>();
 
-        for (doc_id, nearest_centroid) in doc_ids.iter().zip(nearest_centroids.iter()) {
+        for (point_id, nearest_centroid) in point_ids.iter().zip(nearest_centroids.iter()) {
             posting_list_infos[*nearest_centroid]
                 .posting_list
-                .push(*doc_id);
+                .push(*point_id);
         }
         Ok(posting_list_infos)
     }
 
-    fn get_sample_dataset_from_doc_ids(
+    fn get_sample_dataset_from_point_ids(
         &self,
-        doc_ids: &[usize],
+        point_ids: &[usize],
         sample_size: usize,
     ) -> Result<Vec<f32>> {
         let mut rng = rand::thread_rng();
         let mut flattened_dataset: Vec<f32> = vec![];
-        doc_ids
+        point_ids
             .choose_multiple(&mut rng, sample_size)
-            .for_each(|doc_id| {
+            .for_each(|point_id| {
                 flattened_dataset
-                    .extend_from_slice(self.vectors.get_no_context(*doc_id as u32).unwrap());
+                    .extend_from_slice(self.vectors.get_no_context(*point_id as u32).unwrap());
             });
         Ok(flattened_dataset)
     }
 
     fn cluster_docs(
         &self,
-        doc_ids: Vec<usize>,
+        point_ids: Vec<usize>,
         max_posting_list_size: usize,
     ) -> Result<Vec<PostingListInfo>> {
-        let num_clusters = ceil_div(doc_ids.len(), max_posting_list_size);
+        let num_clusters = ceil_div(point_ids.len(), max_posting_list_size);
 
         let num_points_for_clustering = max(
             num_clusters * 10,
@@ -409,10 +407,10 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         );
 
         let flattened_dataset =
-            self.get_sample_dataset_from_doc_ids(&doc_ids, num_points_for_clustering)?;
+            self.get_sample_dataset_from_point_ids(&point_ids, num_points_for_clustering)?;
         let result = kmeans.fit(flattened_dataset)?;
 
-        self.assign_docs_to_cluster(doc_ids, result.centroids.as_ref())
+        self.assign_docs_to_cluster(point_ids, result.centroids.as_ref())
     }
 
     fn compute_actual_num_clusters(
@@ -670,12 +668,12 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
         // Update doc_id_mapping with reassigned IDs
         let tmp_id_provider = self.doc_id_mapping.clone();
-        for (id, doc_id) in tmp_id_provider.into_iter().enumerate() {
-            let new_id = assigned_ids.get(id).ok_or(anyhow!(
+        for (point_id, doc_id) in tmp_id_provider.into_iter().enumerate() {
+            let new_point_id = assigned_ids.get(point_id).ok_or(anyhow!(
                 "id in id_provider {} is larger than size of vectors",
-                id
+                point_id
             ))?;
-            self.doc_id_mapping[*new_id as usize] = doc_id;
+            self.doc_id_mapping[*new_point_id as usize] = doc_id;
         }
 
         // Build reverse assigned ids
