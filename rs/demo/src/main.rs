@@ -6,6 +6,7 @@ use log::{info, LevelFilter};
 use ndarray::s;
 use proto::muopdb::index_server_client::IndexServerClient;
 use proto::muopdb::{FlushRequest, Id, InsertPackedRequest};
+use queue_consumer::producer::{QueueMessage, QueueProducer};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -21,6 +22,10 @@ async fn main() -> Result<()> {
         .await
         .context("Failed to connect to IndexServer")?;
 
+    let brokers = "localhost:19092,localhost:29092,localhost:39092";
+    let topic = "index-server-wal-0";
+    let producer = QueueProducer::new(&brokers, &topic);
+
     info!("=========== Inserting documents ===========");
 
     // Read embeddings from HDF5 file
@@ -31,6 +36,7 @@ async fn main() -> Result<()> {
     // Insert embeddings in batches into MuopDB
     let batch_size = 100_000;
     let total_embeddings = embeddings.nrows();
+    let mut request_msgs = vec![];
     let mut start_idx = 0;
 
     let mut start = Instant::now();
@@ -59,12 +65,27 @@ async fn main() -> Result<()> {
             }],
         });
 
+        let json_string = serde_json::to_string(&request.get_ref().clone())
+            .expect("Failed to serialize request");
+
+
+        let msg = QueueMessage {
+            payload: json_string,
+            topic: topic.to_string(),
+        };
+
+        request_msgs.push(msg);
+
         client.insert_packed(request).await?;
         start_idx = end_idx;
     }
 
     let mut duration = start.elapsed();
     info!("Inserted all documents in {:?}", duration);
+
+    for msg in &request_msgs {
+        producer.send_message(msg).await;
+    }
 
     // Done inserting, now start indexing.
     info!("Start indexing documents...");

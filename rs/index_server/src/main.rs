@@ -22,9 +22,15 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::time::sleep;
 use tonic::transport::Server;
 
+use queue_consumer::consumer::QueueConsumer;
+use queue_consumer::admin::Admin;
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    #[arg(long)]
+    brokers: String,
+
     #[arg(short, long, default_value_t = 9002)]
     port: u32,
 
@@ -84,6 +90,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             sleep(std::time::Duration::from_secs(60)).await;
         }
     });
+
+    let queue_consumer_admin = Admin::new(&arg.brokers);
+    // Create WAL topic
+    let wal_topic_name = format!("index-server-wal-{}", node_id);
+    let group_id = format!("index-server-group-{}", node_id);
+    if let Err(e) = queue_consumer_admin.create_topic(&wal_topic_name).await {
+        error!("Failed to create WAL topic: {}", e);
+    }
+
+    let consumer = QueueConsumer::new(&arg.brokers, &wal_topic_name, &group_id);
+    let consumer_handle = spawn(async move {
+        consumer.consume_messages().await;
+    });
+
 
     let mut ingestion_worker_threads = Vec::new();
     for i in 0..arg.num_ingestion_workers {
@@ -156,5 +176,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for thread in flush_worker_threads {
         thread.await?;
     }
+
+    consumer_handle.await?;
     Ok(())
 }

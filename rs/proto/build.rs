@@ -14,6 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_server(true)
         .file_descriptor_set_path(out_dir.join("muopdb_descriptor.bin"))
         .out_dir(out_dir.clone())
+        .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
         .compile_protos(&[proto_file, admin_proto_file], &["proto"])?;
 
     tonic_build::configure()
@@ -22,6 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_server(true)
         .file_descriptor_set_path(out_dir.join("aggregator_descriptor.bin"))
         .out_dir(out_dir)
+        .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
         .compile_protos(&[aggregator_proto_file], &["proto"])?;
 
     let output = Command::new("cargo")

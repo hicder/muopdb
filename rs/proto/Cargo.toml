@@ -9,3 +9,4 @@ tonic-build.workspace = true
 [dependencies]
 tonic.workspace = true
 prost.workspace = true
+serde.workspace = true

@@ -26,7 +26,7 @@ mkdir -p /mnt/muopdb/data
 ```bash
 # Start server locally. This is recommended for Mac.
 cd target/release
-RUST_LOG=info ./index_server --node-id 0 --index-config-path /mnt/muopdb/indices --index-data-path /mnt/muopdb/data --port 9002
+RUST_LOG=info ./index_server --node-id 0 --index-config-path /mnt/muopdb/indices --index-data-path /mnt/muopdb/data --port 9002 --brokers localhost:19092,localhost:29092,localhost:39092
 
 # Start server with Docker. Only use this option on Linux.
 docker-compose up --build
