@@ -43,6 +43,7 @@ pub struct IvfBuilder<D: DistanceCalculator + CalculateSquared + Send + Sync> {
     centroids: FileBackedAppendableVectorStorage<f32>,
     posting_lists: FileBackedAppendablePostingListStorage,
     doc_id_mapping: Vec<u128>,
+    valid_point_id_mapping: HashMap<u128, u32>,
     _marker: PhantomData<D>,
 }
 
@@ -176,6 +177,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             centroids,
             posting_lists,
             doc_id_mapping: Vec::new(),
+            valid_point_id_mapping: HashMap::new(),
             _marker: PhantomData,
         })
     }
@@ -223,9 +225,17 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         Ok(())
     }
 
+    /// Remove the doc_id from valid_point_id_mapping, return true if doc_id is
+    /// in the map and the removal takes place effectively, false otherwise
+    pub fn invalidate(&mut self, doc_id: u128) -> bool {
+        self.valid_point_id_mapping.remove(&doc_id).is_some()
+    }
+
     fn generate_id(&mut self, doc_id: u128) -> Result<u32> {
         let generated_point_id = self.doc_id_mapping.len() as u32;
         self.doc_id_mapping.push(doc_id);
+        self.valid_point_id_mapping
+            .insert(doc_id, generated_point_id);
         Ok(generated_point_id)
     }
 
@@ -263,6 +273,15 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         Ok(distances)
     }
 
+    fn get_num_valid_vectors(&self) -> usize {
+        self.valid_point_id_mapping.len()
+    }
+
+    fn is_valid_point_id(&self, point_id: usize) -> bool {
+        self.valid_point_id_mapping
+            .contains_key(&self.doc_id_mapping[point_id])
+    }
+
     pub fn build_posting_lists(&mut self) -> Result<()> {
         debug!("Building posting lists");
 
@@ -270,7 +289,9 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             vec![Vec::with_capacity(0); self.centroids.num_vectors()];
 
         // Assign vectors to nearest centroids
-        let point_ids = (0..self.vectors.num_vectors()).collect::<Vec<usize>>();
+        let point_ids: Vec<usize> = (0..self.vectors.num_vectors() as usize)
+            .filter(|&id| self.is_valid_point_id(id))
+            .collect();
         let max_clusters_per_vector = self.config.max_clusters_per_vector;
         let posting_list_per_doc = point_ids
             .par_iter()
@@ -432,7 +453,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
         // First pass to get the initial centroids
         let num_clusters = self.compute_actual_num_clusters(
-            self.vectors.num_vectors(),
+            self.get_num_valid_vectors(),
             self.config.num_clusters,
             self.config.max_posting_list_size,
         );
@@ -446,11 +467,13 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
         // Sample the dataset to build the first set of centroids
         let mut rng = rand::thread_rng();
-        let num_input_vectors = self.vectors.num_vectors();
 
         // Create a vector from 0 to num_input_vectors and then shuffle it
+        // Filter out invalidated ids
         let mut flattened_dataset: Vec<f32> = vec![];
-        let indices: Vec<usize> = (0..num_input_vectors as usize).collect();
+        let indices: Vec<usize> = (0..self.vectors.num_vectors() as usize)
+            .filter(|&id| self.is_valid_point_id(id))
+            .collect();
 
         let num_points_for_clustering =
             max(num_clusters, self.config.num_data_points_for_clustering);
@@ -622,7 +645,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
     /// Assign new ids to the vectors
     fn get_reassigned_ids(&mut self) -> Result<Vec<i32>> {
-        let vector_length = self.vectors.num_vectors();
+        let vector_length = self.get_num_valid_vectors();
         let mut assigned_ids = vec![-1; vector_length];
 
         let mut cur_idx = self.assign_ids_until_last_stopping_point(&mut assigned_ids)?;
@@ -674,6 +697,9 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
                 point_id
             ))?;
             self.doc_id_mapping[*new_point_id as usize] = doc_id;
+            assert!(self.valid_point_id_mapping.contains_key(&doc_id));
+            self.valid_point_id_mapping
+                .insert(doc_id, *new_point_id as u32);
         }
 
         // Build reverse assigned ids
@@ -698,7 +724,6 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
         for i in 0..reverse_assigned_ids.len() {
             let mapped_id = reverse_assigned_ids[i];
-            // let vector = self.vectors.borrow().get(mapped_id as u32).unwrap();
             new_vector_storage
                 .append(self.vectors.get_no_context(mapped_id as u32).unwrap())
                 .unwrap_or_else(|_| panic!("append failed"));
@@ -1443,6 +1468,108 @@ mod tests {
                 + num_clusters * 2 * std::mem::size_of::<u64>()) // posting list metadata
             .div_ceil(builder.config.file_size)
         );
+    }
+
+    #[test]
+    fn test_ivf_builder_with_invalidated() {
+        let temp_dir = tempdir::TempDir::new("ivf_builder_with_invalidated_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 10;
+        let num_vectors = 1000;
+        let num_features = 4;
+        let file_size = 4096;
+        let balance_factor = 0.0;
+        let max_posting_list_size = usize::MAX;
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points_for_clustering: num_vectors,
+            max_clusters_per_vector: 1,
+            distance_threshold: 0.1,
+            base_directory,
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: balance_factor,
+            max_posting_list_size,
+        })
+        .expect("Failed to create builder");
+        // Generate 1000 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            builder
+                .add_vector(i as u128, &generate_random_vector(num_features))
+                .expect("Vector should be added");
+        }
+        for i in 0..num_vectors - 1 {
+            assert!(builder.invalidate(i as u128));
+        }
+
+        let result = builder.build();
+        assert!(result.is_ok());
+
+        assert_eq!(builder.get_num_valid_vectors(), 1);
+        assert_eq!(builder.centroids.num_vectors(), 1);
+        assert_eq!(builder.posting_lists.len(), 1);
+    }
+
+    #[test]
+    fn test_ivf_builder_with_revalidated() {
+        let temp_dir = tempdir::TempDir::new("ivf_builder_with_revalidated_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 10;
+        let num_vectors = 1000;
+        let num_features = 4;
+        let file_size = 4096;
+        let balance_factor = 0.0;
+        let max_posting_list_size = usize::MAX;
+
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points_for_clustering: num_vectors,
+            max_clusters_per_vector: 1,
+            distance_threshold: 0.1,
+            base_directory,
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: balance_factor,
+            max_posting_list_size,
+        })
+        .expect("Failed to create builder");
+        for i in 0..num_vectors {
+            builder
+                .add_vector(i as u128, &generate_random_vector(num_features))
+                .expect("Vector should be added");
+        }
+        for i in 0..num_vectors - 1 {
+            assert!(builder.invalidate(i as u128));
+        }
+        // Test revalidation
+        for i in 0..num_vectors - 1 {
+            builder
+                .add_vector(i as u128, &generate_random_vector(num_features))
+                .expect("Vector should be added");
+        }
+
+        let result = builder.build();
+        assert!(result.is_ok());
+
+        assert_eq!(builder.get_num_valid_vectors(), num_vectors);
+        assert_eq!(builder.centroids.num_vectors(), num_clusters);
+        assert_eq!(builder.posting_lists.len(), num_clusters);
     }
 
     #[test]
