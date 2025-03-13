@@ -277,23 +277,6 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         self.valid_point_id_mapping.len()
     }
 
-    fn is_valid_point_id(&self, point_id: usize) -> bool {
-        // Not only we need to verify that the point_id is mapped to a valid doc_id,
-        // we also need to make sure that valid doc_id is really associated to this point_id
-        // (i.e. the same doc_id hasn't been updated with a new point_id)
-        if let Some(valid_point_id) = self
-            .valid_point_id_mapping
-            .get(&self.doc_id_mapping[point_id])
-        {
-            // doc_id associated with this point_id is valid, but it may be mapped to another point_id,
-            // which makes this point_id invalid
-            *valid_point_id == point_id as u32
-        } else {
-            // doc_id associated with this point_id has been invalidated
-            false
-        }
-    }
-
     pub fn build_posting_lists(&mut self) -> Result<()> {
         debug!("Building posting lists");
 
@@ -301,15 +284,15 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             vec![Vec::with_capacity(0); self.centroids.num_vectors()];
 
         // Assign vectors to nearest centroids
-        let point_ids: Vec<usize> = (0..self.vectors.num_vectors() as usize)
-            .filter(|&id| self.is_valid_point_id(id))
-            .collect();
+        let mut point_ids: Vec<u32> = self.valid_point_id_mapping.values().cloned().collect();
+        point_ids.sort();
+
         let max_clusters_per_vector = self.config.max_clusters_per_vector;
         let posting_list_per_doc = point_ids
             .par_iter()
             .map(|point_id| {
                 let nearest_centroids = Self::find_nearest_centroids(
-                    self.vectors.get_no_context(*point_id as u32).unwrap(),
+                    self.vectors.get_no_context(*point_id).unwrap(),
                     &self.centroids,
                     max_clusters_per_vector,
                 )
@@ -483,8 +466,10 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         // Create a vector from 0 to num_input_vectors and then shuffle it
         // Filter out invalidated ids
         let mut flattened_dataset: Vec<f32> = vec![];
-        let indices: Vec<usize> = (0..self.vectors.num_vectors() as usize)
-            .filter(|&id| self.is_valid_point_id(id))
+        let indices: Vec<usize> = self
+            .valid_point_id_mapping
+            .values()
+            .map(|&x| x as usize)
             .collect();
 
         let num_points_for_clustering =
@@ -1577,15 +1562,24 @@ mod tests {
         }
 
         // Test doc_id reassignment
-        assert!(builder.is_valid_point_id(num_vectors - 1));
+        assert!(builder
+            .valid_point_id_mapping
+            .values()
+            .any(|&valid_point_id| valid_point_id == (num_vectors - 1) as u32));
         assert!(builder
             .add_vector(
                 (num_vectors - 1) as u128,
                 &generate_random_vector(num_features)
             )
             .is_ok());
-        assert!(!builder.is_valid_point_id(num_vectors - 1));
-        assert!(builder.is_valid_point_id(num_vectors * 2 - 1));
+        assert!(!builder
+            .valid_point_id_mapping
+            .values()
+            .any(|&valid_point_id| valid_point_id == (num_vectors - 1) as u32));
+        assert!(builder
+            .valid_point_id_mapping
+            .values()
+            .any(|&valid_point_id| valid_point_id == (num_vectors * 2 - 1) as u32));
 
         let result = builder.build();
         assert!(result.is_ok());
