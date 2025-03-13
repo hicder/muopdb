@@ -278,8 +278,20 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
     }
 
     fn is_valid_point_id(&self, point_id: usize) -> bool {
-        self.valid_point_id_mapping
-            .contains_key(&self.doc_id_mapping[point_id])
+        // Not only we need to verify that the point_id is mapped to a valid doc_id,
+        // we also need to make sure that valid doc_id is really associated to this point_id
+        // (i.e. the same doc_id hasn't been updated with a new point_id)
+        if let Some(valid_point_id) = self
+            .valid_point_id_mapping
+            .get(&self.doc_id_mapping[point_id])
+        {
+            // doc_id associated with this point_id is valid, but it may be mapped to another point_id,
+            // which makes this point_id invalid
+            *valid_point_id == point_id as u32
+        } else {
+            // doc_id associated with this point_id has been invalidated
+            false
+        }
     }
 
     pub fn build_posting_lists(&mut self) -> Result<()> {
@@ -1563,6 +1575,17 @@ mod tests {
                 .add_vector(i as u128, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
+
+        // Test doc_id reassignment
+        assert!(builder.is_valid_point_id(num_vectors - 1));
+        assert!(builder
+            .add_vector(
+                (num_vectors - 1) as u128,
+                &generate_random_vector(num_features)
+            )
+            .is_ok());
+        assert!(!builder.is_valid_point_id(num_vectors - 1));
+        assert!(builder.is_valid_point_id(num_vectors * 2 - 1));
 
         let result = builder.build();
         assert!(result.is_ok());
