@@ -116,13 +116,13 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
 
     pub fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         let index = self.get_or_create_index(user_id)?;
-        let invalidated = index.invalidate(doc_id);
-        if invalidated {
+        let effectively_invalidated = index.invalidate(doc_id);
+        if effectively_invalidated {
             self.invalidated_ids_storage
                 .write()
                 .invalidate(user_id, doc_id)?;
         }
-        Ok(invalidated)
+        Ok(effectively_invalidated)
     }
 
     pub fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {

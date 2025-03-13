@@ -44,9 +44,9 @@ impl MultiSpannBuilder {
             Entry::Vacant(_) => Err(anyhow!("No entry exists for user_id")),
         };
 
-        let invalidated = result?.get().write().unwrap().invalidate(doc_id);
+        let effectively_invalidated = result?.get().write().unwrap().invalidate(doc_id);
 
-        Ok(invalidated)
+        Ok(effectively_invalidated)
     }
 
     pub fn build(&self) -> Result<()> {
