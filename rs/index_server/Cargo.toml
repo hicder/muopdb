@@ -25,3 +25,4 @@ utils.workspace = true
 quantization.workspace = true
 index_writer.workspace = true
 config.workspace = true
+queue_consumer.workspace = true

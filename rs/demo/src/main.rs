@@ -6,6 +6,7 @@ use log::{info, LevelFilter};
 use ndarray::s;
 use proto::muopdb::index_server_client::IndexServerClient;
 use proto::muopdb::{FlushRequest, Id, InsertPackedRequest};
+use queue_consumer::producer::{QueueMessage, QueueProducer};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -20,6 +21,10 @@ async fn main() -> Result<()> {
     let mut client = IndexServerClient::connect(addr)
         .await
         .context("Failed to connect to IndexServer")?;
+
+    let brokers = "localhost:19092,localhost:29092,localhost:39092";
+    let topic = "index-server-wal-0";
+    let producer = QueueProducer::new(&brokers, &topic);
 
     info!("=========== Inserting documents ===========");
 
@@ -59,12 +64,24 @@ async fn main() -> Result<()> {
             }],
         });
 
+        let json_string = serde_json::to_string(&request.get_ref().clone())
+            .expect("Failed to serialize request");
+
+
+        let msg = QueueMessage {
+            payload: json_string,
+            topic: topic.to_string(),
+        };
+
+        producer.send_message(&msg).await;
+
         client.insert_packed(request).await?;
         start_idx = end_idx;
     }
 
     let mut duration = start.elapsed();
     info!("Inserted all documents in {:?}", duration);
+
 
     // Done inserting, now start indexing.
     info!("Start indexing documents...");
