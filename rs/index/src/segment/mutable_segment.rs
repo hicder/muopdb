@@ -33,7 +33,7 @@ impl MutableSegment {
         self.created_at
     }
 
-    pub fn insert(&mut self, doc_id: u128, data: &[f32]) -> Result<()> {
+    pub fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
         if self.finalized {
             return Err(anyhow::anyhow!("Cannot insert into a finalized segment"));
         }
