@@ -195,7 +195,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                     .for_each(|(vector, doc_id)| {
                                         for user_id in user_ids {
                                             mutable_segment
-                                                .write()
+                                                .read()
                                                 .insert_for_user(
                                                     *user_id,
                                                     *doc_id,
@@ -335,7 +335,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     }
 
     pub fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
-        self.mutable_segment.write().insert(doc_id, data)
+        self.mutable_segment.read().insert(doc_id, data)
     }
 
     pub fn insert_for_users(
@@ -346,7 +346,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         sequence_number: u64,
     ) -> Result<()> {
         for user_id in user_ids {
-            self.mutable_segment.write().insert_for_user(
+            self.mutable_segment.read().insert_for_user(
                 *user_id,
                 doc_id,
                 data,
