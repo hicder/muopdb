@@ -277,6 +277,10 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         self.valid_point_id_mapping.len()
     }
 
+    pub fn is_valid_doc_id(&self, doc_id: u128) -> bool {
+        self.valid_point_id_mapping.contains_key(&doc_id)
+    }
+
     pub fn build_posting_lists(&mut self) -> Result<()> {
         debug!("Building posting lists");
 
