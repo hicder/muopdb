@@ -55,6 +55,7 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
         let mut temp_invalidated_ids_storage =
             InvalidatedIdsStorage::read(&temp_invalidated_ids_directory).unwrap();
 
+        // Read back invalidated ids on reset
         let mut temp_invalidated_ids = HashMap::new();
         for invalidated_id in temp_invalidated_ids_storage.iter() {
             temp_invalidated_ids
@@ -70,7 +71,6 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
             parent_directory,
             index: RwLock::new(None),
             use_internal_index: false,
-            // TODO(tyb): avoid unwrap here
             temp_invalidated_ids_storage: RwLock::new(temp_invalidated_ids_storage),
             temp_invalidated_ids: RwLock::new(temp_invalidated_ids),
             collection_config,

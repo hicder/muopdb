@@ -397,6 +397,13 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 ));
                 let index = spann_reader
                     .read::<Q>(self.segment_config.posting_list_encoding_type.clone())?;
+
+                // Invalidate ids
+                for invalidated_id in new_writable_segment.temp_invalidated_ids_storage.write().iter() {
+                    let tmp = index.invalidate(invalidated_id.user_id, invalidated_id.doc_id)?;
+                    println!("TYB {} {} {}", tmp, invalidated_id.user_id, invalidated_id.doc_id);
+                }
+
                 let segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
                     ImmutableSegment::new(index, name_for_new_segment.clone()),
                 )));
@@ -948,7 +955,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_collection_optimizer() -> Result<()> {
-        let temp_dir = TempDir::new("test_collection")?;
+        let temp_dir = TempDir::new("test_collection_optimizer")?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let segment_config = CollectionConfig::default_test_config();
         let collection = Arc::new(
@@ -1208,6 +1215,40 @@ mod tests {
             assert_eq!(toc.pending.len(), 0);
             assert_eq!(toc.sequence_number, 3);
         }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_collection_flush_with_invalidated() -> Result<()> {
+        let temp_dir = TempDir::new("test_collection_flush_with_invalidated")?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let mut segment_config = CollectionConfig::default_test_config();
+        segment_config.initial_num_centroids = 1;
+        let collection = Arc::new(
+            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+        );
+
+        // Add a document and flush
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
+        collection.insert_for_users(&[0], 2, &[2.0, 3.0, 4.0, 5.0], 1)?;
+
+        assert!(collection.mutable_segment.write().remove(0, 1)?);
+        assert_eq!(collection.mutable_segment.read().num_docs(), 2);
+
+        collection.flush()?;
+
+        let segment_names = collection.get_all_segment_names();
+        assert_eq!(segment_names.len(), 1);
+
+        let segment = collection.all_segments.get(&segment_names[0]).unwrap().value().clone();
+
+        assert!(BoxedImmutableSegment::is_invalidated(&segment, 0, 1)?);
+
+        let result =
+            BoxedImmutableSegment::search_with_id(segment, 0, vec![1.0, 2.0, 3.0, 4.0], 10, 10, false).await.unwrap();
+        assert_eq!(result.id_with_scores.len(), 1);
+        assert_eq!(result.id_with_scores[0].id, 2);
 
         Ok(())
     }
