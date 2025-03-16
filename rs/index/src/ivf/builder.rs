@@ -232,6 +232,11 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
     }
 
     fn generate_id(&mut self, doc_id: u128) -> Result<u32> {
+        if self.doc_id_mapping.len() > u32::MAX as usize {
+            return Err(anyhow!(
+                "Trying to add more than 4B documents to the index, which is not allowed"
+            ));
+        }
         let generated_point_id = self.doc_id_mapping.len() as u32;
         self.doc_id_mapping.push(doc_id);
         self.valid_point_id_mapping
@@ -583,7 +588,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         Ok(filtered_lists)
     }
 
-    fn assign_ids_until_last_stopping_point(&mut self, assigned_ids: &mut Vec<i32>) -> Result<i32> {
+    fn assign_ids_until_last_stopping_point(&mut self, assigned_ids: &mut Vec<i64>) -> Result<i64> {
         let mut min_heap: BinaryHeap<Reverse<PostingListWithStoppingPoints>> = BinaryHeap::from(
             self.build_posting_lists_with_stopping_points()?
                 .into_iter()
@@ -644,8 +649,9 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         Ok(cur_idx)
     }
 
-    /// Assign new ids to the vectors
-    fn get_reassigned_ids(&mut self) -> Result<Vec<i32>> {
+    /// Assign new ids to the vectors. The maximum number of vectors should be u32::MAX, however
+    /// we want to use -1 as invalid id, hence the indices are i64.
+    fn get_reassigned_ids(&mut self) -> Result<Vec<i64>> {
         let vector_length = self.get_num_valid_vectors();
         let mut assigned_ids = vec![-1; vector_length];
 
@@ -706,7 +712,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         // Build reverse assigned ids
         let mut reverse_assigned_ids = vec![-1; self.doc_id_mapping.len()];
         for (i, id) in assigned_ids.iter().enumerate() {
-            reverse_assigned_ids[*id as usize] = i as i32;
+            reverse_assigned_ids[*id as usize] = i as i64;
         }
 
         // Put the vectors to their reassigned places
