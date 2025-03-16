@@ -2,14 +2,16 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result};
+use config::collection::CollectionConfig;
 use config::enums::QuantizerType;
 use index::collection::collection::Collection;
 use log::{debug, info, warn};
+use log_consumer::consumer::LogConsumer;
 use quantization::noq::noq::NoQuantizerL2;
 use quantization::pq::pq::ProductQuantizerL2;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
 use utils::io::get_latest_version;
 
 use crate::collection_catalog::CollectionCatalog;
@@ -32,6 +34,9 @@ pub struct CollectionManager {
     latest_version: AtomicU64,
     num_ingestion_workers: u32,
     num_flush_workers: u32,
+
+    // vector of consumer
+    log_consumer_vector: Vec<Arc<Mutex<LogConsumer>>>,
 }
 
 impl CollectionManager {
@@ -41,7 +46,19 @@ impl CollectionManager {
         collection_catalog: Arc<Mutex<CollectionCatalog>>,
         num_ingestion_workers: u32,
         num_flush_workers: u32,
+        num_wal_consumers: u32,
+        log_brokers: &str,
     ) -> Self {
+        let config = CollectionConfig::default();
+        let mut log_consumer_vector = Vec::new();
+
+        // create log consumer vector
+        for i in 0..num_wal_consumers {
+            let group_id = format!("{}-{}", config.group_id, i);
+            let consumer = LogConsumer::new(&log_brokers, None, &group_id);
+            log_consumer_vector.push(Arc::new(Mutex::new(consumer.unwrap())));
+        }
+
         Self {
             config_path,
             collection_provider,
@@ -49,6 +66,7 @@ impl CollectionManager {
             latest_version: AtomicU64::new(0),
             num_ingestion_workers,
             num_flush_workers,
+            log_consumer_vector,
         }
     }
 
@@ -195,6 +213,11 @@ impl CollectionManager {
                 Self::get_collections_to_add(&current_collection_names, &new_collection_names);
             for collection_name in collections_to_add.iter() {
                 info!("Fetching collection {}", collection_name);
+
+                // update the consumer to subscribe to the topic for the collection
+                self.subscribe_to_topics(vec![collection_name.clone()])
+                    .await?;
+
                 let collection_opt = self.collection_provider.read_collection(collection_name);
                 if let Some(collection) = collection_opt {
                     self.collection_catalog
@@ -273,4 +296,38 @@ impl CollectionManager {
         let hash = hasher.finish();
         hash as u32 % num_workers
     }
+
+    pub async fn get_consumer(&self, collection_name: &str) -> MutexGuard<'_, LogConsumer> {
+        let index =
+            self.get_worker_id(collection_name, self.log_consumer_vector.len() as u32) as usize;
+        info!(
+            "Getting consumer for collection {} with worker id {}",
+            collection_name, index
+        );
+
+        self.log_consumer_vector[index].lock().await
+    }
+
+    pub async fn get_consumer_by_index(&self, index: usize) -> MutexGuard<'_, LogConsumer> {
+        self.log_consumer_vector[index % self.log_consumer_vector.len()]
+            .lock()
+            .await
+    }
+
+    pub async fn subscribe_to_topics(&self, collection_name: Vec<String>) -> Result<()> {
+        let collection_config = CollectionConfig::default();
+        for collection_name in collection_name.iter() {
+            let topic_name = format!("{}-{}", &collection_config.topic_prefix, collection_name);
+            info!("Subscribing to topic {}", topic_name);
+
+            // get consumer
+            let consumer = self.get_consumer(&collection_name).await;
+
+            if let Err(e) = consumer.subscribe_to_topics(&[&topic_name]).await {
+                return Err(Error::from(e));
+            }
+        }
+        Ok(())
+    }
 }
+

@@ -3,10 +3,12 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use hdf5::File;
 use log::{info, LevelFilter};
+use log_consumer::admin::Admin;
+use log_consumer::producer::{LogMessage, LogProducer};
 use ndarray::s;
 use proto::muopdb::index_server_client::IndexServerClient;
 use proto::muopdb::{FlushRequest, Id, InsertPackedRequest};
-use queue_consumer::producer::{QueueMessage, QueueProducer};
+use rmp_serde::encode;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -23,8 +25,13 @@ async fn main() -> Result<()> {
         .context("Failed to connect to IndexServer")?;
 
     let brokers = "localhost:19092,localhost:29092,localhost:39092";
-    let topic = "index-server-wal-0";
-    let producer = QueueProducer::new(&brokers, &topic);
+    let topic = "wal_topic-test-collection-1";
+    let producer = LogProducer::new(&brokers, &topic);
+    let admin = Admin::new(&brokers);
+
+    if !admin.topic_exists(&topic).await? {
+        admin.create_topic(&topic).await?;
+    }
 
     info!("=========== Inserting documents ===========");
 
@@ -64,16 +71,15 @@ async fn main() -> Result<()> {
             }],
         });
 
-        let json_string = serde_json::to_string(&request.get_ref().clone())
-            .expect("Failed to serialize request");
+        let rmp_payload =
+            encode::to_vec(&request.get_ref().clone()).expect("Failed to serialize request");
 
-
-        let msg = QueueMessage {
-            payload: json_string,
+        let msg = LogMessage {
+            payload: rmp_payload,
             topic: topic.to_string(),
         };
 
-        producer.send_message(&msg).await;
+        producer.send_logs(&msg).await;
 
         client.insert_packed(request).await?;
         start_idx = end_idx;
@@ -81,7 +87,6 @@ async fn main() -> Result<()> {
 
     let mut duration = start.elapsed();
     info!("Inserted all documents in {:?}", duration);
-
 
     // Done inserting, now start indexing.
     info!("Start indexing documents...");
@@ -95,3 +100,4 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
+

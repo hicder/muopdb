@@ -22,14 +22,11 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::time::sleep;
 use tonic::transport::Server;
 
-use queue_consumer::consumer::QueueConsumer;
-use queue_consumer::admin::Admin;
-
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
     #[arg(long)]
-    brokers: String,
+    log_brokers: String,
 
     #[arg(short, long, default_value_t = 9002)]
     port: u32,
@@ -48,6 +45,9 @@ struct Args {
 
     #[arg(long, default_value_t = 10)]
     num_flush_workers: u32,
+
+    #[arg(long, default_value_t = 10)]
+    num_wal_consumers: u32,
 }
 
 #[tokio::main]
@@ -74,6 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         collection_catalog_for_manager,
         arg.num_ingestion_workers,
         arg.num_flush_workers,
+        arg.num_wal_consumers,
+        &arg.log_brokers,
     )));
 
     let collection_manager_clone = collection_manager.clone();
@@ -90,28 +92,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             sleep(std::time::Duration::from_secs(60)).await;
         }
     });
-
-    let queue_consumer_admin = Admin::new(&arg.brokers);
-    // Create WAL topic
-    let wal_topic_name = format!("index-server-wal-{}", node_id);
-    let group_id = format!("index-server-group-{}", node_id);
-    if let Err(e) = queue_consumer_admin.create_topic(&wal_topic_name).await {
-        error!("Failed to create WAL topic: {}", e);
-    }
-
-    let consumer = QueueConsumer::new(&arg.brokers, &wal_topic_name, &group_id);
-    let consumer_handle = spawn(async move {
-        loop {
-            let processed_ops = consumer.consume_messages().await.unwrap();
-            debug!("Consumer processed {} ops", processed_ops);
-
-            // if there is no ops to process, sleep for 1 second
-            if processed_ops == 0 {
-                sleep(std::time::Duration::from_secs(1)).await;
-            }
-        }
-    });
-
 
     let mut ingestion_worker_threads = Vec::new();
     for i in 0..arg.num_ingestion_workers {
@@ -154,6 +134,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         flush_worker_threads.push(collection_manager_flush_thread);
     }
 
+    let mut consumer_worker_threads = Vec::new();
+    for i in 0..arg.num_wal_consumers {
+        let collection_manager_process_op_clone = collection_manager.clone();
+        let collection_manager_process_ops_thread = spawn(async move {
+            loop {
+                let processed_ops = collection_manager_process_op_clone
+                    .read()
+                    .await
+                    .get_consumer_by_index(i as usize)
+                    .await
+                    .consume_logs()
+                    .await
+                    .unwrap();
+
+                debug!("Consumer processed {} ops", processed_ops);
+
+                // If there are no ops to process, sleep for a shorter time
+                // to check more frequently but not too aggressively
+                if processed_ops == 0 {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            }
+        });
+        consumer_worker_threads.push(collection_manager_process_ops_thread);
+    }
+
     let reflection_service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
         .build_v1()?;
@@ -185,6 +191,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         thread.await?;
     }
 
-    consumer_handle.await?;
+    for thread in consumer_worker_threads {
+        thread.await?;
+    }
+
     Ok(())
 }
+

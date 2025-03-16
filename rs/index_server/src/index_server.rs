@@ -11,7 +11,7 @@ use proto::muopdb::{
     SearchResponse,
 };
 use tokio::sync::{Mutex, RwLock};
-use utils::mem::{ids_to_u128s, transmute_u8_to_slice, bytes_to_u128s};
+use utils::mem::{bytes_to_u128s, ids_to_u128s, transmute_u8_to_slice};
 
 use crate::collection_catalog::CollectionCatalog;
 use crate::collection_manager::CollectionManager;
@@ -131,13 +131,29 @@ impl IndexServer for IndexServerImpl {
             ));
         }
         match collection_manager_locked
-            .add_collection(collection_name.clone(), collection_config)
+            .add_collection(collection_name.clone(), collection_config.clone())
             .await
         {
             Ok(_) => {
-                return Ok(tonic::Response::new(CreateCollectionResponse {
-                    message: format!("Collection {} created", collection_name),
-                }));
+                // create new topic
+                // TODO(trungbui59): create topic before creating collection
+
+                // subscribe to topic
+                match collection_manager_locked
+                    .subscribe_to_topics(vec![collection_name.clone()])
+                    .await
+                {
+                    Ok(_) => Ok(tonic::Response::new(CreateCollectionResponse {
+                        message: format!("Collection {} created", collection_name),
+                    })),
+                    Err(e) => Err(tonic::Status::new(
+                        tonic::Code::Internal,
+                        format!(
+                            "Failed to subscribe to topic for collection {}: {}",
+                            collection_name, e
+                        ),
+                    )),
+                }
             }
             Err(e) => {
                 return Err(tonic::Status::new(tonic::Code::Internal, e.to_string()));
@@ -398,3 +414,4 @@ impl IndexServer for IndexServerImpl {
         }
     }
 }
+

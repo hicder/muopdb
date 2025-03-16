@@ -67,7 +67,7 @@ pub struct CollectionConfig {
     /// Default: 10
     pub initial_num_centroids: usize,
 
-    /// Number of data points to to sample for clustering. Often times, we don't want to cluster
+    /// Number of data points to sample for clustering. Often times, we don't want to cluster
     /// all the data points, but instead sample a subset of them. This is useful for large datasets
     /// where we don't want to store all the data points in memory.
     /// Default: 20000
@@ -127,6 +127,9 @@ pub struct CollectionConfig {
     /// Default: 0 (not using max time to flush)
     #[serde(default = "default_max_time_to_flush_ms")]
     pub max_time_to_flush_ms: u64,
+
+    pub topic_prefix: String,
+    pub group_id: String,
 }
 
 fn default_wal_file_size() -> u64 {
@@ -139,6 +142,14 @@ fn default_max_pending_ops() -> u64 {
 
 fn default_max_time_to_flush_ms() -> u64 {
     10000
+}
+
+fn default_topic_prefix() -> String {
+    String::from("wal_topic")
+}
+
+fn default_group_id() -> String {
+    String::from("wal_group")
 }
 
 impl Default for CollectionConfig {
@@ -169,6 +180,8 @@ impl Default for CollectionConfig {
             wal_file_size: 0,
             max_pending_ops: 0,
             max_time_to_flush_ms: 0,
+            topic_prefix: default_topic_prefix(),
+            group_id: default_group_id(),
         }
     }
 }
@@ -201,6 +214,9 @@ impl CollectionConfig {
             wal_file_size: 1024 * 1024 * 1024,
             max_pending_ops: 10000,
             max_time_to_flush_ms: 10000,
+            topic_prefix: default_topic_prefix(),
+            group_id: default_group_id(),
         }
     }
 }
+

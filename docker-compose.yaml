@@ -1,11 +1,11 @@
 version: '3.8'
 networks:
- redpanda_network:
-   driver: bridge
+  redpanda_network:
+    driver: bridge
 volumes:
- redpanda-0:
- redpanda-1:
- redpanda-2:
+  redpanda-0:
+  redpanda-1:
+  redpanda-2:
 services:
   index_server:
     build:

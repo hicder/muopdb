@@ -14,13 +14,15 @@ tokio.workspace = true
 ndarray.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true
+rmp-serde.workspace = true
 serde.workspace = true
 utils.workspace = true
-queue_consumer.workspace = true
+log_consumer.workspace = true
 
 [[bin]]
 name = "insert"
 path = "src/main.rs"
+
 
 [[bin]]
 name = "search"
