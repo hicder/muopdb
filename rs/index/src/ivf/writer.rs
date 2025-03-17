@@ -79,7 +79,7 @@ where
         let expected_bytes_written = std::mem::size_of::<u128>() * (num_vectors + 1);
         if doc_id_mapping_len != expected_bytes_written {
             return Err(anyhow!(
-                "Expected to write {} bytes in centroid storage, but wrote {}",
+                "Expected to write {} bytes in doc_id_mapping storage, but wrote {}",
                 expected_bytes_written,
                 doc_id_mapping_len,
             ));
@@ -739,6 +739,129 @@ mod tests {
         assert_eq!(
             doc_id_mapping_len,
             (std::mem::size_of::<u128>() * (num_vectors + 1)) as u64
+        );
+
+        let centroids_len = index_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read centroids_len");
+        let posting_lists_and_metadata_len = index_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read posting_lists_and_metadata_len");
+
+        // Verify file size
+        let file_size = index_file
+            .metadata()
+            .expect("Failed to get file metadata")
+            .len();
+        assert_eq!(
+            file_size,
+            41 + 7 + doc_id_mapping_len + centroids_len + posting_lists_and_metadata_len
+        ); // 41 bytes for header + 7 padding
+    }
+
+    #[test]
+    fn test_ivf_writer_write_with_invalidation() {
+        let temp_dir = TempDir::new("test_ivf_writer_write_with_invalidation")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 10;
+        let num_vectors = 1000;
+        let num_features = 4;
+        let file_size = 4096;
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
+        let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
+            base_directory.clone(),
+            quantizer,
+        );
+
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points_for_clustering: num_vectors,
+            max_clusters_per_vector: 1,
+            distance_threshold: 0.1,
+            base_directory: base_directory.clone(),
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: 0.0,
+            max_posting_list_size: usize::MAX,
+        })
+        .expect("Failed to create builder");
+        // Generate 1000 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            let vector = generate_random_vector(num_features);
+            builder
+                .add_vector((i + 100) as u128, &vector)
+                .expect("Vector should be added");
+        }
+        for i in 0..num_vectors {
+            if i % 2 == 0 {
+                assert!(builder.invalidate((i + 100) as u128));
+            }
+        }
+        assert_eq!(builder.get_num_valid_vectors(), num_vectors / 2);
+
+        assert!(builder.build().is_ok());
+        assert!(writer.write(&mut builder, true).is_ok());
+
+        // Check if files were created and removed correctly
+        assert!(fs::metadata(format!("{}/vectors", base_directory)).is_ok());
+        assert!(fs::metadata(format!("{}/index", base_directory)).is_ok());
+        assert!(fs::metadata(format!("{}/doc_id_mapping", base_directory)).is_err());
+        assert!(fs::metadata(format!("{}/centroids", base_directory)).is_err());
+        assert!(fs::metadata(format!("{}/posting_lists", base_directory)).is_err());
+
+        // Verify vectors file content
+        let vectors_file =
+            File::open(format!("{}/vectors", base_directory)).expect("Failed to open vectors file");
+        let mut vectors_reader = std::io::BufReader::new(vectors_file);
+
+        let stored_num_vectors = vectors_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read number of vectors");
+        assert_eq!(stored_num_vectors, (num_vectors / 2) as u64);
+
+        // Verify index file content
+        let mut index_file =
+            File::open(format!("{}/index", base_directory)).expect("Failed to open index file");
+        let mut index_reader = std::io::BufReader::new(&mut index_file);
+
+        // Read and verify header
+        let version = index_reader.read_u8().expect("Failed to read version");
+        assert_eq!(version, 0); // Version::V0
+
+        let stored_num_features = index_reader
+            .read_u32::<LittleEndian>()
+            .expect("Failed to read num_features");
+        assert_eq!(stored_num_features, num_features as u32);
+
+        let stored_quantized_dimension = index_reader
+            .read_u32::<LittleEndian>()
+            .expect("Failed to read quantized_dimension");
+        assert_eq!(stored_quantized_dimension, num_features as u32);
+
+        let stored_num_clusters = index_reader
+            .read_u32::<LittleEndian>()
+            .expect("Failed to read num_clusters");
+        assert_eq!(stored_num_clusters, num_clusters as u32);
+
+        let stored_num_vectors = index_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read num_vectors");
+        assert_eq!(stored_num_vectors, (num_vectors / 2) as u64);
+
+        let doc_id_mapping_len = index_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read doc_id_mapping_len");
+        assert_eq!(
+            doc_id_mapping_len,
+            (std::mem::size_of::<u128>() * (num_vectors / 2 + 1)) as u64
         );
 
         let centroids_len = index_reader

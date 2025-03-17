@@ -278,7 +278,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         Ok(distances)
     }
 
-    fn get_num_valid_vectors(&self) -> usize {
+    pub fn get_num_valid_vectors(&self) -> usize {
         self.valid_point_id_mapping.len()
     }
 
@@ -297,7 +297,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         point_ids.sort();
 
         let max_clusters_per_vector = self.config.max_clusters_per_vector;
-        let posting_list_per_doc = point_ids
+        let posting_list_per_point: HashMap<u32, Vec<u64>> = point_ids
             .par_iter()
             .map(|point_id| {
                 let nearest_centroids = Self::find_nearest_centroids(
@@ -321,18 +321,21 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
                         accepted_centroid_ids.push(centroid_and_distance.point_id as u64);
                     }
                 }
-                accepted_centroid_ids
+                (*point_id, accepted_centroid_ids)
             })
-            .collect::<Vec<Vec<u64>>>();
+            .collect();
 
-        posting_list_per_doc
+        posting_list_per_point
             .iter()
-            .enumerate()
-            .for_each(|(i, posting_list_for_doc)| {
-                posting_list_for_doc.iter().for_each(|posting_list_id| {
-                    posting_lists[*posting_list_id as usize].push(i as u64);
+            .for_each(|(point_id, accepted_centroid_ids)| {
+                accepted_centroid_ids.iter().for_each(|centroid_id| {
+                    posting_lists[*centroid_id as usize].push(*point_id as u64);
                 });
             });
+
+        for posting_list in posting_lists.iter_mut() {
+            posting_list.sort();
+        }
 
         let posting_list_storage_location = format!(
             "{}/builder_posting_list_storage",
@@ -652,7 +655,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
     /// Assign new ids to the vectors. The maximum number of vectors should be u32::MAX, however
     /// we want to use -1 as invalid id, hence the indices are i64.
     fn get_reassigned_ids(&mut self) -> Result<Vec<i64>> {
-        let vector_length = self.get_num_valid_vectors();
+        let vector_length = self.vectors.num_vectors();
         let mut assigned_ids = vec![-1; vector_length];
 
         let mut cur_idx = self.assign_ids_until_last_stopping_point(&mut assigned_ids)?;
@@ -698,11 +701,18 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
         // Update doc_id_mapping with reassigned IDs
         let tmp_id_provider = self.doc_id_mapping.clone();
+        self.doc_id_mapping = vec![0; self.get_num_valid_vectors()];
         for (point_id, doc_id) in tmp_id_provider.into_iter().enumerate() {
             let new_point_id = assigned_ids.get(point_id).ok_or(anyhow!(
                 "id in id_provider {} is larger than size of vectors",
                 point_id
             ))?;
+            // The doc_id originally mapped to this point_id has been invalidated
+            // It can be revalidated though, so we can't check that the doc_id is
+            // still invalid
+            if *new_point_id == -1 {
+                continue;
+            }
             self.doc_id_mapping[*new_point_id as usize] = doc_id;
             assert!(self.valid_point_id_mapping.contains_key(&doc_id));
             self.valid_point_id_mapping
@@ -712,7 +722,9 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         // Build reverse assigned ids
         let mut reverse_assigned_ids = vec![-1; self.doc_id_mapping.len()];
         for (i, id) in assigned_ids.iter().enumerate() {
-            reverse_assigned_ids[*id as usize] = i as i64;
+            if *id != -1 {
+                reverse_assigned_ids[*id as usize] = i as i64;
+            }
         }
 
         // Put the vectors to their reassigned places
@@ -731,9 +743,11 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
         for i in 0..reverse_assigned_ids.len() {
             let mapped_id = reverse_assigned_ids[i];
-            new_vector_storage
-                .append(self.vectors.get_no_context(mapped_id as u32).unwrap())
-                .unwrap_or_else(|_| panic!("append failed"));
+            if mapped_id != -1 {
+                new_vector_storage
+                    .append(self.vectors.get_no_context(mapped_id as u32).unwrap())
+                    .unwrap_or_else(|_| panic!("append failed"));
+            }
         }
 
         self.vectors = new_vector_storage;
@@ -1513,16 +1527,29 @@ mod tests {
                 .add_vector(i as u128, &generate_random_vector(num_features))
                 .expect("Vector should be added");
         }
-        for i in 0..num_vectors - 1 {
-            assert!(builder.invalidate(i as u128));
+        for i in 0..num_vectors {
+            if i % 2 == 0 {
+                assert!(builder.invalidate(i as u128));
+            }
         }
 
         let result = builder.build();
         assert!(result.is_ok());
 
-        assert_eq!(builder.get_num_valid_vectors(), 1);
-        assert_eq!(builder.centroids.num_vectors(), 1);
-        assert_eq!(builder.posting_lists.len(), 1);
+        assert_eq!(builder.get_num_valid_vectors(), num_vectors / 2);
+        assert_eq!(builder.centroids.num_vectors(), num_clusters);
+        assert_eq!(builder.posting_lists.len(), num_clusters);
+
+        assert!(builder.reindex().is_ok());
+        for i in 0..num_clusters {
+            let posting_list = builder
+                .posting_lists()
+                .get(i as u32)
+                .expect("Failed to get a posting list");
+            for index in posting_list.iter() {
+                assert!(index < (num_vectors / 2) as u64);
+            }
+        }
     }
 
     #[test]
@@ -1597,6 +1624,77 @@ mod tests {
         assert_eq!(builder.get_num_valid_vectors(), num_vectors);
         assert_eq!(builder.centroids.num_vectors(), num_clusters);
         assert_eq!(builder.posting_lists.len(), num_clusters);
+
+        assert!(builder.reindex().is_ok());
+        for i in 0..num_clusters {
+            let posting_list = builder
+                .posting_lists()
+                .get(i as u32)
+                .expect("Failed to get a posting list");
+            for index in posting_list.iter() {
+                assert!(index < num_vectors as u64);
+            }
+        }
+    }
+
+    #[test]
+    fn test_ivf_builder_reindex_with_invalidated() {
+        let temp_dir = tempdir::TempDir::new("ivf_builder_with_invalidated_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 1;
+        let num_vectors = 1000;
+        let num_features = 4;
+        let file_size = 4096;
+        let balance_factor = 0.0;
+        let max_posting_list_size = usize::MAX;
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points_for_clustering: num_vectors,
+            max_clusters_per_vector: 1,
+            distance_threshold: 0.1,
+            base_directory,
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: balance_factor,
+            max_posting_list_size,
+        })
+        .expect("Failed to create builder");
+        // Generate 1000 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            builder
+                .add_vector(i as u128, &generate_random_vector(num_features))
+                .expect("Vector should be added");
+        }
+        for i in 0..num_vectors {
+            if i % 2 == 0 {
+                assert!(builder.invalidate(i as u128));
+            }
+        }
+
+        let result = builder.build();
+        assert!(result.is_ok());
+
+        assert_eq!(builder.get_num_valid_vectors(), num_vectors / 2);
+
+        assert!(builder.reindex().is_ok());
+        let posting_list = builder
+            .posting_lists()
+            .get(0)
+            .expect("Failed to get a posting list");
+        assert_eq!(posting_list.elem_count, num_vectors / 2);
+        let mut i = 0;
+        for index in posting_list.iter() {
+            assert!(index == i as u64);
+            i += 1;
+        }
     }
 
     #[test]
