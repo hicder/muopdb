@@ -52,7 +52,7 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
         let temp_invalidated_ids_directory =
             format!("{}/temp_invalidated_ids_storage", data_directory);
         // TODO(tyb) avoid unwrap here
-        let mut temp_invalidated_ids_storage =
+        let temp_invalidated_ids_storage =
             InvalidatedIdsStorage::read(&temp_invalidated_ids_directory).unwrap();
 
         let mut temp_invalidated_ids = HashMap::new();

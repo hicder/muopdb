@@ -37,12 +37,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         let invalidated_ids_directory = format!("{}/invalidated_ids_storage", base_directory);
 
         // Initialize InvalidatedIdsStorage
-        let mut invalidated_ids_storage = InvalidatedIdsStorage::read(&invalidated_ids_directory)?;
-
-        let mut invalidated_ids = Vec::new();
-        for invalidated_id in invalidated_ids_storage.iter() {
-            invalidated_ids.push(invalidated_id);
-        }
+        let invalidated_ids_storage = InvalidatedIdsStorage::read(&invalidated_ids_directory)?;
 
         // Create the MultiSpannIndex instance
         let index = Self {
@@ -54,9 +49,15 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             ivf_type,
         };
 
-        // Iterate over invalidated IDs and call invalidate for each entry
-        for invalidated_id in invalidated_ids.iter() {
-            index.invalidate(invalidated_id.user_id, invalidated_id.doc_id)?;
+        // Iterate over invalidated ids and invalidate each entry. Do not call
+        // MultiSpannIndex::invalidate directly as this also appends invalidated ids to the
+        // storage, whereas these ids are already stored in the storage.
+        {
+            let invalidated_ids = index.invalidated_ids_storage.read();
+            for invalidated_id in invalidated_ids.iter() {
+                let spann_index = index.get_or_create_index(invalidated_id.user_id)?;
+                let _ = spann_index.invalidate(invalidated_id.doc_id);
+            }
         }
 
         Ok(index)
@@ -116,13 +117,13 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
 
     pub fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         let index = self.get_or_create_index(user_id)?;
-        let invalidated = index.invalidate(doc_id);
-        if invalidated {
+        let effectively_invalidated = index.invalidate(doc_id);
+        if effectively_invalidated {
             self.invalidated_ids_storage
                 .write()
                 .invalidate(user_id, doc_id)?;
         }
-        Ok(invalidated)
+        Ok(effectively_invalidated)
     }
 
     pub fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
@@ -362,6 +363,10 @@ mod tests {
         let multi_spann_index = multi_spann_reader
             .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
             .expect("Failed to read Multi-SPANN index");
+        assert!(multi_spann_index
+            .is_invalidated(0, num_vectors as u128)
+            .expect("Failed to query invalidation"));
+        assert_eq!(multi_spann_index.invalidated_ids_storage.read().num_entries(), 1);
 
         let query = vec![1.4, 2.4, 3.4, 4.4];
         let k = 3;
