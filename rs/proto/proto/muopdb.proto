@@ -12,6 +12,7 @@ enum IntSeqEncodingType {
   ELIAS_FANO = 1;
 }
 
+
 service IndexServer {
   rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse) {}
 
@@ -61,6 +62,15 @@ message CreateCollectionRequest {
 }
 
 message CreateCollectionResponse {
+   string message = 1;
+}
+
+message Id {
+  // The lower 64 bits of the id.
+  uint64 low_id = 1;
+
+  // The lower 64 bits of the id.
+  uint64 high_id = 2;
 }
 
 message SearchRequest {
@@ -76,20 +86,11 @@ message SearchRequest {
   // In MuopDB, we support 128-bit ids (which is what most UUIDs are).
   // However, in protobuf, there is no uint128 type, so we have to break
   // the ids into two 64-bit parts.
-
-  // List of lower 64 bits of the user ids to search for.
-  repeated uint64 low_user_ids = 6;
-
-  // List of higher 64 bits of the user ids to search for.
-  repeated uint64 high_user_ids = 7;
+  repeated Id user_ids = 6;
 }
 
 message SearchResponse {
-  // List of lower 64 bits of the doc_ids
-  repeated uint64 low_ids = 1;
-
-  // List of higher 64 bits of the doc_ids
-  repeated uint64 high_ids = 4;
+  repeated Id doc_ids = 1;
 
   repeated float scores = 2;
 
@@ -100,22 +101,14 @@ message SearchResponse {
 message InsertRequest {
   string collection_name = 1;
 
-  // List of lower 64 bits of the doc_ids
-  repeated uint64 low_ids = 2;
-
-  // List of higher 64 bits of the doc_ids
-  repeated uint64 high_ids = 5;
+  repeated Id doc_ids = 2;
 
   // Flattened vector. If the dimension is 10, 
   // and the number of vectors is 5,
   // then this list should have 50 elements.
   repeated float vectors = 3;
 
-  // List of lower 64 bits of the user ids.
-  repeated uint64 low_user_ids = 4;
-
-  // List of higher 64 bits of the user ids.
-  repeated uint64 high_user_ids = 6;
+  repeated Id user_ids = 4;
 }
 
 message InsertResponse {
@@ -136,21 +129,15 @@ message FlushResponse {
 message InsertPackedRequest {
   string collection_name = 1;
 
-  // List of lower 64 bits of the doc_ids. 
-  // These ids should be packed with 8 bytes per number.
-  bytes low_ids = 2;
-
-  // List of lower 64 bits of the doc_ids. 
-  // These ids should be packed with 8 bytes per number.
-  bytes high_ids = 5;
+  // the ids must be 16 bytes each, packed with little endian order
+  bytes doc_ids = 2;
 
   // Packed flattened vector. If the dimension is 10, 
   // and the number of vectors is 5, then this list should 
   // have 50 elements, packed with 8 bytes per number.
   bytes vectors = 3;
 
-  repeated uint64 low_user_ids = 4;
-  repeated uint64 high_user_ids = 6;
+  repeated Id user_ids = 4;
 }
 
 message InsertPackedResponse {

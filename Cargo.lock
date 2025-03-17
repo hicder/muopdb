@@ -3106,6 +3106,7 @@ dependencies = [
  "kmeans",
  "log",
  "ndarray",
+ "proto",
  "rand 0.8.5",
  "rayon",
  "strum",

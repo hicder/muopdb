@@ -195,7 +195,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                     .for_each(|(vector, doc_id)| {
                                         for user_id in user_ids {
                                             mutable_segment
-                                                .write()
+                                                .read()
                                                 .insert_for_user(
                                                     *user_id,
                                                     *doc_id,
@@ -335,7 +335,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     }
 
     pub fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
-        self.mutable_segment.write().insert(doc_id, data)
+        self.mutable_segment.read().insert(doc_id, data)
     }
 
     pub fn insert_for_users(
@@ -346,7 +346,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         sequence_number: u64,
     ) -> Result<()> {
         for user_id in user_ids {
-            self.mutable_segment.write().insert_for_user(
+            self.mutable_segment.read().insert_for_user(
                 *user_id,
                 doc_id,
                 data,
@@ -737,14 +737,21 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             .clone();
         match segment {
             BoxedImmutableSegment::PendingSegment(pending_segment) => {
-                let mut pending_segment = pending_segment.upgradable_read();
-                optimizer.optimize(&pending_segment)?;
-                pending_segment.build_index()?;
-                pending_segment.with_upgraded(|pending_segment_write| {
-                    pending_segment_write.apply_pending_deletions()?;
-                    pending_segment_write.switch_to_internal_index();
-                    Ok(())
-                })?;
+                let temp_storage_dir;
+                {
+                    let mut pending_segment = pending_segment.upgradable_read();
+                    temp_storage_dir = pending_segment.temp_invalidated_ids_storage_directory();
+                    optimizer.optimize(&pending_segment)?;
+                    pending_segment.build_index()?;
+                    pending_segment.with_upgraded(|pending_segment_write| {
+                        pending_segment_write.apply_pending_deletions()?;
+                        pending_segment_write.switch_to_internal_index();
+                        Ok(())
+                    })?;
+                }
+
+                // Remove temporary invalidated ids storage from pending segment.
+                std::fs::remove_dir_all(&temp_storage_dir)?;
             }
             _ => {}
         }
@@ -760,6 +767,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             wal.write().trim_wal(flushed_seq_no)?;
         }
         Ok(())
+    }
+
+    pub fn all_segments(&self) -> &DashMap<String, BoxedImmutableSegment<Q>> {
+        &self.all_segments
     }
 }
 

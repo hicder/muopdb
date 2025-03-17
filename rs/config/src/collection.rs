@@ -138,7 +138,7 @@ fn default_max_pending_ops() -> u64 {
 }
 
 fn default_max_time_to_flush_ms() -> u64 {
-    0
+    10000
 }
 
 impl Default for CollectionConfig {

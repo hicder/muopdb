@@ -15,6 +15,7 @@ kmeans.workspace = true
 log.workspace = true
 env_logger.workspace = true
 rayon.workspace = true
+proto.workspace = true
 
 [[bench]]
 name = "l2"

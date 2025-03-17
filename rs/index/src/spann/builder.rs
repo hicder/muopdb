@@ -179,6 +179,10 @@ impl SpannBuilder {
         self.ivf_builder.add_vector(doc_id, data)
     }
 
+    pub fn invalidate(&mut self, doc_id: u128) -> bool {
+        self.ivf_builder.invalidate(doc_id)
+    }
+
     pub fn build(&mut self) -> Result<()> {
         self.ivf_builder.build()?;
         debug!("Finish building IVF index");

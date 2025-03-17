@@ -1,6 +1,7 @@
 use std::collections::{BinaryHeap, HashSet};
 use std::marker::PhantomData;
 use std::sync::RwLock;
+
 use anyhow::{Context, Result};
 use compression::compression::IntSeqDecoder;
 use compression::elias_fano::ef::EliasFanoDecoder;
@@ -87,6 +88,13 @@ impl<Q: Quantizer> IvfType<Q> {
         match self {
             IvfType::L2Plain(ivf) => ivf.invalidate(doc_id),
             IvfType::L2EF(ivf) => ivf.invalidate(doc_id),
+        }
+    }
+
+    pub fn is_invalidated(&self, doc_id: u128) -> bool {
+        match self {
+            IvfType::L2Plain(ivf) => ivf.is_invalidated(doc_id),
+            IvfType::L2EF(ivf) => ivf.is_invalidated(doc_id),
         }
     }
 
@@ -245,14 +253,24 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         }
     }
 
+    /// Invalidates a doc_id. Returns true if the doc_id is effectively invalidated, false
+    /// otherwise (i.e. doc_id not found or had already been invalidated)
     pub fn invalidate(&self, doc_id: u128) -> bool {
         match self.get_point_id(doc_id) {
             Some(point_id) => {
                 self.invalid_point_ids
                     .write()
                     .unwrap()
-                    .insert(point_id as u32);
-                true
+                    .insert(point_id as u32)
+            }
+            None => false,
+        }
+    }
+
+    pub fn is_invalidated(&self, doc_id: u128) -> bool {
+        match self.get_point_id(doc_id) {
+            Some(point_id) => {
+                self.invalid_point_ids.read().unwrap().contains(&point_id)
             }
             None => false,
         }
@@ -787,6 +805,7 @@ mod tests {
         let k = 4;
 
         assert!(ivf.invalidate(103));
+        assert!(ivf.is_invalidated(103));
 
         let results = ivf
             .search(&query, k, num_probes, false)
