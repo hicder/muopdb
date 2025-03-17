@@ -142,7 +142,7 @@ impl InvalidatedIdsStorage {
         Ok(())
     }
 
-    pub fn iter(&mut self) -> InvalidatedIdsIterator {
+    pub fn iter(&self) -> InvalidatedIdsIterator {
         InvalidatedIdsIterator {
             files: (0..self.files.len())
                 .filter_map(|i| {
@@ -159,6 +159,15 @@ impl InvalidatedIdsStorage {
 
     pub fn base_directory(&self) -> &str {
         &self.base_directory
+    }
+
+    pub fn num_entries(&self) -> usize {
+        if self.current_backing_id == -1 {
+            0
+        } else {
+            (self.current_offset + self.current_backing_id as usize * self.backing_file_size)
+                / BYTES_PER_INVALIDATION
+        }
     }
 }
 
@@ -232,6 +241,7 @@ mod tests {
             storage.current_offset,
             size_of::<u128>() + size_of::<u128>()
         );
+        assert_eq!(storage.num_entries(), 1);
 
         // Verify data written to the file
         let expected_file_path = format!("{}/invalidated_ids.bin.0", base_dir);
@@ -273,6 +283,7 @@ mod tests {
 
         // Verify that multiple backing files were created
         assert!(storage.current_backing_id > 0);
+        assert_eq!(storage.num_entries(), 10);
 
         // Verify contents of each file
         let bytes_per_entry = size_of::<u128>() + size_of::<u128>();
