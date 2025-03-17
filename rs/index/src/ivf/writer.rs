@@ -127,33 +127,71 @@ where
     fn quantize_and_write_vectors(&self, ivf_builder: &IvfBuilder<D>) -> Result<usize> {
         // Quantize vectors
         let full_vectors = &ivf_builder.vectors();
-        let quantized_vectors_path = format!("{}/quantized", self.base_directory);
-        create_dir_all(&quantized_vectors_path)?;
 
-        // Write quantized vectors
-        let path = format!("{}/vectors", self.base_directory);
-        let mut file = File::create(path)?;
-        let capacity = full_vectors.num_vectors()
+        // Create vector directory
+        let quantized_vectors_path = format!("{}/quantized", self.base_directory);
+        let full_vectors_path = format!("{}/full_vectors_tmp", self.base_directory);
+        create_dir_all(&quantized_vectors_path)?;
+        create_dir_all(&full_vectors_path)?;
+
+        // setup the writer and directory for quantized and full vectors
+        let final_quantized_vectors_path = format!("{}/vectors", self.base_directory);
+        let final_full_vectors_path = format!("{}/full_vectors", self.base_directory);
+        let mut quantized_file = File::create(final_quantized_vectors_path)?;
+        let mut full_file = File::create(final_full_vectors_path)?;
+        let quantized_capacity = full_vectors.num_vectors()
             * self.quantizer.quantized_dimension()
             * std::mem::size_of::<Q::QuantizedT>();
-        let mut writer = BufWriter::with_capacity(min(1 << 30, capacity), &mut file);
+        let full_capacity = full_vectors.num_vectors() 
+                * ivf_builder.config().num_features 
+                * std::mem::size_of::<f32>();
+        let mut quantized_writer = BufWriter::with_capacity(
+            min(1 << 30, quantized_capacity),
+             &mut quantized_file);
+        let mut full_writer = BufWriter::with_capacity(
+            min(1 << 30, full_capacity), 
+            &mut full_file);
 
-        let mut bytes_written = 0;
-        bytes_written += wrap_write(&mut writer, &full_vectors.num_vectors().to_le_bytes())?;
+
+        let mut quantized_bytes_written = 0;
+        let mut full_bytes_written = 0;
+        quantized_bytes_written += wrap_write(&mut quantized_writer, &full_vectors.num_vectors().to_le_bytes())?;
+        full_bytes_written += wrap_write(&mut full_writer, &full_vectors.num_vectors().to_le_bytes())?;
         let mut search_context = SearchContext::new(false);
         for i in 0..full_vectors.num_vectors() {
+            // get full vector
+            let full_vector = full_vectors.get(i as u32, &mut search_context)?;
+
+            // quantize
             let quantized_vector = Q::QuantizedT::process_vector(
-                full_vectors.get(i as u32, &mut search_context)?,
+                full_vector,
                 &self.quantizer,
             );
-            for j in 0..quantized_vector.len() {
-                bytes_written +=
-                    wrap_write(&mut writer, quantized_vector[j].to_le_bytes().as_ref())?;
+
+            for j in 0..full_vector.len() {
+                full_bytes_written += wrap_write(&mut full_writer, full_vector[j].to_le_bytes().as_ref())?;
             }
+
+
+            for j in 0..quantized_vector.len() {
+                quantized_bytes_written +=
+                    wrap_write(&mut quantized_writer, quantized_vector[j].to_le_bytes().as_ref())?;
+            }           
         }
 
+        // remove temporary files
         remove_dir_all(&quantized_vectors_path)?;
-        Ok(bytes_written)
+        remove_dir_all(&full_vectors_path)?;
+
+        if full_bytes_written != full_capacity + std::mem::size_of::<u64>()  {
+            return Err(anyhow!(
+                "Expected to write {} bytes in full vectors storage, but wrote {}",
+                full_capacity,
+                full_bytes_written,
+            ));
+        }
+
+        Ok(quantized_bytes_written)
     }
 
     fn write_doc_id_mapping(&self, ivf_builder: &IvfBuilder<D>) -> Result<usize> {
@@ -498,7 +536,8 @@ mod tests {
         assert!(result.is_ok());
 
         let bytes_written = result.unwrap();
-        assert_eq!(bytes_written, 14); // 8 (number of vectors) + 6 (3 bytes each vector)
+        // Quantized vectors: 8 (number of vectors) + 6 (3 bytes each vector)
+        assert_eq!(bytes_written, 14); 
 
         let vectors_path = format!("{}/vectors", base_directory);
         assert!(Path::new(&vectors_path).exists());
@@ -539,6 +578,61 @@ mod tests {
                 "Quantized vector {} does not match expected",
                 i
             );
+        }
+
+        // Check the full vectors file
+        let full_vectors_path = format!("{}/full_vectors", base_directory);
+        assert!(Path::new(&full_vectors_path).exists());
+
+        // Read the full vectors file
+        let file = fs::File::open(full_vectors_path).expect("Failed to open full vectors file");
+        let mut reader = std::io::BufReader::new(file);
+        let mut buffer = Vec::new();
+        reader
+            .read_to_end(&mut buffer)
+            .expect("Failed to read full vectors file");
+
+        // Verify the header (number of vectors)
+        let expected_header = num_vectors.to_le_bytes();
+        assert_eq!(&buffer[0..8], &expected_header);
+
+        // Verify the contents of the full vectors
+        let bytes_per_float = std::mem::size_of::<f32>();
+        let expected_full_vector_length = num_features * bytes_per_float;
+        let data_start = 8; // Skip the header
+        let data_end = buffer.len();
+        assert_eq!(
+            (data_end - data_start) % expected_full_vector_length,
+            0
+        );
+
+        let num_vectors_written = (data_end - data_start) / expected_full_vector_length;
+        assert_eq!(num_vectors_written, num_vectors);
+
+        // Check each full vector
+        let expected_full_vectors = vec![
+            vec![1.0, 2.0, 3.0],
+            vec![4.0, 5.0, 6.0]
+        ];
+
+        for i in 0..num_vectors_written {
+            let vector_start = data_start + i * expected_full_vector_length;
+            
+            for j in 0..num_features {
+                let value_start = vector_start + j * bytes_per_float;
+                let value_end = value_start + bytes_per_float;
+                let value_bytes = &buffer[value_start..value_end];
+                
+                // Convert bytes to f32
+                let value = f32::from_le_bytes([
+                    value_bytes[0], value_bytes[1], value_bytes[2], value_bytes[3]
+                ]);
+                
+                assert!((value - expected_full_vectors[i][j]).abs() < f32::EPSILON,
+                    "Full vector {}, feature {} does not match expected: got {}, expected {}",
+                    i, j, value, expected_full_vectors[i][j]
+                );
+            }
         }
     }
 
