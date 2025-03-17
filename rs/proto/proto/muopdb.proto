@@ -109,6 +109,8 @@ message InsertRequest {
   repeated float vectors = 3;
 
   repeated Id user_ids = 4;
+
+  optional DocumentAttributeList attributes = 5;
 }
 
 message InsertResponse {
@@ -138,6 +140,8 @@ message InsertPackedRequest {
   bytes vectors = 3;
 
   repeated Id user_ids = 4;
+
+  optional DocumentAttributeList attributes = 5;
 }
 
 message InsertPackedResponse {
@@ -146,22 +150,12 @@ message InsertPackedResponse {
 }
 
 // HybridSearch Message
-message HybridSearchDocument {
-  bytes vector = 1;
-  map<string, AttributeValue> attributes = 2;
+message DocumentAttribute {
+  map<string, AttributeValue> value = 1;
 }
 
-message HybridSearchInsertRequest {
-  string collection_name = 1;
-  repeated Id doc_ids    = 2;
-  repeated Id user_ids   = 3;
-
-  repeated HybridSearchDocument documents = 4;
-}
-
-message HybridSearchInsertResponse {
-  // The number of docs that were inserted.
-  uint32 num_docs_inserted = 1;
+message DocumentAttributeList {
+  repeated DocumentAttribute values = 1; 
 }
 
 // Start of Attribute messages
@@ -176,13 +170,13 @@ enum AttributeType {
   ATTRIBUTE_TYPE_VECTOR_KEYWORD = 101;
 }
 
-message Attribute {
+message AttributeField {
   string name         = 1;
   AttributeType type  = 2;
 }
 
 message AttributeSchema {
-  repeated Attribute attributes = 1;
+  repeated AttributeField attributes = 1;
 }
 
 message AttributeValue {

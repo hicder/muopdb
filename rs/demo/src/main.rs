@@ -57,6 +57,7 @@ async fn main() -> Result<()> {
                 low_id: 0,
                 high_id: 0,
             }],
+            attributes: None,
         });
 
         client.insert_packed(request).await?;
