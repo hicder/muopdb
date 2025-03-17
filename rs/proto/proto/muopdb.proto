@@ -1,5 +1,6 @@
 syntax = "proto3";
 package muopdb;
+import "google/protobuf/any.proto";
 
 enum QuantizerType {
   NO_QUANTIZER = 0;
@@ -54,6 +55,9 @@ message CreateCollectionRequest {
   optional uint64 wal_file_size = 25;
   optional uint64 max_pending_ops = 26;
   optional uint64 max_time_to_flush_ms = 27;
+
+  // for hybrid-search
+  optional AttributeSchema attribute_schema = 28; 
 }
 
 message CreateCollectionResponse {
@@ -152,4 +156,75 @@ message InsertPackedRequest {
 message InsertPackedResponse {
   // The number of docs that were inserted.
   uint32 num_docs_inserted = 1;
+}
+
+// HybridSearch Message
+message HybridSearchDocument {
+  bytes vector = 1;
+  map<string, AttributeValue> attributes = 2;
+}
+
+message HybridSearchInsertRequest {
+  string collection_name = 1;
+
+  // List of lower 64 bits of the doc_ids
+  repeated uint64 low_ids = 2;
+
+  // List of higher 64 bits of the doc_ids
+  repeated uint64 high_ids = 3;
+
+   // List of lower 64 bits of the user ids.
+  repeated uint64 low_user_ids = 4;
+
+  // List of higher 64 bits of the user ids.
+  repeated uint64 high_user_ids = 5; 
+
+  repeated HybridSearchDocument documents = 6;
+}
+
+message HybridSearchInsertResponse {
+  // The number of docs that were inserted.
+  uint32 num_docs_inserted = 1;
+}
+
+// Start of Attribute messages
+enum AttributeType {
+  ATTRIBUTE_TYPE_INT        = 0;
+  ATTRIBUTE_TYPE_FLOAT      = 1;
+  ATTRIBUTE_TYPE_BOOL       = 2;
+  ATTRIBUTE_TYPE_KEYWORD    = 3;
+  ATTRIBUTE_TYPE_TEXT       = 4; // full-text search index
+  
+  ATTRIBUTE_TYPE_VECTOR_INT     = 100;
+  ATTRIBUTE_TYPE_VECTOR_KEYWORD = 101;
+}
+
+message Attribute {
+  string name         = 1;
+  AttributeType type  = 2;
+}
+
+message AttributeSchema {
+  repeated Attribute attributes = 1;
+}
+
+message AttributeValue {
+  oneof value {
+    int64  int_value     = 1;
+    float  float_value   = 2;
+    bool   bool_value    = 3;
+    string keyword_value = 4; // exact-match string
+    string text_value    = 5; // full-text search
+
+    AttributeVectorIntValue      vector_int_value = 6;
+    AttributeVectorKeywordValue  vector_keyword_value = 7;
+  }
+}
+
+message AttributeVectorIntValue {
+  repeated int64 values = 1;
+}
+
+message AttributeVectorKeywordValue {
+  repeated string values = 1;
 }
