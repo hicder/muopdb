@@ -126,15 +126,11 @@ where
 
     fn get_vector_writer(
         file_path: String,
-        tmp_dir_path: &String,
         num_vectors: usize,
         dimension: usize,
         element_size: usize,
     ) -> Result<BufWriter<File>> {
-        // Create temporary directory
-        create_dir_all(tmp_dir_path)?;
-
-        let file = File::create(file_path)?;
+        let file: File = File::create(file_path)?;
 
         // Calculate capacity
         let capacity = num_vectors * dimension * element_size;
@@ -147,13 +143,10 @@ where
     fn quantize_and_write_vectors(&self, ivf_builder: &IvfBuilder<D>) -> Result<usize> {
         // Quantize vectors
         let full_vectors = &ivf_builder.vectors();
-        let quantized_vectors_path = format!("{}/quantized", self.base_directory);
-        let full_vectors_path = format!("{}/full_vectors_tmp", self.base_directory);
 
         // get writer for quantized vectors
         let mut quantized_writer = Self::get_vector_writer(
             format!("{}/vectors", self.base_directory),
-            &quantized_vectors_path,
             full_vectors.num_vectors(),
             self.quantizer.quantized_dimension(),
             std::mem::size_of::<Q::QuantizedT>(),
@@ -162,7 +155,6 @@ where
         // get writer for full vectors
         let mut full_writer = Self::get_vector_writer(
             format!("{}/full_vectors", self.base_directory),
-            &full_vectors_path,
             full_vectors.num_vectors(),
             ivf_builder.config().num_features,
             std::mem::size_of::<f32>(),
@@ -198,10 +190,6 @@ where
                 )?;
             }
         }
-
-        // remove temporary files
-        remove_dir_all(&quantized_vectors_path)?;
-        remove_dir_all(&full_vectors_path)?;
 
         let expected_full_vector_bytes = std::mem::size_of::<f32>()
             * full_vectors.num_vectors()
