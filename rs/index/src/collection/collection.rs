@@ -40,6 +40,7 @@ pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
     versions_info: RwLock<VersionsInfo>,
     base_directory: String,
     mutable_segment: RwLock<MutableSegment>,
+    tmp_mutable_segment: RwLock<MutableSegment>,
     segment_config: CollectionConfig,
     wal: Option<RwLock<Wal>>,
 
@@ -59,13 +60,18 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         versions.insert(0, TableOfContent::new(vec![]));
 
         // Create a new segment_config with a random name
-        let random_name = format!("tmp_segment_{}", rand::random::<u64>());
-        let segment_base_directory = format!("{}/{}", base_directory, random_name);
+        let create_mutable_segment = || -> Result<RwLock<MutableSegment>> {
+            let random_name = format!("tmp_segment_{}", rand::random::<u64>());
+            let segment_base_directory = format!("{}/{}", base_directory, random_name);
 
-        let mutable_segment = RwLock::new(MutableSegment::new(
-            segment_config.clone(),
-            segment_base_directory,
-        )?);
+            Ok(RwLock::new(MutableSegment::new(
+                segment_config.clone(),
+                segment_base_directory,
+            )?))
+        };
+
+        let mutable_segment = create_mutable_segment()?;
+        let tmp_mutable_segment  = create_mutable_segment()?;
 
         let wal = if segment_config.wal_file_size > 0 {
             let wal_directory = format!("{}/wal", base_directory);
@@ -86,6 +92,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             versions_info: RwLock::new(VersionsInfo::new()),
             base_directory,
             mutable_segment,
+            tmp_mutable_segment,
             segment_config,
             flushing: Mutex::new(()),
             wal,
@@ -152,13 +159,18 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         }
 
         // Create a new segment_config with a random name
-        let random_name = format!("tmp_segment_{}", rand::random::<u64>());
-        let random_base_directory = format!("{}/{}", base_directory, random_name);
-        std::fs::create_dir_all(&random_base_directory)?;
-        let mutable_segment = RwLock::new(MutableSegment::new(
-            segment_config.clone(),
-            random_base_directory,
-        )?);
+        let create_mutable_segment = || -> Result<RwLock<MutableSegment>> {
+            let random_name = format!("tmp_segment_{}", rand::random::<u64>());
+            let random_base_directory = format!("{}/{}", base_directory, random_name);
+            std::fs::create_dir_all(&random_base_directory)?;
+            Ok(RwLock::new(MutableSegment::new(
+                segment_config.clone(),
+                random_base_directory,
+            )?))
+        };
+
+        let mutable_segment = create_mutable_segment()?;
+        let tmp_mutable_segment  = create_mutable_segment()?;
 
         let wal = if segment_config.wal_file_size > 0 {
             let wal_directory = format!("{}/wal", base_directory);
@@ -231,6 +243,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             versions_info,
             base_directory,
             mutable_segment,
+            tmp_mutable_segment,
             segment_config,
             flushing: Mutex::new(()),
             wal,
@@ -356,6 +369,16 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         Ok(())
     }
 
+    pub fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+        let mut res = self.mutable_segment.read().invalidate(user_id, doc_id)?;
+        // Checks if the `flushing` lock is currently held.
+        if self.flushing.try_lock().is_err() {
+            // The lock could not be acquired, so we are flushing
+            res |= self.tmp_mutable_segment.read().invalidate(user_id, doc_id)?;
+        }
+        Ok(res)
+    }
+
     pub fn dimensions(&self) -> usize {
         self.segment_config.num_features
     }
@@ -375,19 +398,30 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
                 let tmp_name = format!("tmp_segment_{}", rand::random::<u64>());
                 let writable_base_directory = format!("{}/{}", self.base_directory, tmp_name);
-                let mut new_writable_segment =
-                    MutableSegment::new(self.segment_config.clone(), writable_base_directory)?;
 
+                let mut new_writable_segment = MutableSegment::new(self.segment_config.clone(), writable_base_directory)?;
                 {
                     // Grab the write lock and swap tmp_segment with mutable_segment
                     let mut mutable_segment = self.mutable_segment.write();
+
+                    // Make mutable_segment use invalidated ids map for registering pending
+                    // invalidations instead of calling to builder's internal invalidate()
+                    mutable_segment.start_being_flushed();
                     std::mem::swap(&mut *mutable_segment, &mut new_writable_segment);
                 }
 
+                // Store the new writable segment in the struct for other functions to use
+                *self.tmp_mutable_segment.write() = new_writable_segment;
+
+                // This is for testing behaviors of invalidating/inserting while being flushed
+                #[cfg(test)]
+                if std::env::var("TEST_SLOW_FLUSH").is_ok() {
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+
                 let name_for_new_segment = format!("segment_{}", rand::random::<u64>());
-                let last_sequence_number = new_writable_segment.last_sequence_number();
-                new_writable_segment
-                    .build(self.base_directory.clone(), name_for_new_segment.clone())?;
+                let last_sequence_number = self.tmp_mutable_segment.read().last_sequence_number();
+                self.tmp_mutable_segment.write().build(self.base_directory.clone(), name_for_new_segment.clone())?;
 
                 // Read the segment
                 let spann_reader = MultiSpannReader::new(format!(
@@ -397,6 +431,17 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 ));
                 let index = spann_reader
                     .read::<Q>(self.segment_config.posting_list_encoding_type.clone())?;
+
+                // Apply pending invalidations
+                {
+                    let old_segment = self.tmp_mutable_segment.read();
+                    for (user_id, invalidated_set) in old_segment.invalidated_ids_map().read().iter() {
+                        for doc_id in invalidated_set.iter() {
+                            index.invalidate(*user_id, *doc_id)?;
+                        }
+                    }
+                }
+
                 let segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
                     ImmutableSegment::new(index, name_for_new_segment.clone()),
                 )));
@@ -777,8 +822,8 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 // Test
 #[cfg(test)]
 mod tests {
-
     use std::sync::atomic::AtomicBool;
+
     use std::sync::Arc;
 
     use anyhow::{Ok, Result};
@@ -787,6 +832,7 @@ mod tests {
     use quantization::noq::noq::NoQuantizerL2;
     use rand::Rng;
     use tempdir::TempDir;
+    use std::time::Instant;
 
     use crate::collection::collection::Collection;
     use crate::collection::reader::CollectionReader;
@@ -1209,6 +1255,138 @@ mod tests {
             assert_eq!(toc.sequence_number, 3);
         }
 
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_collection_inval_during_flush() -> Result<()> {
+        // Set the environment variable to activate the sleep during flush
+        std::env::set_var("TEST_SLOW_FLUSH", "1");
+
+        let temp_dir = TempDir::new("test_collection_inval_during_flush")?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let segment_config = CollectionConfig::default_test_config();
+        let collection = Arc::new(
+            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+        );
+
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
+        collection.insert_for_users(&[0], 2, &[2.0, 2.0, 3.0, 4.0], 1)?;
+        collection.insert_for_users(&[0], 3, &[3.0, 2.0, 3.0, 4.0], 2)?;
+        assert!(collection.invalidate(0, 2)?);
+
+        let collection_cpy_for_flush = collection.clone();
+        let collection_cpy_for_inval = collection.clone();
+
+        // Use a channel to communicate the segment name from the flush thread
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        // A thread to flush
+        tokio::spawn(async move {
+            let start = Instant::now();
+            println!("Flush thread: Starting flush...");
+            let segment_name = collection_cpy_for_flush.flush().unwrap();
+            println!("Flush thread: Flush completed in {:?}", start.elapsed());
+            tx.send(segment_name).unwrap();
+        });
+
+        // A thread to invalidate
+        tokio::spawn(async move {
+            let start = Instant::now();
+            // Do not invalidate too soon
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            println!("Invalidate thread: Starting invalidation...");
+            assert!(collection_cpy_for_inval.invalidate(0, 1).expect("Failed to invalidate"));
+            println!("Invalidate thread: Invalidation completed in {:?}", start.elapsed());
+        });
+
+        // Receive the segment name from the flush thread
+        let segment_name = rx.await.unwrap();
+
+        let segment = collection
+            .all_segments()
+            .get(&segment_name)
+            .unwrap()
+            .value()
+            .clone();
+        match segment {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                {
+                    assert!(immutable_segment.read().get_point_id(0, 2).is_none());
+                    assert!(immutable_segment.read().get_point_id(0, 1).is_some());
+                    assert!(immutable_segment.read().is_invalidated(0, 1)?);
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_collection_inval_insert_inval_during_flush() -> Result<()> {
+        // Set the environment variable to activate the sleep during flush
+        std::env::set_var("TEST_SLOW_FLUSH", "1");
+
+        let temp_dir = TempDir::new("test_collection_inval_insert_inval_during_flush")?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let segment_config = CollectionConfig::default_test_config();
+        let collection = Arc::new(
+            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+        );
+
+        collection.insert(1, &[1.0, 2.0, 3.0, 4.0])?;
+        collection.insert(2, &[2.0, 2.0, 3.0, 4.0])?;
+        collection.insert(3, &[3.0, 2.0, 3.0, 4.0])?;
+
+        let collection_cpy_for_flush = collection.clone();
+        let collection_cpy_for_inval = collection.clone();
+
+        // Use a channel to communicate the segment name from the flush thread
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        // A thread to flush
+        tokio::spawn(async move {
+            let start = Instant::now();
+            println!("Flush thread: Starting flush...");
+            let segment_name = collection_cpy_for_flush.flush().unwrap();
+            println!("Flush thread: Flush completed in {:?}", start.elapsed());
+            tx.send(segment_name).unwrap();
+        });
+
+        // A thread to invalidate
+        tokio::spawn(async move {
+            let start = Instant::now();
+            // Do not invalidate too soon
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            println!("Invalidate thread: Starting invalidation...");
+            assert!(collection_cpy_for_inval.invalidate(0, 1).expect("Failed to invalidate"));
+            assert!(collection_cpy_for_inval.insert(1, &[1.0, 2.0, 3.0, 4.0]).is_ok());
+            assert!(collection_cpy_for_inval.invalidate(0, 1).expect("Failed to invalidate"));
+            assert!(collection_cpy_for_inval.insert(4, &[1.0, 2.0, 3.0, 4.0]).is_ok());
+            assert!(collection_cpy_for_inval.invalidate(0, 4).expect("Failed to invalidate"));
+            println!("Invalidate thread: Invalidation completed in {:?}", start.elapsed());
+        });
+
+        // Receive the segment name from the flush thread
+        let segment_name = rx.await.unwrap();
+
+        let segment = collection
+            .all_segments()
+            .get(&segment_name)
+            .unwrap()
+            .value()
+            .clone();
+        match segment {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                {
+                    assert!(immutable_segment.read().is_invalidated(0, 1)?);
+                    assert!(!collection.mutable_segment.read().is_valid_doc_id(0, 1));
+                    assert!(immutable_segment.read().get_point_id(0, 4).is_none());
+                    assert!(!collection.mutable_segment.read().is_valid_doc_id(0, 4));
+                }
+            }
+            _ => {}
+        }
         Ok(())
     }
 }
