@@ -3,9 +3,9 @@ use std::sync::Arc;
 use anyhow::{Ok, Result};
 use quantization::quantization::Quantizer;
 
-use super::vacuum::VacuumOptimizer;
 use super::merge::MergeOptimizer;
 use super::noop::NoopOptimizer;
+use super::vacuum::VacuumOptimizer;
 use crate::collection::collection::Collection;
 
 #[derive(Debug, PartialEq, Eq)]

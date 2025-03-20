@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 
 use anyhow::{anyhow, Ok, Result};
 use config::collection::CollectionConfig;
@@ -20,7 +21,9 @@ pub struct PendingSegment<Q: Quantizer + Clone + Send + Sync> {
 
     // Whether to use the internal index instead of passing the query to inner segments.
     // Invariant: use_internal_index is true if and only if index is Some.
-    use_internal_index: bool,
+    // Use AtomicBool to ensure cache coherency, making sure latest updates are always propagated
+    // correctly to subsequent reads.
+    use_internal_index: AtomicBool,
 
     // Temporary invalidated ids management, only used when use_internal_index is false.
     temp_invalidated_ids_storage: RwLock<InvalidatedIdsStorage>,
@@ -52,7 +55,7 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
         let temp_invalidated_ids_directory =
             format!("{}/temp_invalidated_ids_storage", data_directory);
         // TODO(tyb) avoid unwrap here
-        let mut temp_invalidated_ids_storage =
+        let temp_invalidated_ids_storage =
             InvalidatedIdsStorage::read(&temp_invalidated_ids_directory).unwrap();
 
         let mut temp_invalidated_ids = HashMap::new();
@@ -69,7 +72,7 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
             name,
             parent_directory,
             index: RwLock::new(None),
-            use_internal_index: false,
+            use_internal_index: AtomicBool::new(false),
             // TODO(tyb): avoid unwrap here
             temp_invalidated_ids_storage: RwLock::new(temp_invalidated_ids_storage),
             temp_invalidated_ids: RwLock::new(temp_invalidated_ids),
@@ -79,7 +82,10 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
 
     // Caller must hold the read lock before calling this function.
     pub fn build_index(&self) -> Result<()> {
-        if self.use_internal_index {
+        if self
+            .use_internal_index
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
             // We shouldn't build the index if it already exists.
             return Err(anyhow!("Index already exists"));
         }
@@ -96,8 +102,10 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
         let internal_index = self.index.read();
         match &*internal_index {
             Some(index) => {
-                let invalidated_ids_directory =
-                    PathBuf::from(format!("{}/invalidated_ids_storage", index.base_directory()));
+                let invalidated_ids_directory = PathBuf::from(format!(
+                    "{}/invalidated_ids_storage",
+                    index.base_directory()
+                ));
                 if !invalidated_ids_directory.exists() {
                     return Err(anyhow!("Invalidated ids directory does not exist"));
                 }
@@ -106,9 +114,13 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
                 }
 
                 // At this point there should be no invalidated ids recorded in internal index.
-                let is_empty = std::fs::read_dir(&invalidated_ids_directory)?.next().is_none();
+                let is_empty = std::fs::read_dir(&invalidated_ids_directory)?
+                    .next()
+                    .is_none();
                 if !is_empty {
-                    return Err(anyhow!("Invalidated ids directory for internal index is not empty"));
+                    return Err(anyhow!(
+                        "Invalidated ids directory for internal index is not empty"
+                    ));
                 }
 
                 // TODO(tyb): hard link the storage? But still need to invalidate in the hash set
@@ -128,7 +140,8 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
 
     // Caller must hold the write lock before calling this function.
     pub fn switch_to_internal_index(&mut self) {
-        self.use_internal_index = true;
+        self.use_internal_index
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     pub fn inner_segments_names(&self) -> &Vec<String> {
@@ -160,7 +173,10 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
     }
 
     pub fn temp_invalidated_ids_storage_directory(&self) -> String {
-        self.temp_invalidated_ids_storage.read().base_directory().to_string()
+        self.temp_invalidated_ids_storage
+            .read()
+            .base_directory()
+            .to_string()
     }
 }
 
@@ -171,7 +187,10 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
     }
 
     fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
-        if !self.use_internal_index {
+        if !self
+            .use_internal_index
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
             // No need to check inner segments to avoid complexity when a doc_id is removed from
             // one of the segment but not the other, e.g.
             // - invalidate doc_id from segment A,
@@ -226,7 +245,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
     {
-        if !self.use_internal_index {
+        if !self
+            .use_internal_index
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
             let mut results = SearchResult::new();
             // The invalidated ids vector should be very small, we can just clone it
             let invalidated_ids = self

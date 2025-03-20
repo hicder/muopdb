@@ -1,5 +1,6 @@
 pub mod immutable_segment;
 pub mod mutable_segment;
+pub mod pending_mutable_segment;
 pub mod pending_segment;
 
 use std::sync::Arc;

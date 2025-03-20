@@ -1,5 +1,5 @@
 use std::cmp::min;
-use std::fs::{create_dir_all, remove_dir_all, remove_file, File};
+use std::fs::{remove_file, File};
 use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
 
@@ -79,7 +79,7 @@ where
         let expected_bytes_written = std::mem::size_of::<u128>() * (num_vectors + 1);
         if doc_id_mapping_len != expected_bytes_written {
             return Err(anyhow!(
-                "Expected to write {} bytes in centroid storage, but wrote {}",
+                "Expected to write {} bytes in doc_id_mapping storage, but wrote {}",
                 expected_bytes_written,
                 doc_id_mapping_len,
             ));
@@ -124,36 +124,88 @@ where
         Ok(())
     }
 
+    fn get_vector_writer(
+        file_path: String,
+        num_vectors: usize,
+        dimension: usize,
+        element_size: usize,
+    ) -> Result<BufWriter<File>> {
+        let file: File = File::create(file_path)?;
+
+        // Calculate capacity
+        let capacity = num_vectors * dimension * element_size;
+
+        // Create buffered writer with mutable file reference
+        let writer = BufWriter::with_capacity(min(1 << 30, capacity), file);
+
+        Ok(writer)
+    }
     fn quantize_and_write_vectors(&self, ivf_builder: &IvfBuilder<D>) -> Result<usize> {
-        // Quantize vectors
-        let full_vectors = &ivf_builder.vectors();
-        let quantized_vectors_path = format!("{}/quantized", self.base_directory);
-        create_dir_all(&quantized_vectors_path)?;
+        let raw_vectors = &ivf_builder.vectors();
 
-        // Write quantized vectors
-        let path = format!("{}/vectors", self.base_directory);
-        let mut file = File::create(path)?;
-        let capacity = full_vectors.num_vectors()
-            * self.quantizer.quantized_dimension()
-            * std::mem::size_of::<Q::QuantizedT>();
-        let mut writer = BufWriter::with_capacity(min(1 << 30, capacity), &mut file);
+        // get writer for quantized vectors
+        let mut quantized_vectors_writer = Self::get_vector_writer(
+            format!("{}/vectors", self.base_directory),
+            raw_vectors.num_vectors(),
+            self.quantizer.quantized_dimension(),
+            std::mem::size_of::<Q::QuantizedT>(),
+        )?;
 
-        let mut bytes_written = 0;
-        bytes_written += wrap_write(&mut writer, &full_vectors.num_vectors().to_le_bytes())?;
+        // get writer for raw vectors
+        let mut raw_vectors_writer = Self::get_vector_writer(
+            format!("{}/raw_vectors", self.base_directory),
+            raw_vectors.num_vectors(),
+            ivf_builder.config().num_features,
+            std::mem::size_of::<f32>(),
+        )?;
+
+        let mut quantized_bytes_written = 0;
+        let mut raw_bytes_written = 0;
         let mut search_context = SearchContext::new(false);
-        for i in 0..full_vectors.num_vectors() {
-            let quantized_vector = Q::QuantizedT::process_vector(
-                full_vectors.get(i as u32, &mut search_context)?,
-                &self.quantizer,
-            );
+        quantized_bytes_written += wrap_write(
+            &mut quantized_vectors_writer,
+            &raw_vectors.num_vectors().to_le_bytes(),
+        )?;
+
+        raw_bytes_written += wrap_write(
+            &mut raw_vectors_writer,
+            &raw_vectors.num_vectors().to_le_bytes(),
+        )?;
+
+        for i in 0..raw_vectors.num_vectors() {
+            // get raw vector and write to final file
+            let raw_vector = raw_vectors.get(i as u32, &mut search_context)?;
+            for j in 0..raw_vector.len() {
+                raw_bytes_written += wrap_write(
+                    &mut raw_vectors_writer,
+                    raw_vector[j].to_le_bytes().as_ref(),
+                )?;
+            }
+
+            // quantize and write to final file
+            let quantized_vector = Q::QuantizedT::process_vector(raw_vector, &self.quantizer);
             for j in 0..quantized_vector.len() {
-                bytes_written +=
-                    wrap_write(&mut writer, quantized_vector[j].to_le_bytes().as_ref())?;
+                quantized_bytes_written += wrap_write(
+                    &mut quantized_vectors_writer,
+                    quantized_vector[j].to_le_bytes().as_ref(),
+                )?;
             }
         }
 
-        remove_dir_all(&quantized_vectors_path)?;
-        Ok(bytes_written)
+        let expected_raw_bytes_written = std::mem::size_of::<f32>()
+            * raw_vectors.num_vectors()
+            * ivf_builder.config().num_features
+            + std::mem::size_of::<u64>();
+
+        if raw_bytes_written != expected_raw_bytes_written {
+            return Err(anyhow!(
+                "Expected to write {} bytes in raw vectors storage, but wrote {}",
+                expected_raw_bytes_written,
+                raw_bytes_written,
+            ));
+        }
+
+        Ok(quantized_bytes_written)
     }
 
     fn write_doc_id_mapping(&self, ivf_builder: &IvfBuilder<D>) -> Result<usize> {
@@ -498,7 +550,8 @@ mod tests {
         assert!(result.is_ok());
 
         let bytes_written = result.unwrap();
-        assert_eq!(bytes_written, 14); // 8 (number of vectors) + 6 (3 bytes each vector)
+        // Quantized vectors: 8 (number of vectors) + 6 (3 bytes each vector)
+        assert_eq!(bytes_written, 14);
 
         let vectors_path = format!("{}/vectors", base_directory);
         assert!(Path::new(&vectors_path).exists());
@@ -539,6 +592,62 @@ mod tests {
                 "Quantized vector {} does not match expected",
                 i
             );
+        }
+
+        // Check the raw vectors file
+        let raw_vectors_path = format!("{}/raw_vectors", base_directory);
+        assert!(Path::new(&raw_vectors_path).exists());
+
+        // Read the raw vectors file
+        let file = fs::File::open(raw_vectors_path).expect("Failed to open raw vectors file");
+        let mut reader = std::io::BufReader::new(file);
+        let mut buffer = Vec::new();
+        reader
+            .read_to_end(&mut buffer)
+            .expect("Failed to read raw vectors file");
+
+        // Verify the header (number of vectors)
+        let expected_header = num_vectors.to_le_bytes();
+        assert_eq!(&buffer[0..8], &expected_header);
+
+        // Verify the contents of the raw vectors
+        let bytes_per_float = std::mem::size_of::<f32>();
+        let expected_raw_vector_length = num_features * bytes_per_float;
+        let data_start = 8; // Skip the header
+        let data_end = buffer.len();
+        assert_eq!((data_end - data_start) % expected_raw_vector_length, 0);
+
+        let num_vectors_written = (data_end - data_start) / expected_raw_vector_length;
+        assert_eq!(num_vectors_written, num_vectors);
+
+        // Check each raw vector
+        let expected_raw_vectors = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
+
+        for i in 0..num_vectors_written {
+            let vector_start = data_start + i * expected_raw_vector_length;
+
+            for j in 0..num_features {
+                let value_start = vector_start + j * bytes_per_float;
+                let value_end = value_start + bytes_per_float;
+                let value_bytes = &buffer[value_start..value_end];
+
+                // Convert bytes to f32
+                let value = f32::from_le_bytes([
+                    value_bytes[0],
+                    value_bytes[1],
+                    value_bytes[2],
+                    value_bytes[3],
+                ]);
+
+                assert!(
+                    (value - expected_raw_vectors[i][j]).abs() < f32::EPSILON,
+                    "Raw vector {}, feature {} does not match expected: got {}, expected {}",
+                    i,
+                    j,
+                    value,
+                    expected_raw_vectors[i][j]
+                );
+            }
         }
     }
 
@@ -739,6 +848,129 @@ mod tests {
         assert_eq!(
             doc_id_mapping_len,
             (std::mem::size_of::<u128>() * (num_vectors + 1)) as u64
+        );
+
+        let centroids_len = index_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read centroids_len");
+        let posting_lists_and_metadata_len = index_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read posting_lists_and_metadata_len");
+
+        // Verify file size
+        let file_size = index_file
+            .metadata()
+            .expect("Failed to get file metadata")
+            .len();
+        assert_eq!(
+            file_size,
+            41 + 7 + doc_id_mapping_len + centroids_len + posting_lists_and_metadata_len
+        ); // 41 bytes for header + 7 padding
+    }
+
+    #[test]
+    fn test_ivf_writer_write_with_invalidation() {
+        let temp_dir = TempDir::new("test_ivf_writer_write_with_invalidation")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 10;
+        let num_vectors = 1000;
+        let num_features = 4;
+        let file_size = 4096;
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
+        let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
+            base_directory.clone(),
+            quantizer,
+        );
+
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points_for_clustering: num_vectors,
+            max_clusters_per_vector: 1,
+            distance_threshold: 0.1,
+            base_directory: base_directory.clone(),
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: 0.0,
+            max_posting_list_size: usize::MAX,
+        })
+        .expect("Failed to create builder");
+        // Generate 1000 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            let vector = generate_random_vector(num_features);
+            builder
+                .add_vector((i + 100) as u128, &vector)
+                .expect("Vector should be added");
+        }
+        for i in 0..num_vectors {
+            if i % 2 == 0 {
+                assert!(builder.invalidate((i + 100) as u128));
+            }
+        }
+        assert_eq!(builder.get_num_valid_vectors(), num_vectors / 2);
+
+        assert!(builder.build().is_ok());
+        assert!(writer.write(&mut builder, true).is_ok());
+
+        // Check if files were created and removed correctly
+        assert!(fs::metadata(format!("{}/vectors", base_directory)).is_ok());
+        assert!(fs::metadata(format!("{}/index", base_directory)).is_ok());
+        assert!(fs::metadata(format!("{}/doc_id_mapping", base_directory)).is_err());
+        assert!(fs::metadata(format!("{}/centroids", base_directory)).is_err());
+        assert!(fs::metadata(format!("{}/posting_lists", base_directory)).is_err());
+
+        // Verify vectors file content
+        let vectors_file =
+            File::open(format!("{}/vectors", base_directory)).expect("Failed to open vectors file");
+        let mut vectors_reader = std::io::BufReader::new(vectors_file);
+
+        let stored_num_vectors = vectors_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read number of vectors");
+        assert_eq!(stored_num_vectors, (num_vectors / 2) as u64);
+
+        // Verify index file content
+        let mut index_file =
+            File::open(format!("{}/index", base_directory)).expect("Failed to open index file");
+        let mut index_reader = std::io::BufReader::new(&mut index_file);
+
+        // Read and verify header
+        let version = index_reader.read_u8().expect("Failed to read version");
+        assert_eq!(version, 0); // Version::V0
+
+        let stored_num_features = index_reader
+            .read_u32::<LittleEndian>()
+            .expect("Failed to read num_features");
+        assert_eq!(stored_num_features, num_features as u32);
+
+        let stored_quantized_dimension = index_reader
+            .read_u32::<LittleEndian>()
+            .expect("Failed to read quantized_dimension");
+        assert_eq!(stored_quantized_dimension, num_features as u32);
+
+        let stored_num_clusters = index_reader
+            .read_u32::<LittleEndian>()
+            .expect("Failed to read num_clusters");
+        assert_eq!(stored_num_clusters, num_clusters as u32);
+
+        let stored_num_vectors = index_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read num_vectors");
+        assert_eq!(stored_num_vectors, (num_vectors / 2) as u64);
+
+        let doc_id_mapping_len = index_reader
+            .read_u64::<LittleEndian>()
+            .expect("Failed to read doc_id_mapping_len");
+        assert_eq!(
+            doc_id_mapping_len,
+            (std::mem::size_of::<u128>() * (num_vectors / 2 + 1)) as u64
         );
 
         let centroids_len = index_reader

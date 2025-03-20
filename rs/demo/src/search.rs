@@ -3,8 +3,7 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use log::{info, LevelFilter};
 use proto::muopdb::index_server_client::IndexServerClient;
-use proto::muopdb::SearchRequest;
-use proto::muopdb::Id;
+use proto::muopdb::{Id, SearchRequest};
 use serde_json::{json, json_internal};
 use utils::mem::ids_to_u128s;
 
