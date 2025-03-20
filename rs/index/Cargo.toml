@@ -33,3 +33,5 @@ parking_lot.workspace = true
 lock_api.workspace = true
 fs_extra.workspace = true
 tokio.workspace = true
+proto.workspace = true
+
