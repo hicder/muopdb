@@ -4,7 +4,7 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use anyhow::{anyhow, Result};
 
 /// Convenient wrapper for going from io::Result<usize> to Result<usize, String>
-pub fn wrap_write(writer: &mut BufWriter<&mut File>, buf: &[u8]) -> Result<usize> {
+pub fn wrap_write<W: Write>(writer: &mut W, buf: &[u8]) -> Result<usize> {
     anyhow::Ok(writer.write(buf)?)
 }
 

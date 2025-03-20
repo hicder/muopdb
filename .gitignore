@@ -10,3 +10,5 @@ perf.data*
 .venv
 */__pycache__/
 rs/proto/src/muopdb.rs
+.zed/
+.aider*

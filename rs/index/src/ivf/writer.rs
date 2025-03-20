@@ -1,5 +1,5 @@
 use std::cmp::min;
-use std::fs::{create_dir_all, remove_dir_all, remove_file, File};
+use std::fs::{remove_file, File};
 use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
 
@@ -124,36 +124,84 @@ where
         Ok(())
     }
 
+    fn get_vector_writer(
+        file_path: String,
+        num_vectors: usize,
+        dimension: usize,
+        element_size: usize,
+    ) -> Result<BufWriter<File>> {
+        let file: File = File::create(file_path)?;
+
+        // Calculate capacity
+        let capacity = num_vectors * dimension * element_size;
+
+        // Create buffered writer with mutable file reference
+        let writer = BufWriter::with_capacity(min(1 << 30, capacity), file);
+
+        Ok(writer)
+    }
     fn quantize_and_write_vectors(&self, ivf_builder: &IvfBuilder<D>) -> Result<usize> {
-        // Quantize vectors
-        let full_vectors = &ivf_builder.vectors();
-        let quantized_vectors_path = format!("{}/quantized", self.base_directory);
-        create_dir_all(&quantized_vectors_path)?;
+        let raw_vectors = &ivf_builder.vectors();
 
-        // Write quantized vectors
-        let path = format!("{}/vectors", self.base_directory);
-        let mut file = File::create(path)?;
-        let capacity = full_vectors.num_vectors()
-            * self.quantizer.quantized_dimension()
-            * std::mem::size_of::<Q::QuantizedT>();
-        let mut writer = BufWriter::with_capacity(min(1 << 30, capacity), &mut file);
+        // get writer for quantized vectors
+        let mut quantized_vectors_writer = Self::get_vector_writer(
+            format!("{}/vectors", self.base_directory),
+            raw_vectors.num_vectors(),
+            self.quantizer.quantized_dimension(),
+            std::mem::size_of::<Q::QuantizedT>(),
+        )?;
 
-        let mut bytes_written = 0;
-        bytes_written += wrap_write(&mut writer, &full_vectors.num_vectors().to_le_bytes())?;
+        // get writer for raw vectors
+        let mut raw_vectors_writer = Self::get_vector_writer(
+            format!("{}/raw_vectors", self.base_directory),
+            raw_vectors.num_vectors(),
+            ivf_builder.config().num_features,
+            std::mem::size_of::<f32>(),
+        )?;
+
+        let mut quantized_bytes_written = 0;
+        let mut raw_bytes_written = 0;
         let mut search_context = SearchContext::new(false);
-        for i in 0..full_vectors.num_vectors() {
-            let quantized_vector = Q::QuantizedT::process_vector(
-                full_vectors.get(i as u32, &mut search_context)?,
-                &self.quantizer,
-            );
+        quantized_bytes_written += wrap_write(
+            &mut quantized_vectors_writer,
+            &raw_vectors.num_vectors().to_le_bytes(),
+        )?;
+
+        raw_bytes_written +=
+            wrap_write(&mut raw_vectors_writer, &raw_vectors.num_vectors().to_le_bytes())?;
+
+        for i in 0..raw_vectors.num_vectors() {
+            // get raw vector and write to final file
+            let raw_vector = raw_vectors.get(i as u32, &mut search_context)?;
+            for j in 0..raw_vector.len() {
+                raw_bytes_written +=
+                    wrap_write(&mut raw_vectors_writer, raw_vector[j].to_le_bytes().as_ref())?;
+            }
+
+            // quantize and write to final file
+            let quantized_vector = Q::QuantizedT::process_vector(raw_vector, &self.quantizer);
             for j in 0..quantized_vector.len() {
-                bytes_written +=
-                    wrap_write(&mut writer, quantized_vector[j].to_le_bytes().as_ref())?;
+                quantized_bytes_written += wrap_write(
+                    &mut quantized_vectors_writer,
+                    quantized_vector[j].to_le_bytes().as_ref(),
+                )?;
             }
         }
 
-        remove_dir_all(&quantized_vectors_path)?;
-        Ok(bytes_written)
+        let expected_raw_bytes_written = std::mem::size_of::<f32>()
+            * raw_vectors.num_vectors()
+            * ivf_builder.config().num_features
+            + std::mem::size_of::<u64>();
+
+        if raw_bytes_written != expected_raw_bytes_written {
+            return Err(anyhow!(
+                "Expected to write {} bytes in raw vectors storage, but wrote {}",
+                expected_raw_bytes_written,
+                raw_bytes_written,
+            ));
+        }
+
+        Ok(quantized_bytes_written)
     }
 
     fn write_doc_id_mapping(&self, ivf_builder: &IvfBuilder<D>) -> Result<usize> {
@@ -498,7 +546,8 @@ mod tests {
         assert!(result.is_ok());
 
         let bytes_written = result.unwrap();
-        assert_eq!(bytes_written, 14); // 8 (number of vectors) + 6 (3 bytes each vector)
+        // Quantized vectors: 8 (number of vectors) + 6 (3 bytes each vector)
+        assert_eq!(bytes_written, 14);
 
         let vectors_path = format!("{}/vectors", base_directory);
         assert!(Path::new(&vectors_path).exists());
@@ -539,6 +588,62 @@ mod tests {
                 "Quantized vector {} does not match expected",
                 i
             );
+        }
+
+        // Check the raw vectors file
+        let raw_vectors_path = format!("{}/raw_vectors", base_directory);
+        assert!(Path::new(&raw_vectors_path).exists());
+
+        // Read the raw vectors file
+        let file = fs::File::open(raw_vectors_path).expect("Failed to open raw vectors file");
+        let mut reader = std::io::BufReader::new(file);
+        let mut buffer = Vec::new();
+        reader
+            .read_to_end(&mut buffer)
+            .expect("Failed to read raw vectors file");
+
+        // Verify the header (number of vectors)
+        let expected_header = num_vectors.to_le_bytes();
+        assert_eq!(&buffer[0..8], &expected_header);
+
+        // Verify the contents of the raw vectors
+        let bytes_per_float = std::mem::size_of::<f32>();
+        let expected_raw_vector_length = num_features * bytes_per_float;
+        let data_start = 8; // Skip the header
+        let data_end = buffer.len();
+        assert_eq!((data_end - data_start) % expected_raw_vector_length, 0);
+
+        let num_vectors_written = (data_end - data_start) / expected_raw_vector_length;
+        assert_eq!(num_vectors_written, num_vectors);
+
+        // Check each raw vector
+        let expected_raw_vectors = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
+
+        for i in 0..num_vectors_written {
+            let vector_start = data_start + i * expected_raw_vector_length;
+
+            for j in 0..num_features {
+                let value_start = vector_start + j * bytes_per_float;
+                let value_end = value_start + bytes_per_float;
+                let value_bytes = &buffer[value_start..value_end];
+
+                // Convert bytes to f32
+                let value = f32::from_le_bytes([
+                    value_bytes[0],
+                    value_bytes[1],
+                    value_bytes[2],
+                    value_bytes[3],
+                ]);
+
+                assert!(
+                    (value - expected_raw_vectors[i][j]).abs() < f32::EPSILON,
+                    "Raw vector {}, feature {} does not match expected: got {}, expected {}",
+                    i,
+                    j,
+                    value,
+                    expected_raw_vectors[i][j]
+                );
+            }
         }
     }
 
