@@ -61,6 +61,10 @@ impl MutableSegment {
         Ok(())
     }
 
+    pub fn is_valid_doc_id(&self, user_id: u128, doc_id: u128) -> bool {
+        self.multi_spann_builder.is_valid_doc_id(user_id, doc_id)
+    }
+
     pub fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         self.multi_spann_builder.invalidate(user_id, doc_id)
     }
