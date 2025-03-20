@@ -34,9 +34,11 @@ pub struct SegmentInfoAndVersion {
     pub version: u64,
 }
 
-/// MutableSegments is protected by a RwLock.
+/// MutableSegments is protected by a RwLock. This is to ensure atomicity when swapping
+/// the inner mutable segments during flush.
 /// On insert, grab the read-lock of this struct, then read-lock of mutable_segment.
 /// On invalidate, grab read-lock of this struct, then read-lock of both.
+/// On flush, grab write-lock of this struct, then write-lock of both.
 struct MutableSegments {
     pub mutable_segment: RwLock<MutableSegment>,
     pub pending_mutable_segment: RwLock<Option<PendingMutableSegment>>,
@@ -451,7 +453,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     ImmutableSegment::new(index, name_for_new_segment.clone()),
                 )));
 
-                // Must grab the write lock to prevent further invalidations and apply pending deletions
+                // Must grab the write lock to prevent further invalidations when applying pending deletions
                 {
                     let mut pending_segment_write =
                         RwLockUpgradableReadGuard::upgrade(pending_segment_read);
@@ -460,6 +462,8 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                         segment.remove(deletion.user_id, deletion.doc_id)?;
                     }
                     *pending_segment_write = None;
+
+                    // Add segments while holding write lock to prevent insertions/invalidations
                     self.add_segments(
                         vec![name_for_new_segment.clone()],
                         vec![segment],
