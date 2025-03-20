@@ -834,10 +834,11 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 .mutable_segment
                 .read()
                 .invalidate(user_id, doc_id)?;
-            mutable_segments
-                .mutable_segment
-                .write()
-                .invalidate(user_id, doc_id)?;
+
+            let pending_mutable_segment = mutable_segments.pending_mutable_segment.read();
+            if let Some(pending_mutable_segment) = pending_mutable_segment.as_ref() {
+                pending_mutable_segment.invalidate(user_id, doc_id)?;
+            }
         }
 
         let version_info_read = self.versions_info.read();
