@@ -27,6 +27,7 @@ impl PendingMutableSegment {
         }
     }
 
+    // Make absolutely sure that this function is called only once.
     pub fn build(&self, base_directory: String, name: String) -> Result<()> {
         self.mutable_segment
             .borrow_mut()
