@@ -128,8 +128,15 @@ pub struct CollectionConfig {
     #[serde(default = "default_max_time_to_flush_ms")]
     pub max_time_to_flush_ms: u64,
 
-    pub topic_prefix: String,
-    pub group_id: String,
+    /// Enable to use distributed log as WAL.
+    /// Default: false (using local WAL)
+    #[serde(default = "default_use_distributed_log_as_wal")]
+    pub use_distributed_log_as_wal: bool,
+
+    /// Topic name for the distributed log if use as WAL
+    /// Default:
+    #[serde(default= "default_topic_name")]
+    pub topic_name: String,
 }
 
 fn default_wal_file_size() -> u64 {
@@ -144,12 +151,12 @@ fn default_max_time_to_flush_ms() -> u64 {
     10000
 }
 
-fn default_topic_prefix() -> String {
-    String::from("wal_topic")
+fn default_use_distributed_log_as_wal() -> bool {
+    false
 }
 
-fn default_group_id() -> String {
-    String::from("wal_group")
+fn default_topic_name() -> String {
+    String::from("wal_topic")
 }
 
 impl Default for CollectionConfig {
@@ -180,8 +187,8 @@ impl Default for CollectionConfig {
             wal_file_size: 0,
             max_pending_ops: 0,
             max_time_to_flush_ms: 0,
-            topic_prefix: default_topic_prefix(),
-            group_id: default_group_id(),
+            use_distributed_log_as_wal: default_use_distributed_log_as_wal(),
+            topic_name: default_topic_name()
         }
     }
 }
@@ -214,9 +221,8 @@ impl CollectionConfig {
             wal_file_size: 1024 * 1024 * 1024,
             max_pending_ops: 10000,
             max_time_to_flush_ms: 10000,
-            topic_prefix: default_topic_prefix(),
-            group_id: default_group_id(),
+            use_distributed_log_as_wal: default_use_distributed_log_as_wal(),
+            topic_name: default_topic_name()
         }
     }
 }
-

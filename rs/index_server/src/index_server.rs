@@ -119,46 +119,47 @@ impl IndexServer for IndexServerImpl {
         if let Some(max_time_to_flush_ms) = req.max_time_to_flush_ms {
             collection_config.max_time_to_flush_ms = max_time_to_flush_ms as u64;
         }
+        if collection_config.use_distributed_log_as_wal {
+            collection_config
+                .topic_name
+                .push_str(&format!("-{collection_name}"))
+        }
+
+        info!("Enable distributed log WAL: {}, topic name: {}", collection_config.use_distributed_log_as_wal, collection_config.topic_name);
+
 
         let mut collection_manager_locked = self.collection_manager.write().await;
-        if collection_manager_locked
-            .collection_exists(&collection_name)
-            .await
-        {
+        if collection_manager_locked.collection_exists(&collection_name).await {
             return Err(tonic::Status::new(
                 tonic::Code::AlreadyExists,
                 format!("Collection {} already exists", collection_name),
             ));
         }
-        match collection_manager_locked
+
+        collection_manager_locked
             .add_collection(collection_name.clone(), collection_config.clone())
             .await
-        {
-            Ok(_) => {
-                // create new topic
-                // TODO(trungbui59): create topic before creating collection
+            .map_err(|e1| tonic::Status::new(tonic::Code::Internal, e1.to_string()))?;
 
-                // subscribe to topic
-                match collection_manager_locked
-                    .subscribe_to_topics(vec![collection_name.clone()])
-                    .await
-                {
-                    Ok(_) => Ok(tonic::Response::new(CreateCollectionResponse {
-                        message: format!("Collection {} created", collection_name),
-                    })),
-                    Err(e) => Err(tonic::Status::new(
+        if collection_config.use_distributed_log_as_wal {
+            // subscribe to topic
+            collection_manager_locked
+                .subscribe_to_topic(&collection_config.topic_name, None)
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
                         tonic::Code::Internal,
                         format!(
                             "Failed to subscribe to topic for collection {}: {}",
                             collection_name, e
                         ),
-                    )),
-                }
-            }
-            Err(e) => {
-                return Err(tonic::Status::new(tonic::Code::Internal, e.to_string()));
-            }
+                    )
+                })?;
         }
+
+        Ok(tonic::Response::new(CreateCollectionResponse {
+            message: format!("Collection {} created", collection_name),
+        }))
     }
 
     async fn search(
@@ -414,4 +415,3 @@ impl IndexServer for IndexServerImpl {
         }
     }
 }
-

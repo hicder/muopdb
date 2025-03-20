@@ -772,6 +772,14 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     pub fn all_segments(&self) -> &DashMap<String, BoxedImmutableSegment<Q>> {
         &self.all_segments
     }
+
+    pub fn get_use_distributed_log_as_wal(&self) -> bool {
+        self.segment_config.use_distributed_log_as_wal
+    }
+
+    pub fn get_topic_name(&self) -> String {
+        self.segment_config.topic_name.clone()
+    }
 }
 
 // Test

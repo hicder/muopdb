@@ -242,4 +242,18 @@ impl BoxedCollection {
             }
         }
     }
+
+    pub fn get_use_distributed_log_as_wal(&self) -> bool {
+        match self {
+            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.get_use_distributed_log_as_wal(),
+            BoxedCollection::CollectionProductQuantization(collection) => collection.get_use_distributed_log_as_wal(),
+        }
+    }
+
+    pub fn get_topic_name(&self) -> String {
+        match self {
+            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.get_topic_name(),
+            BoxedCollection::CollectionProductQuantization(collection) => collection.get_topic_name(),
+        }
+    }
 }

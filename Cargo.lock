@@ -1581,6 +1581,7 @@ name = "log_consumer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "log",
  "proto",
  "rdkafka",
  "rmp-serde",

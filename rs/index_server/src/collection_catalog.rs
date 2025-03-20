@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-
 use index::collection::BoxedCollection;
 
 pub struct CollectionCatalog {

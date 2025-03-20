@@ -3,7 +3,6 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use anyhow::{Context, Error, Result};
-use config::collection::CollectionConfig;
 use config::enums::QuantizerType;
 use index::collection::collection::Collection;
 use log::{debug, info, warn};
@@ -19,7 +18,7 @@ use crate::collection_provider::CollectionProvider;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CollectionInfo {
-    pub name: String,
+    pub name: String
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -49,13 +48,11 @@ impl CollectionManager {
         num_wal_consumers: u32,
         log_brokers: &str,
     ) -> Self {
-        let config = CollectionConfig::default();
         let mut log_consumer_vector = Vec::new();
 
         // create log consumer vector
-        for i in 0..num_wal_consumers {
-            let group_id = format!("{}-{}", config.group_id, i);
-            let consumer = LogConsumer::new(&log_brokers, None, &group_id);
+        for _ in 0..num_wal_consumers {
+            let consumer = LogConsumer::new(&log_brokers);
             log_consumer_vector.push(Arc::new(Mutex::new(consumer.unwrap())));
         }
 
@@ -214,17 +211,21 @@ impl CollectionManager {
             for collection_name in collections_to_add.iter() {
                 info!("Fetching collection {}", collection_name);
 
-                // update the consumer to subscribe to the topic for the collection
-                self.subscribe_to_topics(vec![collection_name.clone()])
-                    .await?;
-
                 let collection_opt = self.collection_provider.read_collection(collection_name);
                 if let Some(collection) = collection_opt {
+                    // subscribe to distributed log if enable
+                    // TODO(trungbui): read from toc to get offset
+                    if collection.get_use_distributed_log_as_wal() {
+                        self.subscribe_to_topic(&collection.get_topic_name(), None)
+                            .await?;
+                    }
+
                     self.collection_catalog
                         .lock()
                         .await
                         .add_collection(collection_name.clone(), collection)
                         .await;
+                    
                 } else {
                     warn!("Failed to fetch collection {}", collection_name);
                 }
@@ -297,12 +298,13 @@ impl CollectionManager {
         hash as u32 % num_workers
     }
 
-    pub async fn get_consumer(&self, collection_name: &str) -> MutexGuard<'_, LogConsumer> {
+    pub async fn get_consumer_by_topic(&self, topic_name: &str) -> MutexGuard<'_, LogConsumer> {
         let index =
-            self.get_worker_id(collection_name, self.log_consumer_vector.len() as u32) as usize;
+            self.get_worker_id(topic_name, self.log_consumer_vector.len() as u32) as usize;
+
         info!(
-            "Getting consumer for collection {} with worker id {}",
-            collection_name, index
+            "Getting consumer for topic {} with worker id {}",
+            topic_name, index
         );
 
         self.log_consumer_vector[index].lock().await
@@ -314,20 +316,12 @@ impl CollectionManager {
             .await
     }
 
-    pub async fn subscribe_to_topics(&self, collection_name: Vec<String>) -> Result<()> {
-        let collection_config = CollectionConfig::default();
-        for collection_name in collection_name.iter() {
-            let topic_name = format!("{}-{}", &collection_config.topic_prefix, collection_name);
-            info!("Subscribing to topic {}", topic_name);
+    pub async fn subscribe_to_topic(&self, topic_name: &str, offset: Option<i64>) -> Result<()> {
+        let consumer = self.get_consumer_by_topic(&topic_name).await;
 
-            // get consumer
-            let consumer = self.get_consumer(&collection_name).await;
-
-            if let Err(e) = consumer.subscribe_to_topics(&[&topic_name]).await {
-                return Err(Error::from(e));
-            }
+        if let Err(e) = consumer.subscribe_to_topic(&topic_name, offset).await {
+            return Err(Error::from(e));
         }
         Ok(())
     }
 }
-

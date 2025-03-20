@@ -26,8 +26,8 @@ async fn main() -> Result<()> {
 
     let brokers = "localhost:19092,localhost:29092,localhost:39092";
     let topic = "wal_topic-test-collection-1";
-    let producer = LogProducer::new(&brokers, &topic);
-    let admin = Admin::new(&brokers);
+    let producer = LogProducer::new(&brokers, &topic)?;
+    let admin = Admin::new(&brokers)?;
 
     if !admin.topic_exists(&topic).await? {
         admin.create_topic(&topic).await?;
@@ -71,15 +71,15 @@ async fn main() -> Result<()> {
             }],
         });
 
-        let rmp_payload =
+        let msgpack_payload =
             encode::to_vec(&request.get_ref().clone()).expect("Failed to serialize request");
 
         let msg = LogMessage {
-            payload: rmp_payload,
+            payload: msgpack_payload,
             topic: topic.to_string(),
         };
 
-        producer.send_logs(&msg).await;
+        producer.send_logs(&msg).await?;
 
         client.insert_packed(request).await?;
         start_idx = end_idx;
@@ -100,4 +100,3 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
-

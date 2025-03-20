@@ -1,33 +1,34 @@
+use std::time::Duration;
+
+use anyhow::Result;
 use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
 use rdkafka::client::DefaultClientContext;
 use rdkafka::config::ClientConfig;
-use rdkafka::error::KafkaResult;
 use rdkafka::util::Timeout;
-use std::time::Duration;
 
 pub struct Admin {
     client: AdminClient<DefaultClientContext>,
 }
 
 impl Admin {
-    pub fn new(brokers: &str) -> Self {
+    pub fn new(brokers: &str) -> Result<Self> {
         let client: AdminClient<DefaultClientContext> = ClientConfig::new()
             .set("bootstrap.servers", brokers)
-            .create()
-            .expect("Admin client creation error");
+            .create()?;
 
-        Admin { client }
+        Ok(Admin { client })
     }
 
-    pub async fn topic_exists(&self, topic: &str) -> KafkaResult<bool> {
+    pub async fn topic_exists(&self, topic: &str) -> Result<bool> {
         let metadata = self
             .client
             .inner()
-            .fetch_metadata(Some(topic), Timeout::After(Duration::from_secs(5)))?;
+            .fetch_metadata(Some(topic), Timeout::After(Duration::from_secs(5)))
+            .map_err(|e| anyhow::anyhow!("Failed to fetch metadata: {:?}", e))?;
         Ok(metadata.topics().iter().any(|t| t.name() == topic))
     }
 
-    pub async fn create_topic(&self, topic: &str) -> KafkaResult<()> {
+    pub async fn create_topic(&self, topic: &str) -> Result<()> {
         let new_topic =
             NewTopic::new(topic, 1, TopicReplication::Fixed(3)).set("retention.ms", "-1"); // infinite retention
         let res = self
@@ -37,7 +38,8 @@ impl Admin {
                 &AdminOptions::new()
                     .operation_timeout(Some(Timeout::After(Duration::from_secs(10)))),
             )
-            .await?;
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to create topic: {:?}", e))?;
 
         for result in res {
             match result {
@@ -49,4 +51,45 @@ impl Admin {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use tokio::runtime::Runtime;
 
+    use super::*;
+
+    #[test]
+    fn test_admin_creation() {
+        // Test that we can create an Admin client
+        let admin = Admin::new("localhost:19092,localhost:29092,localhost:39092");
+        assert!(admin.is_ok());
+    }
+
+    #[test]
+    fn test_create_topic() {
+        let rt = Runtime::new().unwrap();
+
+        rt.block_on(async {
+            let admin = Admin::new("localhost:19092,localhost:29092,localhost:39092")
+                .expect("Failed to create admin client");
+
+            let random_topic = format!(
+                "test_admin_create_topic_{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+            );
+
+            // Create the topic
+            let result = admin.create_topic(&random_topic).await;
+            assert!(result.is_ok(), "Topic creation failed");
+
+            // Verify the topic exists
+            let exists = admin
+                .topic_exists(&random_topic)
+                .await
+                .expect("Failed to check topic");
+            assert!(exists, "Topic should exist after creation");
+        });
+    }
+}
