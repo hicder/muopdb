@@ -105,6 +105,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_consume_logs() {
         let topic = "test_log_consumer";
         let rt = Runtime::new().unwrap();

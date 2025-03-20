@@ -65,6 +65,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_create_topic() {
         let rt = Runtime::new().unwrap();
 

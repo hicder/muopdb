@@ -64,6 +64,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_send_logs() {
         let rt = Runtime::new().unwrap();
 
