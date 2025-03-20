@@ -447,12 +447,13 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
                 // Must grab the write lock to prevent further invalidations and apply pending deletions
                 {
-                    let pending_segment_write =
+                    let mut pending_segment_write =
                         RwLockUpgradableReadGuard::upgrade(pending_segment_read);
                     let pending_deletions = pending_segment_write.as_ref().unwrap().deletion_ops();
                     for deletion in pending_deletions {
                         segment.remove(deletion.user_id, deletion.doc_id)?;
                     }
+                    *pending_segment_write = None;
                     self.add_segments(
                         vec![name_for_new_segment.clone()],
                         vec![segment],
