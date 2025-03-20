@@ -257,21 +257,18 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
     /// otherwise (i.e. doc_id not found or had already been invalidated)
     pub fn invalidate(&self, doc_id: u128) -> bool {
         match self.get_point_id(doc_id) {
-            Some(point_id) => {
-                self.invalid_point_ids
-                    .write()
-                    .unwrap()
-                    .insert(point_id as u32)
-            }
+            Some(point_id) => self
+                .invalid_point_ids
+                .write()
+                .unwrap()
+                .insert(point_id as u32),
             None => false,
         }
     }
 
     pub fn is_invalidated(&self, doc_id: u128) -> bool {
         match self.get_point_id(doc_id) {
-            Some(point_id) => {
-                self.invalid_point_ids.read().unwrap().contains(&point_id)
-            }
+            Some(point_id) => self.invalid_point_ids.read().unwrap().contains(&point_id),
             None => false,
         }
     }

@@ -153,15 +153,16 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
 #[cfg(test)]
 mod tests {
     use std::fs;
+
     use config::collection::CollectionConfig;
     use config::enums::IntSeqEncodingType;
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
 
+    use crate::ivf::files::invalidated_ids::InvalidatedIdsStorage;
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::reader::MultiSpannReader;
     use crate::multi_spann::writer::MultiSpannWriter;
-    use crate::ivf::files::invalidated_ids::InvalidatedIdsStorage;
 
     #[tokio::test]
     async fn test_multi_spann_search() {
@@ -366,7 +367,13 @@ mod tests {
         assert!(multi_spann_index
             .is_invalidated(0, num_vectors as u128)
             .expect("Failed to query invalidation"));
-        assert_eq!(multi_spann_index.invalidated_ids_storage.read().num_entries(), 1);
+        assert_eq!(
+            multi_spann_index
+                .invalidated_ids_storage
+                .read()
+                .num_entries(),
+            1
+        );
 
         let query = vec![1.4, 2.4, 3.4, 4.4];
         let k = 3;
@@ -422,11 +429,27 @@ mod tests {
         assert!(multi_spann_index
             .invalidate(0, 0 as u128)
             .expect("Failed to invalidate"));
-        assert_eq!(multi_spann_index.invalidated_ids_storage.write().iter().collect::<Vec<_>>().len(), 1);
+        assert_eq!(
+            multi_spann_index
+                .invalidated_ids_storage
+                .write()
+                .iter()
+                .collect::<Vec<_>>()
+                .len(),
+            1
+        );
 
         assert!(!multi_spann_index
             .invalidate(0, num_vectors as u128)
             .expect("Failed to invalidate"));
-        assert_eq!(multi_spann_index.invalidated_ids_storage.write().iter().collect::<Vec<_>>().len(), 1);
+        assert_eq!(
+            multi_spann_index
+                .invalidated_ids_storage
+                .write()
+                .iter()
+                .collect::<Vec<_>>()
+                .len(),
+            1
+        );
     }
 }
