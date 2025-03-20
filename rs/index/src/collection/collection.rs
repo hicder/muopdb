@@ -419,6 +419,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                         Some(pending_mutable_segment);
                 }
 
+                // This is for testing behaviors of invalidating/inserting while being flushed
+                #[cfg(test)]
+                if std::env::var("TEST_SLOW_FLUSH").is_ok() {
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+
                 let name_for_new_segment = format!("segment_{}", rand::random::<u64>());
                 let mutable_segments_read = self.mutable_segments.read();
                 let pending_segment_read = mutable_segments_read
@@ -861,6 +867,7 @@ mod tests {
 
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
+    use std::time::Instant;
 
     use anyhow::{Ok, Result};
     use config::collection::CollectionConfig;
@@ -1290,6 +1297,138 @@ mod tests {
             assert_eq!(toc.sequence_number, 3);
         }
 
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_collection_inval_during_flush() -> Result<()> {
+        // Set the environment variable to activate the sleep during flush
+        std::env::set_var("TEST_SLOW_FLUSH", "1");
+
+        let temp_dir = TempDir::new("test_collection_inval_during_flush")?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let segment_config = CollectionConfig::default_test_config();
+        let collection = Arc::new(
+            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+        );
+
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
+        collection.insert_for_users(&[0], 2, &[2.0, 2.0, 3.0, 4.0], 1)?;
+        collection.insert_for_users(&[0], 3, &[3.0, 2.0, 3.0, 4.0], 2)?;
+        assert!(collection.remove(0, 2).is_ok());
+
+        let collection_cpy_for_flush = collection.clone();
+        let collection_cpy_for_inval = collection.clone();
+
+        // Use a channel to communicate the segment name from the flush thread
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        // A thread to flush
+        tokio::spawn(async move {
+            let start = Instant::now();
+            println!("Flush thread: Starting flush...");
+            let segment_name = collection_cpy_for_flush.flush().unwrap();
+            println!("Flush thread: Flush completed in {:?}", start.elapsed());
+            tx.send(segment_name).unwrap();
+        });
+
+        // A thread to invalidate
+        tokio::spawn(async move {
+            let start = Instant::now();
+            // Do not invalidate too soon
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            println!("Invalidate thread: Starting invalidation...");
+            assert!(collection_cpy_for_inval.remove(0, 1).is_ok());
+            println!("Invalidate thread: Invalidation completed in {:?}", start.elapsed());
+        });
+
+        // Receive the segment name from the flush thread
+        let segment_name = rx.await.unwrap();
+
+        let segment = collection
+            .all_segments()
+            .get(&segment_name)
+            .unwrap()
+            .value()
+            .clone();
+        match segment {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                {
+                    assert!(immutable_segment.read().get_point_id(0, 2).is_none());
+                    assert!(immutable_segment.read().get_point_id(0, 1).is_some());
+                    assert!(immutable_segment.read().is_invalidated(0, 1)?);
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_collection_inval_insert_inval_during_flush() -> Result<()> {
+        // Set the environment variable to activate the sleep during flush
+        std::env::set_var("TEST_SLOW_FLUSH", "1");
+
+        let temp_dir = TempDir::new("test_collection_inval_insert_inval_during_flush")?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let segment_config = CollectionConfig::default_test_config();
+        let collection = Arc::new(
+            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+        );
+
+        collection.insert(1, &[1.0, 2.0, 3.0, 4.0])?;
+        collection.insert(2, &[2.0, 2.0, 3.0, 4.0])?;
+        collection.insert(3, &[3.0, 2.0, 3.0, 4.0])?;
+
+        let collection_cpy_for_flush = collection.clone();
+        let collection_cpy_for_inval = collection.clone();
+
+        // Use a channel to communicate the segment name from the flush thread
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        // A thread to flush
+        tokio::spawn(async move {
+            let start = Instant::now();
+            println!("Flush thread: Starting flush...");
+            let segment_name = collection_cpy_for_flush.flush().unwrap();
+            println!("Flush thread: Flush completed in {:?}", start.elapsed());
+            tx.send(segment_name).unwrap();
+        });
+
+        // A thread to invalidate
+        tokio::spawn(async move {
+            let start = Instant::now();
+            // Do not invalidate too soon
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            println!("Invalidate thread: Starting invalidation...");
+            assert!(collection_cpy_for_inval.remove(0, 1).is_ok());
+            assert!(collection_cpy_for_inval.insert(1, &[1.0, 2.0, 3.0, 4.0]).is_ok());
+            assert!(collection_cpy_for_inval.remove(0, 1).is_ok());
+            assert!(collection_cpy_for_inval.insert(4, &[1.0, 2.0, 3.0, 4.0]).is_ok());
+            assert!(collection_cpy_for_inval.remove(0, 4).is_ok());
+            println!("Invalidate thread: Invalidation completed in {:?}", start.elapsed());
+        });
+
+        // Receive the segment name from the flush thread
+        let segment_name = rx.await.unwrap();
+
+        let segment = collection
+            .all_segments()
+            .get(&segment_name)
+            .unwrap()
+            .value()
+            .clone();
+        match segment {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                {
+                    assert!(immutable_segment.read().is_invalidated(0, 1)?);
+                    assert!(!collection.mutable_segments.read().mutable_segment.read().is_valid_doc_id(0, 1));
+                    assert!(immutable_segment.read().get_point_id(0, 4).is_none());
+                    assert!(!collection.mutable_segments.read().mutable_segment.read().is_valid_doc_id(0, 4));
+                }
+            }
+            _ => {}
+        }
         Ok(())
     }
 }
