@@ -420,8 +420,8 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 }
 
                 let name_for_new_segment = format!("segment_{}", rand::random::<u64>());
-                let mutable_segment_read = self.mutable_segments.read();
-                let pending_segment_read = mutable_segment_read
+                let mutable_segments_read = self.mutable_segments.read();
+                let pending_segment_read = mutable_segments_read
                     .pending_mutable_segment
                     .upgradable_read();
 
