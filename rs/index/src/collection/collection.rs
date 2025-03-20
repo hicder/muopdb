@@ -18,6 +18,7 @@ use crate::multi_spann::reader::MultiSpannReader;
 use crate::optimizers::SegmentOptimizer;
 use crate::segment::immutable_segment::ImmutableSegment;
 use crate::segment::mutable_segment::MutableSegment;
+use crate::segment::pending_mutable_segment::PendingMutableSegment;
 use crate::segment::pending_segment::PendingSegment;
 use crate::segment::{BoxedImmutableSegment, Segment};
 use crate::wal::entry::WalOpType;
@@ -33,13 +34,21 @@ pub struct SegmentInfoAndVersion {
     pub version: u64,
 }
 
+/// MutableSegments is protected by a RwLock.
+/// On insert, grab the read-lock of this struct, then read-lock of mutable_segment.
+/// On invalidate, grab read-lock of this struct, then read-lock of both.
+struct MutableSegments {
+    pub mutable_segment: RwLock<MutableSegment>,
+    pub pending_mutable_segment: RwLock<Option<PendingMutableSegment>>,
+}
+
 /// Collection is thread-safe. All pub fn are thread-safe.
 pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
     pub versions: DashMap<u64, TableOfContent>,
     all_segments: DashMap<String, BoxedImmutableSegment<Q>>,
     versions_info: RwLock<VersionsInfo>,
     base_directory: String,
-    mutable_segment: RwLock<MutableSegment>,
+    mutable_segments: RwLock<MutableSegments>,
     segment_config: CollectionConfig,
     wal: Option<RwLock<Wal>>,
 
@@ -85,7 +94,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             all_segments: DashMap::new(),
             versions_info: RwLock::new(VersionsInfo::new()),
             base_directory,
-            mutable_segment,
+            mutable_segments: RwLock::new(MutableSegments {
+                mutable_segment,
+                pending_mutable_segment: RwLock::new(None),
+            }),
             segment_config,
             flushing: Mutex::new(()),
             wal,
@@ -230,7 +242,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             all_segments,
             versions_info,
             base_directory,
-            mutable_segment,
+            mutable_segments: RwLock::new(MutableSegments {
+                mutable_segment,
+                pending_mutable_segment: RwLock::new(None),
+            }),
             segment_config,
             flushing: Mutex::new(()),
             wal,
@@ -251,7 +266,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         }
 
         if self.segment_config.max_pending_ops > 0 {
-            let current_seq_no = self.mutable_segment.read().last_sequence_number();
+            let current_seq_no = self
+                .mutable_segments
+                .read()
+                .mutable_segment
+                .read()
+                .last_sequence_number();
             let flushed_seq_no = self
                 .versions
                 .get(&self.current_version())
@@ -335,7 +355,11 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     }
 
     pub fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
-        self.mutable_segment.read().insert(doc_id, data)
+        self.mutable_segments
+            .read()
+            .mutable_segment
+            .read()
+            .insert(doc_id, data)
     }
 
     pub fn insert_for_users(
@@ -346,7 +370,9 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         sequence_number: u64,
     ) -> Result<()> {
         for user_id in user_ids {
-            self.mutable_segment
+            self.mutable_segments
+                .read()
+                .mutable_segment
                 .read()
                 .insert_for_user(*user_id, doc_id, data, sequence_number)?;
         }
@@ -365,26 +391,47 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         match self.flushing.try_lock() {
             std::result::Result::Ok(_) => {
                 // If there are no documents to flush, just return an empty string (meaning we're not flushing)
-                if self.mutable_segment.read().num_docs() == 0 {
+                if self
+                    .mutable_segments
+                    .read()
+                    .mutable_segment
+                    .read()
+                    .num_docs()
+                    == 0
+                {
                     *self.last_flush_time.lock().unwrap() = Instant::now();
                     return Ok(String::new());
                 }
 
                 let tmp_name = format!("tmp_segment_{}", rand::random::<u64>());
                 let writable_base_directory = format!("{}/{}", self.base_directory, tmp_name);
-                let mut new_writable_segment =
-                    MutableSegment::new(self.segment_config.clone(), writable_base_directory)?;
-
                 {
                     // Grab the write lock and swap tmp_segment with mutable_segment
-                    let mut mutable_segment = self.mutable_segment.write();
+                    let mut new_writable_segment =
+                        MutableSegment::new(self.segment_config.clone(), writable_base_directory)?;
+
+                    let mutable_segments = self.mutable_segments.write();
+                    let mut mutable_segment = mutable_segments.mutable_segment.write();
                     std::mem::swap(&mut *mutable_segment, &mut new_writable_segment);
+
+                    let pending_mutable_segment = PendingMutableSegment::new(new_writable_segment);
+                    *mutable_segments.pending_mutable_segment.write() =
+                        Some(pending_mutable_segment);
                 }
 
                 let name_for_new_segment = format!("segment_{}", rand::random::<u64>());
-                let last_sequence_number = new_writable_segment.last_sequence_number();
-                new_writable_segment
-                    .build(self.base_directory.clone(), name_for_new_segment.clone())?;
+                let mutable_segment_read = self.mutable_segments.read();
+                let pending_segment_read = mutable_segment_read
+                    .pending_mutable_segment
+                    .upgradable_read();
+
+                let last_sequence_number;
+                {
+                    let pending_mutable_segment = pending_segment_read.as_ref().unwrap();
+                    last_sequence_number = pending_mutable_segment.last_sequence_number();
+                    pending_mutable_segment
+                        .build(self.base_directory.clone(), name_for_new_segment.clone())?;
+                }
 
                 // Read the segment
                 let spann_reader = MultiSpannReader::new(format!(
@@ -397,11 +444,21 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 let segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
                     ImmutableSegment::new(index, name_for_new_segment.clone()),
                 )));
-                self.add_segments(
-                    vec![name_for_new_segment.clone()],
-                    vec![segment],
-                    last_sequence_number,
-                )?;
+
+                // Must grab the write lock to prevent further invalidations and apply pending deletions
+                {
+                    let pending_segment_write =
+                        RwLockUpgradableReadGuard::upgrade(pending_segment_read);
+                    let pending_deletions = pending_segment_write.as_ref().unwrap().deletion_ops();
+                    for deletion in pending_deletions {
+                        segment.remove(deletion.user_id, deletion.doc_id)?;
+                    }
+                    self.add_segments(
+                        vec![name_for_new_segment.clone()],
+                        vec![segment],
+                        last_sequence_number,
+                    )?;
+                }
                 self.trim_wal(last_sequence_number as i64)?;
                 *self.last_flush_time.lock().unwrap() = Instant::now();
                 Ok(name_for_new_segment)
@@ -768,6 +825,31 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
     pub fn all_segments(&self) -> &DashMap<String, BoxedImmutableSegment<Q>> {
         &self.all_segments
+    }
+
+    pub fn remove(&self, user_id: u128, doc_id: u128) -> Result<()> {
+        {
+            let mutable_segments = self.mutable_segments.read();
+            mutable_segments
+                .mutable_segment
+                .read()
+                .invalidate(user_id, doc_id)?;
+            mutable_segments
+                .mutable_segment
+                .write()
+                .invalidate(user_id, doc_id)?;
+        }
+
+        let version_info_read = self.versions_info.read();
+        let current_version = version_info_read.current_version;
+
+        let version = self.versions.get(&current_version).unwrap();
+        for segment_name in version.toc.iter() {
+            let segment = self.all_segments.get(segment_name).unwrap();
+            segment.remove(user_id, doc_id)?;
+        }
+
+        Ok(())
     }
 }
 
