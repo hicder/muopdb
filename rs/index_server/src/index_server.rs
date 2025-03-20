@@ -11,7 +11,7 @@ use proto::muopdb::{
     SearchResponse,
 };
 use tokio::sync::{Mutex, RwLock};
-use utils::mem::{ids_to_u128s, transmute_u8_to_slice, bytes_to_u128s};
+use utils::mem::{bytes_to_u128s, ids_to_u128s, transmute_u8_to_slice};
 
 use crate::collection_catalog::CollectionCatalog;
 use crate::collection_manager::CollectionManager;

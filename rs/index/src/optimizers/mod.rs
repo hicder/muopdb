@@ -1,7 +1,7 @@
 pub mod engine;
-pub mod vacuum;
 pub mod merge;
 pub mod noop;
+pub mod vacuum;
 
 use anyhow::Result;
 use quantization::quantization::Quantizer;

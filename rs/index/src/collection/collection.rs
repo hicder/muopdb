@@ -346,12 +346,9 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         sequence_number: u64,
     ) -> Result<()> {
         for user_id in user_ids {
-            self.mutable_segment.read().insert_for_user(
-                *user_id,
-                doc_id,
-                data,
-                sequence_number,
-            )?;
+            self.mutable_segment
+                .read()
+                .insert_for_user(*user_id, doc_id, data, sequence_number)?;
         }
         Ok(())
     }

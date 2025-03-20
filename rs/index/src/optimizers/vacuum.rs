@@ -93,7 +93,7 @@ mod tests {
 
         let segments = collection.get_current_toc().toc.clone();
         assert_eq!(segments.len(), 1);
-        
+
         let pending_segment = collection.init_optimizing(&segments)?;
 
         let optimizer = VacuumOptimizer::<NoQuantizerL2>::new();
@@ -165,8 +165,14 @@ mod tests {
         assert_eq!(segments.len(), 1);
 
         // Remove a doc from the first segment
-        assert!(collection.all_segments().get(&segments[0]).unwrap().value().remove(0, 2).is_ok());
-        
+        assert!(collection
+            .all_segments()
+            .get(&segments[0])
+            .unwrap()
+            .value()
+            .remove(0, 2)
+            .is_ok());
+
         let pending_segment = collection.init_optimizing(&segments)?;
 
         let optimizer = VacuumOptimizer::<NoQuantizerL2>::new();
@@ -222,7 +228,7 @@ mod tests {
 
         let segments = collection.get_current_toc().toc.clone();
         assert_eq!(segments.len(), 1);
-        
+
         let pending_segment = collection.init_optimizing(&segments)?;
 
         let optimizer = VacuumOptimizer::<NoQuantizerL2>::new();
@@ -265,7 +271,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_vacuum_invalidated_optimizer_with_multiple_users() -> Result<()> {
-        let tmp_dir = tempdir::TempDir::new("test_vacuum_invalidated_optimizer_with_multiple_users")?;
+        let tmp_dir =
+            tempdir::TempDir::new("test_vacuum_invalidated_optimizer_with_multiple_users")?;
         // Create directory if it doesn't exist
         std::fs::create_dir_all(&tmp_dir)?;
 
@@ -299,8 +306,14 @@ mod tests {
         assert_eq!(segments.len(), 1);
 
         // Remove a doc from the first segment
-        assert!(collection.all_segments().get(&segments[0]).unwrap().value().remove(1, 203).is_ok());
-        
+        assert!(collection
+            .all_segments()
+            .get(&segments[0])
+            .unwrap()
+            .value()
+            .remove(1, 203)
+            .is_ok());
+
         let pending_segment = collection.init_optimizing(&segments)?;
 
         let optimizer = VacuumOptimizer::<NoQuantizerL2>::new();
