@@ -3,6 +3,7 @@ mod collection_catalog;
 mod collection_manager;
 mod collection_provider;
 mod index_server;
+mod metrics;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -125,6 +126,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
         flush_worker_threads.push(collection_manager_flush_thread);
     }
+
+    // Start the metrics server
+    let metrics_addr = SocketAddr::new(addr.ip(), addr.port() + 1);
+    info!("Starting metrics server on {}", metrics_addr);
+    spawn(async move {
+        if let Err(e) = metrics::MetricsServer::new().serve(metrics_addr).await {
+            error!("Metrics server error: {}", e);
+        }
+    });
 
     let reflection_service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
