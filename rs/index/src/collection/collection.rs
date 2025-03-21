@@ -313,9 +313,11 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         data: &[f32],
     ) -> Result<u64> {
         if let Some(wal) = &self.wal {
-            // Write to WAL, and persist to disk
-            let seq_no = wal
-                .write()
+            // Write to WAL, and persist to disk.
+            // Intentionally keep the write lock until we send the message to the channel.
+            // This ensures that message in the channel is the same order as WAL.
+            let mut wal_write = wal.write();
+            let seq_no = wal_write
                 .append(doc_ids, user_ids, data, WalOpType::Insert)?;
 
             // Once the WAL is written, send the op to the channel
