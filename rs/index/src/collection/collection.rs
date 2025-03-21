@@ -55,6 +55,7 @@ pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
     wal: Option<RwLock<Wal>>,
 
     // A channel for sending ops to collection
+    // Channels are thread-safe, so no lock is required when processing ops
     sender: Sender<OpChannelEntry>,
     receiver: AtomicRefCell<Receiver<OpChannelEntry>>,
 
@@ -1434,5 +1435,57 @@ mod tests {
             _ => {}
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_collection_inval() {
+        let temp_dir = TempDir::new("test_collection_inval").expect("Failed to create temporary directory");
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let segment_config = CollectionConfig::default_test_config();
+        let collection = Arc::new(
+            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+        );
+
+        assert!(collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0).is_ok());
+        assert!(collection.insert_for_users(&[0], 2, &[2.0, 2.0, 3.0, 4.0], 1).is_ok());
+        assert!(collection.insert_for_users(&[0], 3, &[3.0, 2.0, 3.0, 4.0], 2).is_ok());
+        assert!(collection.remove(0, 2).is_ok());
+
+        assert!(collection.flush().is_ok());
+        assert!(collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0).is_ok());
+        assert!(collection.insert_for_users(&[0], 2, &[1.0, 2.0, 3.0, 4.0], 1).is_ok());
+        assert!(collection.insert_for_users(&[0], 3, &[2.0, 2.0, 3.0, 4.0], 2).is_ok());
+        assert!(collection.insert_for_users(&[0], 4, &[3.0, 2.0, 3.0, 4.0], 3).is_ok());
+        assert!(collection.remove(0, 2).is_ok());
+        assert!(collection.remove(0, 3).is_ok());
+        assert!(collection.remove(0, 4).is_ok());
+
+        let segment_names = collection.get_all_segment_names();
+        assert_eq!(segment_names.len(), 1);
+
+        let segment_name = segment_names[0].clone();
+
+        let segment = collection
+            .all_segments()
+            .get(&segment_name)
+            .unwrap()
+            .value()
+            .clone();
+        match segment {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                {
+                    assert!(immutable_segment.read().get_point_id(0, 1).is_some());
+                    assert!(immutable_segment.read().get_point_id(0, 2).is_none());
+                    assert!(immutable_segment.read().get_point_id(0, 3).is_some());
+                    assert!(immutable_segment.read().is_invalidated(0, 3).unwrap());
+
+                    assert!(collection.mutable_segments.read().mutable_segment.read().is_valid_doc_id(0, 1));
+                    assert!(!collection.mutable_segments.read().mutable_segment.read().is_valid_doc_id(0, 2));
+                    assert!(!collection.mutable_segments.read().mutable_segment.read().is_valid_doc_id(0, 3));
+                    assert!(!collection.mutable_segments.read().mutable_segment.read().is_valid_doc_id(0, 4));
+                }
+            }
+            _ => { assert!(false); }
+        }
     }
 }
