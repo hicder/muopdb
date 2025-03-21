@@ -79,6 +79,8 @@ impl MultiSpannWriter {
                 centroid_index_len: 0,
                 ivf_vectors_offset: 0,
                 ivf_vectors_len: 0,
+                ivf_raw_vectors_offset: 0,
+                ivf_raw_vectors_len: 0,
                 ivf_index_offset: 0,
                 ivf_index_len: 0,
                 ivf_pq_codebook_offset: 0,
@@ -121,6 +123,10 @@ impl MultiSpannWriter {
         let mut ivf_vectors_file = File::create(format!("{}/vectors", ivf_directory))?;
         let mut ivf_vectors_buffer_writer = BufWriter::new(&mut ivf_vectors_file);
 
+        // IVF raw vectors file
+        let mut ivf_raw_vectors_file = File::create(format!("{}/raw_vectors", ivf_directory))?;
+        let mut ivf_raw_vectors_buffer_writer = BufWriter::new(&mut ivf_raw_vectors_file);
+
         // IVF product quantizer codebook file
         let ivf_pq_codebook_path = format!("{}/quantizer/{}", ivf_directory, CODEBOOK_NAME);
         let mut ivf_pq_codebook_file = File::create(&ivf_pq_codebook_path)?;
@@ -130,6 +136,7 @@ impl MultiSpannWriter {
         let mut centroids_vector_written: u64 = 0;
         let mut ivf_index_written: u64 = 0;
         let mut ivf_vectors_written: u64 = 0;
+        let mut ivf_raw_vectors_written: u64 = 0;
         let mut ivf_pq_codebook_written: u64 = 0;
 
         for (idx, user_id) in user_ids.iter().enumerate() {
@@ -186,6 +193,13 @@ impl MultiSpannWriter {
                 &format!("{}/ivf/vectors", user_id_base_directory),
                 &mut ivf_vectors_buffer_writer,
             )? as u64;
+            user_index_info.ivf_raw_vectors_offset = ivf_raw_vectors_written;
+            ivf_raw_vectors_written += append_file_to_writer(
+                &format!("{}/ivf/raw_vectors", user_id_base_directory),
+                &mut ivf_raw_vectors_buffer_writer,
+            )? as u64;
+            user_index_info.ivf_raw_vectors_len =
+                ivf_raw_vectors_written - user_index_info.ivf_raw_vectors_offset;
             user_index_info.ivf_vectors_len =
                 ivf_vectors_written - user_index_info.ivf_vectors_offset;
 
@@ -238,7 +252,7 @@ mod tests {
     use config::collection::CollectionConfig;
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
-
+    use std::io::{Read, Seek, SeekFrom};
     use super::*;
 
     #[test]
@@ -345,5 +359,96 @@ mod tests {
         assert!(PathBuf::from(&hnsw_index_path).exists());
         assert!(PathBuf::from(&ivf_quantizer_codebook_path).exists());
         assert!(PathBuf::from(&ivf_quantizer_config_path).exists());
+    }
+
+    #[test]
+    fn test_read_raw_vectors_after_writing() {
+        // Setup a simple test environment
+        let temp_dir = TempDir::new("test_read_raw_vectors_after_writing").unwrap();
+        let base_directory = temp_dir.path().to_str().unwrap().to_string();
+        
+        let num_vectors: usize = 3;
+        let num_features: usize = 4;
+        
+        // Setup collection config
+        let mut collection_config = CollectionConfig::default_test_config();
+        collection_config.num_features = num_features;
+        collection_config.initial_num_centroids = 3;
+        
+
+        let mut builder = MultiSpannBuilder::new(collection_config, base_directory.clone()).unwrap();
+        let test_vectors = vec![
+            vec![1.0, 2.0, 3.0, 4.0],
+            vec![5.0, 6.0, 7.0, 8.0],
+            vec![9.0, 10.0, 11.0, 12.0]
+        ];
+        
+        // Only one user
+        let user_id = 42u128;
+        for (i, vector) in test_vectors.iter().enumerate() {
+            builder.insert(user_id, i as u128, vector).unwrap();
+        }
+        
+        // Build and write the index
+        builder.build().unwrap();
+        let writer = MultiSpannWriter::new(base_directory.clone());
+        let user_index_infos = writer.write(&mut builder).unwrap();
+        
+        // Check for one user only
+        assert_eq!(user_index_infos.len(), 1);
+        let user_info = &user_index_infos[0];
+        assert_eq!(user_info.user_id, user_id);
+        
+        // Verify raw vectors file exists
+        let raw_vectors_path = format!("{}/ivf/raw_vectors", base_directory);
+        assert!(PathBuf::from(&raw_vectors_path).exists());
+        
+        // Read the raw vectors
+        let file = std::fs::File::open(&raw_vectors_path).unwrap();
+        let mut reader = std::io::BufReader::new(file);
+        reader.seek(SeekFrom::Start(user_info.ivf_raw_vectors_offset)).unwrap();
+
+        let mut buffer = vec![0u8; user_info.ivf_raw_vectors_len as usize];
+        reader.read_exact(&mut buffer).unwrap();
+
+         // First 8 bytes should be the number of vectors
+        let num_vectors_in_file = u64::from_le_bytes([
+            buffer[0], buffer[1], buffer[2], buffer[3],
+            buffer[4], buffer[5], buffer[6], buffer[7]
+        ]);
+        assert_eq!(num_vectors_in_file as usize, num_vectors);
+
+        // Read and verify each vector
+        let bytes_per_float = std::mem::size_of::<f32>();
+        let vector_size_bytes = num_features * bytes_per_float;
+        
+        for i in 0..num_vectors {
+            // 8-byte header + vector offset
+            let vector_start = 8 + i * vector_size_bytes; 
+            
+            let mut read_vector = Vec::with_capacity(num_features);
+            for j in 0..num_features {
+                let value_offset = vector_start + j * bytes_per_float;
+                let value_bytes = [
+                    buffer[value_offset],
+                    buffer[value_offset + 1],
+                    buffer[value_offset + 2],
+                    buffer[value_offset + 3],
+                ];
+                
+                let value = f32::from_le_bytes(value_bytes);
+                read_vector.push(value);
+            }
+            // Compare with the original vector
+            for j in 0..num_features {
+                let expected = test_vectors[i][j];
+                let actual = read_vector[j];
+                assert!(
+                    (expected - actual).abs() < 1e-6,
+                    "Vector {}, component {} mismatch: expected {}, got {}",
+                    i, j, expected, actual
+                );
+            }
+        }
     }
 }
