@@ -15,11 +15,10 @@ const VERSION_1: &[u8] = b"version1";
 /// | version1 | start_seq_no | num_entries | data |
 /// | 8 bytes  | 8 bytes      | 4 bytes     | ...  |
 ///
-/// Each data entry will have the following format (n is number of vectors):
-/// | length  | doc_ids      | user_ids     | data                       | op_type |
-/// | 4 bytes | 16 bytes * n | 16 bytes * n | 4 bytes * n * num_features | 1 byte  |
+/// Each data entry will have the following format (n is number of doc_ids, m is number of user_ids):
+/// | length   | n       | m       | doc_ids      | user_ids     | data                       | op_type |
+/// | 4 bytes  | 4 bytes | 4 bytes | 16 bytes * n | 16 bytes * m | 4 bytes * n * num_features | 1 byte  |
 ///
-/// To compute number of vectors in each entry: (length - 1) / (16 + 16 + 4 * num_features)
 #[allow(unused)]
 pub struct WalFile {
     file: File,
@@ -110,8 +109,11 @@ impl WalFile {
         data: &[f32],
         op_type: WalOpType,
     ) -> Result<u64> {
-        let len = (doc_ids.len() * 16 + user_ids.len() * 16 + data.len() * 4 + 1) as u32;
+        let len = (4 + 4 + doc_ids.len() * 16 + user_ids.len() * 16 + data.len() * 4 + 1) as u32;
         self.file.write_all(&len.to_le_bytes())?;
+        self.file.write_all(&(doc_ids.len() as u32).to_le_bytes())?;
+        self.file
+            .write_all(&(user_ids.len() as u32).to_le_bytes())?;
         self.file.write_all(transmute_slice_to_u8(doc_ids))?;
         self.file.write_all(transmute_slice_to_u8(user_ids))?;
         self.file.write_all(transmute_slice_to_u8(data))?;
