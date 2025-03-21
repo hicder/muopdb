@@ -149,13 +149,14 @@ impl BoxedCollection {
         doc_ids: &[u128],
         user_ids: &[u128],
         data: &[f32],
+        wal_op_type: WalOpType,
     ) -> Result<u64> {
         match self {
             BoxedCollection::CollectionNoQuantizationL2(collection) => {
-                collection.write_to_wal(doc_ids, user_ids, data).await
+                collection.write_to_wal(doc_ids, user_ids, data, wal_op_type).await
             }
             BoxedCollection::CollectionProductQuantization(collection) => {
-                collection.write_to_wal(doc_ids, user_ids, data).await
+                collection.write_to_wal(doc_ids, user_ids, data, wal_op_type).await
             }
         }
     }

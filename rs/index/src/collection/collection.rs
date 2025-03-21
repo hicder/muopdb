@@ -7,7 +7,7 @@ use config::collection::CollectionConfig;
 use dashmap::DashMap;
 use fs_extra::dir::CopyOptions;
 use lock_api::RwLockUpgradableReadGuard;
-use log::{debug, info};
+use log::debug;
 use parking_lot::{RawRwLock, RwLock};
 use quantization::quantization::Quantizer;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -312,6 +312,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         doc_ids: &[u128],
         user_ids: &[u128],
         data: &[f32],
+        wal_op_type: WalOpType,
     ) -> Result<u64> {
         if let Some(wal) = &self.wal {
             // Write to WAL, and persist to disk.
@@ -319,11 +320,11 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             // This ensures that message in the channel is the same order as WAL.
             let mut wal_write = wal.write();
             let seq_no = wal_write
-                .append(doc_ids, user_ids, data, WalOpType::Insert)?;
+                .append(doc_ids, user_ids, data, wal_op_type.clone())?;
 
             // Once the WAL is written, send the op to the channel
             let op_channel_entry =
-                OpChannelEntry::new(doc_ids, user_ids, data, seq_no, WalOpType::Insert);
+                OpChannelEntry::new(doc_ids, user_ids, data, seq_no, wal_op_type);
             self.sender.send(op_channel_entry).await?;
             Ok(seq_no)
         } else {
@@ -335,7 +336,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         if let std::result::Result::Ok(op) = self.receiver.borrow_mut().try_recv() {
             match op.op_type {
                 WalOpType::Insert => {
-                    info!("Processing insert operation with seq_no {}", op.seq_no);
+                    debug!("Processing insert operation with seq_no {}", op.seq_no);
                     let doc_ids = op.doc_ids();
                     let user_ids = op.user_ids();
                     let data = op.data();
@@ -346,11 +347,17 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                 .unwrap();
                         });
                 }
-                _ => {
-                    return Err(anyhow::anyhow!(
-                        "Unsupported operation type: {:?}",
-                        op.op_type
-                    ))
+                WalOpType::Delete => {
+                    debug!("Processing delete operation with seq_no {}", op.seq_no);
+                    let doc_ids = op.doc_ids();
+                    let user_ids = op.user_ids();
+                    assert!(op.data().is_empty());
+                    user_ids.iter().try_for_each(|&user_id| {
+                        doc_ids.iter().try_for_each(|&doc_id| {
+                            self.remove(user_id, doc_id)?;
+                            Ok(())
+                        })
+                    })?;
                 }
             }
             Ok(1)
@@ -888,6 +895,7 @@ mod tests {
     use crate::collection::snapshot::Snapshot;
     use crate::optimizers::noop::NoopOptimizer;
     use crate::segment::{BoxedImmutableSegment, MockedSegment, Segment};
+    use crate::wal::entry::WalOpType;
 
     #[test]
     fn test_collection() -> Result<()> {
@@ -1212,19 +1220,22 @@ mod tests {
             Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
         );
         collection
-            .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
             .await?;
         collection
-            .write_to_wal(&[2], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .write_to_wal(&[2], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
             .await?;
         collection
-            .write_to_wal(&[3], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .write_to_wal(&[3], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
             .await?;
         collection
-            .write_to_wal(&[4], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .write_to_wal(&[4], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
             .await?;
         collection
-            .write_to_wal(&[5], &[0], &[1.0, 2.0, 3.0, 4.0])
+            .write_to_wal(&[5], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
+            .await?;
+        collection
+            .write_to_wal(&[5], &[0], &[], WalOpType::Delete)
             .await?;
 
         // Process all ops
@@ -1235,6 +1246,29 @@ mod tests {
             }
         }
         collection.flush()?;
+        let segment_names = collection.get_all_segment_names();
+        assert_eq!(segment_names.len(), 1);
+
+        let segment_name = segment_names[0].clone();
+
+        let segment = collection
+            .all_segments()
+            .get(&segment_name)
+            .unwrap()
+            .value()
+            .clone();
+        match segment {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                {
+                    assert!(immutable_segment.read().get_point_id(0, 1).is_some());
+                    assert!(immutable_segment.read().get_point_id(0, 2).is_some());
+                    assert!(immutable_segment.read().get_point_id(0, 3).is_some());
+                    assert!(immutable_segment.read().get_point_id(0, 4).is_some());
+                    assert!(immutable_segment.read().get_point_id(0, 5).is_none());
+                }
+            }
+            _ => { assert!(false); }
+        }
         let toc = collection.get_current_toc();
         assert_eq!(toc.pending.len(), 0);
         assert_eq!(toc.sequence_number, 4);
@@ -1255,10 +1289,10 @@ mod tests {
             let reader = CollectionReader::new(base_directory.clone());
             let collection = reader.read::<NoQuantizerL2>()?;
             collection
-                .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0])
+                .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
                 .await?;
             collection
-                .write_to_wal(&[2], &[0], &[1.0, 2.0, 3.0, 4.0])
+                .write_to_wal(&[2], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
                 .await?;
 
             // Process all ops
@@ -1284,10 +1318,10 @@ mod tests {
 
             // Write 2 more ops, but don't flush
             collection
-                .write_to_wal(&[3], &[0], &[1.0, 2.0, 3.0, 4.0])
+                .write_to_wal(&[3], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
                 .await?;
             collection
-                .write_to_wal(&[4], &[0], &[1.0, 2.0, 3.0, 4.0])
+                .write_to_wal(&[4], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
                 .await?;
         }
 
