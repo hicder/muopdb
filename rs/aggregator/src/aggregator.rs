@@ -103,7 +103,8 @@ impl Aggregator for AggregatorServerImpl {
 
             let inner = ret.into_inner();
             inner
-                .doc_ids.iter()
+                .doc_ids
+                .iter()
                 .zip(inner.scores.iter())
                 .for_each(|(id, score)| {
                     vecs_and_scores.push(IdAndScore {

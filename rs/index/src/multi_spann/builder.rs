@@ -1,6 +1,6 @@
 use std::sync::RwLock;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use config::collection::CollectionConfig;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
@@ -39,14 +39,30 @@ impl MultiSpannBuilder {
     }
 
     pub fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
-        let result = match self.inner_builders.entry(user_id) {
-            Entry::Occupied(entry) => Ok(entry),
-            Entry::Vacant(_) => Err(anyhow!("No entry exists for user_id")),
-        };
+        // Check if the user_id exists in the inner_builders map
+        if let Entry::Occupied(entry) = self.inner_builders.entry(user_id) {
+            // If the entry exists, invalidate the doc_id and return the result
+            let effectively_invalidated = entry.get().write().unwrap().invalidate(doc_id);
+            Ok(effectively_invalidated)
+        } else {
+            // If the entry does not exist, return false instead of error
+            Ok(false)
+        }
+    }
 
-        let invalidated = result?.get().write().unwrap().invalidate(doc_id);
-
-        Ok(invalidated)
+    pub fn is_valid_doc_id(&self, user_id: u128, doc_id: u128) -> bool {
+        let entry = self.inner_builders.entry(user_id).or_insert_with(|| {
+            let user_directory = format!("{}/{}", self.base_directory, user_id);
+            RwLock::new(
+                SpannBuilder::new(SpannBuilderConfig::from_collection_config(
+                    &self.config,
+                    user_directory,
+                ))
+                .unwrap(),
+            )
+        });
+        let spann_builder = entry.read().unwrap();
+        spann_builder.is_valid_doc_id(doc_id)
     }
 
     pub fn build(&self) -> Result<()> {
@@ -232,8 +248,8 @@ mod tests {
         // Trying to invalidate a doc_id that is not in the builder should return false
         assert!(!multi_builder.invalidate(user_id_1, doc_id_3).unwrap());
 
-        // Trying to invalidate from an inexistent user should return error
-        assert!(multi_builder.invalidate(user_id_2, doc_id_2).is_err());
+        // Trying to invalidate from an inexistent user should return false
+        assert!(!multi_builder.invalidate(user_id_2, doc_id_2).unwrap());
 
         let builder_lock = multi_builder.inner_builders.get(&user_id_1).unwrap();
         let builder = builder_lock.read().unwrap();

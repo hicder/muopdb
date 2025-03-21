@@ -1,5 +1,6 @@
 syntax = "proto3";
 package muopdb;
+import "google/protobuf/any.proto";
 
 enum QuantizerType {
   NO_QUANTIZER = 0;
@@ -55,6 +56,9 @@ message CreateCollectionRequest {
   optional uint64 wal_file_size = 25;
   optional uint64 max_pending_ops = 26;
   optional uint64 max_time_to_flush_ms = 27;
+
+  // for hybrid-search
+  optional AttributeSchema attribute_schema = 28; 
 }
 
 message CreateCollectionResponse {
@@ -105,6 +109,8 @@ message InsertRequest {
   repeated float vectors = 3;
 
   repeated Id user_ids = 4;
+
+  optional DocumentAttributeList attributes = 5;
 }
 
 message InsertResponse {
@@ -134,9 +140,62 @@ message InsertPackedRequest {
   bytes vectors = 3;
 
   repeated Id user_ids = 4;
+
+  optional DocumentAttributeList attributes = 5;
 }
 
 message InsertPackedResponse {
   // The number of docs that were inserted.
   uint32 num_docs_inserted = 1;
+}
+
+// HybridSearch Message
+message DocumentAttribute {
+  map<string, AttributeValue> value = 1;
+}
+
+message DocumentAttributeList {
+  repeated DocumentAttribute values = 1; 
+}
+
+// Start of Attribute messages
+enum AttributeType {
+  ATTRIBUTE_TYPE_INT        = 0;
+  ATTRIBUTE_TYPE_FLOAT      = 1;
+  ATTRIBUTE_TYPE_BOOL       = 2;
+  ATTRIBUTE_TYPE_KEYWORD    = 3;
+  ATTRIBUTE_TYPE_TEXT       = 4; // full-text search index
+  
+  ATTRIBUTE_TYPE_VECTOR_INT     = 100;
+  ATTRIBUTE_TYPE_VECTOR_KEYWORD = 101;
+}
+
+message AttributeField {
+  string name         = 1;
+  AttributeType type  = 2;
+}
+
+message AttributeSchema {
+  repeated AttributeField attributes = 1;
+}
+
+message AttributeValue {
+  oneof value {
+    int64  int_value     = 1;
+    float  float_value   = 2;
+    bool   bool_value    = 3;
+    string keyword_value = 4; // exact-match string
+    string text_value    = 5; // full-text search
+
+    AttributeVectorIntValue      vector_int_value = 6;
+    AttributeVectorKeywordValue  vector_keyword_value = 7;
+  }
+}
+
+message AttributeVectorIntValue {
+  repeated int64 values = 1;
+}
+
+message AttributeVectorKeywordValue {
+  repeated string values = 1;
 }

@@ -34,10 +34,6 @@ impl MutableSegment {
     }
 
     pub fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
-        if self.finalized {
-            return Err(anyhow::anyhow!("Cannot insert into a finalized segment"));
-        }
-
         self.insert_for_user(0, doc_id, data, 0)
     }
 
@@ -63,6 +59,14 @@ impl MutableSegment {
         self.num_docs
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Ok(())
+    }
+
+    pub fn is_valid_doc_id(&self, user_id: u128, doc_id: u128) -> bool {
+        self.multi_spann_builder.is_valid_doc_id(user_id, doc_id)
+    }
+
+    pub fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+        self.multi_spann_builder.invalidate(user_id, doc_id)
     }
 
     pub fn build(&mut self, base_directory: String, name: String) -> Result<()> {
@@ -94,3 +98,36 @@ impl MutableSegment {
 unsafe impl Send for MutableSegment {}
 
 unsafe impl Sync for MutableSegment {}
+
+#[cfg(test)]
+mod tests {
+    use config::collection::CollectionConfig;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_mutable_segment() {
+        let tmp_dir = tempdir::TempDir::new("mutable_segment_test").unwrap();
+        let base_dir = tmp_dir.path().to_str().unwrap().to_string();
+
+        let segment_config = CollectionConfig::default_test_config();
+        let mutable_segment = MutableSegment::new(segment_config.clone(), base_dir)
+            .expect("Failed to create mutable segment");
+
+        assert!(mutable_segment.insert(0, &[1.0, 2.0, 3.0, 4.0]).is_ok());
+        assert!(mutable_segment.insert(1, &[5.0, 6.0, 7.0, 8.0]).is_ok());
+        assert!(mutable_segment.insert(2, &[9.0, 10.0, 11.0, 12.0]).is_ok());
+
+
+        assert!(mutable_segment
+            .invalidate(0, 0)
+            .expect("Failed to invalidate"));
+        assert!(!mutable_segment
+            .invalidate(0, 0)
+            .expect("Failed to invalidate"));
+        assert!(mutable_segment.insert(0, &[5.0, 6.0, 7.0, 8.0]).is_ok());
+        assert!(mutable_segment
+            .invalidate(0, 0)
+            .expect("Failed to invalidate"));
+    }
+}

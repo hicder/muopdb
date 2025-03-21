@@ -45,8 +45,8 @@ async fn main() -> Result<()> {
                 ef_construction: 100,
                 user_ids: vec![Id {
                     low_id: 0,
-                    high_id: 0
-                }]
+                    high_id: 0,
+                }],
             });
 
             let response = client
@@ -70,8 +70,8 @@ async fn main() -> Result<()> {
                 ef_construction: 100,
                 user_ids: vec![Id {
                     low_id: 0,
-                    high_id: 0
-                }]
+                    high_id: 0,
+                }],
             });
 
             info!("Request: {:?}", request);
