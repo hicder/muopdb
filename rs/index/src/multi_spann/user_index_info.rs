@@ -9,6 +9,8 @@ pub struct UserIndexInfo {
     pub centroid_index_len: u64,
     pub ivf_vectors_offset: u64,
     pub ivf_vectors_len: u64,
+    pub ivf_raw_vectors_offset: u64,
+    pub ivf_raw_vectors_len: u64,
     pub ivf_index_offset: u64,
     pub ivf_index_len: u64,
     pub ivf_pq_codebook_offset: u64,
@@ -17,8 +19,8 @@ pub struct UserIndexInfo {
 
 impl UserIndexInfo {
     #[inline]
-    pub fn to_le_bytes(&self) -> [u8; 96] {
-        let mut bytes = [0u8; 96];
+    pub fn to_le_bytes(&self) -> [u8; 112] {
+        let mut bytes = [0u8; 112];
         bytes[0..16].copy_from_slice(&self.user_id.to_le_bytes());
         bytes[16..24].copy_from_slice(&self.centroid_vector_offset.to_le_bytes());
         bytes[24..32].copy_from_slice(&self.centroid_vector_len.to_le_bytes());
@@ -27,9 +29,11 @@ impl UserIndexInfo {
         bytes[48..56].copy_from_slice(&self.ivf_vectors_offset.to_le_bytes());
         bytes[56..64].copy_from_slice(&self.ivf_vectors_len.to_le_bytes());
         bytes[64..72].copy_from_slice(&self.ivf_index_offset.to_le_bytes());
-        bytes[72..80].copy_from_slice(&self.ivf_index_len.to_le_bytes());
-        bytes[80..88].copy_from_slice(&self.ivf_pq_codebook_offset.to_le_bytes());
-        bytes[88..96].copy_from_slice(&self.ivf_pq_codebook_len.to_le_bytes());
+        bytes[72..80].copy_from_slice(&self.ivf_raw_vectors_offset.to_le_bytes());
+        bytes[80..88].copy_from_slice(&self.ivf_raw_vectors_len.to_le_bytes());
+        bytes[88..96].copy_from_slice(&self.ivf_index_len.to_le_bytes());
+        bytes[96..104].copy_from_slice(&self.ivf_pq_codebook_offset.to_le_bytes());
+        bytes[104..112].copy_from_slice(&self.ivf_pq_codebook_len.to_le_bytes());
         bytes
     }
 
@@ -43,9 +47,11 @@ impl UserIndexInfo {
         let ivf_vectors_offset = u64::from_le_bytes(bytes[48..56].try_into().unwrap());
         let ivf_vectors_len = u64::from_le_bytes(bytes[56..64].try_into().unwrap());
         let ivf_index_offset = u64::from_le_bytes(bytes[64..72].try_into().unwrap());
-        let ivf_index_len = u64::from_le_bytes(bytes[72..80].try_into().unwrap());
-        let ivf_pq_codebook_offset = u64::from_le_bytes(bytes[80..88].try_into().unwrap());
-        let ivf_pq_codebook_len = u64::from_le_bytes(bytes[88..96].try_into().unwrap());
+        let ivf_raw_vectors_offset = u64::from_le_bytes(bytes[72..80].try_into().unwrap());
+        let ivf_raw_vectors_len = u64::from_le_bytes(bytes[80..88].try_into().unwrap());
+        let ivf_index_len = u64::from_le_bytes(bytes[88..96].try_into().unwrap());
+        let ivf_pq_codebook_offset = u64::from_le_bytes(bytes[96..104].try_into().unwrap());
+        let ivf_pq_codebook_len = u64::from_le_bytes(bytes[104..112].try_into().unwrap());
         Self {
             user_id,
             centroid_vector_offset,
@@ -54,6 +60,8 @@ impl UserIndexInfo {
             centroid_index_len,
             ivf_vectors_offset,
             ivf_vectors_len,
+            ivf_raw_vectors_offset,
+            ivf_raw_vectors_len,
             ivf_index_offset,
             ivf_index_len,
             ivf_pq_codebook_offset,
@@ -67,7 +75,7 @@ impl Config for HashConfig {
     type Key = u128;
     type Value = UserIndexInfo;
     type EncodedKey = [u8; 16];
-    type EncodedValue = [u8; 96];
+    type EncodedValue = [u8; 112];
     type H = FxHashFn;
 
     #[inline]
