@@ -3,8 +3,6 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use hdf5::File;
 use log::{info, LevelFilter};
-use log_consumer::admin::Admin;
-use log_consumer::producer::{LogMessage, LogProducer};
 use ndarray::s;
 use proto::muopdb::index_server_client::IndexServerClient;
 use proto::muopdb::{FlushRequest, Id, InsertPackedRequest};
@@ -23,15 +21,6 @@ async fn main() -> Result<()> {
     let mut client = IndexServerClient::connect(addr)
         .await
         .context("Failed to connect to IndexServer")?;
-
-    let brokers = "localhost:19092,localhost:29092,localhost:39092";
-    let topic = "wal_topic-test-collection-1";
-    let producer = LogProducer::new(&brokers, &topic)?;
-    let admin = Admin::new(&brokers)?;
-
-    if !admin.topic_exists(&topic).await? {
-        admin.create_topic(&topic).await?;
-    }
 
     info!("=========== Inserting documents ===========");
 
@@ -71,16 +60,6 @@ async fn main() -> Result<()> {
             }],
             attributes: None,
         });
-
-        let msgpack_payload =
-            encode::to_vec(&request.get_ref().clone()).expect("Failed to serialize request");
-
-        let msg = LogMessage {
-            payload: msgpack_payload,
-            topic: topic.to_string(),
-        };
-
-        producer.send_logs(&msg).await?;
 
         client.insert_packed(request).await?;
         start_idx = end_idx;

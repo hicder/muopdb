@@ -119,14 +119,12 @@ impl IndexServer for IndexServerImpl {
         if let Some(max_time_to_flush_ms) = req.max_time_to_flush_ms {
             collection_config.max_time_to_flush_ms = max_time_to_flush_ms as u64;
         }
-        if collection_config.use_distributed_log_as_wal {
-            collection_config
-                .topic_name
-                .push_str(&format!("-{collection_name}"))
+        if let Some(use_distributed_log_as_wal) = req.use_distributed_log_as_wal {
+            collection_config.use_distributed_log_as_wal = use_distributed_log_as_wal;
         }
-
-        info!("Enable distributed log WAL: {}, topic name: {}", collection_config.use_distributed_log_as_wal, collection_config.topic_name);
-
+        if let Some(topic_name) = req.topic_name {
+            collection_config.topic_name = topic_name;
+        }
 
         let mut collection_manager_locked = self.collection_manager.write().await;
         if collection_manager_locked.collection_exists(&collection_name).await {
@@ -140,22 +138,6 @@ impl IndexServer for IndexServerImpl {
             .add_collection(collection_name.clone(), collection_config.clone())
             .await
             .map_err(|e1| tonic::Status::new(tonic::Code::Internal, e1.to_string()))?;
-
-        if collection_config.use_distributed_log_as_wal {
-            // subscribe to topic
-            collection_manager_locked
-                .subscribe_to_topic(&collection_config.topic_name, None)
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Internal,
-                        format!(
-                            "Failed to subscribe to topic for collection {}: {}",
-                            collection_name, e
-                        ),
-                    )
-                })?;
-        }
 
         Ok(tonic::Response::new(CreateCollectionResponse {
             message: format!("Collection {} created", collection_name),

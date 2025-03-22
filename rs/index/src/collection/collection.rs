@@ -854,7 +854,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         Ok(())
     }
 
-    pub fn get_use_distributed_log_as_wal(&self) -> bool {
+    pub fn use_distributed_log_as_wal(&self) -> bool {
         self.segment_config.use_distributed_log_as_wal
     }
 

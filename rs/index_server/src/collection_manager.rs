@@ -18,7 +18,7 @@ use crate::collection_provider::CollectionProvider;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CollectionInfo {
-    pub name: String
+    pub name: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -48,7 +48,7 @@ impl CollectionManager {
         num_wal_consumers: u32,
         log_brokers: &str,
     ) -> Self {
-        let mut log_consumer_vector = Vec::new();
+        let mut log_consumer_vector = Vec::with_capacity(num_wal_consumers as usize);
 
         // create log consumer vector
         for _ in 0..num_wal_consumers {
@@ -225,7 +225,6 @@ impl CollectionManager {
                         .await
                         .add_collection(collection_name.clone(), collection)
                         .await;
-                    
                 } else {
                     warn!("Failed to fetch collection {}", collection_name);
                 }
@@ -298,19 +297,13 @@ impl CollectionManager {
         hash as u32 % num_workers
     }
 
-    pub async fn get_consumer_by_topic(&self, topic_name: &str) -> MutexGuard<'_, LogConsumer> {
-        let index =
-            self.get_worker_id(topic_name, self.log_consumer_vector.len() as u32) as usize;
-
-        info!(
-            "Getting consumer for topic {} with worker id {}",
-            topic_name, index
-        );
+    async fn get_consumer_by_topic(&self, topic_name: &str) -> MutexGuard<'_, LogConsumer> {
+        let index = self.get_worker_id(topic_name, self.log_consumer_vector.len() as u32) as usize;
 
         self.log_consumer_vector[index].lock().await
     }
 
-    pub async fn get_consumer_by_index(&self, index: usize) -> MutexGuard<'_, LogConsumer> {
+    async fn get_consumer_by_index(&self, index: usize) -> MutexGuard<'_, LogConsumer> {
         self.log_consumer_vector[index % self.log_consumer_vector.len()]
             .lock()
             .await

@@ -134,31 +134,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         flush_worker_threads.push(collection_manager_flush_thread);
     }
 
-    let mut consumer_worker_threads = Vec::new();
-    for i in 0..arg.num_wal_consumers {
-        let collection_manager_process_op_clone = collection_manager.clone();
-        let collection_manager_process_ops_thread = spawn(async move {
-            loop {
-                let processed_ops = collection_manager_process_op_clone
-                    .read()
-                    .await
-                    .get_consumer_by_index(i as usize)
-                    .await
-                    .consume_logs()
-                    .await
-                    .unwrap();
-
-                debug!("Consumer processed {} ops", processed_ops);
-
-                // If there are no ops to process, sleep for a shorter time
-                // to check more frequently but not too aggressively
-                if processed_ops == 0 {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                }
-            }
-        });
-        consumer_worker_threads.push(collection_manager_process_ops_thread);
-    }
 
     let reflection_service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
@@ -188,10 +163,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         thread.await?;
     }
     for thread in flush_worker_threads {
-        thread.await?;
-    }
-
-    for thread in consumer_worker_threads {
         thread.await?;
     }
 

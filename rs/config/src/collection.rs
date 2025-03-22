@@ -134,8 +134,6 @@ pub struct CollectionConfig {
     pub use_distributed_log_as_wal: bool,
 
     /// Topic name for the distributed log if use as WAL
-    /// Default:
-    #[serde(default= "default_topic_name")]
     pub topic_name: String,
 }
 
@@ -153,10 +151,6 @@ fn default_max_time_to_flush_ms() -> u64 {
 
 fn default_use_distributed_log_as_wal() -> bool {
     false
-}
-
-fn default_topic_name() -> String {
-    String::from("wal_topic")
 }
 
 impl Default for CollectionConfig {

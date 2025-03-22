@@ -58,7 +58,11 @@ message CreateCollectionRequest {
   optional uint64 max_time_to_flush_ms = 27;
 
   // for hybrid-search
-  optional AttributeSchema attribute_schema = 28; 
+  optional AttributeSchema attribute_schema = 28;
+
+  // for distributed log
+  optional bool use_distributed_log_as_wal = 29;
+  optional string topic_name = 30;
 }
 
 message CreateCollectionResponse {
