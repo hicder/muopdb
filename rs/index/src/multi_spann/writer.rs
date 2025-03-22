@@ -363,18 +363,17 @@ mod tests {
 
     #[test]
     fn test_read_raw_vectors_after_writing() {
-        // Setup a simple test environment
         let temp_dir = TempDir::new("test_read_raw_vectors_after_writing").unwrap();
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
-        
+
         let num_vectors: usize = 3;
         let num_features: usize = 4;
-        
+
         // Setup collection config
         let mut collection_config = CollectionConfig::default_test_config();
         collection_config.num_features = num_features;
         collection_config.initial_num_centroids = 3;
-        
+
 
         let mut builder = MultiSpannBuilder::new(collection_config, base_directory.clone()).unwrap();
         let test_vectors = vec![
@@ -382,27 +381,27 @@ mod tests {
             vec![5.0, 6.0, 7.0, 8.0],
             vec![9.0, 10.0, 11.0, 12.0]
         ];
-        
+
         // Only one user
         let user_id = 42u128;
         for (i, vector) in test_vectors.iter().enumerate() {
             builder.insert(user_id, i as u128, vector).unwrap();
         }
-        
+
         // Build and write the index
         builder.build().unwrap();
         let writer = MultiSpannWriter::new(base_directory.clone());
         let user_index_infos = writer.write(&mut builder).unwrap();
-        
+
         // Check for one user only
         assert_eq!(user_index_infos.len(), 1);
         let user_info = &user_index_infos[0];
         assert_eq!(user_info.user_id, user_id);
-        
+
         // Verify raw vectors file exists
         let raw_vectors_path = format!("{}/ivf/raw_vectors", base_directory);
         assert!(PathBuf::from(&raw_vectors_path).exists());
-        
+
         // Read the raw vectors
         let file = std::fs::File::open(&raw_vectors_path).unwrap();
         let mut reader = std::io::BufReader::new(file);
@@ -422,11 +421,12 @@ mod tests {
         let bytes_per_float = std::mem::size_of::<f32>();
         let vector_size_bytes = num_features * bytes_per_float;
         
+        let mut vectors = Vec::new();
+
         for i in 0..num_vectors {
             // 8-byte header + vector offset
-            let vector_start = 8 + i * vector_size_bytes; 
-            
-            let mut read_vector = Vec::with_capacity(num_features);
+            let vector_start = 8 + i * vector_size_bytes;
+            let mut current_vector = Vec::new();
             for j in 0..num_features {
                 let value_offset = vector_start + j * bytes_per_float;
                 let value_bytes = [
@@ -435,20 +435,11 @@ mod tests {
                     buffer[value_offset + 2],
                     buffer[value_offset + 3],
                 ];
-                
-                let value = f32::from_le_bytes(value_bytes);
-                read_vector.push(value);
+                current_vector.push(f32::from_le_bytes(value_bytes));
             }
-            // Compare with the original vector
-            for j in 0..num_features {
-                let expected = test_vectors[i][j];
-                let actual = read_vector[j];
-                assert!(
-                    (expected - actual).abs() < 1e-6,
-                    "Vector {}, component {} mismatch: expected {}, got {}",
-                    i, j, expected, actual
-                );
-            }
+            vectors.push(current_vector);
         }
+        vectors.sort_by(|a, b| a[0].partial_cmp(&b[0]).unwrap());
+        assert_eq!(vectors, test_vectors, "Raw vectors do not match expected: {:?}, expected {:?}", vectors, test_vectors);
     }
 }
