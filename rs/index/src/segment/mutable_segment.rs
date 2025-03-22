@@ -118,7 +118,6 @@ mod tests {
         assert!(mutable_segment.insert(1, &[5.0, 6.0, 7.0, 8.0]).is_ok());
         assert!(mutable_segment.insert(2, &[9.0, 10.0, 11.0, 12.0]).is_ok());
 
-
         assert!(mutable_segment
             .invalidate(0, 0)
             .expect("Failed to invalidate"));

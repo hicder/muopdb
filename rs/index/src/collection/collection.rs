@@ -319,8 +319,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             // Intentionally keep the write lock until we send the message to the channel.
             // This ensures that message in the channel is the same order as WAL.
             let mut wal_write = wal.write();
-            let seq_no = wal_write
-                .append(doc_ids, user_ids, data, wal_op_type.clone())?;
+            let seq_no = wal_write.append(doc_ids, user_ids, data, wal_op_type.clone())?;
 
             // Once the WAL is written, send the op to the channel
             let op_channel_entry =
@@ -1259,15 +1258,15 @@ mod tests {
             .clone();
         match segment {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                {
-                    assert!(immutable_segment.read().get_point_id(0, 1).is_some());
-                    assert!(immutable_segment.read().get_point_id(0, 2).is_some());
-                    assert!(immutable_segment.read().get_point_id(0, 3).is_some());
-                    assert!(immutable_segment.read().get_point_id(0, 4).is_some());
-                    assert!(immutable_segment.read().get_point_id(0, 5).is_none());
-                }
+                assert!(immutable_segment.read().get_point_id(0, 1).is_some());
+                assert!(immutable_segment.read().get_point_id(0, 2).is_some());
+                assert!(immutable_segment.read().get_point_id(0, 3).is_some());
+                assert!(immutable_segment.read().get_point_id(0, 4).is_some());
+                assert!(immutable_segment.read().get_point_id(0, 5).is_none());
             }
-            _ => { assert!(false); }
+            _ => {
+                assert!(false);
+            }
         }
         let toc = collection.get_current_toc();
         assert_eq!(toc.pending.len(), 0);
@@ -1380,7 +1379,10 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(1));
             println!("Invalidate thread: Starting invalidation...");
             assert!(collection_cpy_for_inval.remove(0, 1).is_ok());
-            println!("Invalidate thread: Invalidation completed in {:?}", start.elapsed());
+            println!(
+                "Invalidate thread: Invalidation completed in {:?}",
+                start.elapsed()
+            );
         });
 
         // Receive the segment name from the flush thread
@@ -1394,11 +1396,9 @@ mod tests {
             .clone();
         match segment {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                {
-                    assert!(immutable_segment.read().get_point_id(0, 2).is_none());
-                    assert!(immutable_segment.read().get_point_id(0, 1).is_some());
-                    assert!(immutable_segment.read().is_invalidated(0, 1)?);
-                }
+                assert!(immutable_segment.read().get_point_id(0, 2).is_none());
+                assert!(immutable_segment.read().get_point_id(0, 1).is_some());
+                assert!(immutable_segment.read().is_invalidated(0, 1)?);
             }
             _ => {}
         }
@@ -1443,11 +1443,18 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(1));
             println!("Invalidate thread: Starting invalidation...");
             assert!(collection_cpy_for_inval.remove(0, 1).is_ok());
-            assert!(collection_cpy_for_inval.insert(1, &[1.0, 2.0, 3.0, 4.0]).is_ok());
+            assert!(collection_cpy_for_inval
+                .insert(1, &[1.0, 2.0, 3.0, 4.0])
+                .is_ok());
             assert!(collection_cpy_for_inval.remove(0, 1).is_ok());
-            assert!(collection_cpy_for_inval.insert(4, &[1.0, 2.0, 3.0, 4.0]).is_ok());
+            assert!(collection_cpy_for_inval
+                .insert(4, &[1.0, 2.0, 3.0, 4.0])
+                .is_ok());
             assert!(collection_cpy_for_inval.remove(0, 4).is_ok());
-            println!("Invalidate thread: Invalidation completed in {:?}", start.elapsed());
+            println!(
+                "Invalidate thread: Invalidation completed in {:?}",
+                start.elapsed()
+            );
         });
 
         // Receive the segment name from the flush thread
@@ -1461,12 +1468,20 @@ mod tests {
             .clone();
         match segment {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                {
-                    assert!(immutable_segment.read().is_invalidated(0, 1)?);
-                    assert!(!collection.mutable_segments.read().mutable_segment.read().is_valid_doc_id(0, 1));
-                    assert!(immutable_segment.read().get_point_id(0, 4).is_none());
-                    assert!(!collection.mutable_segments.read().mutable_segment.read().is_valid_doc_id(0, 4));
-                }
+                assert!(immutable_segment.read().is_invalidated(0, 1)?);
+                assert!(!collection
+                    .mutable_segments
+                    .read()
+                    .mutable_segment
+                    .read()
+                    .is_valid_doc_id(0, 1));
+                assert!(immutable_segment.read().get_point_id(0, 4).is_none());
+                assert!(!collection
+                    .mutable_segments
+                    .read()
+                    .mutable_segment
+                    .read()
+                    .is_valid_doc_id(0, 4));
             }
             _ => {}
         }
@@ -1475,23 +1490,38 @@ mod tests {
 
     #[test]
     fn test_collection_inval() {
-        let temp_dir = TempDir::new("test_collection_inval").expect("Failed to create temporary directory");
+        let temp_dir =
+            TempDir::new("test_collection_inval").expect("Failed to create temporary directory");
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let segment_config = CollectionConfig::default_test_config();
         let collection = Arc::new(
             Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
         );
 
-        assert!(collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0).is_ok());
-        assert!(collection.insert_for_users(&[0], 2, &[2.0, 2.0, 3.0, 4.0], 1).is_ok());
-        assert!(collection.insert_for_users(&[0], 3, &[3.0, 2.0, 3.0, 4.0], 2).is_ok());
+        assert!(collection
+            .insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)
+            .is_ok());
+        assert!(collection
+            .insert_for_users(&[0], 2, &[2.0, 2.0, 3.0, 4.0], 1)
+            .is_ok());
+        assert!(collection
+            .insert_for_users(&[0], 3, &[3.0, 2.0, 3.0, 4.0], 2)
+            .is_ok());
         assert!(collection.remove(0, 2).is_ok());
 
         assert!(collection.flush().is_ok());
-        assert!(collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0).is_ok());
-        assert!(collection.insert_for_users(&[0], 2, &[1.0, 2.0, 3.0, 4.0], 1).is_ok());
-        assert!(collection.insert_for_users(&[0], 3, &[2.0, 2.0, 3.0, 4.0], 2).is_ok());
-        assert!(collection.insert_for_users(&[0], 4, &[3.0, 2.0, 3.0, 4.0], 3).is_ok());
+        assert!(collection
+            .insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)
+            .is_ok());
+        assert!(collection
+            .insert_for_users(&[0], 2, &[1.0, 2.0, 3.0, 4.0], 1)
+            .is_ok());
+        assert!(collection
+            .insert_for_users(&[0], 3, &[2.0, 2.0, 3.0, 4.0], 2)
+            .is_ok());
+        assert!(collection
+            .insert_for_users(&[0], 4, &[3.0, 2.0, 3.0, 4.0], 3)
+            .is_ok());
         assert!(collection.remove(0, 2).is_ok());
         assert!(collection.remove(0, 3).is_ok());
         assert!(collection.remove(0, 4).is_ok());
@@ -1509,19 +1539,39 @@ mod tests {
             .clone();
         match segment {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                {
-                    assert!(immutable_segment.read().get_point_id(0, 1).is_some());
-                    assert!(immutable_segment.read().get_point_id(0, 2).is_none());
-                    assert!(immutable_segment.read().get_point_id(0, 3).is_some());
-                    assert!(immutable_segment.read().is_invalidated(0, 3).unwrap());
+                assert!(immutable_segment.read().get_point_id(0, 1).is_some());
+                assert!(immutable_segment.read().get_point_id(0, 2).is_none());
+                assert!(immutable_segment.read().get_point_id(0, 3).is_some());
+                assert!(immutable_segment.read().is_invalidated(0, 3).unwrap());
 
-                    assert!(collection.mutable_segments.read().mutable_segment.read().is_valid_doc_id(0, 1));
-                    assert!(!collection.mutable_segments.read().mutable_segment.read().is_valid_doc_id(0, 2));
-                    assert!(!collection.mutable_segments.read().mutable_segment.read().is_valid_doc_id(0, 3));
-                    assert!(!collection.mutable_segments.read().mutable_segment.read().is_valid_doc_id(0, 4));
-                }
+                assert!(collection
+                    .mutable_segments
+                    .read()
+                    .mutable_segment
+                    .read()
+                    .is_valid_doc_id(0, 1));
+                assert!(!collection
+                    .mutable_segments
+                    .read()
+                    .mutable_segment
+                    .read()
+                    .is_valid_doc_id(0, 2));
+                assert!(!collection
+                    .mutable_segments
+                    .read()
+                    .mutable_segment
+                    .read()
+                    .is_valid_doc_id(0, 3));
+                assert!(!collection
+                    .mutable_segments
+                    .read()
+                    .mutable_segment
+                    .read()
+                    .is_valid_doc_id(0, 4));
             }
-            _ => { assert!(false); }
+            _ => {
+                assert!(false);
+            }
         }
     }
 }
