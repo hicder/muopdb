@@ -1,8 +1,9 @@
+use rkyv::util::AlignedVec;
 use utils::mem::{transmute_u8_to_slice, transmute_u8_to_val};
 
 #[derive(Debug, Clone)]
 pub struct WalEntry {
-    pub buffer: Vec<u8>,
+    pub buffer: AlignedVec<16>,
     pub seq_no: u64,
 }
 
@@ -22,14 +23,16 @@ pub struct WalEntryDecoded<'a> {
 impl WalEntry {
     pub fn decode(&self, num_features: usize) -> WalEntryDecoded {
         let length = self.buffer.len() - 1;
-        let num_docs = transmute_u8_to_val::<u32>(&self.buffer[0..4]) as usize;
-        let num_users = transmute_u8_to_val::<u32>(&self.buffer[4..8]) as usize;
-        let doc_ids = transmute_u8_to_slice::<u128>(&self.buffer[8..8 + num_docs * 16]);
-        let user_ids = transmute_u8_to_slice::<u128>(
-            &self.buffer[8 + num_docs * 16..8 + num_docs * 16 + num_users * 16],
-        );
-        let data =
-            transmute_u8_to_slice::<f32>(&self.buffer[8 + num_docs * 16 + num_users * 16..length]);
+        let mut offset = 0;
+        let num_docs = transmute_u8_to_val::<u64>(&self.buffer[offset..offset + 8]) as usize;
+        offset += 8;
+        let num_users = transmute_u8_to_val::<u64>(&self.buffer[offset..offset + 8]) as usize;
+        offset += 8;
+        let doc_ids = transmute_u8_to_slice::<u128>(&self.buffer[offset..offset + num_docs * 16]);
+        offset += num_docs * 16;
+        let user_ids = transmute_u8_to_slice::<u128>(&self.buffer[offset..offset + num_users * 16]);
+        offset += num_users * 16;
+        let data = transmute_u8_to_slice::<f32>(&self.buffer[offset..length]);
 
         assert_eq!(
             data.len(),
