@@ -247,12 +247,13 @@ impl MultiSpannWriter {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Read, Seek, SeekFrom};
     use std::path::PathBuf;
 
     use config::collection::CollectionConfig;
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
-    use std::io::{Read, Seek, SeekFrom};
+
     use super::*;
 
     #[test]
@@ -374,12 +375,12 @@ mod tests {
         collection_config.num_features = num_features;
         collection_config.initial_num_centroids = 3;
 
-
-        let mut builder = MultiSpannBuilder::new(collection_config, base_directory.clone()).unwrap();
+        let mut builder =
+            MultiSpannBuilder::new(collection_config, base_directory.clone()).unwrap();
         let test_vectors = vec![
             vec![1.0, 2.0, 3.0, 4.0],
             vec![5.0, 6.0, 7.0, 8.0],
-            vec![9.0, 10.0, 11.0, 12.0]
+            vec![9.0, 10.0, 11.0, 12.0],
         ];
 
         // Only one user
@@ -405,22 +406,23 @@ mod tests {
         // Read the raw vectors
         let file = std::fs::File::open(&raw_vectors_path).unwrap();
         let mut reader = std::io::BufReader::new(file);
-        reader.seek(SeekFrom::Start(user_info.ivf_raw_vectors_offset)).unwrap();
+        reader
+            .seek(SeekFrom::Start(user_info.ivf_raw_vectors_offset))
+            .unwrap();
 
         let mut buffer = vec![0u8; user_info.ivf_raw_vectors_len as usize];
         reader.read_exact(&mut buffer).unwrap();
 
-         // First 8 bytes should be the number of vectors
+        // First 8 bytes should be the number of vectors
         let num_vectors_in_file = u64::from_le_bytes([
-            buffer[0], buffer[1], buffer[2], buffer[3],
-            buffer[4], buffer[5], buffer[6], buffer[7]
+            buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7],
         ]);
         assert_eq!(num_vectors_in_file as usize, num_vectors);
 
         // Read and verify each vector
         let bytes_per_float = std::mem::size_of::<f32>();
         let vector_size_bytes = num_features * bytes_per_float;
-        
+
         let mut vectors = Vec::new();
 
         for i in 0..num_vectors {
@@ -440,6 +442,10 @@ mod tests {
             vectors.push(current_vector);
         }
         vectors.sort_by(|a, b| a[0].partial_cmp(&b[0]).unwrap());
-        assert_eq!(vectors, test_vectors, "Raw vectors do not match expected: {:?}, expected {:?}", vectors, test_vectors);
+        assert_eq!(
+            vectors, test_vectors,
+            "Raw vectors do not match expected: {:?}, expected {:?}",
+            vectors, test_vectors
+        );
     }
 }

@@ -96,18 +96,51 @@ mod tests {
         let deserialized_info = UserIndexInfo::from_le_bytes(&bytes);
 
         assert_eq!(original_info.user_id, deserialized_info.user_id);
-        assert_eq!(original_info.centroid_vector_offset, deserialized_info.centroid_vector_offset);
-        assert_eq!(original_info.centroid_vector_len, deserialized_info.centroid_vector_len);
-        assert_eq!(original_info.centroid_index_offset, deserialized_info.centroid_index_offset);
-        assert_eq!(original_info.centroid_index_len, deserialized_info.centroid_index_len);
-        assert_eq!(original_info.ivf_vectors_offset, deserialized_info.ivf_vectors_offset);
-        assert_eq!(original_info.ivf_vectors_len, deserialized_info.ivf_vectors_len);
-        assert_eq!(original_info.ivf_raw_vectors_offset, deserialized_info.ivf_raw_vectors_offset);
-        assert_eq!(original_info.ivf_raw_vectors_len, deserialized_info.ivf_raw_vectors_len);
-        assert_eq!(original_info.ivf_index_offset, deserialized_info.ivf_index_offset);
+        assert_eq!(
+            original_info.centroid_vector_offset,
+            deserialized_info.centroid_vector_offset
+        );
+        assert_eq!(
+            original_info.centroid_vector_len,
+            deserialized_info.centroid_vector_len
+        );
+        assert_eq!(
+            original_info.centroid_index_offset,
+            deserialized_info.centroid_index_offset
+        );
+        assert_eq!(
+            original_info.centroid_index_len,
+            deserialized_info.centroid_index_len
+        );
+        assert_eq!(
+            original_info.ivf_vectors_offset,
+            deserialized_info.ivf_vectors_offset
+        );
+        assert_eq!(
+            original_info.ivf_vectors_len,
+            deserialized_info.ivf_vectors_len
+        );
+        assert_eq!(
+            original_info.ivf_raw_vectors_offset,
+            deserialized_info.ivf_raw_vectors_offset
+        );
+        assert_eq!(
+            original_info.ivf_raw_vectors_len,
+            deserialized_info.ivf_raw_vectors_len
+        );
+        assert_eq!(
+            original_info.ivf_index_offset,
+            deserialized_info.ivf_index_offset
+        );
         assert_eq!(original_info.ivf_index_len, deserialized_info.ivf_index_len);
-        assert_eq!(original_info.ivf_pq_codebook_offset, deserialized_info.ivf_pq_codebook_offset);
-        assert_eq!(original_info.ivf_pq_codebook_len, deserialized_info.ivf_pq_codebook_len);
+        assert_eq!(
+            original_info.ivf_pq_codebook_offset,
+            deserialized_info.ivf_pq_codebook_offset
+        );
+        assert_eq!(
+            original_info.ivf_pq_codebook_len,
+            deserialized_info.ivf_pq_codebook_len
+        );
     }
 }
 
