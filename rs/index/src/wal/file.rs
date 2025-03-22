@@ -5,6 +5,7 @@ use anyhow::Result;
 use byteorder::{LittleEndian, ReadBytesExt};
 use log::info;
 use memmap2::{MmapMut, MmapOptions};
+use rkyv::util::AlignedVec;
 use utils::mem::{transmute_slice_to_u8, transmute_u8_to_val};
 
 use super::entry::{WalEntry, WalOpType};
@@ -15,11 +16,10 @@ const VERSION_1: &[u8] = b"version1";
 /// | version1 | start_seq_no | num_entries | data |
 /// | 8 bytes  | 8 bytes      | 4 bytes     | ...  |
 ///
-/// Each data entry will have the following format (n is number of vectors):
-/// | length  | doc_ids      | user_ids     | data                       | op_type |
-/// | 4 bytes | 16 bytes * n | 16 bytes * n | 4 bytes * n * num_features | 1 byte  |
+/// Each data entry will have the following format (n is number of doc_ids, m is number of user_ids):
+/// | length   | n       | m       | doc_ids      | user_ids     | data                       | op_type |
+/// | 4 bytes  | 8 bytes | 8 bytes | 16 bytes * n | 16 bytes * m | 4 bytes * n * num_features | 1 byte  |
 ///
-/// To compute number of vectors in each entry: (length - 1) / (16 + 16 + 4 * num_features)
 #[allow(unused)]
 pub struct WalFile {
     file: File,
@@ -110,8 +110,11 @@ impl WalFile {
         data: &[f32],
         op_type: WalOpType,
     ) -> Result<u64> {
-        let len = (doc_ids.len() * 16 + user_ids.len() * 16 + data.len() * 4 + 1) as u32;
+        let len = (8 + 8 + doc_ids.len() * 16 + user_ids.len() * 16 + data.len() * 4 + 1) as u32;
         self.file.write_all(&len.to_le_bytes())?;
+        self.file.write_all(&(doc_ids.len() as u64).to_le_bytes())?;
+        self.file
+            .write_all(&(user_ids.len() as u64).to_le_bytes())?;
         self.file.write_all(transmute_slice_to_u8(doc_ids))?;
         self.file.write_all(transmute_slice_to_u8(user_ids))?;
         self.file.write_all(transmute_slice_to_u8(data))?;
@@ -247,7 +250,9 @@ impl Iterator for WalFileIterator {
         }
         self.offset += length as u64;
 
-        let mut buffer = vec![0; length as usize];
+        let mut buffer = AlignedVec::<16>::with_capacity(length as usize);
+        buffer.resize(length as usize, 0);
+
         self.file.read_exact(buffer.as_mut_slice()).unwrap();
         self.current_seq_no += 1;
         let seq_no = self.current_seq_no;
@@ -293,11 +298,11 @@ mod tests {
         assert_eq!(start_seq_no, 100);
 
         let entry = iter.next().unwrap().unwrap();
-        assert_eq!(entry.buffer, b"hello");
+        assert_eq!(entry.buffer.as_slice(), b"hello");
         assert_eq!(entry.seq_no, 101);
 
         let entry = iter.next().unwrap().unwrap();
-        assert_eq!(entry.buffer, b"world");
+        assert_eq!(entry.buffer.as_slice(), b"world");
         assert_eq!(entry.seq_no, 102);
 
         let entry = iter.next();
@@ -322,11 +327,11 @@ mod tests {
 
         iter.skip_to(2).unwrap();
         let entry = iter.next().unwrap().unwrap();
-        assert_eq!(entry.buffer, b"hello_2");
+        assert_eq!(entry.buffer.as_slice(), b"hello_2");
         assert_eq!(entry.seq_no, 2);
 
         let entry = iter.next().unwrap().unwrap();
-        assert_eq!(entry.buffer, b"hello_3");
+        assert_eq!(entry.buffer.as_slice(), b"hello_3");
         assert_eq!(entry.seq_no, 3);
 
         let seq_no = iter.skip_to(10).unwrap();

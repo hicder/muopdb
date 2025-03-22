@@ -6,7 +6,6 @@ use log::{info, LevelFilter};
 use ndarray::s;
 use proto::muopdb::index_server_client::IndexServerClient;
 use proto::muopdb::{FlushRequest, Id, InsertPackedRequest};
-use rmp_serde::encode;
 
 #[tokio::main]
 async fn main() -> Result<()> {

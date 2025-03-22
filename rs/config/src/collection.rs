@@ -182,7 +182,7 @@ impl Default for CollectionConfig {
             max_pending_ops: 0,
             max_time_to_flush_ms: 0,
             use_distributed_log_as_wal: default_use_distributed_log_as_wal(),
-            topic_name: default_topic_name()
+            topic_name: String::new(),
         }
     }
 }
@@ -216,7 +216,7 @@ impl CollectionConfig {
             max_pending_ops: 10000,
             max_time_to_flush_ms: 10000,
             use_distributed_log_as_wal: default_use_distributed_log_as_wal(),
-            topic_name: default_topic_name()
+            topic_name: String::new(),
         }
     }
 }

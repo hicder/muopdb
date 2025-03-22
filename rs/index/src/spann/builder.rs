@@ -183,6 +183,10 @@ impl SpannBuilder {
         self.ivf_builder.invalidate(doc_id)
     }
 
+    pub fn is_valid_doc_id(&self, doc_id: u128) -> bool {
+        self.ivf_builder.is_valid_doc_id(doc_id)
+    }
+
     pub fn build(&mut self) -> Result<()> {
         self.ivf_builder.build()?;
         debug!("Finish building IVF index");

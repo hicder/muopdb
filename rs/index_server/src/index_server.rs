@@ -3,6 +3,7 @@ use std::vec;
 
 use config::collection::CollectionConfig;
 use index::collection::snapshot::SnapshotWithQuantizer;
+use index::wal::entry::WalOpType;
 use log::info;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
@@ -249,7 +250,7 @@ impl IndexServer for IndexServerImpl {
                 }
 
                 let seq_no = collection
-                    .write_to_wal(&ids, &user_ids, &vectors)
+                    .write_to_wal(&ids, &user_ids, &vectors, WalOpType::Insert)
                     .await
                     .unwrap_or(0);
                 let num_docs_inserted = ids.len() as u32;
@@ -354,7 +355,7 @@ impl IndexServer for IndexServerImpl {
                 }
 
                 let seq_no = collection
-                    .write_to_wal(&doc_ids, &user_ids, &vectors)
+                    .write_to_wal(&doc_ids, &user_ids, &vectors, WalOpType::Insert)
                     .await
                     .unwrap_or(0);
                 let num_docs_inserted = doc_ids.len() as u32;

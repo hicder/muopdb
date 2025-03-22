@@ -131,6 +131,13 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         Ok(index.is_invalidated(doc_id))
     }
 
+    pub fn get_point_id(&self, user_id: u128, doc_id: u128) -> Option<u32> {
+        match self.get_or_create_index(user_id) {
+            Ok(index) => index.get_point_id(doc_id),
+            Err(_) => None,
+        }
+    }
+
     pub async fn search_with_id(
         &self,
         id: u128,
