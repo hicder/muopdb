@@ -61,6 +61,10 @@ impl MutableSegment {
         Ok(())
     }
 
+    pub fn is_valid_doc_id(&self, user_id: u128, doc_id: u128) -> bool {
+        self.multi_spann_builder.is_valid_doc_id(user_id, doc_id)
+    }
+
     pub fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         self.multi_spann_builder.invalidate(user_id, doc_id)
     }
@@ -113,7 +117,6 @@ mod tests {
         assert!(mutable_segment.insert(0, &[1.0, 2.0, 3.0, 4.0]).is_ok());
         assert!(mutable_segment.insert(1, &[5.0, 6.0, 7.0, 8.0]).is_ok());
         assert!(mutable_segment.insert(2, &[9.0, 10.0, 11.0, 12.0]).is_ok());
-
 
         assert!(mutable_segment
             .invalidate(0, 0)

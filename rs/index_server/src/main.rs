@@ -6,7 +6,6 @@ mod index_server;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-
 use admin_server::AdminServerImpl;
 use clap::Parser;
 use collection_catalog::CollectionCatalog;
@@ -48,6 +47,9 @@ struct Args {
 
     #[arg(long, default_value_t = 10)]
     num_wal_consumers: u32,
+
+    #[arg(long, default_value_t = 500)]
+    log_consumer_poll_interval: u64
 }
 
 #[tokio::main]
@@ -74,8 +76,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         collection_catalog_for_manager,
         arg.num_ingestion_workers,
         arg.num_flush_workers,
-        arg.num_wal_consumers,
-        &arg.log_brokers,
     )));
 
     let collection_manager_clone = collection_manager.clone();

@@ -24,7 +24,8 @@ services:
       "--node-id", "0",
       "--index-config-path", "/mnt/muopdb/indices",
       "--index-data-path", "/mnt/muopdb/data",
-      "--brokers", "redpanda-0:9092,redpanda-1:9092,redpanda-2:9092",
+      "--log-brokers", "redpanda-0:9092,redpanda-1:9092,redpanda-2:9092",
+      "--log-consumer-poll-interval", "500"
       "--port", "9002"
     ]
     depends_on:

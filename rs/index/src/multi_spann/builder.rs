@@ -50,6 +50,21 @@ impl MultiSpannBuilder {
         }
     }
 
+    pub fn is_valid_doc_id(&self, user_id: u128, doc_id: u128) -> bool {
+        let entry = self.inner_builders.entry(user_id).or_insert_with(|| {
+            let user_directory = format!("{}/{}", self.base_directory, user_id);
+            RwLock::new(
+                SpannBuilder::new(SpannBuilderConfig::from_collection_config(
+                    &self.config,
+                    user_directory,
+                ))
+                .unwrap(),
+            )
+        });
+        let spann_builder = entry.read().unwrap();
+        spann_builder.is_valid_doc_id(doc_id)
+    }
+
     pub fn build(&self) -> Result<()> {
         for entry in self.inner_builders.iter() {
             debug!("Building segment for user {}", entry.key());

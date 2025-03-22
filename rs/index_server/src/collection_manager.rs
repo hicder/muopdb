@@ -2,15 +2,14 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use anyhow::{Context, Error, Result};
+use anyhow::{Context, Result};
 use config::enums::QuantizerType;
 use index::collection::collection::Collection;
 use log::{debug, info, warn};
-use log_consumer::consumer::LogConsumer;
 use quantization::noq::noq::NoQuantizerL2;
 use quantization::pq::pq::ProductQuantizerL2;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::{Mutex};
 use utils::io::get_latest_version;
 
 use crate::collection_catalog::CollectionCatalog;
@@ -33,9 +32,6 @@ pub struct CollectionManager {
     latest_version: AtomicU64,
     num_ingestion_workers: u32,
     num_flush_workers: u32,
-
-    // vector of consumer
-    log_consumer_vector: Vec<Arc<Mutex<LogConsumer>>>,
 }
 
 impl CollectionManager {
@@ -45,17 +41,7 @@ impl CollectionManager {
         collection_catalog: Arc<Mutex<CollectionCatalog>>,
         num_ingestion_workers: u32,
         num_flush_workers: u32,
-        num_wal_consumers: u32,
-        log_brokers: &str,
     ) -> Self {
-        let mut log_consumer_vector = Vec::with_capacity(num_wal_consumers as usize);
-
-        // create log consumer vector
-        for _ in 0..num_wal_consumers {
-            let consumer = LogConsumer::new(&log_brokers);
-            log_consumer_vector.push(Arc::new(Mutex::new(consumer.unwrap())));
-        }
-
         Self {
             config_path,
             collection_provider,
@@ -63,7 +49,6 @@ impl CollectionManager {
             latest_version: AtomicU64::new(0),
             num_ingestion_workers,
             num_flush_workers,
-            log_consumer_vector,
         }
     }
 
@@ -213,13 +198,6 @@ impl CollectionManager {
 
                 let collection_opt = self.collection_provider.read_collection(collection_name);
                 if let Some(collection) = collection_opt {
-                    // subscribe to distributed log if enable
-                    // TODO(trungbui): read from toc to get offset
-                    if collection.get_use_distributed_log_as_wal() {
-                        self.subscribe_to_topic(&collection.get_topic_name(), None)
-                            .await?;
-                    }
-
                     self.collection_catalog
                         .lock()
                         .await
@@ -295,26 +273,5 @@ impl CollectionManager {
         collection_name.hash(&mut hasher);
         let hash = hasher.finish();
         hash as u32 % num_workers
-    }
-
-    async fn get_consumer_by_topic(&self, topic_name: &str) -> MutexGuard<'_, LogConsumer> {
-        let index = self.get_worker_id(topic_name, self.log_consumer_vector.len() as u32) as usize;
-
-        self.log_consumer_vector[index].lock().await
-    }
-
-    async fn get_consumer_by_index(&self, index: usize) -> MutexGuard<'_, LogConsumer> {
-        self.log_consumer_vector[index % self.log_consumer_vector.len()]
-            .lock()
-            .await
-    }
-
-    pub async fn subscribe_to_topic(&self, topic_name: &str, offset: Option<i64>) -> Result<()> {
-        let consumer = self.get_consumer_by_topic(&topic_name).await;
-
-        if let Err(e) = consumer.subscribe_to_topic(&topic_name, offset).await {
-            return Err(Error::from(e));
-        }
-        Ok(())
     }
 }

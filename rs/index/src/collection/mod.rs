@@ -149,13 +149,18 @@ impl BoxedCollection {
         doc_ids: &[u128],
         user_ids: &[u128],
         data: &[f32],
+        wal_op_type: WalOpType,
     ) -> Result<u64> {
         match self {
             BoxedCollection::CollectionNoQuantizationL2(collection) => {
-                collection.write_to_wal(doc_ids, user_ids, data).await
+                collection
+                    .write_to_wal(doc_ids, user_ids, data, wal_op_type)
+                    .await
             }
             BoxedCollection::CollectionProductQuantization(collection) => {
-                collection.write_to_wal(doc_ids, user_ids, data).await
+                collection
+                    .write_to_wal(doc_ids, user_ids, data, wal_op_type)
+                    .await
             }
         }
     }
@@ -243,10 +248,10 @@ impl BoxedCollection {
         }
     }
 
-    pub fn get_use_distributed_log_as_wal(&self) -> bool {
+    pub fn use_distributed_log_as_wal(&self) -> bool {
         match self {
-            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.get_use_distributed_log_as_wal(),
-            BoxedCollection::CollectionProductQuantization(collection) => collection.get_use_distributed_log_as_wal(),
+            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.use_distributed_log_as_wal(),
+            BoxedCollection::CollectionProductQuantization(collection) => collection.use_distributed_log_as_wal(),
         }
     }
 

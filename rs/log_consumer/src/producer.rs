@@ -12,6 +12,7 @@ pub struct LogMessage<T> {
     pub payload: T,
     pub topic: String,
 }
+
 pub struct LogProducer {
     producer: FutureProducer,
     topic: String,

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use log::{error, info};
+use log::{error};
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{BaseConsumer, Consumer};
 use rdkafka::{Message, Offset, TopicPartitionList};
@@ -17,37 +17,44 @@ pub struct LogMessage<T> {
 
 pub struct LogConsumer {
     inner: BaseConsumer,
+    poll_interval: u64,
 }
 
 impl LogConsumer {
-    pub fn new(broker: &str) -> Result<Self> {
+    pub fn new(broker: &str, poll_interval: u64) -> Result<Self> {
         let consumer: BaseConsumer = ClientConfig::new()
             .set("bootstrap.servers", broker)
             .set("group.id", "log_consumer")
             // start from the beginning of the topic if no offset is stored
             .set("auto.offset.reset", "earliest")
-            // manually commit offsets
-            .set("enable.auto.commit", "false")
+            // automatically commit offsets
+            .set("enable.auto.commit", "true")
             .create()?;
 
-        Ok(LogConsumer { inner: consumer })
+        Ok(LogConsumer {
+            inner: consumer,
+            poll_interval,
+        })
     }
 
     pub async fn consume_logs(&self) -> Result<usize> {
         let mut processed_ops = 0;
 
-        while let Some(Ok(result)) = self.inner.poll(Duration::from_millis(500)) {
+        while let Some(Ok(result)) = self.inner.poll(Duration::from_millis(self.poll_interval)) {
             processed_ops += 1;
             match decode::from_slice::<LogMessage<Vec<u8>>>(result.payload().unwrap()) {
                 Ok(wal_entry_message) => {
-                    let decoded: Value = decode::from_slice(&wal_entry_message.payload)?;
-                    let message = format!(
-                        "WAL offset: {}, partition: {}, payload: {:?}",
-                        result.offset(),
-                        result.partition(),
-                        decoded
-                    );
-                    info!("{}", message);
+                    #[cfg(debug_assertions)]
+                    {
+                        let decoded: Value = decode::from_slice(&wal_entry_message.payload)?;
+                        let message = format!(
+                            "WAL offset: {}, partition: {}, payload: {:?}",
+                            result.offset(),
+                            result.partition(),
+                            decoded
+                        );
+                        println!("{}", message);
+                    }
                 }
                 Err(e) => {
                     error!("Failed to decode message: {}", e)
@@ -76,7 +83,7 @@ impl LogConsumer {
             .ok_or_else(|| anyhow::anyhow!("Topic {} metadata not found", topic))?;
 
         let mut tpl = TopicPartitionList::new();
-        match topic_metadata.partitions().get(0) {
+        match topic_metadata.partitions().first() {
             Some(partition) => {
                 tpl.add_partition(topic_metadata.name(), partition.id())
                     .set_offset(offset)?;
@@ -100,7 +107,7 @@ mod tests {
     #[test]
     fn test_log_consumer_creation() {
         // Test that we can create a LogConsumer
-        let consumer = LogConsumer::new("localhost:19092,localhost:29092,localhost:39092");
+        let consumer = LogConsumer::new("localhost:19092,localhost:29092,localhost:39092", 500);
         assert!(consumer.is_ok());
     }
 
@@ -149,7 +156,7 @@ mod tests {
 
             sleep(Duration::from_secs(2)).await;
 
-            let consumer = LogConsumer::new("localhost:19092,localhost:29092,localhost:39092")
+            let consumer = LogConsumer::new("localhost:19092,localhost:29092,localhost:39092", 500)
                 .expect("Failed to create consumer");
 
             consumer

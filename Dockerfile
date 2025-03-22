@@ -41,4 +41,4 @@ RUN mv /muopdb/target/release/index_server /app/index_server
 
 RUN rm -rf /muopdb
 
-CMD ["/app/index_server", "--node-id", "0", "--index-config-path", "/mnt/muopdb/indices", "--index-data-path", "/mnt/muopdb/data", "--port", "9002"]
+CMD ["/app/index_server", "--node-id", "0", "--index-config-path", "/mnt/muopdb/indices", "--index-data-path", "/mnt/muopdb/data", "--port", "9002", "--log-brokers", "redpanda-0:9092,redpanda-1:9092,redpanda-2:9092"]
