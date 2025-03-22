@@ -55,7 +55,7 @@ impl MutableSegment {
 
         self.multi_spann_builder.insert(user_id, doc_id, data)?;
         self.last_sequence_number
-            .store(sequence_number, std::sync::atomic::Ordering::Relaxed);
+            .store(sequence_number, std::sync::atomic::Ordering::SeqCst);
         self.num_docs
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Ok(())
@@ -65,7 +65,9 @@ impl MutableSegment {
         self.multi_spann_builder.is_valid_doc_id(user_id, doc_id)
     }
 
-    pub fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+    pub fn invalidate(&self, user_id: u128, doc_id: u128, sequence_number: u64) -> Result<bool> {
+        self.last_sequence_number
+            .store(sequence_number, std::sync::atomic::Ordering::SeqCst);
         self.multi_spann_builder.invalidate(user_id, doc_id)
     }
 
@@ -87,7 +89,7 @@ impl MutableSegment {
 
     pub fn last_sequence_number(&self) -> u64 {
         self.last_sequence_number
-            .load(std::sync::atomic::Ordering::Relaxed)
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 
     pub fn num_docs(&self) -> u64 {
@@ -119,14 +121,14 @@ mod tests {
         assert!(mutable_segment.insert(2, &[9.0, 10.0, 11.0, 12.0]).is_ok());
 
         assert!(mutable_segment
-            .invalidate(0, 0)
+            .invalidate(0, 0, 0)
             .expect("Failed to invalidate"));
         assert!(!mutable_segment
-            .invalidate(0, 0)
+            .invalidate(0, 0, 1)
             .expect("Failed to invalidate"));
         assert!(mutable_segment.insert(0, &[5.0, 6.0, 7.0, 8.0]).is_ok());
         assert!(mutable_segment
-            .invalidate(0, 0)
+            .invalidate(0, 0, 2)
             .expect("Failed to invalidate"));
     }
 }
