@@ -67,7 +67,7 @@ pub struct CollectionConfig {
     /// Default: 10
     pub initial_num_centroids: usize,
 
-    /// Number of data points to to sample for clustering. Often times, we don't want to cluster
+    /// Number of data points to sample for clustering. Often times, we don't want to cluster
     /// all the data points, but instead sample a subset of them. This is useful for large datasets
     /// where we don't want to store all the data points in memory.
     /// Default: 20000
@@ -127,6 +127,14 @@ pub struct CollectionConfig {
     /// Default: 0 (not using max time to flush)
     #[serde(default = "default_max_time_to_flush_ms")]
     pub max_time_to_flush_ms: u64,
+
+    /// Enable to use distributed log as WAL.
+    /// Default: false (using local WAL)
+    #[serde(default = "default_use_distributed_log_as_wal")]
+    pub use_distributed_log_as_wal: bool,
+
+    /// Topic name for the distributed log if use as WAL
+    pub topic_name: String,
 }
 
 fn default_wal_file_size() -> u64 {
@@ -139,6 +147,10 @@ fn default_max_pending_ops() -> u64 {
 
 fn default_max_time_to_flush_ms() -> u64 {
     10000
+}
+
+fn default_use_distributed_log_as_wal() -> bool {
+    false
 }
 
 impl Default for CollectionConfig {
@@ -169,6 +181,8 @@ impl Default for CollectionConfig {
             wal_file_size: 0,
             max_pending_ops: 0,
             max_time_to_flush_ms: 0,
+            use_distributed_log_as_wal: default_use_distributed_log_as_wal(),
+            topic_name: String::new(),
         }
     }
 }
@@ -201,6 +215,8 @@ impl CollectionConfig {
             wal_file_size: 1024 * 1024 * 1024,
             max_pending_ops: 10000,
             max_time_to_flush_ms: 10000,
+            use_distributed_log_as_wal: default_use_distributed_log_as_wal(),
+            topic_name: String::new(),
         }
     }
 }

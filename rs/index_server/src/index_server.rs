@@ -120,30 +120,29 @@ impl IndexServer for IndexServerImpl {
         if let Some(max_time_to_flush_ms) = req.max_time_to_flush_ms {
             collection_config.max_time_to_flush_ms = max_time_to_flush_ms as u64;
         }
+        if let Some(use_distributed_log_as_wal) = req.use_distributed_log_as_wal {
+            collection_config.use_distributed_log_as_wal = use_distributed_log_as_wal;
+        }
+        if let Some(topic_name) = req.topic_name {
+            collection_config.topic_name = topic_name;
+        }
 
         let mut collection_manager_locked = self.collection_manager.write().await;
-        if collection_manager_locked
-            .collection_exists(&collection_name)
-            .await
-        {
+        if collection_manager_locked.collection_exists(&collection_name).await {
             return Err(tonic::Status::new(
                 tonic::Code::AlreadyExists,
                 format!("Collection {} already exists", collection_name),
             ));
         }
-        match collection_manager_locked
-            .add_collection(collection_name.clone(), collection_config)
+
+        collection_manager_locked
+            .add_collection(collection_name.clone(), collection_config.clone())
             .await
-        {
-            Ok(_) => {
-                return Ok(tonic::Response::new(CreateCollectionResponse {
-                    message: format!("Collection {} created", collection_name),
-                }));
-            }
-            Err(e) => {
-                return Err(tonic::Status::new(tonic::Code::Internal, e.to_string()));
-            }
-        }
+            .map_err(|e1| tonic::Status::new(tonic::Code::Internal, e1.to_string()))?;
+
+        Ok(tonic::Response::new(CreateCollectionResponse {
+            message: format!("Collection {} created", collection_name),
+        }))
     }
 
     async fn search(

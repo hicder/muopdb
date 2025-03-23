@@ -872,6 +872,14 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         Ok(())
     }
+
+    pub fn use_distributed_log_as_wal(&self) -> bool {
+        self.segment_config.use_distributed_log_as_wal
+    }
+
+    pub fn get_topic_name(&self) -> String {
+        self.segment_config.topic_name.clone()
+    }
 }
 
 // Test

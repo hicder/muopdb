@@ -21,6 +21,7 @@ utils.workspace = true
 name = "insert"
 path = "src/main.rs"
 
+
 [[bin]]
 name = "search"
 path = "src/search.rs"

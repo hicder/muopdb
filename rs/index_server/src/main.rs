@@ -6,7 +6,6 @@ mod index_server;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-
 use admin_server::AdminServerImpl;
 use clap::Parser;
 use collection_catalog::CollectionCatalog;
@@ -25,6 +24,9 @@ use tonic::transport::Server;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    #[arg(long)]
+    log_brokers: String,
+
     #[arg(short, long, default_value_t = 9002)]
     port: u32,
 
@@ -42,6 +44,12 @@ struct Args {
 
     #[arg(long, default_value_t = 10)]
     num_flush_workers: u32,
+
+    #[arg(long, default_value_t = 10)]
+    num_wal_consumers: u32,
+
+    #[arg(long, default_value_t = 500)]
+    log_consumer_poll_interval: u64
 }
 
 #[tokio::main]
@@ -126,6 +134,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         flush_worker_threads.push(collection_manager_flush_thread);
     }
 
+
     let reflection_service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
         .build_v1()?;
@@ -156,5 +165,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for thread in flush_worker_threads {
         thread.await?;
     }
+
     Ok(())
 }

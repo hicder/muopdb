@@ -9,6 +9,17 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # Install hdf5 protobuf openblas clang
 RUN apt-get install -y libhdf5-dev libprotobuf-dev libopenblas-dev clang protobuf-compiler pkg-config
 
+# Install dependencies for librdkafka
+RUN apt-get install -y \
+    build-essential \
+    make \
+    pkg-config \
+    libssl-dev \
+    zlib1g-dev \
+    libsasl2-dev \
+    libzstd-dev \
+    liblz4-dev
+
 # Install nightly toolchain
 RUN rustup install nightly-x86_64-unknown-linux-gnu && \
     rustup default nightly-x86_64-unknown-linux-gnu
@@ -30,4 +41,4 @@ RUN mv /muopdb/target/release/index_server /app/index_server
 
 RUN rm -rf /muopdb
 
-CMD ["/app/index_server", "--node-id", "0", "--index-config-path", "/mnt/muopdb/indices", "--index-data-path", "/mnt/muopdb/data", "--port", "9002"]
+CMD ["/app/index_server", "--node-id", "0", "--index-config-path", "/mnt/muopdb/indices", "--index-data-path", "/mnt/muopdb/data", "--port", "9002", "--log-brokers", "redpanda-0:9092,redpanda-1:9092,redpanda-2:9092"]

@@ -9,7 +9,7 @@ use log::{debug, info, warn};
 use quantization::noq::noq::NoQuantizerL2;
 use quantization::pq::pq::ProductQuantizerL2;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex};
 use utils::io::get_latest_version;
 
 use crate::collection_catalog::CollectionCatalog;
@@ -195,6 +195,7 @@ impl CollectionManager {
                 Self::get_collections_to_add(&current_collection_names, &new_collection_names);
             for collection_name in collections_to_add.iter() {
                 info!("Fetching collection {}", collection_name);
+
                 let collection_opt = self.collection_provider.read_collection(collection_name);
                 if let Some(collection) = collection_opt {
                     self.collection_catalog
