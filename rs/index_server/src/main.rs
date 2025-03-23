@@ -128,11 +128,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Start the metrics server
-    let metrics_addr = SocketAddr::new(addr.ip(), addr.port() + 1);
-    info!("Starting metrics server on {}", metrics_addr);
+    let http_server_addr = SocketAddr::new(addr.ip(), addr.port() + 1);
+    info!("Starting HTTP server on {}", http_server_addr);
     spawn(async move {
-        if let Err(e) = metrics::MetricsServer::new().serve(metrics_addr).await {
-            error!("Metrics server error: {}", e);
+        if let Err(e) = metrics::HttpServer::new().serve(http_server_addr).await {
+            error!("HTTP server error: {}", e);
         }
     });
 

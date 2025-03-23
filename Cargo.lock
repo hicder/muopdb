@@ -1384,6 +1384,7 @@ dependencies = [
  "hyper-util",
  "index",
  "index_writer",
+ "lazy_static",
  "log",
  "parking_lot",
  "prometheus-client",
