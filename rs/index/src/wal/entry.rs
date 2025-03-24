@@ -34,15 +34,15 @@ impl WalEntry {
         offset += num_users * 16;
         let data = transmute_u8_to_slice::<f32>(&self.buffer[offset..length]);
 
-        assert_eq!(
-            data.len(),
-            num_features * num_docs,
-            "num_vectors mismatch while decoding WalEntry data"
-        );
-
         let op_type = if self.buffer[length] == 0 {
+            assert_eq!(
+                data.len(),
+                num_features * num_docs,
+                "num_vectors mismatch while decoding WalEntry data"
+            );
             WalOpType::Insert
         } else {
+            assert_eq!(data.len(), 0, "WalEntry data should be empty for delete op");
             WalOpType::Delete
         };
         WalEntryDecoded {

@@ -214,9 +214,8 @@ mod tests {
         let dir = tmp_dir.path();
         let mut wal = Wal::open(dir.to_str().unwrap(), 1024, -1).unwrap();
         for i in 0..5 {
-            let data = vec![i as f32; 10];
             let seq_no = wal
-                .append(&vec![i as u128], &vec![i as u128], &data, WalOpType::Delete)
+                .append(&vec![i as u128], &vec![i as u128], &[], WalOpType::Delete)
                 .unwrap();
             assert_eq!(seq_no, i as u64);
         }
@@ -230,7 +229,7 @@ mod tests {
             let decoded = entry.decode(10);
             assert_eq!(decoded.doc_ids, vec![i as u128]);
             assert_eq!(decoded.user_ids, vec![i as u128]);
-            assert_eq!(decoded.data, vec![i as f32; 10]);
+            assert_eq!(decoded.data, vec![] as Vec<f32>);
             assert_eq!(decoded.op_type, WalOpType::Delete);
         }
     }
