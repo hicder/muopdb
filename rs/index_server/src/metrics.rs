@@ -18,7 +18,8 @@ use tokio::pin;
 use tokio::signal::unix::{signal, SignalKind};
 
 lazy_static! {
-    /// A counter metric for the number of incoming requests to the metrics endpoint.
+    /// Add your own metrics here. Remember to add them to the `register_metrics` function.
+    /// Example: a counter metric for the number of incoming requests to the metrics endpoint.
     pub static ref METRICS_REQUESTS: Counter<u64> = Counter::default();
 }
 
