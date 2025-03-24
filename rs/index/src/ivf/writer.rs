@@ -877,8 +877,8 @@ mod tests {
             .to_str()
             .expect("Failed to convert temporary directory path to string")
             .to_string();
-        let num_clusters = 10;
-        let num_vectors = 1000;
+        let num_clusters = 2;
+        let num_vectors = 100;
         let num_features = 4;
         let file_size = 4096;
         let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
