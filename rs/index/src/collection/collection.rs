@@ -170,10 +170,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         let random_name = format!("tmp_segment_{}", rand::random::<u64>());
         let random_base_directory = format!("{}/{}", base_directory, random_name);
         std::fs::create_dir_all(&random_base_directory)?;
-        let mutable_segment = RwLock::new(MutableSegment::new(
-            segment_config.clone(),
-            random_base_directory,
-        )?);
+        let mutable_segment = MutableSegment::new(segment_config.clone(), random_base_directory)?;
 
         let wal = if segment_config.wal_file_size > 0 {
             let wal_directory = format!("{}/wal", base_directory);
@@ -210,7 +207,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                     .for_each(|(vector, doc_id)| {
                                         for user_id in user_ids {
                                             mutable_segment
-                                                .read()
                                                 .insert_for_user(
                                                     *user_id,
                                                     *doc_id,
@@ -222,7 +218,24 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                     });
                             }
                             WalOpType::Delete => {
-                                // TODO(hicder): Implement delete
+                                let doc_ids = wal_entry.doc_ids;
+                                let user_ids = wal_entry.user_ids;
+                                assert!(wal_entry.data.is_empty());
+                                let ver = versions.get(&version).unwrap();
+                                user_ids.iter().try_for_each(|&user_id| {
+                                    doc_ids.iter().try_for_each(|&doc_id| {
+                                        Self::remove_impl(
+                                            &ver,
+                                            &all_segments,
+                                            &mutable_segment,
+                                            /* pending_mutable_segment */ None,
+                                            user_id,
+                                            doc_id,
+                                            entry_seq_no,
+                                        )?;
+                                        Ok(())
+                                    })
+                                })?;
                             }
                         }
                     } else {
@@ -246,7 +259,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             versions_info,
             base_directory,
             mutable_segments: RwLock::new(MutableSegments {
-                mutable_segment,
+                mutable_segment: RwLock::new(mutable_segment),
                 pending_mutable_segment: RwLock::new(None),
             }),
             segment_config,
@@ -847,30 +860,50 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         &self.all_segments
     }
 
-    pub fn remove(&self, user_id: u128, doc_id: u128, sequence_number: u64) -> Result<()> {
-        {
-            let mutable_segments = self.mutable_segments.read();
-            mutable_segments
-                .mutable_segment
-                .read()
-                .invalidate(user_id, doc_id, sequence_number)?;
+    #[inline(always)]
+    fn remove_impl(
+        version: &TableOfContent,
+        all_segments: &DashMap<String, BoxedImmutableSegment<Q>>,
+        mutable_segment: &MutableSegment,
+        pending_mutable_segment: Option<&PendingMutableSegment>,
+        user_id: u128,
+        doc_id: u128,
+        sequence_number: u64,
+    ) -> Result<()> {
+        mutable_segment.invalidate(user_id, doc_id, sequence_number)?;
 
-            let pending_mutable_segment = mutable_segments.pending_mutable_segment.read();
-            if let Some(pending_mutable_segment) = pending_mutable_segment.as_ref() {
-                pending_mutable_segment.invalidate(user_id, doc_id)?;
-            }
+        if pending_mutable_segment.is_some() {
+            pending_mutable_segment
+                .unwrap()
+                .invalidate(user_id, doc_id)?;
         }
 
-        let version_info_read = self.versions_info.read();
-        let current_version = version_info_read.current_version;
-
-        let version = self.versions.get(&current_version).unwrap();
         for segment_name in version.toc.iter() {
-            let segment = self.all_segments.get(segment_name).unwrap();
+            let segment = all_segments.get(segment_name).unwrap();
             segment.remove(user_id, doc_id)?;
         }
 
         Ok(())
+    }
+
+    pub fn remove(&self, user_id: u128, doc_id: u128, sequence_number: u64) -> Result<()> {
+        let version_info_read = self.versions_info.read();
+        let current_version = version_info_read.current_version;
+        let version = self.versions.get(&current_version).unwrap();
+
+        let mutable_segments = self.mutable_segments.read();
+        let mutable_segment = mutable_segments.mutable_segment.read();
+        let pending_mutable_segment = mutable_segments.pending_mutable_segment.read();
+
+        Self::remove_impl(
+            &version,
+            &self.all_segments,
+            &mutable_segment,
+            pending_mutable_segment.as_ref(),
+            user_id,
+            doc_id,
+            sequence_number,
+        )
     }
 }
 
@@ -1293,6 +1326,9 @@ mod tests {
             collection
                 .write_to_wal(&[2], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
                 .await?;
+            collection
+                .write_to_wal(&[1], &[0], &[], WalOpType::Delete)
+                .await?;
 
             // Process all ops
             loop {
@@ -1303,6 +1339,7 @@ mod tests {
             }
         }
 
+        let segment1_name;
         {
             let reader = CollectionReader::new(base_directory.clone());
             let collection = reader.read::<NoQuantizerL2>()?;
@@ -1311,16 +1348,48 @@ mod tests {
             assert_eq!(toc.sequence_number, -1);
 
             collection.flush()?;
+            let segment_names = collection.get_all_segment_names();
+            assert_eq!(segment_names.len(), 1);
+
+            segment1_name = segment_names[0].clone();
+
+            let segment1 = collection
+                .all_segments()
+                .get(&segment1_name)
+                .unwrap()
+                .value()
+                .clone();
+            match segment1 {
+                BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                    assert!(immutable_segment.read().get_point_id(0, 1).is_none());
+                    assert!(immutable_segment.read().get_point_id(0, 2).is_some());
+                }
+                _ => {
+                    assert!(false);
+                }
+            }
             let toc = collection.get_current_toc();
             assert_eq!(toc.pending.len(), 0);
-            assert_eq!(toc.sequence_number, 1);
+            assert_eq!(toc.sequence_number, 2);
 
             // Write 2 more ops, but don't flush
+            collection
+                .write_to_wal(&[2], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
+                .await?;
             collection
                 .write_to_wal(&[3], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
                 .await?;
             collection
                 .write_to_wal(&[4], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
+                .await?;
+            collection
+                .write_to_wal(&[1], &[0], &[], WalOpType::Delete)
+                .await?;
+            collection
+                .write_to_wal(&[2], &[0], &[], WalOpType::Delete)
+                .await?;
+            collection
+                .write_to_wal(&[3], &[0], &[], WalOpType::Delete)
                 .await?;
         }
 
@@ -1329,12 +1398,52 @@ mod tests {
             let collection = reader.read::<NoQuantizerL2>()?;
             let toc = collection.get_current_toc();
             assert_eq!(toc.pending.len(), 0);
-            assert_eq!(toc.sequence_number, 1);
+            assert_eq!(toc.sequence_number, 2);
 
             collection.flush()?;
+            let segment_names = collection.get_all_segment_names();
+            assert_eq!(segment_names.len(), 2);
+
+            let segment2_name = if segment1_name == segment_names[0] {
+                segment_names[1].clone()
+            } else {
+                segment_names[0].clone()
+            };
+
+            let segment2 = collection
+                .all_segments()
+                .get(&segment2_name)
+                .unwrap()
+                .value()
+                .clone();
+            match segment2 {
+                BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                    assert!(immutable_segment.read().get_point_id(0, 1).is_none());
+                    assert!(immutable_segment.read().get_point_id(0, 2).is_none());
+                    assert!(immutable_segment.read().get_point_id(0, 3).is_none());
+                }
+                _ => {
+                    assert!(false);
+                }
+            }
+
+            let segment1 = collection
+                .all_segments()
+                .get(&segment1_name)
+                .unwrap()
+                .value()
+                .clone();
+            match segment1 {
+                BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                    assert!(immutable_segment.read().is_invalidated(0, 2)?);
+                }
+                _ => {
+                    assert!(false);
+                }
+            }
             let toc = collection.get_current_toc();
             assert_eq!(toc.pending.len(), 0);
-            assert_eq!(toc.sequence_number, 3);
+            assert_eq!(toc.sequence_number, 8);
         }
 
         Ok(())
