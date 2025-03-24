@@ -353,7 +353,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     assert!(op.data().is_empty());
                     user_ids.iter().try_for_each(|&user_id| {
                         doc_ids.iter().try_for_each(|&doc_id| {
-                            self.remove(user_id, doc_id)?;
+                            self.remove(user_id, doc_id, op.seq_no)?;
                             Ok(())
                         })
                     })?;
@@ -847,13 +847,13 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         &self.all_segments
     }
 
-    pub fn remove(&self, user_id: u128, doc_id: u128) -> Result<()> {
+    pub fn remove(&self, user_id: u128, doc_id: u128, sequence_number: u64) -> Result<()> {
         {
             let mutable_segments = self.mutable_segments.read();
             mutable_segments
                 .mutable_segment
                 .read()
-                .invalidate(user_id, doc_id)?;
+                .invalidate(user_id, doc_id, sequence_number)?;
 
             let pending_mutable_segment = mutable_segments.pending_mutable_segment.read();
             if let Some(pending_mutable_segment) = pending_mutable_segment.as_ref() {
@@ -1270,7 +1270,7 @@ mod tests {
         }
         let toc = collection.get_current_toc();
         assert_eq!(toc.pending.len(), 0);
-        assert_eq!(toc.sequence_number, 4);
+        assert_eq!(toc.sequence_number, 5);
         Ok(())
     }
 
@@ -1355,7 +1355,7 @@ mod tests {
         collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
         collection.insert_for_users(&[0], 2, &[2.0, 2.0, 3.0, 4.0], 1)?;
         collection.insert_for_users(&[0], 3, &[3.0, 2.0, 3.0, 4.0], 2)?;
-        assert!(collection.remove(0, 2).is_ok());
+        assert!(collection.remove(0, 2, 3).is_ok());
 
         let collection_cpy_for_flush = collection.clone();
         let collection_cpy_for_inval = collection.clone();
@@ -1378,7 +1378,7 @@ mod tests {
             // Do not invalidate too soon
             std::thread::sleep(std::time::Duration::from_millis(1));
             println!("Invalidate thread: Starting invalidation...");
-            assert!(collection_cpy_for_inval.remove(0, 1).is_ok());
+            assert!(collection_cpy_for_inval.remove(0, 1, 4).is_ok());
             println!(
                 "Invalidate thread: Invalidation completed in {:?}",
                 start.elapsed()
@@ -1442,15 +1442,15 @@ mod tests {
             // Do not invalidate too soon
             std::thread::sleep(std::time::Duration::from_millis(1));
             println!("Invalidate thread: Starting invalidation...");
-            assert!(collection_cpy_for_inval.remove(0, 1).is_ok());
+            assert!(collection_cpy_for_inval.remove(0, 1, 1).is_ok());
             assert!(collection_cpy_for_inval
                 .insert(1, &[1.0, 2.0, 3.0, 4.0])
                 .is_ok());
-            assert!(collection_cpy_for_inval.remove(0, 1).is_ok());
+            assert!(collection_cpy_for_inval.remove(0, 1, 2).is_ok());
             assert!(collection_cpy_for_inval
                 .insert(4, &[1.0, 2.0, 3.0, 4.0])
                 .is_ok());
-            assert!(collection_cpy_for_inval.remove(0, 4).is_ok());
+            assert!(collection_cpy_for_inval.remove(0, 4, 3).is_ok());
             println!(
                 "Invalidate thread: Invalidation completed in {:?}",
                 start.elapsed()
@@ -1507,7 +1507,7 @@ mod tests {
         assert!(collection
             .insert_for_users(&[0], 3, &[3.0, 2.0, 3.0, 4.0], 2)
             .is_ok());
-        assert!(collection.remove(0, 2).is_ok());
+        assert!(collection.remove(0, 2, 3).is_ok());
 
         assert!(collection.flush().is_ok());
         assert!(collection
@@ -1522,9 +1522,9 @@ mod tests {
         assert!(collection
             .insert_for_users(&[0], 4, &[3.0, 2.0, 3.0, 4.0], 3)
             .is_ok());
-        assert!(collection.remove(0, 2).is_ok());
-        assert!(collection.remove(0, 3).is_ok());
-        assert!(collection.remove(0, 4).is_ok());
+        assert!(collection.remove(0, 2, 4).is_ok());
+        assert!(collection.remove(0, 3, 5).is_ok());
+        assert!(collection.remove(0, 4, 6).is_ok());
 
         let segment_names = collection.get_all_segment_names();
         assert_eq!(segment_names.len(), 1);
