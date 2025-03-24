@@ -8,8 +8,8 @@ use log::info;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
     CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse, Id,
-    InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, SearchRequest,
-    SearchResponse,
+    InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, RemoveRequest,
+    RemoveResponse, SearchRequest, SearchResponse,
 };
 use tokio::sync::{Mutex, RwLock};
 use utils::mem::{bytes_to_u128s, ids_to_u128s, transmute_u8_to_slice};
@@ -283,6 +283,62 @@ impl IndexServer for IndexServerImpl {
                 );
 
                 Ok(tonic::Response::new(InsertResponse { num_docs_inserted }))
+            }
+            None => Err(tonic::Status::new(
+                tonic::Code::NotFound,
+                "Collection not found",
+            )),
+        }
+    }
+
+    async fn remove(
+        &self,
+        request: tonic::Request<RemoveRequest>,
+    ) -> Result<tonic::Response<RemoveResponse>, tonic::Status> {
+        let start = std::time::Instant::now();
+        let req = request.into_inner();
+        let collection_name = req.collection_name;
+        let ids = ids_to_u128s(&req.doc_ids);
+        let user_ids = ids_to_u128s(&req.user_ids);
+        let collection_opt = self
+            .collection_catalog
+            .lock()
+            .await
+            .get_collection(&collection_name)
+            .await;
+
+        match collection_opt {
+            Some(collection) => {
+                let seq_no = collection
+                    .write_to_wal(&ids, &user_ids, &[], WalOpType::Delete)
+                    .await
+                    .unwrap_or(0);
+                let num_docs_removed = ids.len() as u32;
+                info!(
+                    "[{}] Removed {} vectors from WAL with seq_no {}",
+                    collection_name, num_docs_removed, seq_no
+                );
+
+                let success = true;
+                if collection.use_wal() {
+                    return Ok(tonic::Response::new(RemoveResponse { success }));
+                }
+
+                user_ids.iter().for_each(|&user_id| {
+                    ids.iter().for_each(|&doc_id| {
+                        collection.remove(user_id, doc_id, seq_no).unwrap();
+                    })
+                });
+
+                // log the duration
+                let end = std::time::Instant::now();
+                let duration = end.duration_since(start);
+                info!(
+                    "[{}] Removed {} vectors in {:?}",
+                    collection_name, num_docs_removed, duration
+                );
+
+                Ok(tonic::Response::new(RemoveResponse { success }))
             }
             None => Err(tonic::Status::new(
                 tonic::Code::NotFound,

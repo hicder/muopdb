@@ -193,6 +193,17 @@ impl BoxedCollection {
         }
     }
 
+    pub fn remove(&self, user_id: u128, doc_id: u128, seq_no: u64) -> Result<()> {
+        match self {
+            BoxedCollection::CollectionNoQuantizationL2(collection) => {
+                collection.remove(user_id, doc_id, seq_no)
+            }
+            BoxedCollection::CollectionProductQuantization(collection) => {
+                collection.remove(user_id, doc_id, seq_no)
+            }
+        }
+    }
+
     pub fn flush(&self) -> Result<String> {
         match self {
             BoxedCollection::CollectionNoQuantizationL2(collection) => collection.flush(),
