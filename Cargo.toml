@@ -32,16 +32,16 @@ dashmap = "6.1.0"
 env_logger = "0.11.5"
 fs_extra = "1.3.0"
 futures = "0.3.31"
-hdf5 = { package = "hdf5-metno", version = "0.9.0" }
+hdf5 = { package = "hdf5-metno", version = "0.10.1" }
 index = { path = './rs/index' }
 index_writer = { path = './rs/index_writer' }
 kmeans = "0.11.0"
 lock_api = "0.4.12"
 log = "0.4.22"
 memmap2 = "0.9.5"
-ndarray = "0.15.6"
-ndarray-linalg = { version = "0.16.0", features = ["openblas-system"] }
-ndarray-rand = "0.14.0"
+ndarray = "0.16.1"
+ndarray-linalg = { version = "0.17.0", features = ["openblas-system"] }
+ndarray-rand = "0.15.0"
 num-traits = "0.2.19"
 odht = "0.3.1"
 ordered-float = "4.3.0"
@@ -51,7 +51,7 @@ proto = { path = './rs/proto' }
 quantization = { path = './rs/quantization' }
 rand = "0.8.5"
 rayon = "1.10.0"
-reqwest = {version = "0.12.11", features = ["json"]}
+reqwest = { version = "0.12.11", features = ["json"] }
 rkyv = "0.8.10"
 roaring = "0.10.6"
 serde = { version = "1.0", features = ["derive"] }
