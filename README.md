@@ -103,6 +103,27 @@ docker-compose up --build
 }
 ```
 
+5. Remove
+```
+{
+    "collection_name": "test-collection-2",
+    "user_ids": [
+        {
+            "low_id": 0,
+            "high_id": 0
+        }
+    ],
+    "doc_ids": [
+        {
+            "low_id": 0,
+            "high_id": 0
+        }
+    ]
+}
+```
+
+Querying the same vector as above should now return no result.
+
 ## Plans
 ### Phase 0 (Done)
 - [x] Query path
