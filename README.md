@@ -51,20 +51,25 @@ docker-compose up --build
 ```
 {
     "collection_name": "test-collection-2",
-    "high_ids": [
-        0
+    "doc_ids": [
+        {
+            "high_id": 0,
+            "low_id": 0
+        },
+        {
+            "high_id": 0,
+            "low_id": 1
+        }
     ],
-    "low_ids": [
-        4
-    ],
-    "high_user_ids": [
-        0
-    ],
-    "low_user_ids": [
-        0
+    "user_ids": [
+        {
+            "high_id": 0,
+            "low_id": 0
+        }
     ],
     "vectors": [
-        1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0
+        1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+        11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0
     ]
 }
 ```
@@ -88,8 +93,12 @@ docker-compose up --build
     "ef_construction": 100,
     "record_metrics": false,
     "top_k": 1,
-    "high_user_ids": [0],
-    "low_user_ids": [0],
+    "user_ids": [
+        {
+            "high_id": 0,
+            "low_id": 0
+        }
+    ],
     "vector": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 9.0, 9.0]
 }
 ```
