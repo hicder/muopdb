@@ -20,6 +20,8 @@ service IndexServer {
 
   rpc Insert(InsertRequest) returns (InsertResponse) {}
 
+  rpc Remove(RemoveRequest) returns (RemoveResponse) {}
+
   rpc InsertPacked(InsertPackedRequest) returns (InsertPackedResponse) {}
 
   rpc Flush(FlushRequest) returns (FlushResponse) {}
@@ -116,6 +118,21 @@ message InsertRequest {
 message InsertResponse {
   // The number of docs that were inserted.
   uint32 num_docs_inserted = 3;
+}
+
+message RemoveRequest {
+  string collection_name = 1;
+
+  repeated Id doc_ids = 2;
+
+  repeated Id user_ids = 3;
+}
+
+message RemoveResponse {
+  // Whether the request was successful, i.e.
+  // no errors (though the removal may have not
+  // been effective).
+  bool success = 1;
 }
 
 message FlushRequest {
