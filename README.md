@@ -36,17 +36,22 @@ docker-compose up --build
   * You can use Server Reflection in Postman - it will automatically detect the RPCs for MuopDB.
 ### Examples using Postman
 1. Create collection
-<img width="603" alt="Screenshot 2025-01-16 at 11 14 23 AM" src="https://github.com/user-attachments/assets/cadf00c4-199f-4756-8446-7fb08de2b0c0" />
+<img width="802" alt="Screenshot 2025-03-26 at 8 32 05 PM" src="https://github.com/user-attachments/assets/52af33b0-3698-4770-90af-ff679c42ffd6" />
+
 
 ```
 {
     "collection_name": "test-collection-2",
-    "num_features": 10
+    "num_features": 10,
+    "wal_file_size": 1024000000,
+    "max_time_to_flush_ms": 5000,
+    "max_pending_ops": 10
 }
 ```
 
 2. Insert some data
-<img width="603" alt="Screenshot 2025-01-17 at 9 45 20 AM" src="https://github.com/user-attachments/assets/ec15a3b7-3a0a-44a3-a929-29ac9b7a47fc" />
+
+<img width="782" alt="Screenshot 2025-03-26 at 8 24 52 PM" src="https://github.com/user-attachments/assets/6d6bed7d-637d-48c6-96b2-6a512c2f848a" />
 
 ```
 {
@@ -54,11 +59,7 @@ docker-compose up --build
     "doc_ids": [
         {
             "high_id": 0,
-            "low_id": 0
-        },
-        {
-            "high_id": 0,
-            "low_id": 1
+            "low_id": 100
         }
     ],
     "user_ids": [
@@ -68,29 +69,18 @@ docker-compose up --build
         }
     ],
     "vectors": [
-        1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
-        11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0
+        100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0
     ]
 }
 ```
 
-
-3. Flush
-<img width="603" alt="Screenshot 2025-01-16 at 10 51 42 AM" src="https://github.com/user-attachments/assets/83f0d12c-afde-47f5-9238-eedf31a4dad5" />
-
-```
-{
-    "collection_name": "test-collection-2",
-}
-```
-
-4. Query
-<img width="603" alt="Screenshot 2025-01-17 at 9 45 31 AM" src="https://github.com/user-attachments/assets/5859453b-5423-4321-a032-337a0a061ac1" />
+3. Search
+<img width="603" alt="Screenshot 2025-03-26 at 8 25 40 PM" src="https://github.com/user-attachments/assets/e01cfa34-ade0-467c-b4b5-5d9dbec65e88" />
 
 ```
 {
     "collection_name": "test-collection-2",
-    "ef_construction": 100,
+    "ef_construction": 200,
     "record_metrics": false,
     "top_k": 1,
     "user_ids": [
@@ -99,21 +89,25 @@ docker-compose up --build
             "low_id": 0
         }
     ],
-    "vector": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 9.0, 9.0]
+    "vector": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0]
 }
 ```
 
-5. Remove
+4. Remove
+
+<img width="603" alt="Screenshot 2025-03-26 at 8 25 57 PM" src="https://github.com/user-attachments/assets/7007eb6a-ca96-423d-b866-6ead2c5cbb22" />
+
+
 ```
 {
     "collection_name": "test-collection-2",
-    "user_ids": [
+    "doc_ids": [
         {
-            "low_id": 0,
+            "low_id": 100,
             "high_id": 0
         }
     ],
-    "doc_ids": [
+    "user_ids": [
         {
             "low_id": 0,
             "high_id": 0
@@ -122,7 +116,27 @@ docker-compose up --build
 }
 ```
 
-Querying the same vector as above should now return no result.
+5. Search again
+You should see something else
+<img width="603" alt="Screenshot 2025-03-26 at 8 26 15 PM" src="https://github.com/user-attachments/assets/33ab4e14-785c-4bd9-a9a0-668cc4c554c0" />
+
+```
+{
+    "collection_name": "test-collection-2",
+    "ef_construction": 200,
+    "record_metrics": false,
+    "top_k": 1,
+    "user_ids": [
+        {
+            "high_id": 0,
+            "low_id": 0
+        }
+    ],
+    "vector": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0]
+}
+```
+
+This time it should give you something else
 
 ## Plans
 ### Phase 0 (Done)
@@ -149,13 +163,14 @@ Querying the same vector as above should now return no result.
   - [x] Elias-Fano encoding for IVF
   - [x] Multi-user SPANN index
 ### Phase 3 (Ongoing)
-- [ ] Features
-  - [ ] Delete vector from collection
-- [ ] Database Management
+- [x] Features
+  - [x] Delete vector from collection
+- [x] Database Management
   - [x] Segment optimizer framework
   - [x] Write-ahead-log
   - [x] Segments merger
-  - [ ] Segments vacuum
+  - [x] Segments vacuum
+  - [ ] Automatic optimizer
 
 ### Building
 
