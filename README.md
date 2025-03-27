@@ -162,7 +162,7 @@ This time it should give you something else
   - [x] Optimizing index build time
   - [x] Elias-Fano encoding for IVF
   - [x] Multi-user SPANN index
-### Phase 3 (Ongoing)
+### Phase 3 (Done)
 - [x] Features
   - [x] Delete vector from collection
 - [x] Database Management
@@ -170,6 +170,13 @@ This time it should give you something else
   - [x] Write-ahead-log
   - [x] Segments merger
   - [x] Segments vacuum
+### Phase 4 (Ongoing)
+- [ ] Features
+  - [ ] Hybrid search
+- [ ] Database Management
+  - [ ] Optimizing deletion with bloom filter
+  - [ ] Automatic segment optimizer
+  - [ ] Cloud-native MuopDB (Kafka + S3)
 
 ### Building
 
