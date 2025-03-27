@@ -170,7 +170,6 @@ This time it should give you something else
   - [x] Write-ahead-log
   - [x] Segments merger
   - [x] Segments vacuum
-  - [ ] Automatic optimizer
 
 ### Building
 
