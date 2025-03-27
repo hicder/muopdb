@@ -14,7 +14,7 @@ use utils::{CalculateSquared, DistanceCalculator};
 use crate::quantization::{Quantizer, WritableQuantizer};
 
 pub const CODEBOOK_NAME: &str = "codebook";
-pub const CONFIG_NAME: &str = "product_quantizer_config.yaml";
+pub const CONFIG_FILE_NAME: &str = "product_quantizer_config.yaml";
 
 // (TODO): support inner PQ distance template
 #[derive(Debug, Clone)]
@@ -53,7 +53,7 @@ impl ProductQuantizerReader {
     }
 
     pub fn read<D: DistanceCalculator>(&self) -> Result<ProductQuantizer<D>> {
-        let config_path = Path::new(&self.base_directory).join(CONFIG_NAME);
+        let config_path = Path::new(&self.base_directory).join(CONFIG_FILE_NAME);
         if !config_path.exists() {
             return Err(Error::msg("Config file does not exist"));
         }
@@ -289,7 +289,7 @@ impl<D: DistanceCalculator> Quantizer for ProductQuantizer<D> {
 
 impl<D: DistanceCalculator> WritableQuantizer for ProductQuantizer<D> {
     fn write_to_directory(&self, base_directory: &str) -> Result<()> {
-        let config_path = Path::new(&base_directory).join(CONFIG_NAME);
+        let config_path = Path::new(&base_directory).join(CONFIG_FILE_NAME);
         if config_path.exists() {
             // Delete the file if exists
             std::fs::remove_file(config_path)?;
@@ -308,7 +308,7 @@ impl<D: DistanceCalculator> WritableQuantizer for ProductQuantizer<D> {
         codebook_file.write(&codebook_buffer)?;
 
         // Write config
-        let mut config_file = File::create(Path::new(&base_directory).join(CONFIG_NAME))?;
+        let mut config_file = File::create(Path::new(&base_directory).join(CONFIG_FILE_NAME))?;
         config_file.write(serde_yaml::to_string(&self.config())?.as_bytes())?;
         Ok(())
     }
