@@ -7,7 +7,7 @@ use config::collection::CollectionConfig;
 use config::enums::QuantizerType;
 use odht::HashTableOwned;
 use quantization::noq::noq::NoQuantizer;
-use quantization::pq::pq::{ProductQuantizerConfig, CODEBOOK_NAME};
+use quantization::pq::pq::{ProductQuantizerConfig, CODEBOOK_NAME, CONFIG_FILE_NAME};
 use quantization::quantization::WritableQuantizer;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::io::{append_file_to_writer, write_pad};
@@ -38,8 +38,7 @@ impl MultiSpannWriter {
                     num_bits: config.product_quantization_num_bits as u8,
                 };
 
-                let config_path =
-                    Path::new(&ivf_quantizer_directory).join("product_quantizer_config.yaml");
+                let config_path = Path::new(&ivf_quantizer_directory).join(CONFIG_FILE_NAME);
                 if config_path.exists() {
                     // Delete the file if exists
                     std::fs::remove_file(&config_path)?;
@@ -251,6 +250,7 @@ mod tests {
     use std::path::PathBuf;
 
     use config::collection::CollectionConfig;
+    use quantization::pq::pq::CONFIG_FILE_NAME;
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
 
@@ -352,8 +352,7 @@ mod tests {
         let ivf_directory_path = format!("{}/ivf", base_directory);
         let ivf_quantizer_directory = format!("{}/quantizer", ivf_directory_path);
         let ivf_quantizer_codebook_path = format!("{}/codebook", ivf_quantizer_directory.clone());
-        let ivf_quantizer_config_path =
-            format!("{}/product_quantizer_config.yaml", ivf_quantizer_directory);
+        let ivf_quantizer_config_path = format!("{}/{}", ivf_quantizer_directory, CONFIG_FILE_NAME);
 
         assert!(PathBuf::from(&centroids_directory_path).exists());
         assert!(PathBuf::from(&hnsw_vector_storage_path).exists());
