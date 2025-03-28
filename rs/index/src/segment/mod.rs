@@ -106,7 +106,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
                 BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                     immutable_segment
                         .read()
-                        .search_with_id(id, query.clone(), k, ef_construction, record_pages)
+                        .search_for_user(id, query.clone(), k, ef_construction, record_pages)
                         .await
                 }
                 BoxedImmutableSegment::PendingSegment(pending_segment) => {

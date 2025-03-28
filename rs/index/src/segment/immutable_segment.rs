@@ -62,16 +62,16 @@ impl<Q: Quantizer> Segment for ImmutableSegment<Q> {
 }
 
 impl<Q: Quantizer> ImmutableSegment<Q> {
-    pub async fn search_with_id(
+    pub async fn search_for_user(
         &self,
-        id: u128,
+        user_id: u128,
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
         record_pages: bool,
     ) -> Option<SearchResult> {
         self.index
-            .search_with_id(id, query, k, ef_construction, record_pages)
+            .search_for_user(user_id, query, k, ef_construction, record_pages)
             .await
     }
 }
@@ -138,7 +138,7 @@ mod tests {
         let num_probes = 2;
 
         let results = immutable_segment
-            .search_with_id(0, query.clone(), k, num_probes, false)
+            .search_for_user(0, query.clone(), k, num_probes, false)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -204,7 +204,7 @@ mod tests {
             .expect("Failed to invalidate"));
 
         let results = immutable_segment
-            .search_with_id(0, query.clone(), k, num_probes, false)
+            .search_for_user(0, query.clone(), k, num_probes, false)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
