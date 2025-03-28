@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "rs/aggregator",
+  "rs/bloom_filter",
   "rs/cli",
   "rs/compression",
   "rs/config",
@@ -23,6 +24,7 @@ anyhow = "1.0.90"
 approx = "0.5"
 atomic_refcell = "0.1.13"
 bit-vec = "0.8.0"
+bloom_filter = { path = './rs/bloom_filter' }
 byteorder = "1.5.0"
 clap = { version = "4.1.4", features = ["derive"] }
 compression = { path = './rs/compression' }
