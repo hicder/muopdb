@@ -1111,7 +1111,7 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
-        assert_eq!(result.id_with_scores[0].id, 1);
+        assert_eq!(result.id_with_scores[0].doc_id, 1);
 
         let optimizer = NoopOptimizer::new();
         collection.run_optimizer(&optimizer, &pending_segment)?;
@@ -1190,7 +1190,7 @@ mod tests {
                 .unwrap();
 
                 assert_eq!(result.id_with_scores.len(), 1);
-                assert_eq!(result.id_with_scores[0].id, 1);
+                assert_eq!(result.id_with_scores[0].doc_id, 1);
 
                 // Sleep randomly between 100ms and 200ms
                 let sleep_duration = rand::thread_rng().gen_range(100..200);

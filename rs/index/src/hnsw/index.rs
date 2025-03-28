@@ -106,7 +106,7 @@ impl<Q: Quantizer> Hnsw<Q> {
             .into_iter()
             .zip(doc_ids)
             .map(|(x, y)| IdWithScore {
-                id: y,
+                doc_id: y,
                 score: x.distance.to_f32().unwrap(),
             })
             .collect();
