@@ -167,7 +167,7 @@ impl IndexServer for IndexServerImpl {
             .await;
         if let Some(collection) = collection_opt {
             if let Ok(snapshot) = collection.get_snapshot() {
-                let result = SnapshotWithQuantizer::search_for_ids(
+                let result = SnapshotWithQuantizer::search_for_users(
                     snapshot,
                     &user_ids,
                     vec,

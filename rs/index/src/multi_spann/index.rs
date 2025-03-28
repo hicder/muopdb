@@ -138,15 +138,15 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         }
     }
 
-    pub async fn search_with_id(
+    pub async fn search_for_user(
         &self,
-        id: u128,
+        user_id: u128,
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
         record_pages: bool,
     ) -> Option<SearchResult> {
-        match self.get_or_create_index(id) {
+        match self.get_or_create_index(user_id) {
             Ok(index) => index.search(query, k, ef_construction, record_pages).await,
             Err(_) => None,
         }
@@ -214,7 +214,7 @@ mod tests {
         let num_probes = 2;
 
         let results = multi_spann_index
-            .search_with_id(0, query, k, num_probes, false)
+            .search_for_user(0, query, k, num_probes, false)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -316,7 +316,7 @@ mod tests {
             .expect("Failed to query invalidation"));
 
         let results = multi_spann_index
-            .search_with_id(0, query, k, num_probes, false)
+            .search_for_user(0, query, k, num_probes, false)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -387,7 +387,7 @@ mod tests {
         let num_probes = 2;
 
         let results = multi_spann_index
-            .search_with_id(0, query, k, num_probes, false)
+            .search_for_user(0, query, k, num_probes, false)
             .await
             .expect("Failed to search with Multi-SPANN index");
 

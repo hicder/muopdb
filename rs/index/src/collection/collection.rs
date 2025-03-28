@@ -1107,7 +1107,7 @@ mod tests {
         assert_eq!(segment_name, pending_segment);
 
         let result =
-            Snapshot::search_for_ids(snapshot, &[0], vec![1.0, 2.0, 3.0, 4.0], 10, 10, false)
+            Snapshot::search_for_users(snapshot, &[0], vec![1.0, 2.0, 3.0, 4.0], 10, 10, false)
                 .await
                 .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
@@ -1178,7 +1178,7 @@ mod tests {
                 let c = collection_cpy_for_query.clone();
                 let snapshot = c.get_snapshot().unwrap();
                 let snapshot = Arc::new(snapshot);
-                let result = Snapshot::search_for_ids(
+                let result = Snapshot::search_for_users(
                     snapshot,
                     &[0],
                     vec![1.0, 2.0, 3.0, 4.0],

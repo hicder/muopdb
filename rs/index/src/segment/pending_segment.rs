@@ -285,7 +285,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
             match &*index {
                 Some(index) => {
                     index
-                        .search_with_id(id, query.clone(), k, ef_construction, record_pages)
+                        .search_for_user(id, query.clone(), k, ef_construction, record_pages)
                         .await
                 }
                 None => unreachable!("Index should not be None if use_internal_index is set"),

@@ -104,7 +104,7 @@ mod tests {
 
         let snapshot = collection.get_snapshot()?;
         let result = snapshot
-            .search_with_id(0, vec![11.0, 12.0, 13.0], 3, 10, false)
+            .search_for_user(0, vec![11.0, 12.0, 13.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 2);
@@ -118,7 +118,7 @@ mod tests {
         assert_eq!(result_ids, vec![1, 2]);
 
         let result = snapshot
-            .search_with_id(0, vec![11.0, 12.0, 13.0], 1, 10, false)
+            .search_for_user(0, vec![11.0, 12.0, 13.0], 1, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
@@ -183,7 +183,7 @@ mod tests {
 
         let snapshot = collection.get_snapshot()?;
         let result = snapshot
-            .search_with_id(0, vec![20.0, 21.0, 22.0], 1, 10, false)
+            .search_for_user(0, vec![20.0, 21.0, 22.0], 1, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
@@ -239,7 +239,7 @@ mod tests {
 
         let snapshot = collection.get_snapshot()?;
         let result = snapshot
-            .search_with_id(0, vec![11.0, 12.0, 13.0], 3, 10, false)
+            .search_for_user(0, vec![11.0, 12.0, 13.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
@@ -253,7 +253,7 @@ mod tests {
         assert_eq!(result_ids, vec![101]);
 
         let result = snapshot
-            .search_with_id(1, vec![11.0, 12.0, 13.0], 3, 10, false)
+            .search_for_user(1, vec![11.0, 12.0, 13.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
@@ -324,7 +324,7 @@ mod tests {
 
         let snapshot = collection.get_snapshot()?;
         let result = snapshot
-            .search_with_id(0, vec![20.0, 21.0, 22.0], 3, 10, false)
+            .search_for_user(0, vec![20.0, 21.0, 22.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -338,7 +338,7 @@ mod tests {
         assert_eq!(result_ids, vec![11, 12, 13]);
 
         let result = snapshot
-            .search_with_id(1, vec![20.0, 21.0, 22.0], 3, 10, false)
+            .search_for_user(1, vec![20.0, 21.0, 22.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 2);
