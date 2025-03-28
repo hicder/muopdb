@@ -112,7 +112,7 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![1, 2]);
@@ -125,7 +125,7 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![2]);
@@ -191,7 +191,7 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![3]);
@@ -247,7 +247,7 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![101]);
@@ -261,7 +261,7 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![202]);
@@ -332,7 +332,7 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![11, 12, 13]);
@@ -346,7 +346,7 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![201, 202]);

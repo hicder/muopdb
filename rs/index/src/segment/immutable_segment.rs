@@ -143,9 +143,9 @@ mod tests {
             .expect("Failed to search with Multi-SPANN index");
 
         assert_eq!(results.id_with_scores.len(), k);
-        assert_eq!(results.id_with_scores[0].id, num_vectors);
-        assert_eq!(results.id_with_scores[1].id, 3);
-        assert_eq!(results.id_with_scores[2].id, 2);
+        assert_eq!(results.id_with_scores[0].doc_id, num_vectors);
+        assert_eq!(results.id_with_scores[1].doc_id, 3);
+        assert_eq!(results.id_with_scores[2].doc_id, 2);
     }
 
     #[tokio::test]
@@ -209,9 +209,9 @@ mod tests {
             .expect("Failed to search with Multi-SPANN index");
 
         assert_eq!(results.id_with_scores.len(), k);
-        assert_eq!(results.id_with_scores[0].id, 3);
-        assert_eq!(results.id_with_scores[1].id, 2);
-        assert_eq!(results.id_with_scores[2].id, 4);
+        assert_eq!(results.id_with_scores[0].doc_id, 3);
+        assert_eq!(results.id_with_scores[1].doc_id, 2);
+        assert_eq!(results.id_with_scores[2].doc_id, 4);
 
         assert!(!immutable_segment
             .remove(1, num_vectors as u128)

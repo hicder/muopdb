@@ -184,8 +184,8 @@ impl IndexServer for IndexServerImpl {
                         for id_with_score in result.id_with_scores {
                             // TODO(hicder): Support u128
                             doc_ids.push(Id {
-                                low_id: id_with_score.id as u64,
-                                high_id: (id_with_score.id >> 64) as u64,
+                                low_id: id_with_score.doc_id as u64,
+                                high_id: (id_with_score.doc_id >> 64) as u64,
                             });
 
                             scores.push(id_with_score.score);

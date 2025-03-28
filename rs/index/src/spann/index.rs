@@ -99,7 +99,7 @@ impl<Q: Quantizer> Spann<Q> {
             .filter(|centroid_and_distance| {
                 centroid_and_distance.score - nearest_distance <= nearest_distance * 0.1
             })
-            .map(|x| x.id as usize)
+            .map(|x| x.doc_id as usize)
             .collect();
 
         debug!(
@@ -195,8 +195,8 @@ mod tests {
             .expect("IVF search should return a result");
 
         assert_eq!(results.id_with_scores.len(), k);
-        assert_eq!(results.id_with_scores[0].id, 4); // Closest to [4.0, 4.0, 4.0, 4.0]
-        assert_eq!(results.id_with_scores[1].id, 3); // Next is [3.0, 3.0, 3.0, 3.0]
+        assert_eq!(results.id_with_scores[0].doc_id, 4); // Closest to [4.0, 4.0, 4.0, 4.0]
+        assert_eq!(results.id_with_scores[1].doc_id, 3); // Next is [3.0, 3.0, 3.0, 3.0]
     }
 
     #[tokio::test]
@@ -270,8 +270,8 @@ mod tests {
             .expect("IVF search should return a result");
 
         assert_eq!(results.id_with_scores.len(), k);
-        assert_eq!(results.id_with_scores[0].id, 3); // Closest to [3.0, 3.0, 3.0, 3.0]
-        assert_eq!(results.id_with_scores[1].id, 5); // Next is [5.0, 5.0, 5.0, 5.0]
+        assert_eq!(results.id_with_scores[0].doc_id, 3); // Closest to [3.0, 3.0, 3.0, 3.0]
+        assert_eq!(results.id_with_scores[1].doc_id, 5); // Next is [5.0, 5.0, 5.0, 5.0]
     }
 
     #[tokio::test]

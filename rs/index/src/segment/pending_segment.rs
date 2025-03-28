@@ -273,7 +273,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
                     // Filter out invalidated IDs
                     result
                         .id_with_scores
-                        .retain(|id_with_score| !invalidated_ids.contains(&id_with_score.id));
+                        .retain(|id_with_score| !invalidated_ids.contains(&id_with_score.doc_id));
 
                     results.id_with_scores.extend(result.id_with_scores);
                     results.stats.merge(&result.stats);
@@ -374,7 +374,7 @@ mod tests {
             .await;
         let res = results.unwrap();
         assert_eq!(res.id_with_scores.len(), 1);
-        assert_eq!(res.id_with_scores[0].id, 0);
+        assert_eq!(res.id_with_scores[0].doc_id, 0);
 
         Ok(())
     }
@@ -416,7 +416,7 @@ mod tests {
             .await;
         let res = results.unwrap();
         assert_eq!(res.id_with_scores.len(), 1);
-        assert_eq!(res.id_with_scores[0].id, 2);
+        assert_eq!(res.id_with_scores[0].doc_id, 2);
 
         Ok(())
     }
@@ -464,7 +464,7 @@ mod tests {
             .await;
         let res = results.unwrap();
         assert_eq!(res.id_with_scores.len(), 1);
-        assert_eq!(res.id_with_scores[0].id, 2);
+        assert_eq!(res.id_with_scores[0].doc_id, 2);
 
         Ok(())
     }
