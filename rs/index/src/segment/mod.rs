@@ -29,7 +29,7 @@ pub trait Segment {
 
     /// Returns true if the segment may contain the given document.
     /// False if the segment definitely does not contain the document.
-    fn may_contains(&self, doc_id: u128) -> bool;
+    fn may_contain(&self, doc_id: u128) -> bool;
 
     /// Returns the name of the segment.
     fn name(&self) -> String;
@@ -155,16 +155,16 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for BoxedImmutableSegment<Q> {
         }
     }
 
-    fn may_contains(&self, doc_id: u128) -> bool {
+    fn may_contain(&self, doc_id: u128) -> bool {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment.read().may_contains(doc_id)
+                immutable_segment.read().may_contain(doc_id)
             }
             BoxedImmutableSegment::PendingSegment(pending_segment) => {
-                pending_segment.read().may_contains(doc_id)
+                pending_segment.read().may_contain(doc_id)
             }
             BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
-                mocked_segment.read().may_contains(doc_id)
+                mocked_segment.read().may_contain(doc_id)
             }
         }
     }
@@ -237,7 +237,7 @@ impl Segment for MockedSegment {
         todo!()
     }
 
-    fn may_contains(&self, doc_id: u128) -> bool {
+    fn may_contain(&self, doc_id: u128) -> bool {
         todo!()
     }
 
