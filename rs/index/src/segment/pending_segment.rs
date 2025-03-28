@@ -224,7 +224,7 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
         }
     }
 
-    fn may_contains(&self, _doc_id: u128) -> bool {
+    fn may_contain(&self, _doc_id: u128) -> bool {
         todo!()
     }
 
