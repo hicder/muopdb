@@ -42,6 +42,10 @@ impl InvalidatedIdsStorage {
         }
     }
 
+    pub fn invalidated_documents_size(&self) -> usize {
+        self.num_entries() * BYTES_PER_INVALIDATION
+    }
+
     pub fn read(base_directory: &str) -> Result<Self> {
         let base_path = Path::new(base_directory);
         // Create a storage from scratch if none exists.

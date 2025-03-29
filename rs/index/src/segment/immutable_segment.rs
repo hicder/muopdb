@@ -29,6 +29,10 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
         self.index.size_in_bytes()
     }
 
+    pub fn size_in_bytes_deleted_documents(&self) -> usize {
+        self.index.size_in_bytes_deleted_documents()
+    }
+
     pub fn get_point_id(&self, user_id: u128, doc_id: u128) -> Option<u32> {
         self.index.get_point_id(user_id, doc_id)
     }

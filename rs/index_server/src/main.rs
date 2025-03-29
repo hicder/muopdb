@@ -89,6 +89,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let collection_manager_clone_for_cleanup = collection_manager.clone();
+    let automatic_segments_cleanup_thread = spawn(async move {
+        loop {
+            let collection_manager_read = collection_manager_clone_for_cleanup.read().await;
+            let collection_catalog_clone = collection_manager_read.get_collection_catalog();
+            let collection_catalog = collection_catalog_clone.lock().await;
+            let collections = collection_catalog.get_all_collections().await;
+            
+            for (_name, collection) in collections {
+                collection.auto_vacuum().unwrap();
+            }
+            sleep(std::time::Duration::from_secs(60)).await;
+        }
+    });
+    automatic_segments_cleanup_thread.await?;
+
     let mut ingestion_worker_threads = Vec::new();
     for i in 0..arg.num_ingestion_workers {
         let collection_manager_process_ops_clone = collection_manager.clone();
@@ -167,7 +183,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         thread.await?;
     }
     for thread in flush_worker_threads {
-        thread.await?;
     }
     Ok(())
 }

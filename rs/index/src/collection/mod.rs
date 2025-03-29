@@ -258,4 +258,11 @@ impl BoxedCollection {
             }
         }
     }
+
+    pub fn auto_vacuum(&self) -> Result<()> {
+        match self {
+            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.auto_vacuum(),
+            BoxedCollection::CollectionProductQuantization(collection) => collection.auto_vacuum(),
+        }
+    }
 }

@@ -34,6 +34,10 @@ impl CollectionCatalog {
     pub async fn collection_exists(&self, name: &str) -> bool {
         self.collections.contains_key(name)
     }
+
+    pub async fn get_all_collections(&self) -> HashMap<String, BoxedCollection> {
+        self.collections.clone()
+    }
 }
 
 #[cfg(test)]
