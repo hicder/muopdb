@@ -273,4 +273,8 @@ impl CollectionManager {
         let hash = hasher.finish();
         hash as u32 % num_workers
     }
+
+    pub fn get_collection_catalog(&self) -> Arc<Mutex<CollectionCatalog>> {
+        self.collection_catalog.clone()
+    }
 }
