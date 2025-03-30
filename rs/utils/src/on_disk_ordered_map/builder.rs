@@ -66,6 +66,8 @@ impl OnDiskOrderedMapBuilder {
 
         // Max size of varint is 9 bytes
         let mut buffer = vec![0u8; 9];
+
+        // For each tuple, we will write shared, unshared, unshared key, value
         for (key, value) in self.map.iter() {
             if prev_key.is_empty() {
                 indices.push(IndexItem {
