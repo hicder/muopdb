@@ -970,9 +970,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     }
 
     pub fn auto_vacuum(&self) -> Result<()> {
-        // Initialize an empty vector to store the segments
-        let mut qualified_segments = Vec::new();
-        
         // Loop through all the segments and filter out segments that has a high deleted ratio
         for segment in self.all_segments.iter() {
             let segment_name = segment.key();
@@ -989,14 +986,14 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
             // If more than 10% documents are deleted, then add the segment to the list
             if deleted_ratio > 0.1 {
-                qualified_segments.push(segment_name.clone());
-            }            
+                let segments_to_optimize = vec![segment_name.clone()];
+                let pending_segment = self.init_optimizing(&segments_to_optimize)?;
+                let vacuum_optimizer = VacuumOptimizer::<Q>::new();
+                self
+                    .run_optimizer(&vacuum_optimizer, &pending_segment)?;
+            }
         }
 
-        let pending_segment = self.init_optimizing(&qualified_segments)?;
-        let vacuum_optimizer = VacuumOptimizer::<Q>::new();
-        self
-            .run_optimizer(&vacuum_optimizer, &pending_segment)?;
         Ok(())
     }
 }
