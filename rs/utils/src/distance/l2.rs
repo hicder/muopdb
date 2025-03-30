@@ -58,7 +58,7 @@ impl CalculateSquared for L2DistanceCalculator {
             ret += sum_4.reduce_sum();
         }
 
-        if a_vec.len() > 0 {
+        if !a_vec.is_empty() {
             for i in 0..a_vec.len() {
                 ret += (a_vec[i] - b_vec[i]).powi(2);
             }
