@@ -989,8 +989,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 let segments_to_optimize = vec![segment_name.clone()];
                 let pending_segment = self.init_optimizing(&segments_to_optimize)?;
                 let vacuum_optimizer = VacuumOptimizer::<Q>::new();
-                self
-                    .run_optimizer(&vacuum_optimizer, &pending_segment)?;
+                self.run_optimizer(&vacuum_optimizer, &pending_segment)?;
             }
         }
 
