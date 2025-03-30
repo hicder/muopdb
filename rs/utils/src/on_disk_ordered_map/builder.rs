@@ -5,6 +5,7 @@ use std::io::{BufWriter, Write};
 use anyhow::Result;
 
 use super::encoder::IntegerCodec;
+use crate::io::append_file_to_writer;
 
 const PAGE_SIZE: usize = 1024 * 1024; // 1 MB
 
@@ -24,6 +25,7 @@ struct IndexItem {
 /// Builder for the on disk ordered map. This will accumulate the keys and values in a BTreeMap.
 /// Then on build, it will write the map to a file.
 impl OnDiskOrderedMapBuilder {
+    #[allow(dead_code)]
     fn add(&mut self, key: String, value: u64) {
         self.map.insert(key, value);
     }
@@ -40,12 +42,14 @@ impl OnDiskOrderedMapBuilder {
         let mut data_file = OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(data_path)?;
         let mut data_buffered_writer = BufWriter::new(&mut data_file);
 
         let mut index_file = OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(tmp_dir.join("index.bin"))?;
         let mut index_buffered_writer = BufWriter::new(&mut index_file);
 
@@ -114,10 +118,84 @@ impl OnDiskOrderedMapBuilder {
         }
 
         // Write index to file
-        for index in indices {}
+        let mut index_len = 0u64;
+        for index in indices {
+            // Write key len first
+            buffer.fill(0);
+            let len = codec.encode_u32(index.key.len() as u32, &mut buffer);
+            index_buffered_writer.write_all(&buffer[..len])?;
+            index_buffered_writer.write_all(index.key.as_bytes())?;
+            index_len += (len + index.key.len()) as u64;
+
+            // Write value
+            buffer.fill(0);
+            let len = codec.encode_u64(index.value, &mut buffer);
+            index_buffered_writer.write_all(&buffer[..len])?;
+            index_len += len as u64;
+        }
 
         data_buffered_writer.flush()?;
         data_buffered_writer.flush()?;
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(file_path)?;
+
+        let mut file_buffered_writer = BufWriter::new(&mut file);
+
+        // write codec type
+        file_buffered_writer.write_all(&codec.id().to_le_bytes())?;
+        // write index length
+        file_buffered_writer.write_all(&index_len.to_le_bytes())?;
+        // copy index data and append to file
+        append_file_to_writer(
+            tmp_dir.join("index.bin").to_str().unwrap(),
+            &mut file_buffered_writer,
+        )?;
+        append_file_to_writer(
+            tmp_dir.join("data.bin").to_str().unwrap(),
+            &mut file_buffered_writer,
+        )?;
+
+        file_buffered_writer.flush()?;
+        // rm tmp dir
+        std::fs::remove_dir_all(tmp_dir)?;
+
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::on_disk_ordered_map::encoder::VarintIntegerCodec;
+
+    #[test]
+    fn test_map_builder() {
+        let tmp_dir = tempdir::TempDir::new("test_builder").unwrap();
+        let base_directory = tmp_dir.path().to_str().unwrap();
+        let final_map_file_path = base_directory.to_string() + "/map.bin";
+
+        let mut builder = OnDiskOrderedMapBuilder {
+            map: BTreeMap::new(),
+        };
+        builder.add(String::from("key1"), 1);
+        builder.add(String::from("key2"), 2);
+        builder.add(String::from("key3"), 3);
+
+        let codec = VarintIntegerCodec {};
+        builder.build(codec, &final_map_file_path).unwrap();
+
+        // Check that only map.bin is there
+        assert_eq!(std::fs::read_dir(base_directory).unwrap().count(), 1);
+        assert!(std::fs::read_dir(base_directory)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path()
+            .ends_with("map.bin"));
     }
 }

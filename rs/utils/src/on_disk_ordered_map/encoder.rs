@@ -6,6 +6,8 @@ pub struct DecodingResult<T> {
 }
 
 pub trait IntegerCodec {
+    fn id(&self) -> u8;
+
     fn encode_u64(&self, value: u64, buf: &mut [u8]) -> usize;
     fn decode_u64(&self, buf: &[u8]) -> DecodingResult<u64>;
 
@@ -16,6 +18,10 @@ pub trait IntegerCodec {
 pub struct FixedIntegerCodec {}
 
 impl IntegerCodec for FixedIntegerCodec {
+    fn id(&self) -> u8 {
+        0
+    }
+
     fn encode_u64(&self, value: u64, buf: &mut [u8]) -> usize {
         buf[..8].copy_from_slice(&value.to_le_bytes());
         8
@@ -44,6 +50,10 @@ impl IntegerCodec for FixedIntegerCodec {
 pub struct VarintIntegerCodec {}
 
 impl IntegerCodec for VarintIntegerCodec {
+    fn id(&self) -> u8 {
+        1
+    }
+
     #[inline(always)]
     fn encode_u64(&self, value: u64, buf: &mut [u8]) -> usize {
         value.encode_var(buf)

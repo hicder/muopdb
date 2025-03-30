@@ -5,8 +5,8 @@ pub mod distance;
 pub mod io;
 pub mod kmeans_builder;
 pub mod mem;
-pub mod test_utils;
 pub mod on_disk_ordered_map;
+pub mod test_utils;
 
 pub trait DistanceCalculator {
     /// Compute distance between two vectors.
