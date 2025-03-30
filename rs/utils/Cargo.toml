@@ -5,17 +5,18 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.90"
-hdf5.workspace = true
-ndarray.workspace = true
-rand.workspace = true
-strum.workspace = true
 criterion.workspace = true
-tempdir.workspace = true
+env_logger.workspace = true
+hdf5.workspace = true
+integer-encoding.workspace = true
 kmeans.workspace = true
 log.workspace = true
-env_logger.workspace = true
-rayon.workspace = true
+ndarray.workspace = true
 proto.workspace = true
+rand.workspace = true
+rayon.workspace = true
+strum.workspace = true
+tempdir.workspace = true
 
 [[bench]]
 name = "l2"

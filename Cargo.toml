@@ -35,6 +35,7 @@ futures = "0.3.31"
 hdf5 = { package = "hdf5-metno", version = "0.10.1" }
 index = { path = './rs/index' }
 index_writer = { path = './rs/index_writer' }
+integer-encoding = "4.0.2"
 kmeans = "0.11.0"
 lock_api = "0.4.12"
 log = "0.4.22"
