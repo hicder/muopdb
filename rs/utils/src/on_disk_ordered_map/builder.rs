@@ -172,7 +172,7 @@ impl OnDiskOrderedMapBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::on_disk_ordered_map::encoder::VarintIntegerCodec;
+    use crate::on_disk_ordered_map::encoder::{FixedIntegerCodec, VarintIntegerCodec};
 
     #[test]
     fn test_map_builder() {
@@ -188,6 +188,33 @@ mod tests {
         builder.add(String::from("key3"), 3);
 
         let codec = VarintIntegerCodec {};
+        builder.build(codec, &final_map_file_path).unwrap();
+
+        // Check that only map.bin is there
+        assert_eq!(std::fs::read_dir(base_directory).unwrap().count(), 1);
+        assert!(std::fs::read_dir(base_directory)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path()
+            .ends_with("map.bin"));
+    }
+
+    #[test]
+    fn test_map_builder_fixed_integer_codec() {
+        let tmp_dir = tempdir::TempDir::new("test_builder").unwrap();
+        let base_directory = tmp_dir.path().to_str().unwrap();
+        let final_map_file_path = base_directory.to_string() + "/map.bin";
+
+        let mut builder = OnDiskOrderedMapBuilder {
+            map: BTreeMap::new(),
+        };
+        builder.add(String::from("key1"), 1);
+        builder.add(String::from("key2"), 2);
+        builder.add(String::from("key3"), 3);
+
+        let codec = FixedIntegerCodec {};
         builder.build(codec, &final_map_file_path).unwrap();
 
         // Check that only map.bin is there
