@@ -181,6 +181,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         thread.await?;
     }
     for thread in flush_worker_threads {
+        thread.await?;
     }
     Ok(())
 }
