@@ -984,7 +984,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             let deleted_size = segment_value.size_in_bytes_deleted_documents();
             let deleted_ratio = deleted_size as f32 / total_size as f32;
 
-            // If more than 10% documents are deleted, then add the segment to the list
+            // If more than 10% documents are deleted, then run vacuum optimizer
             if deleted_ratio > 0.1 {
                 let segments_to_optimize = vec![segment_name.clone()];
                 let pending_segment = self.init_optimizing(&segments_to_optimize)?;
