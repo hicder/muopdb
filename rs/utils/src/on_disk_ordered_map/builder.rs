@@ -59,7 +59,7 @@ impl OnDiskOrderedMapBuilder {
         // write the size of the key with varint first
         // avoid allocating a new buffer for each key
         let mut run_length = 0;
-        let mut prev_key = vec![0u8; max_key_len];
+        let mut prev_key = Vec::<u8>::with_capacity(max_key_len);
 
         let mut indices = vec![];
         let mut total_written = 0;
@@ -137,7 +137,7 @@ impl OnDiskOrderedMapBuilder {
         }
 
         data_buffered_writer.flush()?;
-        data_buffered_writer.flush()?;
+        index_buffered_writer.flush()?;
 
         let mut file = OpenOptions::new()
             .create(true)
