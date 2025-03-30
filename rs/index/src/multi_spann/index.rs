@@ -117,7 +117,9 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
     }
 
     pub fn size_in_bytes_deleted_documents(&self) -> usize {
-        self.invalidated_ids_storage.read().invalidated_documents_size()
+        self.invalidated_ids_storage
+            .read()
+            .invalidated_documents_size()
     }
 
     pub fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
