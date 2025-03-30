@@ -274,7 +274,25 @@ impl CollectionManager {
         hash as u32 % num_workers
     }
 
-    pub fn get_collection_catalog(&self) -> Arc<Mutex<CollectionCatalog>> {
-        self.collection_catalog.clone()
+    pub async fn auto_vacuum(&self) -> Result<()> {
+        let collections = self
+            .collection_catalog
+            .lock()
+            .await
+            .get_all_collection_names_sorted()
+            .await;
+
+        for collection_name in collections {
+            let collection = self
+                .collection_catalog
+                .lock()
+                .await
+                .get_collection(&collection_name)
+                .await
+                .unwrap();
+
+            collection.auto_vacuum().unwrap();
+        }
+        Ok(())
     }
 }
