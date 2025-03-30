@@ -1435,6 +1435,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "integer-encoding"
+version = "4.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d762194228a2f1c11063e46e32e5acb96e66e906382b9eb5441f2e0504bbd5a"
+
+[[package]]
 name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3347,6 +3353,7 @@ dependencies = [
  "criterion",
  "env_logger",
  "hdf5-metno",
+ "integer-encoding",
  "kmeans",
  "log",
  "ndarray",
