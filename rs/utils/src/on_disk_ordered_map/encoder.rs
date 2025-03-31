@@ -5,13 +5,24 @@ pub struct DecodingResult<T> {
     pub num_bytes_read: usize,
 }
 
+/// Codec used to encode and decode integers.
 pub trait IntegerCodec {
     fn id(&self) -> u8;
 
+    /// Encode a u64 value using this codec into the provided buffer.
+    /// Returns the number of bytes written.
     fn encode_u64(&self, value: u64, buf: &mut [u8]) -> usize;
+    
+    /// Decode a u64 value using this codec from the provided buffer.
+    /// Returns a DecodingResult containing the decoded value and the number of bytes read.
     fn decode_u64(&self, buf: &[u8]) -> DecodingResult<u64>;
 
+    /// Encode a u32 value using this codec into the provided buffer.
+    /// Returns the number of bytes written.
     fn encode_u32(&self, value: u32, buf: &mut [u8]) -> usize;
+    
+    /// Decode a u32 value using this codec from the provided buffer.
+    /// Returns a DecodingResult containing the decoded value and the number of bytes read.
     fn decode_u32(&self, buf: &[u8]) -> DecodingResult<u32>;
 }
 
