@@ -25,6 +25,12 @@ struct IndexItem {
 /// Builder for the on disk ordered map. This will accumulate the keys and values in a BTreeMap.
 /// Then on build, it will write the map to a file.
 impl OnDiskOrderedMapBuilder {
+    pub fn new() -> Self {
+        OnDiskOrderedMapBuilder {
+            map: BTreeMap::new()
+        }
+    }
+    
     #[allow(dead_code)]
     fn add(&mut self, key: String, value: u64) {
         self.map.insert(key, value);
