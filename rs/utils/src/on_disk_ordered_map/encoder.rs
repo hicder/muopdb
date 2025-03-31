@@ -18,15 +18,19 @@ pub trait IntegerCodec {
 pub struct FixedIntegerCodec {}
 
 impl IntegerCodec for FixedIntegerCodec {
+    #[inline(always)]
     fn id(&self) -> u8 {
         0
     }
 
+    #[inline(always)]
     fn encode_u64(&self, value: u64, buf: &mut [u8]) -> usize {
         buf[..8].copy_from_slice(&value.to_le_bytes());
         8
     }
 
+
+    #[inline(always)]
     fn decode_u64(&self, buf: &[u8]) -> DecodingResult<u64> {
         DecodingResult {
             value: u64::from_le_bytes(buf[..8].try_into().unwrap()),
@@ -34,11 +38,13 @@ impl IntegerCodec for FixedIntegerCodec {
         }
     }
 
+    #[inline(always)]
     fn encode_u32(&self, value: u32, buf: &mut [u8]) -> usize {
         buf[..4].copy_from_slice(&value.to_le_bytes());
         4
     }
 
+    #[inline(always)]
     fn decode_u32(&self, buf: &[u8]) -> DecodingResult<u32> {
         DecodingResult {
             value: u32::from_le_bytes(buf[..4].try_into().unwrap()),
@@ -50,6 +56,7 @@ impl IntegerCodec for FixedIntegerCodec {
 pub struct VarintIntegerCodec {}
 
 impl IntegerCodec for VarintIntegerCodec {
+    #[inline(always)]
     fn id(&self) -> u8 {
         1
     }
