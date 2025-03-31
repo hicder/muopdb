@@ -27,12 +27,12 @@ struct IndexItem {
 impl OnDiskOrderedMapBuilder {
     pub fn new() -> Self {
         OnDiskOrderedMapBuilder {
-            map: BTreeMap::new()
+            map: BTreeMap::new(),
         }
     }
-    
+
     #[allow(dead_code)]
-    fn add(&mut self, key: String, value: u64) {
+    pub fn add(&mut self, key: String, value: u64) {
         self.map.insert(key, value);
     }
 
@@ -156,7 +156,10 @@ impl OnDiskOrderedMapBuilder {
         // write codec type
         file_buffered_writer.write_all(&codec.id().to_le_bytes())?;
         // write index length
-        file_buffered_writer.write_all(&index_len.to_le_bytes())?;
+        buffer.fill(0);
+        let len = codec.encode_u64(index_len, &mut buffer);
+        file_buffered_writer.write_all(&buffer[..len])?;
+
         // copy index data and append to file
         append_file_to_writer(
             tmp_dir.join("index.bin").to_str().unwrap(),
