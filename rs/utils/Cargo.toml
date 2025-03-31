@@ -11,6 +11,7 @@ hdf5.workspace = true
 integer-encoding.workspace = true
 kmeans.workspace = true
 log.workspace = true
+memmap2.workspace = true
 ndarray.workspace = true
 proto.workspace = true
 rand.workspace = true

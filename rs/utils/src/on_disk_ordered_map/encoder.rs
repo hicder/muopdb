@@ -7,6 +7,8 @@ pub struct DecodingResult<T> {
 
 /// Codec used to encode and decode integers.
 pub trait IntegerCodec {
+    fn new() -> Self;
+
     fn id(&self) -> u8;
 
     /// Encode a u64 value using this codec into the provided buffer.
@@ -29,6 +31,10 @@ pub trait IntegerCodec {
 pub struct FixedIntegerCodec {}
 
 impl IntegerCodec for FixedIntegerCodec {
+    fn new() -> Self {
+        FixedIntegerCodec {}
+    }
+
     #[inline(always)]
     fn id(&self) -> u8 {
         0
@@ -66,6 +72,10 @@ impl IntegerCodec for FixedIntegerCodec {
 pub struct VarintIntegerCodec {}
 
 impl IntegerCodec for VarintIntegerCodec {
+    fn new() -> Self {
+        VarintIntegerCodec {}
+    }
+
     #[inline(always)]
     fn id(&self) -> u8 {
         1

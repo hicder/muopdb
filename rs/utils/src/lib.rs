@@ -1,4 +1,6 @@
 #![feature(portable_simd)]
+#![feature(btree_cursors)]
+#![feature(new_range_api)]
 
 use std::simd::{LaneCount, Simd, SupportedLaneCount};
 pub mod distance;
