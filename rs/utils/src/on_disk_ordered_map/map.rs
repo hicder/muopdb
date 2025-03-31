@@ -12,8 +12,11 @@ pub struct OnDiskOrderedMap<'a, C: IntegerCodec> {
     codec: C,
 
     index: BTreeMap<String, u64>,
+
+    // This map is only valid between [start_offset, end_offset)
     start_offset: usize,
-    len: usize,
+    end_offset: usize,
+
     data_offset: usize,
 }
 
@@ -23,7 +26,7 @@ impl<'a, C: IntegerCodec> OnDiskOrderedMap<'a, C> {
         path: String,
         mmap: &'a memmap2::Mmap,
         start_offset: usize,
-        len: usize,
+        end_offset: usize,
     ) -> Result<Self> {
         // let mmap = unsafe { memmap2::Mmap::map(&std::fs::File::open(&path).unwrap()) }.unwrap();
         let codec = C::new();
@@ -64,7 +67,7 @@ impl<'a, C: IntegerCodec> OnDiskOrderedMap<'a, C> {
             codec,
             index: map,
             start_offset,
-            len,
+            end_offset,
             data_offset: offset,
         })
     }
@@ -118,7 +121,7 @@ impl<'a, C: IntegerCodec> OnDiskOrderedMap<'a, C> {
                     } else if prev_key.as_slice() > key.as_bytes() {
                         // println!("Key not found");
                         return None;
-                    } else if offset >= self.len {
+                    } else if offset >= self.end_offset {
                         return None;
                     }
                 }
