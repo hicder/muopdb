@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.90"
+bitvec = "1"
 criterion.workspace = true
 env_logger.workspace = true
 hdf5.workspace = true

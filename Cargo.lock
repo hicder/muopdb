@@ -287,13 +287,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bloom_filter"
-version = "0.1.0"
-dependencies = [
- "bitvec",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3357,6 +3350,7 @@ name = "utils"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bitvec",
  "criterion",
  "env_logger",
  "hdf5-metno",
