@@ -4,7 +4,6 @@ mod collection_manager;
 mod collection_provider;
 mod http_server;
 mod index_server;
-mod metrics;
 use std::net::SocketAddr;
 use std::sync::Arc;
 

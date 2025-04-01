@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use index::collection::BoxedCollection;
-
-use crate::metrics::NUM_COLLECTIONS;
+use metrics::NUM_COLLECTIONS;
 
 pub struct CollectionCatalog {
     collections: HashMap<String, BoxedCollection>,
@@ -43,17 +42,17 @@ mod tests {
 
     use config::collection::CollectionConfig;
     use index::collection::collection::Collection;
+    use metrics::NUM_COLLECTIONS;
     use quantization::noq::noq::NoQuantizer;
     use tempdir::TempDir;
     use utils::distance::l2::L2DistanceCalculator;
 
     use super::*;
-    use crate::metrics;
 
     #[tokio::test]
     async fn test_num_collections_metrics_increment() {
         // Get initial metric value
-        let initial_count = metrics::NUM_COLLECTIONS.get();
+        let initial_count = NUM_COLLECTIONS.get();
 
         // Create a new catalog
         let mut catalog = CollectionCatalog::new();
@@ -74,7 +73,7 @@ mod tests {
             .await;
 
         // Verify metric was incremented
-        assert_eq!(metrics::NUM_COLLECTIONS.get(), initial_count + 1);
+        assert_eq!(NUM_COLLECTIONS.get(), initial_count + 1);
 
         // Add another collection
         catalog
@@ -82,6 +81,6 @@ mod tests {
             .await;
 
         // Verify metric was incremented again
-        assert_eq!(metrics::NUM_COLLECTIONS.get(), initial_count + 2);
+        assert_eq!(NUM_COLLECTIONS.get(), initial_count + 2);
     }
 }

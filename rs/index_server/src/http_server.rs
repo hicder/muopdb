@@ -9,13 +9,12 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
+use metrics::{register_metrics, METRICS_REQUESTS};
 use prometheus_client::encoding::text::encode;
 use prometheus_client::registry::Registry;
 use tokio::net::TcpListener;
 use tokio::pin;
 use tokio::signal::unix::{signal, SignalKind};
-
-use crate::metrics::{register_metrics, METRICS_REQUESTS};
 
 pub struct HttpServer {
     metrics_registry: Arc<Registry>,
