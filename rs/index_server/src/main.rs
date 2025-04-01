@@ -2,9 +2,9 @@ mod admin_server;
 mod collection_catalog;
 mod collection_manager;
 mod collection_provider;
+mod http_server;
 mod index_server;
 mod metrics;
-
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -13,6 +13,7 @@ use clap::Parser;
 use collection_catalog::CollectionCatalog;
 use collection_manager::CollectionManager;
 use collection_provider::CollectionProvider;
+use http_server::HttpServer;
 use index_server::IndexServerImpl;
 use log::{debug, error, info};
 use proto::admin::index_server_admin_server::IndexServerAdminServer;
@@ -134,7 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_server_addr = SocketAddr::new(addr.ip(), arg.http_port);
     info!("Starting HTTP server on {}", http_server_addr);
     spawn(async move {
-        if let Err(e) = metrics::HttpServer::new().serve(http_server_addr).await {
+        if let Err(e) = HttpServer::new().serve(http_server_addr).await {
             error!("HTTP server error: {}", e);
         }
     });
