@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::enums::{IntSeqEncodingType, QuantizerType};
 use crate::attribute_schema::AttributeSchema;
+use crate::enums::{IntSeqEncodingType, QuantizerType};
 
 /// Config for a collection.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::vec;
 
-use config::collection::CollectionConfig;
 use config::attribute_schema::AttributeSchema;
+use config::collection::CollectionConfig;
 use index::collection::snapshot::SnapshotWithQuantizer;
 use index::wal::entry::WalOpType;
 use log::info;
