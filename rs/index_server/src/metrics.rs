@@ -21,6 +21,7 @@ lazy_static! {
     /// Add your own metrics here. Remember to add them to the `register_metrics` function.
     /// Example: a counter metric for the number of incoming requests to the metrics endpoint.
     pub static ref METRICS_REQUESTS: Counter<u64> = Counter::default();
+    pub static ref NUM_COLLECTIONS: Counter<u64> = Counter::default();
 }
 
 /// Register the metrics with the provided registry.
@@ -29,6 +30,11 @@ fn register_metrics(metrics_registry: &mut Registry) {
         "metrics_requests",
         "Number of requests made to the metrics endpoint",
         METRICS_REQUESTS.clone(),
+    );
+    metrics_registry.register(
+        "num_collections",
+        "Number of collections",
+        NUM_COLLECTIONS.clone(),
     );
 }
 

@@ -29,6 +29,9 @@ struct Args {
     #[arg(short, long, default_value_t = 9002)]
     port: u32,
 
+    #[arg(short, long, default_value_t = 9003)]
+    http_port: u16,
+
     #[arg(short, long)]
     node_id: u32,
 
@@ -128,7 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Start the metrics server
-    let http_server_addr = SocketAddr::new(addr.ip(), addr.port() + 1);
+    let http_server_addr = SocketAddr::new(addr.ip(), arg.http_port);
     info!("Starting HTTP server on {}", http_server_addr);
     spawn(async move {
         if let Err(e) = metrics::HttpServer::new().serve(http_server_addr).await {

@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use index::collection::BoxedCollection;
 
+use crate::metrics::NUM_COLLECTIONS;
+
 pub struct CollectionCatalog {
     collections: HashMap<String, BoxedCollection>,
 }
@@ -14,6 +16,7 @@ impl CollectionCatalog {
     }
 
     pub async fn add_collection(&mut self, name: String, collection: BoxedCollection) {
+        NUM_COLLECTIONS.inc();
         self.collections.insert(name, collection);
     }
 
@@ -31,5 +34,54 @@ impl CollectionCatalog {
 
     pub async fn collection_exists(&self, name: &str) -> bool {
         self.collections.contains_key(name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use config::collection::CollectionConfig;
+    use index::collection::collection::Collection;
+    use quantization::noq::noq::NoQuantizer;
+    use tempdir::TempDir;
+    use utils::distance::l2::L2DistanceCalculator;
+
+    use super::*;
+    use crate::metrics;
+
+    #[tokio::test]
+    async fn test_num_collections_metrics_increment() {
+        // Get initial metric value
+        let initial_count = metrics::NUM_COLLECTIONS.get();
+
+        // Create a new catalog
+        let mut catalog = CollectionCatalog::new();
+
+        let temp_dir = TempDir::new("test_collection").unwrap();
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+
+        // Create and add a mock collection
+        let collection: BoxedCollection = BoxedCollection::CollectionNoQuantizationL2(Arc::new(
+            Collection::<NoQuantizer<L2DistanceCalculator>>::new(
+                base_directory,
+                CollectionConfig::default(),
+            )
+            .unwrap(),
+        ));
+        catalog
+            .add_collection("test1".to_string(), collection.clone())
+            .await;
+
+        // Verify metric was incremented
+        assert_eq!(metrics::NUM_COLLECTIONS.get(), initial_count + 1);
+
+        // Add another collection
+        catalog
+            .add_collection("test2".to_string(), collection.clone())
+            .await;
+
+        // Verify metric was incremented again
+        assert_eq!(metrics::NUM_COLLECTIONS.get(), initial_count + 2);
     }
 }
