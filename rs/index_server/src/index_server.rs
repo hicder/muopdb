@@ -4,15 +4,16 @@ use std::vec;
 use config::collection::CollectionConfig;
 use config::attribute_schema::AttributeSchema;
 use index::collection::snapshot::SnapshotWithQuantizer;
+use index::wal::entry::WalOpType;
 use log::info;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
     CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse, Id,
-    InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, SearchRequest,
-    SearchResponse,
+    InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, RemoveRequest,
+    RemoveResponse, SearchRequest, SearchResponse,
 };
 use tokio::sync::{Mutex, RwLock};
-use utils::mem::{ids_to_u128s, transmute_u8_to_slice, bytes_to_u128s};
+use utils::mem::{bytes_to_u128s, ids_to_u128s, transmute_u8_to_slice};
 
 use crate::collection_catalog::CollectionCatalog;
 use crate::collection_manager::CollectionManager;
@@ -171,7 +172,7 @@ impl IndexServer for IndexServerImpl {
             .await;
         if let Some(collection) = collection_opt {
             if let Ok(snapshot) = collection.get_snapshot() {
-                let result = SnapshotWithQuantizer::search_for_ids(
+                let result = SnapshotWithQuantizer::search_for_users(
                     snapshot,
                     &user_ids,
                     vec,
@@ -188,8 +189,8 @@ impl IndexServer for IndexServerImpl {
                         for id_with_score in result.id_with_scores {
                             // TODO(hicder): Support u128
                             doc_ids.push(Id {
-                                low_id: id_with_score.id as u64,
-                                high_id: (id_with_score.id >> 64) as u64,
+                                low_id: id_with_score.doc_id as u64,
+                                high_id: (id_with_score.doc_id >> 64) as u64,
                             });
 
                             scores.push(id_with_score.score);
@@ -255,7 +256,7 @@ impl IndexServer for IndexServerImpl {
                 }
 
                 let seq_no = collection
-                    .write_to_wal(&ids, &user_ids, &vectors)
+                    .write_to_wal(&ids, &user_ids, &vectors, WalOpType::Insert)
                     .await
                     .unwrap_or(0);
                 let num_docs_inserted = ids.len() as u32;
@@ -287,6 +288,62 @@ impl IndexServer for IndexServerImpl {
                 );
 
                 Ok(tonic::Response::new(InsertResponse { num_docs_inserted }))
+            }
+            None => Err(tonic::Status::new(
+                tonic::Code::NotFound,
+                "Collection not found",
+            )),
+        }
+    }
+
+    async fn remove(
+        &self,
+        request: tonic::Request<RemoveRequest>,
+    ) -> Result<tonic::Response<RemoveResponse>, tonic::Status> {
+        let start = std::time::Instant::now();
+        let req = request.into_inner();
+        let collection_name = req.collection_name;
+        let ids = ids_to_u128s(&req.doc_ids);
+        let user_ids = ids_to_u128s(&req.user_ids);
+        let collection_opt = self
+            .collection_catalog
+            .lock()
+            .await
+            .get_collection(&collection_name)
+            .await;
+
+        match collection_opt {
+            Some(collection) => {
+                let seq_no = collection
+                    .write_to_wal(&ids, &user_ids, &[], WalOpType::Delete)
+                    .await
+                    .unwrap_or(0);
+                let num_docs_removed = ids.len() as u32;
+                info!(
+                    "[{}] Removed {} vectors from WAL with seq_no {}",
+                    collection_name, num_docs_removed, seq_no
+                );
+
+                let success = true;
+                if collection.use_wal() {
+                    return Ok(tonic::Response::new(RemoveResponse { success }));
+                }
+
+                user_ids.iter().for_each(|&user_id| {
+                    ids.iter().for_each(|&doc_id| {
+                        collection.remove(user_id, doc_id, seq_no).unwrap();
+                    })
+                });
+
+                // log the duration
+                let end = std::time::Instant::now();
+                let duration = end.duration_since(start);
+                info!(
+                    "[{}] Removed {} vectors in {:?}",
+                    collection_name, num_docs_removed, duration
+                );
+
+                Ok(tonic::Response::new(RemoveResponse { success }))
             }
             None => Err(tonic::Status::new(
                 tonic::Code::NotFound,
@@ -360,7 +417,7 @@ impl IndexServer for IndexServerImpl {
                 }
 
                 let seq_no = collection
-                    .write_to_wal(&doc_ids, &user_ids, &vectors)
+                    .write_to_wal(&doc_ids, &user_ids, &vectors, WalOpType::Insert)
                     .await
                     .unwrap_or(0);
                 let num_docs_inserted = doc_ids.len() as u32;

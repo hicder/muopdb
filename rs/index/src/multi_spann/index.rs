@@ -131,15 +131,22 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         Ok(index.is_invalidated(doc_id))
     }
 
-    pub async fn search_with_id(
+    pub fn get_point_id(&self, user_id: u128, doc_id: u128) -> Option<u32> {
+        match self.get_or_create_index(user_id) {
+            Ok(index) => index.get_point_id(doc_id),
+            Err(_) => None,
+        }
+    }
+
+    pub async fn search_for_user(
         &self,
-        id: u128,
+        user_id: u128,
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
         record_pages: bool,
     ) -> Option<SearchResult> {
-        match self.get_or_create_index(id) {
+        match self.get_or_create_index(user_id) {
             Ok(index) => index.search(query, k, ef_construction, record_pages).await,
             Err(_) => None,
         }
@@ -153,15 +160,16 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
 #[cfg(test)]
 mod tests {
     use std::fs;
+
     use config::collection::CollectionConfig;
     use config::enums::IntSeqEncodingType;
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
 
+    use crate::ivf::files::invalidated_ids::InvalidatedIdsStorage;
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::reader::MultiSpannReader;
     use crate::multi_spann::writer::MultiSpannWriter;
-    use crate::ivf::files::invalidated_ids::InvalidatedIdsStorage;
 
     #[tokio::test]
     async fn test_multi_spann_search() {
@@ -206,14 +214,14 @@ mod tests {
         let num_probes = 2;
 
         let results = multi_spann_index
-            .search_with_id(0, query, k, num_probes, false)
+            .search_for_user(0, query, k, num_probes, false)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
         assert_eq!(results.id_with_scores.len(), k);
-        assert_eq!(results.id_with_scores[0].id, num_vectors);
-        assert_eq!(results.id_with_scores[1].id, 3);
-        assert_eq!(results.id_with_scores[2].id, 2);
+        assert_eq!(results.id_with_scores[0].doc_id, num_vectors);
+        assert_eq!(results.id_with_scores[1].doc_id, 3);
+        assert_eq!(results.id_with_scores[2].doc_id, 2);
     }
 
     #[test]
@@ -308,14 +316,14 @@ mod tests {
             .expect("Failed to query invalidation"));
 
         let results = multi_spann_index
-            .search_with_id(0, query, k, num_probes, false)
+            .search_for_user(0, query, k, num_probes, false)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
         assert_eq!(results.id_with_scores.len(), k);
-        assert_eq!(results.id_with_scores[0].id, 3);
-        assert_eq!(results.id_with_scores[1].id, 2);
-        assert_eq!(results.id_with_scores[2].id, 4);
+        assert_eq!(results.id_with_scores[0].doc_id, 3);
+        assert_eq!(results.id_with_scores[1].doc_id, 2);
+        assert_eq!(results.id_with_scores[2].doc_id, 4);
     }
 
     #[tokio::test]
@@ -366,21 +374,27 @@ mod tests {
         assert!(multi_spann_index
             .is_invalidated(0, num_vectors as u128)
             .expect("Failed to query invalidation"));
-        assert_eq!(multi_spann_index.invalidated_ids_storage.read().num_entries(), 1);
+        assert_eq!(
+            multi_spann_index
+                .invalidated_ids_storage
+                .read()
+                .num_entries(),
+            1
+        );
 
         let query = vec![1.4, 2.4, 3.4, 4.4];
         let k = 3;
         let num_probes = 2;
 
         let results = multi_spann_index
-            .search_with_id(0, query, k, num_probes, false)
+            .search_for_user(0, query, k, num_probes, false)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
         assert_eq!(results.id_with_scores.len(), k);
-        assert_eq!(results.id_with_scores[0].id, 3);
-        assert_eq!(results.id_with_scores[1].id, 2);
-        assert_eq!(results.id_with_scores[2].id, 4);
+        assert_eq!(results.id_with_scores[0].doc_id, 3);
+        assert_eq!(results.id_with_scores[1].doc_id, 2);
+        assert_eq!(results.id_with_scores[2].doc_id, 4);
     }
 
     #[tokio::test]
@@ -422,11 +436,27 @@ mod tests {
         assert!(multi_spann_index
             .invalidate(0, 0 as u128)
             .expect("Failed to invalidate"));
-        assert_eq!(multi_spann_index.invalidated_ids_storage.write().iter().collect::<Vec<_>>().len(), 1);
+        assert_eq!(
+            multi_spann_index
+                .invalidated_ids_storage
+                .write()
+                .iter()
+                .collect::<Vec<_>>()
+                .len(),
+            1
+        );
 
         assert!(!multi_spann_index
             .invalidate(0, num_vectors as u128)
             .expect("Failed to invalidate"));
-        assert_eq!(multi_spann_index.invalidated_ids_storage.write().iter().collect::<Vec<_>>().len(), 1);
+        assert_eq!(
+            multi_spann_index
+                .invalidated_ids_storage
+                .write()
+                .iter()
+                .collect::<Vec<_>>()
+                .len(),
+            1
+        );
     }
 }

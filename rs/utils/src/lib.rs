@@ -1,10 +1,13 @@
 #![feature(portable_simd)]
+#![feature(btree_cursors)]
+#![feature(new_range_api)]
 
 use std::simd::{LaneCount, Simd, SupportedLaneCount};
 pub mod distance;
 pub mod io;
 pub mod kmeans_builder;
 pub mod mem;
+pub mod on_disk_ordered_map;
 pub mod test_utils;
 
 pub trait DistanceCalculator {

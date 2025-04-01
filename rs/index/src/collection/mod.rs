@@ -149,13 +149,18 @@ impl BoxedCollection {
         doc_ids: &[u128],
         user_ids: &[u128],
         data: &[f32],
+        wal_op_type: WalOpType,
     ) -> Result<u64> {
         match self {
             BoxedCollection::CollectionNoQuantizationL2(collection) => {
-                collection.write_to_wal(doc_ids, user_ids, data).await
+                collection
+                    .write_to_wal(doc_ids, user_ids, data, wal_op_type)
+                    .await
             }
             BoxedCollection::CollectionProductQuantization(collection) => {
-                collection.write_to_wal(doc_ids, user_ids, data).await
+                collection
+                    .write_to_wal(doc_ids, user_ids, data, wal_op_type)
+                    .await
             }
         }
     }
@@ -184,6 +189,17 @@ impl BoxedCollection {
             }
             BoxedCollection::CollectionProductQuantization(collection) => {
                 collection.insert_for_users(user_ids, doc_id, data, seq_no)
+            }
+        }
+    }
+
+    pub fn remove(&self, user_id: u128, doc_id: u128, seq_no: u64) -> Result<()> {
+        match self {
+            BoxedCollection::CollectionNoQuantizationL2(collection) => {
+                collection.remove(user_id, doc_id, seq_no)
+            }
+            BoxedCollection::CollectionProductQuantization(collection) => {
+                collection.remove(user_id, doc_id, seq_no)
             }
         }
     }

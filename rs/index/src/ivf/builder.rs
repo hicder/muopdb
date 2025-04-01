@@ -545,6 +545,11 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
     }
 
     pub fn build(&mut self) -> Result<()> {
+        if self.get_num_valid_vectors() == 0 {
+            return Err(anyhow!(
+                "Trying to build an IVF index with empty vectors list"
+            ));
+        }
         self.build_centroids()?;
         self.build_posting_lists()?;
 

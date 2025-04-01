@@ -1,5 +1,6 @@
 pub mod immutable_segment;
 pub mod mutable_segment;
+pub mod pending_mutable_segment;
 pub mod pending_segment;
 
 use std::sync::Arc;
@@ -105,7 +106,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
                 BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                     immutable_segment
                         .read()
-                        .search_with_id(id, query.clone(), k, ef_construction, record_pages)
+                        .search_for_user(id, query.clone(), k, ef_construction, record_pages)
                         .await
                 }
                 BoxedImmutableSegment::PendingSegment(pending_segment) => {

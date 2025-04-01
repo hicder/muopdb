@@ -36,7 +36,7 @@ impl SegmentOptimizer<NoQuantizerL2> for MergeOptimizer<NoQuantizerL2> {
         let config = pending_segment.collection_config();
         let mut builder = MultiSpannBuilder::new(config.clone(), pending_segment.base_directory())?;
         let all_user_ids = pending_segment.all_user_ids();
-        
+
         for user_id in all_user_ids {
             for inner_segment in inner_segments {
                 let iter = inner_segment.iter_for_user(user_id);
@@ -115,7 +115,7 @@ mod tests {
         let snapshot = collection.get_snapshot()?;
         let snapshot = Arc::new(snapshot);
         let result = snapshot
-            .search_with_id(0, vec![100.0, 101.0, 102.0], 3, 10, false)
+            .search_for_user(0, vec![100.0, 101.0, 102.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -123,20 +123,20 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![4, 5, 6]);
 
         let result = snapshot
-            .search_with_id(0, vec![1.0, 2.0, 3.0], 3, 10, false)
+            .search_for_user(0, vec![1.0, 2.0, 3.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![1, 2, 3]);
@@ -183,7 +183,13 @@ mod tests {
         assert_eq!(segments.len(), 2);
 
         // Remove a doc from the first segment
-        assert!(collection.all_segments().get(&segments[0]).unwrap().value().remove(0, 1).is_ok());
+        assert!(collection
+            .all_segments()
+            .get(&segments[0])
+            .unwrap()
+            .value()
+            .remove(0, 1)
+            .is_ok());
 
         let pending_segment = collection.init_optimizing(&segments)?;
 
@@ -197,14 +203,14 @@ mod tests {
         let snapshot = Arc::new(snapshot);
 
         let result = snapshot
-            .search_with_id(0, vec![1.0, 2.0, 3.0], 3, 10, false)
+            .search_for_user(0, vec![1.0, 2.0, 3.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![2, 3, 4]);
@@ -259,7 +265,7 @@ mod tests {
 
         let snapshot = collection.get_snapshot()?;
         let result = snapshot
-            .search_with_id(0, vec![1.0, 2.0, 3.0], 3, 10, false)
+            .search_for_user(0, vec![1.0, 2.0, 3.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -267,13 +273,13 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![1, 2, 3]);
 
         let result = snapshot
-            .search_with_id(1, vec![10.0, 11.0, 12.0], 3, 10, false)
+            .search_for_user(1, vec![10.0, 11.0, 12.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -281,7 +287,7 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![4, 5, 6]);
@@ -291,7 +297,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_invalidated_optimizer_with_multiple_users() -> Result<()> {
-        let tmp_dir = tempdir::TempDir::new("test_merge_invalidated_optimizer_with_multiple_users")?;
+        let tmp_dir =
+            tempdir::TempDir::new("test_merge_invalidated_optimizer_with_multiple_users")?;
         // Create directory if it doesn't exist
         std::fs::create_dir_all(&tmp_dir)?;
 
@@ -328,7 +335,13 @@ mod tests {
         assert_eq!(segments.len(), 2);
 
         // Remove a doc from the first segment
-        assert!(collection.all_segments().get(&segments[0]).unwrap().value().remove(0, 1).is_ok());
+        assert!(collection
+            .all_segments()
+            .get(&segments[0])
+            .unwrap()
+            .value()
+            .remove(0, 1)
+            .is_ok());
 
         let pending_segment = collection.init_optimizing(&segments)?;
 
@@ -340,7 +353,7 @@ mod tests {
 
         let snapshot = collection.get_snapshot()?;
         let result = snapshot
-            .search_with_id(0, vec![1.0, 2.0, 3.0], 3, 10, false)
+            .search_for_user(0, vec![1.0, 2.0, 3.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 2);
@@ -348,7 +361,7 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![2, 3]);

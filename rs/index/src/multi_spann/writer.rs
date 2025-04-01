@@ -7,7 +7,7 @@ use config::collection::CollectionConfig;
 use config::enums::QuantizerType;
 use odht::HashTableOwned;
 use quantization::noq::noq::NoQuantizer;
-use quantization::pq::pq::{ProductQuantizerConfig, CODEBOOK_NAME};
+use quantization::pq::pq::{ProductQuantizerConfig, CODEBOOK_NAME, CONFIG_FILE_NAME};
 use quantization::quantization::WritableQuantizer;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::io::{append_file_to_writer, write_pad};
@@ -38,8 +38,7 @@ impl MultiSpannWriter {
                     num_bits: config.product_quantization_num_bits as u8,
                 };
 
-                let config_path =
-                    Path::new(&ivf_quantizer_directory).join("product_quantizer_config.yaml");
+                let config_path = Path::new(&ivf_quantizer_directory).join(CONFIG_FILE_NAME);
                 if config_path.exists() {
                     // Delete the file if exists
                     std::fs::remove_file(&config_path)?;
@@ -79,6 +78,8 @@ impl MultiSpannWriter {
                 centroid_index_len: 0,
                 ivf_vectors_offset: 0,
                 ivf_vectors_len: 0,
+                ivf_raw_vectors_offset: 0,
+                ivf_raw_vectors_len: 0,
                 ivf_index_offset: 0,
                 ivf_index_len: 0,
                 ivf_pq_codebook_offset: 0,
@@ -121,6 +122,10 @@ impl MultiSpannWriter {
         let mut ivf_vectors_file = File::create(format!("{}/vectors", ivf_directory))?;
         let mut ivf_vectors_buffer_writer = BufWriter::new(&mut ivf_vectors_file);
 
+        // IVF raw vectors file
+        let mut ivf_raw_vectors_file = File::create(format!("{}/raw_vectors", ivf_directory))?;
+        let mut ivf_raw_vectors_buffer_writer = BufWriter::new(&mut ivf_raw_vectors_file);
+
         // IVF product quantizer codebook file
         let ivf_pq_codebook_path = format!("{}/quantizer/{}", ivf_directory, CODEBOOK_NAME);
         let mut ivf_pq_codebook_file = File::create(&ivf_pq_codebook_path)?;
@@ -130,6 +135,7 @@ impl MultiSpannWriter {
         let mut centroids_vector_written: u64 = 0;
         let mut ivf_index_written: u64 = 0;
         let mut ivf_vectors_written: u64 = 0;
+        let mut ivf_raw_vectors_written: u64 = 0;
         let mut ivf_pq_codebook_written: u64 = 0;
 
         for (idx, user_id) in user_ids.iter().enumerate() {
@@ -186,6 +192,13 @@ impl MultiSpannWriter {
                 &format!("{}/ivf/vectors", user_id_base_directory),
                 &mut ivf_vectors_buffer_writer,
             )? as u64;
+            user_index_info.ivf_raw_vectors_offset = ivf_raw_vectors_written;
+            ivf_raw_vectors_written += append_file_to_writer(
+                &format!("{}/ivf/raw_vectors", user_id_base_directory),
+                &mut ivf_raw_vectors_buffer_writer,
+            )? as u64;
+            user_index_info.ivf_raw_vectors_len =
+                ivf_raw_vectors_written - user_index_info.ivf_raw_vectors_offset;
             user_index_info.ivf_vectors_len =
                 ivf_vectors_written - user_index_info.ivf_vectors_offset;
 
@@ -233,9 +246,11 @@ impl MultiSpannWriter {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Read, Seek, SeekFrom};
     use std::path::PathBuf;
 
     use config::collection::CollectionConfig;
+    use quantization::pq::pq::CONFIG_FILE_NAME;
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
 
@@ -337,13 +352,99 @@ mod tests {
         let ivf_directory_path = format!("{}/ivf", base_directory);
         let ivf_quantizer_directory = format!("{}/quantizer", ivf_directory_path);
         let ivf_quantizer_codebook_path = format!("{}/codebook", ivf_quantizer_directory.clone());
-        let ivf_quantizer_config_path =
-            format!("{}/product_quantizer_config.yaml", ivf_quantizer_directory);
+        let ivf_quantizer_config_path = format!("{}/{}", ivf_quantizer_directory, CONFIG_FILE_NAME);
 
         assert!(PathBuf::from(&centroids_directory_path).exists());
         assert!(PathBuf::from(&hnsw_vector_storage_path).exists());
         assert!(PathBuf::from(&hnsw_index_path).exists());
         assert!(PathBuf::from(&ivf_quantizer_codebook_path).exists());
         assert!(PathBuf::from(&ivf_quantizer_config_path).exists());
+    }
+
+    #[test]
+    fn test_read_raw_vectors_after_writing() {
+        let temp_dir = TempDir::new("test_read_raw_vectors_after_writing").unwrap();
+        let base_directory = temp_dir.path().to_str().unwrap().to_string();
+
+        let num_vectors: usize = 3;
+        let num_features: usize = 4;
+
+        // Setup collection config
+        let mut collection_config = CollectionConfig::default_test_config();
+        collection_config.num_features = num_features;
+        collection_config.initial_num_centroids = 3;
+
+        let mut builder =
+            MultiSpannBuilder::new(collection_config, base_directory.clone()).unwrap();
+        let test_vectors = vec![
+            vec![1.0, 2.0, 3.0, 4.0],
+            vec![5.0, 6.0, 7.0, 8.0],
+            vec![9.0, 10.0, 11.0, 12.0],
+        ];
+
+        // Only one user
+        let user_id = 42u128;
+        for (i, vector) in test_vectors.iter().enumerate() {
+            builder.insert(user_id, i as u128, vector).unwrap();
+        }
+
+        // Build and write the index
+        builder.build().unwrap();
+        let writer = MultiSpannWriter::new(base_directory.clone());
+        let user_index_infos = writer.write(&mut builder).unwrap();
+
+        // Check for one user only
+        assert_eq!(user_index_infos.len(), 1);
+        let user_info = &user_index_infos[0];
+        assert_eq!(user_info.user_id, user_id);
+
+        // Verify raw vectors file exists
+        let raw_vectors_path = format!("{}/ivf/raw_vectors", base_directory);
+        assert!(PathBuf::from(&raw_vectors_path).exists());
+
+        // Read the raw vectors
+        let file = std::fs::File::open(&raw_vectors_path).unwrap();
+        let mut reader = std::io::BufReader::new(file);
+        reader
+            .seek(SeekFrom::Start(user_info.ivf_raw_vectors_offset))
+            .unwrap();
+
+        let mut buffer = vec![0u8; user_info.ivf_raw_vectors_len as usize];
+        reader.read_exact(&mut buffer).unwrap();
+
+        // First 8 bytes should be the number of vectors
+        let num_vectors_in_file = u64::from_le_bytes([
+            buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7],
+        ]);
+        assert_eq!(num_vectors_in_file as usize, num_vectors);
+
+        // Read and verify each vector
+        let bytes_per_float = std::mem::size_of::<f32>();
+        let vector_size_bytes = num_features * bytes_per_float;
+
+        let mut vectors = Vec::new();
+
+        for i in 0..num_vectors {
+            // 8-byte header + vector offset
+            let vector_start = 8 + i * vector_size_bytes;
+            let mut current_vector = Vec::new();
+            for j in 0..num_features {
+                let value_offset = vector_start + j * bytes_per_float;
+                let value_bytes = [
+                    buffer[value_offset],
+                    buffer[value_offset + 1],
+                    buffer[value_offset + 2],
+                    buffer[value_offset + 3],
+                ];
+                current_vector.push(f32::from_le_bytes(value_bytes));
+            }
+            vectors.push(current_vector);
+        }
+        vectors.sort_by(|a, b| a[0].partial_cmp(&b[0]).unwrap());
+        assert_eq!(
+            vectors, test_vectors,
+            "Raw vectors do not match expected: {:?}, expected {:?}",
+            vectors, test_vectors
+        );
     }
 }

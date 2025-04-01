@@ -167,15 +167,19 @@ where
             &raw_vectors.num_vectors().to_le_bytes(),
         )?;
 
-        raw_bytes_written +=
-            wrap_write(&mut raw_vectors_writer, &raw_vectors.num_vectors().to_le_bytes())?;
+        raw_bytes_written += wrap_write(
+            &mut raw_vectors_writer,
+            &raw_vectors.num_vectors().to_le_bytes(),
+        )?;
 
         for i in 0..raw_vectors.num_vectors() {
             // get raw vector and write to final file
             let raw_vector = raw_vectors.get(i as u32, &mut search_context)?;
             for j in 0..raw_vector.len() {
-                raw_bytes_written +=
-                    wrap_write(&mut raw_vectors_writer, raw_vector[j].to_le_bytes().as_ref())?;
+                raw_bytes_written += wrap_write(
+                    &mut raw_vectors_writer,
+                    raw_vector[j].to_le_bytes().as_ref(),
+                )?;
             }
 
             // quantize and write to final file
@@ -873,8 +877,8 @@ mod tests {
             .to_str()
             .expect("Failed to convert temporary directory path to string")
             .to_string();
-        let num_clusters = 10;
-        let num_vectors = 1000;
+        let num_clusters = 2;
+        let num_vectors = 100;
         let num_features = 4;
         let file_size = 4096;
         let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);

@@ -93,7 +93,7 @@ mod tests {
 
         let segments = collection.get_current_toc().toc.clone();
         assert_eq!(segments.len(), 1);
-        
+
         let pending_segment = collection.init_optimizing(&segments)?;
 
         let optimizer = VacuumOptimizer::<NoQuantizerL2>::new();
@@ -104,7 +104,7 @@ mod tests {
 
         let snapshot = collection.get_snapshot()?;
         let result = snapshot
-            .search_with_id(0, vec![11.0, 12.0, 13.0], 3, 10, false)
+            .search_for_user(0, vec![11.0, 12.0, 13.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 2);
@@ -112,20 +112,20 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![1, 2]);
 
         let result = snapshot
-            .search_with_id(0, vec![11.0, 12.0, 13.0], 1, 10, false)
+            .search_for_user(0, vec![11.0, 12.0, 13.0], 1, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![2]);
@@ -165,8 +165,14 @@ mod tests {
         assert_eq!(segments.len(), 1);
 
         // Remove a doc from the first segment
-        assert!(collection.all_segments().get(&segments[0]).unwrap().value().remove(0, 2).is_ok());
-        
+        assert!(collection
+            .all_segments()
+            .get(&segments[0])
+            .unwrap()
+            .value()
+            .remove(0, 2)
+            .is_ok());
+
         let pending_segment = collection.init_optimizing(&segments)?;
 
         let optimizer = VacuumOptimizer::<NoQuantizerL2>::new();
@@ -177,7 +183,7 @@ mod tests {
 
         let snapshot = collection.get_snapshot()?;
         let result = snapshot
-            .search_with_id(0, vec![20.0, 21.0, 22.0], 1, 10, false)
+            .search_for_user(0, vec![20.0, 21.0, 22.0], 1, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
@@ -185,7 +191,7 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![3]);
@@ -222,7 +228,7 @@ mod tests {
 
         let segments = collection.get_current_toc().toc.clone();
         assert_eq!(segments.len(), 1);
-        
+
         let pending_segment = collection.init_optimizing(&segments)?;
 
         let optimizer = VacuumOptimizer::<NoQuantizerL2>::new();
@@ -233,7 +239,7 @@ mod tests {
 
         let snapshot = collection.get_snapshot()?;
         let result = snapshot
-            .search_with_id(0, vec![11.0, 12.0, 13.0], 3, 10, false)
+            .search_for_user(0, vec![11.0, 12.0, 13.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
@@ -241,13 +247,13 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![101]);
 
         let result = snapshot
-            .search_with_id(1, vec![11.0, 12.0, 13.0], 3, 10, false)
+            .search_for_user(1, vec![11.0, 12.0, 13.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
@@ -255,7 +261,7 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![202]);
@@ -265,7 +271,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_vacuum_invalidated_optimizer_with_multiple_users() -> Result<()> {
-        let tmp_dir = tempdir::TempDir::new("test_vacuum_invalidated_optimizer_with_multiple_users")?;
+        let tmp_dir =
+            tempdir::TempDir::new("test_vacuum_invalidated_optimizer_with_multiple_users")?;
         // Create directory if it doesn't exist
         std::fs::create_dir_all(&tmp_dir)?;
 
@@ -299,8 +306,14 @@ mod tests {
         assert_eq!(segments.len(), 1);
 
         // Remove a doc from the first segment
-        assert!(collection.all_segments().get(&segments[0]).unwrap().value().remove(1, 203).is_ok());
-        
+        assert!(collection
+            .all_segments()
+            .get(&segments[0])
+            .unwrap()
+            .value()
+            .remove(1, 203)
+            .is_ok());
+
         let pending_segment = collection.init_optimizing(&segments)?;
 
         let optimizer = VacuumOptimizer::<NoQuantizerL2>::new();
@@ -311,7 +324,7 @@ mod tests {
 
         let snapshot = collection.get_snapshot()?;
         let result = snapshot
-            .search_with_id(0, vec![20.0, 21.0, 22.0], 3, 10, false)
+            .search_for_user(0, vec![20.0, 21.0, 22.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -319,13 +332,13 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![11, 12, 13]);
 
         let result = snapshot
-            .search_with_id(1, vec![20.0, 21.0, 22.0], 3, 10, false)
+            .search_for_user(1, vec![20.0, 21.0, 22.0], 3, 10, false)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 2);
@@ -333,7 +346,7 @@ mod tests {
         let mut result_ids = result
             .id_with_scores
             .iter()
-            .map(|id| id.id)
+            .map(|id| id.doc_id)
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![201, 202]);

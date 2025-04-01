@@ -216,7 +216,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         point_ids
             .iter()
             .map(|x| IdWithScore {
-                id: self
+                doc_id: self
                     .posting_list_storage
                     .get_doc_id(x.point_id as usize)
                     .unwrap(),
@@ -257,21 +257,18 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
     /// otherwise (i.e. doc_id not found or had already been invalidated)
     pub fn invalidate(&self, doc_id: u128) -> bool {
         match self.get_point_id(doc_id) {
-            Some(point_id) => {
-                self.invalid_point_ids
-                    .write()
-                    .unwrap()
-                    .insert(point_id as u32)
-            }
+            Some(point_id) => self
+                .invalid_point_ids
+                .write()
+                .unwrap()
+                .insert(point_id as u32),
             None => false,
         }
     }
 
     pub fn is_invalidated(&self, doc_id: u128) -> bool {
         match self.get_point_id(doc_id) {
-            Some(point_id) => {
-                self.invalid_point_ids.read().unwrap().contains(&point_id)
-            }
+            Some(point_id) => self.invalid_point_ids.read().unwrap().contains(&point_id),
             None => false,
         }
     }
@@ -601,8 +598,8 @@ mod tests {
             .expect("IVF search should return a result");
 
         assert_eq!(results.id_with_scores.len(), k);
-        assert_eq!(results.id_with_scores[0].id, 103); // Closest to [2.0, 3.0, 4.0]
-        assert_eq!(results.id_with_scores[1].id, 100); // Second closest to [2.0, 3.0, 4.0]
+        assert_eq!(results.id_with_scores[0].doc_id, 103); // Closest to [2.0, 3.0, 4.0]
+        assert_eq!(results.id_with_scores[1].doc_id, 100); // Second closest to [2.0, 3.0, 4.0]
         assert!(results.id_with_scores[0].score < results.id_with_scores[1].score);
     }
 
@@ -684,13 +681,13 @@ mod tests {
         // This demonstrates the accuracy loss due to quantization
         assert!(results.id_with_scores[0].score == results.id_with_scores[1].score);
         assert_eq!(
-            results.id_with_scores[0].id + results.id_with_scores[1].id,
+            results.id_with_scores[0].doc_id + results.id_with_scores[1].doc_id,
             203
         );
         assert_eq!(
             results.id_with_scores[0]
-                .id
-                .abs_diff(results.id_with_scores[1].id),
+                .doc_id
+                .abs_diff(results.id_with_scores[1].doc_id),
             3
         );
     }
@@ -747,7 +744,7 @@ mod tests {
             .expect("IVF search should return a result");
 
         assert_eq!(results.id_with_scores.len(), 1); // Only one result available
-        assert_eq!(results.id_with_scores[0].id, 100);
+        assert_eq!(results.id_with_scores[0].doc_id, 100);
     }
 
     #[tokio::test]
@@ -814,8 +811,8 @@ mod tests {
 
         assert_eq!(results.id_with_scores.len(), k - 1);
         // doc id 103 is not in result
-        assert_eq!(results.id_with_scores[0].id, 100);
-        assert_eq!(results.id_with_scores[1].id, 101);
-        assert_eq!(results.id_with_scores[2].id, 102);
+        assert_eq!(results.id_with_scores[0].doc_id, 100);
+        assert_eq!(results.id_with_scores[1].doc_id, 101);
+        assert_eq!(results.id_with_scores[2].doc_id, 102);
     }
 }

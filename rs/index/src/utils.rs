@@ -67,6 +67,10 @@ impl StorageContext for SearchContext {
     }
 }
 
+/// PointAndDistance is used to store the distance between a point and a query
+/// This is only meaningful inside a segment, since point_id is not unique within a segment,
+/// but is unique within a segment. To return to the user, we need to map point_id to
+/// the actual doc_id
 #[derive(PartialEq, Eq, Ord, PartialOrd, Clone, Debug)]
 pub struct PointAndDistance {
     pub distance: NotNan<f32>,
@@ -82,9 +86,12 @@ impl PointAndDistance {
     }
 }
 
+/// IdWithScore is used to store the doc_id and score of a document
+/// This is only meaningful across segments, since doc_id is unique across segments
+/// This is the id that will be returned to the user
 #[derive(Debug)]
 pub struct IdWithScore {
-    pub id: u128,
+    pub doc_id: u128,
     pub score: f32,
 }
 
@@ -92,7 +99,7 @@ impl Ord for IdWithScore {
     fn cmp(&self, other: &Self) -> Ordering {
         // Handle NaN cases first
         if self.score.is_nan() && other.score.is_nan() {
-            self.id.cmp(&other.id) // Both are NaN, consider them equal, tie-break by id
+            self.doc_id.cmp(&other.doc_id) // Both are NaN, consider them equal, tie-break by id
         } else if self.score.is_nan() {
             Ordering::Greater // This instance is NaN, consider it greater
         } else if other.score.is_nan() {
@@ -100,7 +107,7 @@ impl Ord for IdWithScore {
         } else {
             match self.score.partial_cmp(&other.score) {
                 // Tie-break by id
-                Some(Ordering::Equal) => self.id.cmp(&other.id),
+                Some(Ordering::Equal) => self.doc_id.cmp(&other.doc_id),
                 Some(order) => order,
                 // Handle unexpected cases (shouldn't happen with valid inputs)
                 None => Ordering::Equal,
@@ -117,7 +124,7 @@ impl PartialOrd for IdWithScore {
 
 impl PartialEq for IdWithScore {
     fn eq(&self, other: &Self) -> bool {
-        self.score == other.score && self.id == other.id
+        self.score == other.score && self.doc_id == other.doc_id
     }
 }
 
@@ -165,11 +172,26 @@ mod tests {
 
     #[test]
     fn test_id_with_score_ord() {
-        let a = IdWithScore { id: 2, score: 1.0 };
-        let b = IdWithScore { id: 1, score: 2.0 };
-        let c = IdWithScore { id: 1, score: 1.0 };
-        let d = IdWithScore { id: 2, score: 1.0 };
-        let e = IdWithScore { id: 1, score: 1.0 };
+        let a = IdWithScore {
+            doc_id: 2,
+            score: 1.0,
+        };
+        let b = IdWithScore {
+            doc_id: 1,
+            score: 2.0,
+        };
+        let c = IdWithScore {
+            doc_id: 1,
+            score: 1.0,
+        };
+        let d = IdWithScore {
+            doc_id: 2,
+            score: 1.0,
+        };
+        let e = IdWithScore {
+            doc_id: 1,
+            score: 1.0,
+        };
 
         // Test basic comparison
         assert!(a < b); // a has a smaller score than b
@@ -183,11 +205,11 @@ mod tests {
 
         // Test NaN handling
         let f = IdWithScore {
-            id: 3,
+            doc_id: 3,
             score: f32::NAN,
         };
         let g = IdWithScore {
-            id: 4,
+            doc_id: 4,
             score: f32::NAN,
         };
 
@@ -200,42 +222,66 @@ mod tests {
         let mut scores = vec![
             IdWithScore {
                 score: f32::NAN,
-                id: 5,
+                doc_id: 5,
             },
-            IdWithScore { score: 1.0, id: 2 },
-            IdWithScore { score: 1.0, id: 1 },
-            IdWithScore { score: 3.0, id: 0 },
+            IdWithScore {
+                score: 1.0,
+                doc_id: 2,
+            },
+            IdWithScore {
+                score: 1.0,
+                doc_id: 1,
+            },
+            IdWithScore {
+                score: 3.0,
+                doc_id: 0,
+            },
             IdWithScore {
                 score: f32::NAN,
-                id: 4,
+                doc_id: 4,
             },
-            IdWithScore { score: 2.0, id: 1 },
+            IdWithScore {
+                score: 2.0,
+                doc_id: 1,
+            },
         ];
 
         scores.sort();
 
         let expected_order = vec![
-            IdWithScore { score: 1.0, id: 1 },
-            IdWithScore { score: 1.0, id: 2 },
-            IdWithScore { score: 2.0, id: 1 },
-            IdWithScore { score: 3.0, id: 0 },
             IdWithScore {
-                score: f32::NAN,
-                id: 4,
+                score: 1.0,
+                doc_id: 1,
+            },
+            IdWithScore {
+                score: 1.0,
+                doc_id: 2,
+            },
+            IdWithScore {
+                score: 2.0,
+                doc_id: 1,
+            },
+            IdWithScore {
+                score: 3.0,
+                doc_id: 0,
             },
             IdWithScore {
                 score: f32::NAN,
-                id: 5,
+                doc_id: 4,
+            },
+            IdWithScore {
+                score: f32::NAN,
+                doc_id: 5,
             },
         ];
 
         for (a, b) in scores.iter().zip(expected_order.iter()) {
             if a.score.is_nan() {
                 assert!(b.score.is_nan());
-                assert_eq!(a.id, b.id);
+                assert_eq!(a.doc_id, b.doc_id);
             } else {
                 assert_eq!(a.score, b.score);
-                assert_eq!(a.id, b.id);
+                assert_eq!(a.doc_id, b.doc_id);
             }
         }
     }

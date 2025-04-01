@@ -123,7 +123,7 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
                 Some(guard.clone())
             }
         };
-        
+
         match invalidate_ids_clone {
             None => {
                 for id in iterator {
@@ -152,7 +152,7 @@ impl<T: ToBytes + Clone> FixedFileVectorStorage<T> {
                 }
             }
         }
-        
+
         stats.num_pages_accessed = context.num_pages_accessed();
         Ok(IntermediateResult {
             point_and_distances: result,
