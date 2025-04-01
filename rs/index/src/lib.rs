@@ -13,4 +13,3 @@ pub mod traverse_state;
 pub mod utils;
 pub mod vector;
 pub mod wal;
-pub mod attribute;
