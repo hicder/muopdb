@@ -487,6 +487,8 @@ dependencies = [
 name = "config"
 version = "0.1.0"
 dependencies = [
+ "log",
+ "proto",
  "serde",
  "serde_json",
 ]

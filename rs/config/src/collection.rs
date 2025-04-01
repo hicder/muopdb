@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::enums::{IntSeqEncodingType, QuantizerType};
+use crate::attribute_schema::AttributeSchema;
 
 /// Config for a collection.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -127,6 +128,8 @@ pub struct CollectionConfig {
     /// Default: 0 (not using max time to flush)
     #[serde(default = "default_max_time_to_flush_ms")]
     pub max_time_to_flush_ms: u64,
+
+    pub attribute_schema: Option<AttributeSchema>,
 }
 
 fn default_wal_file_size() -> u64 {
@@ -169,6 +172,7 @@ impl Default for CollectionConfig {
             wal_file_size: 0,
             max_pending_ops: 0,
             max_time_to_flush_ms: 0,
+            attribute_schema: None,
         }
     }
 }
@@ -201,6 +205,7 @@ impl CollectionConfig {
             wal_file_size: 1024 * 1024 * 1024,
             max_pending_ops: 10000,
             max_time_to_flush_ms: 10000,
+            attribute_schema: None,
         }
     }
 }
