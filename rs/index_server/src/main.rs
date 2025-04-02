@@ -29,7 +29,7 @@ struct Args {
     #[arg(short, long, default_value_t = 9002)]
     port: u32,
 
-    #[arg(short, long, default_value_t = 9003)]
+    #[arg(long, default_value_t = 9003)]
     http_port: u16,
 
     #[arg(short, long)]
