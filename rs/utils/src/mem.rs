@@ -1,3 +1,5 @@
+use std::ptr;
+
 use proto::muopdb::Id;
 
 pub fn transmute_u8_to_slice<T>(data: &[u8]) -> &[T] {
@@ -9,8 +11,23 @@ pub fn transmute_u8_to_slice<T>(data: &[u8]) -> &[T] {
     }
 }
 
-pub fn transmute_u8_to_val<T: Copy>(data: &[u8]) -> T {
+/// Use when we can guarantee the alignment of data.
+pub fn transmute_u8_to_val_aligned<T: Copy>(data: &[u8]) -> T {
+    #[cfg(debug_assertions)]
+    {
+        assert!(data.len() >= std::mem::size_of::<T>());
+        assert!(data.as_ptr().align_offset(std::mem::align_of::<T>()) == 0);
+    }
     unsafe { *(data.as_ptr() as *const T) }
+}
+
+/// Use when we're not sure about the alignment of data
+pub fn transmute_u8_to_val_unaligned<T: Copy>(data: &[u8]) -> T {
+    #[cfg(debug_assertions)]
+    {
+        assert!(data.len() >= std::mem::size_of::<T>());
+    }
+    unsafe { ptr::read_unaligned(data.as_ptr() as *const T) }
 }
 
 pub fn transmute_slice_to_u8<T>(slice: &[T]) -> &[u8] {
