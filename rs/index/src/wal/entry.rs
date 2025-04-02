@@ -1,5 +1,5 @@
 use rkyv::util::AlignedVec;
-use utils::mem::{transmute_u8_to_slice, transmute_u8_to_val};
+use utils::mem::{transmute_u8_to_slice, transmute_u8_to_val_aligned};
 
 #[derive(Debug, Clone)]
 pub struct WalEntry {
@@ -24,9 +24,11 @@ impl WalEntry {
     pub fn decode(&self, num_features: usize) -> WalEntryDecoded {
         let length = self.buffer.len() - 1;
         let mut offset = 0;
-        let num_docs = transmute_u8_to_val::<u64>(&self.buffer[offset..offset + 8]) as usize;
+        let num_docs =
+            transmute_u8_to_val_aligned::<u64>(&self.buffer[offset..offset + 8]) as usize;
         offset += 8;
-        let num_users = transmute_u8_to_val::<u64>(&self.buffer[offset..offset + 8]) as usize;
+        let num_users =
+            transmute_u8_to_val_aligned::<u64>(&self.buffer[offset..offset + 8]) as usize;
         offset += 8;
         let doc_ids = transmute_u8_to_slice::<u128>(&self.buffer[offset..offset + num_docs * 16]);
         offset += num_docs * 16;

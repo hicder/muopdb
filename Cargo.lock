@@ -3361,6 +3361,7 @@ dependencies = [
  "proto",
  "rand 0.8.5",
  "rayon",
+ "rkyv",
  "strum",
  "tempdir",
 ]

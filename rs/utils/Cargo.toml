@@ -16,6 +16,7 @@ ndarray.workspace = true
 proto.workspace = true
 rand.workspace = true
 rayon.workspace = true
+rkyv.workspace = true
 strum.workspace = true
 tempdir.workspace = true
 
@@ -29,6 +30,10 @@ harness = false
 
 [[bench]]
 name = "dot_product"
+harness = false
+
+[[bench]]
+name = "mem"
 harness = false
 
 [[bin]]

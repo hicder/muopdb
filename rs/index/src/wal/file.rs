@@ -6,7 +6,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use log::info;
 use memmap2::{MmapMut, MmapOptions};
 use rkyv::util::AlignedVec;
-use utils::mem::{transmute_slice_to_u8, transmute_u8_to_val};
+use utils::mem::{transmute_slice_to_u8, transmute_u8_to_val_unaligned};
 
 use super::entry::{WalEntry, WalOpType};
 
@@ -75,7 +75,7 @@ impl WalFile {
         // Read the start sequence number
         let mut buf = vec![0; 8];
         file.read_exact(&mut buf)?;
-        let start_seq_no = transmute_u8_to_val::<i64>(&buf);
+        let start_seq_no = transmute_u8_to_val_unaligned::<i64>(&buf);
 
         // Reopen with append only
         file = OpenOptions::new().append(true).open(path)?;
@@ -155,7 +155,9 @@ impl WalFile {
     }
 
     fn read_num_entries(mmap: &[u8]) -> Result<u32> {
-        Ok(transmute_u8_to_val::<u32>(mmap[0..4].try_into().unwrap()))
+        Ok(transmute_u8_to_val_unaligned::<u32>(
+            mmap[0..4].try_into().unwrap(),
+        ))
     }
 
     pub fn get_file_size(&self) -> Result<u64> {
@@ -197,11 +199,11 @@ impl WalFileIterator {
 
         let mut buf = vec![0; 8];
         file.read_exact(&mut buf)?;
-        let start_seq_no = transmute_u8_to_val::<i64>(&buf);
+        let start_seq_no = transmute_u8_to_val_unaligned::<i64>(&buf);
 
         let mut buf = vec![0; 4];
         file.read_exact(&mut buf)?;
-        let num_entries = transmute_u8_to_val::<u32>(&buf);
+        let num_entries = transmute_u8_to_val_unaligned::<u32>(&buf);
 
         Ok(Self {
             file,
