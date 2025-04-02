@@ -8,6 +8,7 @@ use dashmap::DashMap;
 use fs_extra::dir::CopyOptions;
 use lock_api::RwLockUpgradableReadGuard;
 use log::debug;
+use metrics::{CollectionLabel, NUM_ACTIVE_SEGMENTS_PER_COLLECTION};
 use parking_lot::{RawRwLock, RwLock};
 use quantization::quantization::Quantizer;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -589,6 +590,13 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         self.versions.insert(new_version, toc);
 
+        // New TOC now contains the new segments. Update the metrics
+        NUM_ACTIVE_SEGMENTS_PER_COLLECTION
+            .get_or_create(&CollectionLabel {
+                name: self.base_directory.clone(),
+            })
+            .inc_by(names.len() as i64);
+
         Ok(())
     }
 
@@ -601,7 +609,8 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         is_pending: bool,
         versions_info_read: RwLockUpgradableReadGuard<RawRwLock, VersionsInfo>,
     ) -> Result<()> {
-        // Check that the old segments if they are not active
+        let num_old_segments = old_segment_names.len();
+        // Make sure the old segments are active
         let current_toc = self
             .versions
             .get(&versions_info_read.current_version)
@@ -666,6 +675,14 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             .insert(new_version, 0);
 
         self.versions.insert(new_version, toc);
+
+        // New TOC now got rid of the old segments and added the new segment. Update the metrics
+        NUM_ACTIVE_SEGMENTS_PER_COLLECTION
+            .get_or_create(&CollectionLabel {
+                name: self.base_directory.clone(),
+            })
+            .inc_by(1 - (num_old_segments as i64));
+
         Ok(())
     }
 
@@ -917,6 +934,7 @@ mod tests {
 
     use anyhow::{Ok, Result};
     use config::collection::CollectionConfig;
+    use metrics::{CollectionLabel, NUM_ACTIVE_SEGMENTS_PER_COLLECTION};
     use parking_lot::RwLock;
     use quantization::noq::noq::NoQuantizerL2;
     use rand::Rng;
@@ -1682,5 +1700,74 @@ mod tests {
                 assert!(false);
             }
         }
+    }
+
+    #[test]
+    fn test_num_segments_metrics() {
+        let temp_dir = TempDir::new("test_num_segments_metrics").unwrap();
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let segment_config = CollectionConfig::default();
+        let collection =
+            Arc::new(Collection::<NoQuantizerL2>::new(base_directory, segment_config).unwrap());
+        let collection_name = &collection.base_directory;
+
+        // Initially should have 0 immutable segments
+        assert_eq!(collection.all_segments.len(), 0);
+
+        // Add 3 new segments
+        let segment_names: Vec<String> = (1..=3).map(|i| format!("segment_{}", i)).collect();
+        let segments: Vec<BoxedImmutableSegment<NoQuantizerL2>> = segment_names
+            .iter()
+            .map(|name| {
+                BoxedImmutableSegment::<NoQuantizerL2>::MockedNoQuantizationSegment(Arc::new(
+                    RwLock::new(MockedSegment::new(name.clone())),
+                ))
+            })
+            .collect();
+        assert!(collection
+            .add_segments(segment_names.clone(), segments, 0)
+            .is_ok());
+
+        // Should have 3 active segments
+        assert!(NUM_ACTIVE_SEGMENTS_PER_COLLECTION
+            .get(&CollectionLabel {
+                name: collection_name.clone(),
+            })
+            .is_some());
+        assert_eq!(
+            NUM_ACTIVE_SEGMENTS_PER_COLLECTION
+                .get(&CollectionLabel {
+                    name: collection_name.clone(),
+                })
+                .unwrap()
+                .get(),
+            3
+        );
+
+        // Replace 2 segments with 1 new segment
+        let new_segment_name = "segment_4".to_string();
+        let new_segment: BoxedImmutableSegment<NoQuantizerL2> =
+            BoxedImmutableSegment::<NoQuantizerL2>::MockedNoQuantizationSegment(Arc::new(
+                RwLock::new(MockedSegment::new(new_segment_name.clone())),
+            ));
+        assert!(collection
+            .replace_segment(
+                new_segment,
+                Vec::from(&segment_names[..2]),
+                false,
+                collection.versions_info.upgradable_read()
+            )
+            .is_ok());
+
+        // Should have 2 active segments
+        assert_eq!(
+            NUM_ACTIVE_SEGMENTS_PER_COLLECTION
+                .get(&CollectionLabel {
+                    name: collection_name.clone(),
+                })
+                .unwrap()
+                .get(),
+            2
+        );
     }
 }

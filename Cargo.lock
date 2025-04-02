@@ -1343,6 +1343,7 @@ dependencies = [
  "lock_api",
  "log",
  "memmap2",
+ "metrics",
  "num-traits 0.2.19",
  "odht",
  "ordered-float",
