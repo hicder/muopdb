@@ -50,7 +50,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_num_collections_metrics() {
+    async fn test_collection_catalog_metrics() {
         // Get initial metric value
         let initial_count = NUM_COLLECTIONS.get();
 

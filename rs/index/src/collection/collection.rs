@@ -8,7 +8,7 @@ use dashmap::DashMap;
 use fs_extra::dir::CopyOptions;
 use lock_api::RwLockUpgradableReadGuard;
 use log::debug;
-use metrics::{CollectionLabel, COLLECTION_SIZE_BYTES, NUM_ACTIVE_SEGMENTS};
+use metrics::{CollectionLabel, NUM_ACTIVE_SEGMENTS, NUM_SEARCHABLE_DOCS};
 use parking_lot::{RawRwLock, RwLock};
 use quantization::quantization::Quantizer;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -191,6 +191,13 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     continue;
                 }
 
+                // Initialize number of searchable documents
+                NUM_SEARCHABLE_DOCS
+                    .get_or_create(&CollectionLabel {
+                        name: base_directory.clone(),
+                    })
+                    .set(0);
+
                 iterator.skip_to(seq_no)?;
                 for op in iterator {
                     if let anyhow::Result::Ok(wal_entry) = op {
@@ -217,6 +224,13 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                                 .unwrap();
                                         }
                                     });
+
+                                // The docs are not immediately searchable, but we update the metrics anyway
+                                NUM_SEARCHABLE_DOCS
+                                    .get_or_create(&CollectionLabel {
+                                        name: base_directory.clone(),
+                                    })
+                                    .inc_by(doc_ids.len() as i64);
                             }
                             WalOpType::Delete => {
                                 let doc_ids = wal_entry.doc_ids;
@@ -234,6 +248,14 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                             doc_id,
                                             entry_seq_no,
                                         )?;
+
+                                        // If deletion is successful, decrement the number of searchable documents
+                                        NUM_SEARCHABLE_DOCS
+                                            .get_or_create(&CollectionLabel {
+                                                name: base_directory.clone(),
+                                            })
+                                            .dec();
+
                                         Ok(())
                                     })
                                 })?;
@@ -254,22 +276,11 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         let (sender, receiver) = mpsc::channel(100);
         let receiver = AtomicRefCell::new(receiver);
 
-        // Update the metrics
         NUM_ACTIVE_SEGMENTS
             .get_or_create(&CollectionLabel {
                 name: base_directory.clone(),
             })
             .set(all_segments.len() as i64);
-        COLLECTION_SIZE_BYTES
-            .get_or_create(&CollectionLabel {
-                name: base_directory.clone(),
-            })
-            .set(
-                all_segments
-                    .iter()
-                    .map(|s| s.value().size_in_bytes_immutable_segments())
-                    .sum::<u64>() as i64,
-            );
 
         Ok(Self {
             versions,
@@ -401,7 +412,16 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             .read()
             .mutable_segment
             .read()
-            .insert(doc_id, data)
+            .insert(doc_id, data)?;
+
+        // The doc is not immediately searchable, but we update the metrics anyway
+        NUM_SEARCHABLE_DOCS
+            .get_or_create(&CollectionLabel {
+                name: self.base_directory.clone(),
+            })
+            .inc();
+
+        Ok(())
     }
 
     pub fn insert_for_users(
@@ -418,6 +438,14 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 .read()
                 .insert_for_user(*user_id, doc_id, data, sequence_number)?;
         }
+
+        // The doc is not immediately searchable, but we update the metrics anyway
+        NUM_SEARCHABLE_DOCS
+            .get_or_create(&CollectionLabel {
+                name: self.base_directory.clone(),
+            })
+            .inc();
+
         Ok(())
     }
 
@@ -441,6 +469,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     .num_docs()
                     == 0
                 {
+                    debug!("No documents to flush");
                     *self.last_flush_time.lock().unwrap() = Instant::now();
                     return Ok(String::new());
                 }
@@ -614,24 +643,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             })
             .inc_by(names.len() as i64);
 
-        // New TOC now contains new documents. Update the metrics
-        COLLECTION_SIZE_BYTES
-            .get_or_create(&CollectionLabel {
-                name: self.base_directory.clone(),
-            })
-            .inc_by(
-                names
-                    .iter()
-                    .map(|name| {
-                        self.all_segments
-                            .get(name)
-                            .unwrap()
-                            .value()
-                            .size_in_bytes_immutable_segments()
-                    })
-                    .sum::<u64>() as i64,
-            );
-
         Ok(())
     }
 
@@ -717,25 +728,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 name: self.base_directory.clone(),
             })
             .inc_by(1 - (num_old_segments as i64));
-
-        // New TOC now contains new documents. Update the metrics
-        COLLECTION_SIZE_BYTES
-            .get_or_create(&CollectionLabel {
-                name: self.base_directory.clone(),
-            })
-            .inc_by(
-                new_segment.size_in_bytes_immutable_segments() as i64
-                    - old_segment_names
-                        .iter()
-                        .map(|name| {
-                            self.all_segments
-                                .get(name)
-                                .unwrap()
-                                .value()
-                                .size_in_bytes_immutable_segments()
-                        })
-                        .sum::<u64>() as i64,
-            );
 
         Ok(())
     }
@@ -974,7 +966,16 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             user_id,
             doc_id,
             sequence_number,
-        )
+        )?;
+
+        // The doc is immediately not searchable
+        NUM_SEARCHABLE_DOCS
+            .get_or_create(&CollectionLabel {
+                name: self.base_directory.clone(),
+            })
+            .dec();
+
+        Ok(())
     }
 }
 
@@ -988,7 +989,7 @@ mod tests {
 
     use anyhow::{Ok, Result};
     use config::collection::CollectionConfig;
-    use metrics::{CollectionLabel, NUM_ACTIVE_SEGMENTS};
+    use metrics::{CollectionLabel, NUM_ACTIVE_SEGMENTS, NUM_SEARCHABLE_DOCS};
     use parking_lot::RwLock;
     use quantization::noq::noq::NoQuantizerL2;
     use rand::Rng;
@@ -1755,73 +1756,109 @@ mod tests {
             }
         }
     }
-
     #[test]
-    fn test_num_segments_metrics() {
-        let temp_dir = TempDir::new("test_num_segments_metrics").unwrap();
+    fn test_collection_metrics() {
+        let temp_dir = TempDir::new("test_collection_metrics").unwrap();
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
-        let segment_config = CollectionConfig::default();
-        let collection =
-            Arc::new(Collection::<NoQuantizerL2>::new(base_directory, segment_config).unwrap());
+        let mut segment_config = CollectionConfig::default();
+        segment_config.num_features = 16; // Set a specific feature size for precise calculations
+        let collection = Arc::new(
+            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config.clone())
+                .unwrap(),
+        );
         let collection_name = &collection.base_directory;
 
-        // Initially should have 0 immutable segments
-        assert_eq!(collection.all_segments.len(), 0);
-
-        // Add 3 new segments
-        let segment_names: Vec<String> = (1..=3).map(|i| format!("segment_{}", i)).collect();
-        let segments: Vec<BoxedImmutableSegment<NoQuantizerL2>> = segment_names
-            .iter()
-            .map(|name| {
-                BoxedImmutableSegment::<NoQuantizerL2>::MockedNoQuantizationSegment(Arc::new(
-                    RwLock::new(MockedSegment::new(name.clone())),
-                ))
-            })
-            .collect();
-        assert!(collection
-            .add_segments(segment_names.clone(), segments, 0)
-            .is_ok());
-
-        // Should have 3 active segments
-        assert!(NUM_ACTIVE_SEGMENTS
-            .get(&CollectionLabel {
-                name: collection_name.clone(),
-            })
-            .is_some());
-        assert_eq!(
+        // Helper functions to get metrics
+        let get_active_segments = || {
             NUM_ACTIVE_SEGMENTS
                 .get(&CollectionLabel {
                     name: collection_name.clone(),
                 })
-                .unwrap()
-                .get(),
-            3
-        );
+                .map(|metric| metric.get())
+                .unwrap_or(0)
+        };
 
-        // Replace 2 segments with 1 new segment
-        let new_segment_name = "segment_4".to_string();
-        let new_segment: BoxedImmutableSegment<NoQuantizerL2> =
-            BoxedImmutableSegment::<NoQuantizerL2>::MockedNoQuantizationSegment(Arc::new(
-                RwLock::new(MockedSegment::new(new_segment_name.clone())),
-            ));
-        assert!(collection
-            .replace_segment(
-                new_segment,
-                Vec::from(&segment_names[..2]),
-                false,
-                collection.versions_info.upgradable_read()
-            )
-            .is_ok());
-
-        // Should have 2 active segments
-        assert_eq!(
-            NUM_ACTIVE_SEGMENTS
+        let get_searchable_docs = || {
+            NUM_SEARCHABLE_DOCS
                 .get(&CollectionLabel {
                     name: collection_name.clone(),
                 })
-                .unwrap()
-                .get(),
-            2
+                .map(|metric| metric.get())
+                .unwrap_or(0)
+        };
+
+        // Initial state checks
+        assert_eq!(get_searchable_docs(), 0);
+        assert_eq!(get_active_segments(), 0);
+
+        // Prepare test data
+        let num_features = segment_config.num_features;
+        let test_vectors: Vec<f32> = (0..num_features * 5).map(|i| i as f32).collect();
+        let doc_ids: Vec<u128> = (0..5).map(|i| i as u128).collect();
+        let user_ids: Vec<u128> = vec![42; 5];
+
+        // Insert 5 documents for all users
+        println!("Inserting 5 documents...");
+        for (idx, &doc_id) in doc_ids.iter().enumerate() {
+            let vector = &test_vectors[idx * num_features..(idx + 1) * num_features];
+            collection
+                .insert_for_users(&user_ids, doc_id, vector, 0)
+                .unwrap();
+        }
+
+        // Verify metrics after insertions
+        assert_eq!(get_searchable_docs(), 5);
+        assert_eq!(get_active_segments(), 0);
+
+        // Flush the mutable segment
+        println!("Flushing the collection once...");
+        assert!(collection.flush().is_ok());
+        assert_eq!(
+            collection
+                .mutable_segments
+                .read()
+                .mutable_segment
+                .read()
+                .num_docs(),
+            0
         );
+
+        // Verify metrics after flush
+        assert_eq!(get_searchable_docs(), 5);
+        assert_eq!(get_active_segments(), 1);
+
+        // Remove 2 documents for first user
+        println!("Removing 2 documents...");
+        let docs_to_delete = &doc_ids[0..2];
+        for &doc_id in docs_to_delete {
+            collection.remove(user_ids[0], doc_id, 0).unwrap();
+        }
+
+        // Verify metrics after document removal
+        assert_eq!(get_searchable_docs(), 3);
+        assert_eq!(get_active_segments(), 1);
+
+        // Flush again. Should not create a new segment
+        println!("Flushing the collection again...");
+        assert!(collection.flush().is_ok());
+        assert_eq!(get_active_segments(), 1);
+
+        // Insert 2 documents for all users
+        println!("Inserting the 2 documents back...");
+        let docs_to_insert = docs_to_delete;
+        for (idx, &doc_id) in docs_to_insert.iter().enumerate() {
+            let vector = &test_vectors[idx * num_features..(idx + 1) * num_features];
+            collection
+                .insert_for_users(&user_ids, doc_id, vector, 0)
+                .unwrap();
+        }
+
+        // Flush again to create another immutable segment
+        println!("Flushing the collection again...");
+        assert!(collection.flush().is_ok());
+
+        // Final metrics verification
+        assert_eq!(get_searchable_docs(), 5);
+        assert_eq!(get_active_segments(), 2);
     }
 }
