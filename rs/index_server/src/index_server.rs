@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::vec;
 
+use config::attribute_schema::AttributeSchema;
 use config::collection::CollectionConfig;
 use index::collection::snapshot::SnapshotWithQuantizer;
 use index::wal::entry::WalOpType;
@@ -119,6 +120,10 @@ impl IndexServer for IndexServerImpl {
         }
         if let Some(max_time_to_flush_ms) = req.max_time_to_flush_ms {
             collection_config.max_time_to_flush_ms = max_time_to_flush_ms as u64;
+        }
+
+        if let Some(proto_schema) = req.attribute_schema {
+            collection_config.attribute_schema = Some(AttributeSchema::from(proto_schema));
         }
 
         let mut collection_manager_locked = self.collection_manager.write().await;
