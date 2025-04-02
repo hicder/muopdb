@@ -3,6 +3,7 @@
 #![feature(new_range_api)]
 
 use std::simd::{LaneCount, Simd, SupportedLaneCount};
+pub mod bloom_filter;
 pub mod distance;
 pub mod io;
 pub mod kmeans_builder;

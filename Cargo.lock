@@ -3350,6 +3350,7 @@ name = "utils"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bitvec",
  "criterion",
  "env_logger",
  "hdf5-metno",
