@@ -8,7 +8,7 @@ use dashmap::DashMap;
 use fs_extra::dir::CopyOptions;
 use lock_api::RwLockUpgradableReadGuard;
 use log::debug;
-use metrics::{CollectionLabel, NUM_ACTIVE_SEGMENTS_PER_COLLECTION};
+use metrics::{CollectionLabel, COLLECTION_SIZE_BYTES, NUM_ACTIVE_SEGMENTS};
 use parking_lot::{RawRwLock, RwLock};
 use quantization::quantization::Quantizer;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -253,6 +253,23 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         let (sender, receiver) = mpsc::channel(100);
         let receiver = AtomicRefCell::new(receiver);
+
+        // Update the metrics
+        NUM_ACTIVE_SEGMENTS
+            .get_or_create(&CollectionLabel {
+                name: base_directory.clone(),
+            })
+            .set(all_segments.len() as i64);
+        COLLECTION_SIZE_BYTES
+            .get_or_create(&CollectionLabel {
+                name: base_directory.clone(),
+            })
+            .set(
+                all_segments
+                    .iter()
+                    .map(|s| s.value().size_in_bytes_immutable_segments())
+                    .sum::<u64>() as i64,
+            );
 
         Ok(Self {
             versions,
@@ -591,11 +608,29 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         self.versions.insert(new_version, toc);
 
         // New TOC now contains the new segments. Update the metrics
-        NUM_ACTIVE_SEGMENTS_PER_COLLECTION
+        NUM_ACTIVE_SEGMENTS
             .get_or_create(&CollectionLabel {
                 name: self.base_directory.clone(),
             })
             .inc_by(names.len() as i64);
+
+        // New TOC now contains new documents. Update the metrics
+        COLLECTION_SIZE_BYTES
+            .get_or_create(&CollectionLabel {
+                name: self.base_directory.clone(),
+            })
+            .inc_by(
+                names
+                    .iter()
+                    .map(|name| {
+                        self.all_segments
+                            .get(name)
+                            .unwrap()
+                            .value()
+                            .size_in_bytes_immutable_segments()
+                    })
+                    .sum::<u64>() as i64,
+            );
 
         Ok(())
     }
@@ -643,7 +678,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         let mut new_pending = self.versions.get(&current_version).unwrap().pending.clone();
         let last_sequence_number = self.versions.get(&current_version).unwrap().sequence_number;
         if is_pending {
-            new_pending.insert(new_segment.name(), old_segment_names);
+            new_pending.insert(new_segment.name(), old_segment_names.clone());
         } else {
             // Cleanup the pending segment
             new_pending.retain(|name, _| new_toc.contains(name));
@@ -677,11 +712,30 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         self.versions.insert(new_version, toc);
 
         // New TOC now got rid of the old segments and added the new segment. Update the metrics
-        NUM_ACTIVE_SEGMENTS_PER_COLLECTION
+        NUM_ACTIVE_SEGMENTS
             .get_or_create(&CollectionLabel {
                 name: self.base_directory.clone(),
             })
             .inc_by(1 - (num_old_segments as i64));
+
+        // New TOC now contains new documents. Update the metrics
+        COLLECTION_SIZE_BYTES
+            .get_or_create(&CollectionLabel {
+                name: self.base_directory.clone(),
+            })
+            .inc_by(
+                new_segment.size_in_bytes_immutable_segments() as i64
+                    - old_segment_names
+                        .iter()
+                        .map(|name| {
+                            self.all_segments
+                                .get(name)
+                                .unwrap()
+                                .value()
+                                .size_in_bytes_immutable_segments()
+                        })
+                        .sum::<u64>() as i64,
+            );
 
         Ok(())
     }
@@ -934,7 +988,7 @@ mod tests {
 
     use anyhow::{Ok, Result};
     use config::collection::CollectionConfig;
-    use metrics::{CollectionLabel, NUM_ACTIVE_SEGMENTS_PER_COLLECTION};
+    use metrics::{CollectionLabel, NUM_ACTIVE_SEGMENTS};
     use parking_lot::RwLock;
     use quantization::noq::noq::NoQuantizerL2;
     use rand::Rng;
@@ -1729,13 +1783,13 @@ mod tests {
             .is_ok());
 
         // Should have 3 active segments
-        assert!(NUM_ACTIVE_SEGMENTS_PER_COLLECTION
+        assert!(NUM_ACTIVE_SEGMENTS
             .get(&CollectionLabel {
                 name: collection_name.clone(),
             })
             .is_some());
         assert_eq!(
-            NUM_ACTIVE_SEGMENTS_PER_COLLECTION
+            NUM_ACTIVE_SEGMENTS
                 .get(&CollectionLabel {
                     name: collection_name.clone(),
                 })
@@ -1761,7 +1815,7 @@ mod tests {
 
         // Should have 2 active segments
         assert_eq!(
-            NUM_ACTIVE_SEGMENTS_PER_COLLECTION
+            NUM_ACTIVE_SEGMENTS
                 .get(&CollectionLabel {
                     name: collection_name.clone(),
                 })
