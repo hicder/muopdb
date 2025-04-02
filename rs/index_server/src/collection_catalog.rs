@@ -50,14 +50,14 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_num_collections_metrics_increment() {
+    async fn test_num_collections_metrics() {
         // Get initial metric value
         let initial_count = NUM_COLLECTIONS.get();
 
         // Create a new catalog
         let mut catalog = CollectionCatalog::new();
 
-        let temp_dir = TempDir::new("test_collection").unwrap();
+        let temp_dir = TempDir::new("test_num_collections_metrics").unwrap();
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
 
         // Create and add a mock collection
