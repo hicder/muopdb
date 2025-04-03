@@ -9,7 +9,7 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
-use metrics::{register_metrics, METRICS_REQUESTS};
+use metrics::{register_metrics, INTERNAL_METRICS};
 use prometheus_client::encoding::text::encode;
 use prometheus_client::registry::Registry;
 use tokio::net::TcpListener;
@@ -76,7 +76,7 @@ fn make_handler(
 
             // Increment the metric counter
             log::info!("Received metrics request");
-            METRICS_REQUESTS.inc();
+            INTERNAL_METRICS.prometheus_requests.inc();
 
             let mut buf = String::new();
             encode(&mut buf, &reg)

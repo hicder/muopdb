@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use index::collection::BoxedCollection;
-use metrics::NUM_COLLECTIONS;
+use metrics::INTERNAL_METRICS;
 
 pub struct CollectionCatalog {
     collections: HashMap<String, BoxedCollection>,
@@ -15,7 +15,7 @@ impl CollectionCatalog {
     }
 
     pub async fn add_collection(&mut self, name: String, collection: BoxedCollection) {
-        NUM_COLLECTIONS.inc();
+        INTERNAL_METRICS.num_collections.inc();
         self.collections.insert(name, collection);
     }
 
@@ -42,7 +42,7 @@ mod tests {
 
     use config::collection::CollectionConfig;
     use index::collection::collection::Collection;
-    use metrics::NUM_COLLECTIONS;
+    use metrics::INTERNAL_METRICS;
     use quantization::noq::noq::NoQuantizer;
     use tempdir::TempDir;
     use utils::distance::l2::L2DistanceCalculator;
@@ -52,7 +52,7 @@ mod tests {
     #[tokio::test]
     async fn test_collection_catalog_metrics() {
         // Get initial metric value
-        let initial_count = NUM_COLLECTIONS.get();
+        let initial_count = INTERNAL_METRICS.num_collections.get();
 
         // Create a new catalog
         let mut catalog = CollectionCatalog::new();
@@ -73,7 +73,7 @@ mod tests {
             .await;
 
         // Verify metric was incremented
-        assert_eq!(NUM_COLLECTIONS.get(), initial_count + 1);
+        assert_eq!(INTERNAL_METRICS.num_collections.get(), initial_count + 1);
 
         // Add another collection
         catalog
@@ -81,6 +81,6 @@ mod tests {
             .await;
 
         // Verify metric was incremented again
-        assert_eq!(NUM_COLLECTIONS.get(), initial_count + 2);
+        assert_eq!(INTERNAL_METRICS.num_collections.get(), initial_count + 2);
     }
 }

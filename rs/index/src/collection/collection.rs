@@ -8,7 +8,7 @@ use dashmap::DashMap;
 use fs_extra::dir::CopyOptions;
 use lock_api::RwLockUpgradableReadGuard;
 use log::debug;
-use metrics::{CollectionLabel, NUM_ACTIVE_SEGMENTS, NUM_SEARCHABLE_DOCS};
+use metrics::INTERNAL_METRICS;
 use parking_lot::{RawRwLock, RwLock};
 use quantization::quantization::Quantizer;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -51,6 +51,7 @@ pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
     all_segments: DashMap<String, BoxedImmutableSegment<Q>>,
     versions_info: RwLock<VersionsInfo>,
     base_directory: String,
+    collection_name: String,
     mutable_segments: RwLock<MutableSegments>,
     segment_config: CollectionConfig,
     wal: Option<RwLock<Wal>>,
@@ -68,6 +69,11 @@ pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
 
 impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     pub fn new(base_directory: String, segment_config: CollectionConfig) -> Result<Self> {
+        let collection_name = base_directory
+            .split('/')
+            .last()
+            .unwrap_or("unknown")
+            .to_string();
         let versions: DashMap<u64, TableOfContent> = DashMap::new();
         versions.insert(0, TableOfContent::new(vec![]));
 
@@ -93,11 +99,17 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         let (sender, receiver) = mpsc::channel(100);
         let receiver = AtomicRefCell::new(receiver);
+
+        // Initialize the metrics
+        INTERNAL_METRICS.num_active_segments_set(&collection_name, 0);
+        INTERNAL_METRICS.num_searchable_docs_set(&collection_name, 0);
+
         Ok(Self {
             versions,
             all_segments: DashMap::new(),
             versions_info: RwLock::new(VersionsInfo::new()),
             base_directory,
+            collection_name,
             mutable_segments: RwLock::new(MutableSegments {
                 mutable_segment,
                 pending_mutable_segment: RwLock::new(None),
@@ -133,6 +145,11 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         segments: Vec<BoxedImmutableSegment<Q>>,
         segment_config: CollectionConfig,
     ) -> Result<Self> {
+        let collection_name = base_directory
+            .split('/')
+            .last()
+            .unwrap_or("unknown")
+            .to_string();
         let versions_info = RwLock::new(VersionsInfo::new());
         versions_info.write().current_version = version;
         versions_info.write().version_ref_counts.insert(version, 0);
@@ -191,12 +208,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     continue;
                 }
 
-                // Initialize number of searchable documents
-                NUM_SEARCHABLE_DOCS
-                    .get_or_create(&CollectionLabel {
-                        name: base_directory.clone(),
-                    })
-                    .set(0);
+                INTERNAL_METRICS.num_searchable_docs_set(&collection_name, 0);
 
                 iterator.skip_to(seq_no)?;
                 for op in iterator {
@@ -222,15 +234,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                                     entry_seq_no,
                                                 )
                                                 .unwrap();
+
+                                            // The doc is not immediately searchable, but we update the metrics anyway
+                                            INTERNAL_METRICS
+                                                .num_searchable_docs_inc(&collection_name);
                                         }
                                     });
-
-                                // The docs are not immediately searchable, but we update the metrics anyway
-                                NUM_SEARCHABLE_DOCS
-                                    .get_or_create(&CollectionLabel {
-                                        name: base_directory.clone(),
-                                    })
-                                    .inc_by(doc_ids.len() as i64);
                             }
                             WalOpType::Delete => {
                                 let doc_ids = wal_entry.doc_ids;
@@ -250,11 +259,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                         )?;
 
                                         // If deletion is successful, decrement the number of searchable documents
-                                        NUM_SEARCHABLE_DOCS
-                                            .get_or_create(&CollectionLabel {
-                                                name: base_directory.clone(),
-                                            })
-                                            .dec();
+                                        INTERNAL_METRICS.num_searchable_docs_dec(&collection_name);
 
                                         Ok(())
                                     })
@@ -276,17 +281,15 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         let (sender, receiver) = mpsc::channel(100);
         let receiver = AtomicRefCell::new(receiver);
 
-        NUM_ACTIVE_SEGMENTS
-            .get_or_create(&CollectionLabel {
-                name: base_directory.clone(),
-            })
-            .set(all_segments.len() as i64);
+        // TODO(hung): Get the number of searchable documents in all_segments to update num_searchable_docs
+        INTERNAL_METRICS.num_active_segments_set(&collection_name, all_segments.len() as i64);
 
         Ok(Self {
             versions,
             all_segments,
             versions_info,
             base_directory,
+            collection_name,
             mutable_segments: RwLock::new(MutableSegments {
                 mutable_segment: RwLock::new(mutable_segment),
                 pending_mutable_segment: RwLock::new(None),
@@ -415,11 +418,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             .insert(doc_id, data)?;
 
         // The doc is not immediately searchable, but we update the metrics anyway
-        NUM_SEARCHABLE_DOCS
-            .get_or_create(&CollectionLabel {
-                name: self.base_directory.clone(),
-            })
-            .inc();
+        INTERNAL_METRICS.num_searchable_docs_inc(&self.collection_name);
 
         Ok(())
     }
@@ -440,11 +439,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         }
 
         // The doc is not immediately searchable, but we update the metrics anyway
-        NUM_SEARCHABLE_DOCS
-            .get_or_create(&CollectionLabel {
-                name: self.base_directory.clone(),
-            })
-            .inc();
+        INTERNAL_METRICS.num_searchable_docs_inc(&self.collection_name);
 
         Ok(())
     }
@@ -637,11 +632,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         self.versions.insert(new_version, toc);
 
         // New TOC now contains the new segments. Update the metrics
-        NUM_ACTIVE_SEGMENTS
-            .get_or_create(&CollectionLabel {
-                name: self.base_directory.clone(),
-            })
-            .inc_by(names.len() as i64);
+        INTERNAL_METRICS.num_active_segments_inc_by(&self.collection_name, names.len() as i64);
 
         Ok(())
     }
@@ -723,11 +714,8 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         self.versions.insert(new_version, toc);
 
         // New TOC now got rid of the old segments and added the new segment. Update the metrics
-        NUM_ACTIVE_SEGMENTS
-            .get_or_create(&CollectionLabel {
-                name: self.base_directory.clone(),
-            })
-            .inc_by(1 - (num_old_segments as i64));
+        INTERNAL_METRICS
+            .num_active_segments_inc_by(&self.collection_name, 1 - (num_old_segments as i64));
 
         Ok(())
     }
@@ -969,11 +957,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         )?;
 
         // The doc is immediately not searchable
-        NUM_SEARCHABLE_DOCS
-            .get_or_create(&CollectionLabel {
-                name: self.base_directory.clone(),
-            })
-            .dec();
+        INTERNAL_METRICS.num_searchable_docs_dec(&self.collection_name);
 
         Ok(())
     }
@@ -989,7 +973,7 @@ mod tests {
 
     use anyhow::{Ok, Result};
     use config::collection::CollectionConfig;
-    use metrics::{CollectionLabel, NUM_ACTIVE_SEGMENTS, NUM_SEARCHABLE_DOCS};
+    use metrics::INTERNAL_METRICS;
     use parking_lot::RwLock;
     use quantization::noq::noq::NoQuantizerL2;
     use rand::Rng;
@@ -1766,26 +1750,11 @@ mod tests {
             Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config.clone())
                 .unwrap(),
         );
-        let collection_name = &collection.base_directory;
+        let collection_name = &collection.collection_name;
 
         // Helper functions to get metrics
-        let get_active_segments = || {
-            NUM_ACTIVE_SEGMENTS
-                .get(&CollectionLabel {
-                    name: collection_name.clone(),
-                })
-                .map(|metric| metric.get())
-                .unwrap_or(0)
-        };
-
-        let get_searchable_docs = || {
-            NUM_SEARCHABLE_DOCS
-                .get(&CollectionLabel {
-                    name: collection_name.clone(),
-                })
-                .map(|metric| metric.get())
-                .unwrap_or(0)
-        };
+        let get_active_segments = || INTERNAL_METRICS.num_active_segments_get(collection_name);
+        let get_searchable_docs = || INTERNAL_METRICS.num_searchable_docs_get(collection_name);
 
         // Initial state checks
         assert_eq!(get_searchable_docs(), 0);
