@@ -45,12 +45,13 @@ impl InternalMetrics {
         );
         metrics_registry.register(
             "num_active_segments",
-            "Number of active segments per collection",
+            "Number of active segments in collection",
             self.num_active_segments.clone(),
         );
+        // NOTE: (hung) Name this num_documents for now, but it should be changed to num_searchable_docs
         metrics_registry.register(
-            "num_searchable_docs",
-            "Number of searchable documents per collection",
+            "num_documents",
+            "Number of documents in collection",
             self.num_searchable_docs.clone(),
         );
     }

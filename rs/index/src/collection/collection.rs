@@ -281,7 +281,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         let (sender, receiver) = mpsc::channel(100);
         let receiver = AtomicRefCell::new(receiver);
 
-        // TODO(hung): Get the number of searchable documents in all_segments to update num_searchable_docs
+        // TODO: (hung) Get the number of searchable documents in all_segments to update num_searchable_docs
         INTERNAL_METRICS.num_active_segments_set(&collection_name, all_segments.len() as i64);
 
         Ok(Self {
