@@ -72,3 +72,4 @@ tonic = "0.12.3"
 tonic-build = "0.12.3"
 tonic-reflection = "0.12.3"
 utils = { path = './rs/utils' }
+uuid = {version = "1.16.0", features = ["v4"]}

@@ -20,6 +20,7 @@ rayon.workspace = true
 rkyv.workspace = true
 strum.workspace = true
 tempdir.workspace = true
+uuid.workspace = true
 
 [[bench]]
 name = "l2"
@@ -35,6 +36,10 @@ harness = false
 
 [[bench]]
 name = "mem"
+harness = false
+
+[[bench]]
+name = "odom"
 harness = false
 
 [[bin]]

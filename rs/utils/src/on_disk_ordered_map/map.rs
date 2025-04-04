@@ -92,7 +92,7 @@ impl<'a, C: IntegerCodec> OnDiskOrderedMap<'a, C> {
     }
 
     #[allow(unused)]
-    fn get(&self, key: &str) -> Option<u64> {
+    pub fn get(&self, key: &str) -> Option<u64> {
         match self.index_for_key(key) {
             Some(offset) => {
                 let mut offset = self.data_offset + *offset as usize;
