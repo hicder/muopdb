@@ -9,28 +9,12 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
-use lazy_static::lazy_static;
+use metrics::{register_metrics, INTERNAL_METRICS};
 use prometheus_client::encoding::text::encode;
-use prometheus_client::metrics::counter::Counter;
 use prometheus_client::registry::Registry;
 use tokio::net::TcpListener;
 use tokio::pin;
 use tokio::signal::unix::{signal, SignalKind};
-
-lazy_static! {
-    /// Add your own metrics here. Remember to add them to the `register_metrics` function.
-    /// Example: a counter metric for the number of incoming requests to the metrics endpoint.
-    pub static ref METRICS_REQUESTS: Counter<u64> = Counter::default();
-}
-
-/// Register the metrics with the provided registry.
-fn register_metrics(metrics_registry: &mut Registry) {
-    metrics_registry.register(
-        "metrics_requests",
-        "Number of requests made to the metrics endpoint",
-        METRICS_REQUESTS.clone(),
-    );
-}
 
 pub struct HttpServer {
     metrics_registry: Arc<Registry>,
@@ -92,11 +76,11 @@ fn make_handler(
 
             // Increment the metric counter
             log::info!("Received metrics request");
-            METRICS_REQUESTS.inc();
+            INTERNAL_METRICS.prometheus_requests.inc();
 
             let mut buf = String::new();
             encode(&mut buf, &reg)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+                .map_err(std::io::Error::other)
                 .map(|_| {
                     let body = full(Bytes::from(buf));
                     Response::builder()

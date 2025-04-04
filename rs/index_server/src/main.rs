@@ -2,9 +2,8 @@ mod admin_server;
 mod collection_catalog;
 mod collection_manager;
 mod collection_provider;
+mod http_server;
 mod index_server;
-mod metrics;
-
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -13,6 +12,7 @@ use clap::Parser;
 use collection_catalog::CollectionCatalog;
 use collection_manager::CollectionManager;
 use collection_provider::CollectionProvider;
+use http_server::HttpServer;
 use index_server::IndexServerImpl;
 use log::{debug, error, info};
 use proto::admin::index_server_admin_server::IndexServerAdminServer;
@@ -28,6 +28,9 @@ use tonic::transport::Server;
 struct Args {
     #[arg(short, long, default_value_t = 9002)]
     port: u32,
+
+    #[arg(long, default_value_t = 9003)]
+    http_port: u16,
 
     #[arg(short, long)]
     node_id: u32,
@@ -128,10 +131,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Start the metrics server
-    let http_server_addr = SocketAddr::new(addr.ip(), addr.port() + 1);
+    let http_server_addr = SocketAddr::new(addr.ip(), arg.http_port);
     info!("Starting HTTP server on {}", http_server_addr);
     spawn(async move {
-        if let Err(e) = metrics::HttpServer::new().serve(http_server_addr).await {
+        if let Err(e) = HttpServer::new().serve(http_server_addr).await {
             error!("HTTP server error: {}", e);
         }
     });

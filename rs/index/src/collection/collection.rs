@@ -8,6 +8,7 @@ use dashmap::DashMap;
 use fs_extra::dir::CopyOptions;
 use lock_api::RwLockUpgradableReadGuard;
 use log::debug;
+use metrics::INTERNAL_METRICS;
 use parking_lot::{RawRwLock, RwLock};
 use quantization::quantization::Quantizer;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -50,6 +51,7 @@ pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
     all_segments: DashMap<String, BoxedImmutableSegment<Q>>,
     versions_info: RwLock<VersionsInfo>,
     base_directory: String,
+    collection_name: String,
     mutable_segments: RwLock<MutableSegments>,
     segment_config: CollectionConfig,
     wal: Option<RwLock<Wal>>,
@@ -67,6 +69,11 @@ pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
 
 impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     pub fn new(base_directory: String, segment_config: CollectionConfig) -> Result<Self> {
+        let collection_name = base_directory
+            .split('/')
+            .last()
+            .unwrap_or("unknown")
+            .to_string();
         let versions: DashMap<u64, TableOfContent> = DashMap::new();
         versions.insert(0, TableOfContent::new(vec![]));
 
@@ -92,11 +99,17 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         let (sender, receiver) = mpsc::channel(100);
         let receiver = AtomicRefCell::new(receiver);
+
+        // Initialize the metrics
+        INTERNAL_METRICS.num_active_segments_set(&collection_name, 0);
+        INTERNAL_METRICS.num_searchable_docs_set(&collection_name, 0);
+
         Ok(Self {
             versions,
             all_segments: DashMap::new(),
             versions_info: RwLock::new(VersionsInfo::new()),
             base_directory,
+            collection_name,
             mutable_segments: RwLock::new(MutableSegments {
                 mutable_segment,
                 pending_mutable_segment: RwLock::new(None),
@@ -132,6 +145,11 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         segments: Vec<BoxedImmutableSegment<Q>>,
         segment_config: CollectionConfig,
     ) -> Result<Self> {
+        let collection_name = base_directory
+            .split('/')
+            .last()
+            .unwrap_or("unknown")
+            .to_string();
         let versions_info = RwLock::new(VersionsInfo::new());
         versions_info.write().current_version = version;
         versions_info.write().version_ref_counts.insert(version, 0);
@@ -190,6 +208,8 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     continue;
                 }
 
+                INTERNAL_METRICS.num_searchable_docs_set(&collection_name, 0);
+
                 iterator.skip_to(seq_no)?;
                 for op in iterator {
                     if let anyhow::Result::Ok(wal_entry) = op {
@@ -214,6 +234,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                                     entry_seq_no,
                                                 )
                                                 .unwrap();
+
+                                            // The doc is not immediately searchable, but we update the metrics anyway
+                                            INTERNAL_METRICS
+                                                .num_searchable_docs_inc(&collection_name);
                                         }
                                     });
                             }
@@ -233,6 +257,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                             doc_id,
                                             entry_seq_no,
                                         )?;
+
+                                        // If deletion is successful, decrement the number of searchable documents
+                                        INTERNAL_METRICS.num_searchable_docs_dec(&collection_name);
+
                                         Ok(())
                                     })
                                 })?;
@@ -253,11 +281,15 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         let (sender, receiver) = mpsc::channel(100);
         let receiver = AtomicRefCell::new(receiver);
 
+        // TODO: (hung) Get the number of searchable documents in all_segments to update num_searchable_docs
+        INTERNAL_METRICS.num_active_segments_set(&collection_name, all_segments.len() as i64);
+
         Ok(Self {
             versions,
             all_segments,
             versions_info,
             base_directory,
+            collection_name,
             mutable_segments: RwLock::new(MutableSegments {
                 mutable_segment: RwLock::new(mutable_segment),
                 pending_mutable_segment: RwLock::new(None),
@@ -383,7 +415,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             .read()
             .mutable_segment
             .read()
-            .insert(doc_id, data)
+            .insert(doc_id, data)?;
+
+        // The doc is not immediately searchable, but we update the metrics anyway
+        INTERNAL_METRICS.num_searchable_docs_inc(&self.collection_name);
+
+        Ok(())
     }
 
     pub fn insert_for_users(
@@ -400,6 +437,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 .read()
                 .insert_for_user(*user_id, doc_id, data, sequence_number)?;
         }
+
+        // The doc is not immediately searchable, but we update the metrics anyway
+        INTERNAL_METRICS.num_searchable_docs_inc(&self.collection_name);
+
         Ok(())
     }
 
@@ -423,6 +464,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     .num_docs()
                     == 0
                 {
+                    debug!("No documents to flush");
                     *self.last_flush_time.lock().unwrap() = Instant::now();
                     return Ok(String::new());
                 }
@@ -589,6 +631,9 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         self.versions.insert(new_version, toc);
 
+        // New TOC now contains the new segments. Update the metrics
+        INTERNAL_METRICS.num_active_segments_inc_by(&self.collection_name, names.len() as i64);
+
         Ok(())
     }
 
@@ -601,7 +646,8 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         is_pending: bool,
         versions_info_read: RwLockUpgradableReadGuard<RawRwLock, VersionsInfo>,
     ) -> Result<()> {
-        // Check that the old segments if they are not active
+        let num_old_segments = old_segment_names.len();
+        // Make sure the old segments are active
         let current_toc = self
             .versions
             .get(&versions_info_read.current_version)
@@ -634,7 +680,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         let mut new_pending = self.versions.get(&current_version).unwrap().pending.clone();
         let last_sequence_number = self.versions.get(&current_version).unwrap().sequence_number;
         if is_pending {
-            new_pending.insert(new_segment.name(), old_segment_names);
+            new_pending.insert(new_segment.name(), old_segment_names.clone());
         } else {
             // Cleanup the pending segment
             new_pending.retain(|name, _| new_toc.contains(name));
@@ -666,6 +712,11 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             .insert(new_version, 0);
 
         self.versions.insert(new_version, toc);
+
+        // New TOC now got rid of the old segments and added the new segment. Update the metrics
+        INTERNAL_METRICS
+            .num_active_segments_inc_by(&self.collection_name, 1 - (num_old_segments as i64));
+
         Ok(())
     }
 
@@ -903,7 +954,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             user_id,
             doc_id,
             sequence_number,
-        )
+        )?;
+
+        // The doc is immediately not searchable
+        INTERNAL_METRICS.num_searchable_docs_dec(&self.collection_name);
+
+        Ok(())
     }
 }
 
@@ -917,6 +973,7 @@ mod tests {
 
     use anyhow::{Ok, Result};
     use config::collection::CollectionConfig;
+    use metrics::INTERNAL_METRICS;
     use parking_lot::RwLock;
     use quantization::noq::noq::NoQuantizerL2;
     use rand::Rng;
@@ -1682,5 +1739,95 @@ mod tests {
                 assert!(false);
             }
         }
+    }
+    #[test]
+    fn test_collection_metrics() {
+        let temp_dir = TempDir::new("test_collection_metrics").unwrap();
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let mut segment_config = CollectionConfig::default();
+        segment_config.num_features = 16; // Set a specific feature size for precise calculations
+        let collection = Arc::new(
+            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config.clone())
+                .unwrap(),
+        );
+        let collection_name = &collection.collection_name;
+
+        // Helper functions to get metrics
+        let get_active_segments = || INTERNAL_METRICS.num_active_segments_get(collection_name);
+        let get_searchable_docs = || INTERNAL_METRICS.num_searchable_docs_get(collection_name);
+
+        // Initial state checks
+        assert_eq!(get_searchable_docs(), 0);
+        assert_eq!(get_active_segments(), 0);
+
+        // Prepare test data
+        let num_features = segment_config.num_features;
+        let test_vectors: Vec<f32> = (0..num_features * 5).map(|i| i as f32).collect();
+        let doc_ids: Vec<u128> = (0..5).map(|i| i as u128).collect();
+        let user_ids: Vec<u128> = vec![42; 5];
+
+        // Insert 5 documents for all users
+        println!("Inserting 5 documents...");
+        for (idx, &doc_id) in doc_ids.iter().enumerate() {
+            let vector = &test_vectors[idx * num_features..(idx + 1) * num_features];
+            collection
+                .insert_for_users(&user_ids, doc_id, vector, 0)
+                .unwrap();
+        }
+
+        // Verify metrics after insertions
+        assert_eq!(get_searchable_docs(), 5);
+        assert_eq!(get_active_segments(), 0);
+
+        // Flush the mutable segment
+        println!("Flushing the collection once...");
+        assert!(collection.flush().is_ok());
+        assert_eq!(
+            collection
+                .mutable_segments
+                .read()
+                .mutable_segment
+                .read()
+                .num_docs(),
+            0
+        );
+
+        // Verify metrics after flush
+        assert_eq!(get_searchable_docs(), 5);
+        assert_eq!(get_active_segments(), 1);
+
+        // Remove 2 documents for first user
+        println!("Removing 2 documents...");
+        let docs_to_delete = &doc_ids[0..2];
+        for &doc_id in docs_to_delete {
+            collection.remove(user_ids[0], doc_id, 0).unwrap();
+        }
+
+        // Verify metrics after document removal
+        assert_eq!(get_searchable_docs(), 3);
+        assert_eq!(get_active_segments(), 1);
+
+        // Flush again. Should not create a new segment
+        println!("Flushing the collection again...");
+        assert!(collection.flush().is_ok());
+        assert_eq!(get_active_segments(), 1);
+
+        // Insert 2 documents for all users
+        println!("Inserting the 2 documents back...");
+        let docs_to_insert = docs_to_delete;
+        for (idx, &doc_id) in docs_to_insert.iter().enumerate() {
+            let vector = &test_vectors[idx * num_features..(idx + 1) * num_features];
+            collection
+                .insert_for_users(&user_ids, doc_id, vector, 0)
+                .unwrap();
+        }
+
+        // Flush again to create another immutable segment
+        println!("Flushing the collection again...");
+        assert!(collection.flush().is_ok());
+
+        // Final metrics verification
+        assert_eq!(get_searchable_docs(), 5);
+        assert_eq!(get_active_segments(), 2);
     }
 }

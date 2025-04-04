@@ -1345,6 +1345,7 @@ dependencies = [
  "lock_api",
  "log",
  "memmap2",
+ "metrics",
  "num-traits 0.2.19",
  "odht",
  "ordered-float",
@@ -1377,8 +1378,8 @@ dependencies = [
  "hyper-util",
  "index",
  "index_writer",
- "lazy_static",
  "log",
+ "metrics",
  "parking_lot",
  "prometheus-client",
  "prost",
@@ -1388,6 +1389,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "tempdir",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -1660,6 +1662,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd3f7eed9d3848f8b98834af67102b720745c4ec028fcd0aa0239277e7de374f"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "metrics"
+version = "0.1.0"
+dependencies = [
+ "lazy_static",
+ "prometheus-client",
 ]
 
 [[package]]

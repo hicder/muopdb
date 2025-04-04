@@ -8,6 +8,7 @@ members = [
   "rs/index",
   "rs/index_server",
   "rs/index_writer",
+  "rs/metrics",
   "rs/proto",
   "rs/quantization",
   "rs/utils",
@@ -72,3 +73,5 @@ tonic = "0.12.3"
 tonic-build = "0.12.3"
 tonic-reflection = "0.12.3"
 utils = { path = './rs/utils' }
+metrics = { path = './rs/metrics' }
+prometheus-client = "0.23.1"
