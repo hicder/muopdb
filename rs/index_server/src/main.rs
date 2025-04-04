@@ -86,6 +86,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let collection_manager_clone_for_cleanup = collection_manager.clone();
+    let automatic_segments_cleanup_thread = spawn(async move {
+        loop {
+            collection_manager_clone_for_cleanup
+                .read()
+                .await
+                .auto_vacuum()
+                .await
+                .unwrap();
+            sleep(std::time::Duration::from_secs(60)).await;
+        }
+    });
+
     let mut ingestion_worker_threads = Vec::new();
     for i in 0..arg.num_ingestion_workers {
         let collection_manager_process_ops_clone = collection_manager.clone();
@@ -160,6 +173,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO(hicder): Add graceful shutdown
     info!("Received signal, shutting down");
     collection_manager_thread.await?;
+    automatic_segments_cleanup_thread.await?;
     for thread in ingestion_worker_threads {
         thread.await?;
     }
