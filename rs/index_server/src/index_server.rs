@@ -5,6 +5,7 @@ use config::collection::CollectionConfig;
 use index::collection::snapshot::SnapshotWithQuantizer;
 use index::wal::entry::WalOpType;
 use log::info;
+use metrics::API_METRICS;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
     CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse, Id,
@@ -40,9 +41,11 @@ impl IndexServer for IndexServerImpl {
         &self,
         request: tonic::Request<CreateCollectionRequest>,
     ) -> Result<tonic::Response<CreateCollectionResponse>, tonic::Status> {
+        let start = std::time::Instant::now();
         let mut collection_config = CollectionConfig::default();
         let req = request.into_inner();
         let collection_name = req.collection_name;
+        API_METRICS.num_requests_inc("create_collection", &collection_name);
 
         if let Some(num_features) = req.num_features {
             collection_config.num_features = num_features as usize;
@@ -136,6 +139,9 @@ impl IndexServer for IndexServerImpl {
             .await
         {
             Ok(_) => {
+                let latency_ms = start.elapsed().as_millis() as f64;
+                API_METRICS.request_latency_ms_observe("create_collection", latency_ms);
+
                 return Ok(tonic::Response::new(CreateCollectionResponse {
                     message: format!("Collection {} created", collection_name),
                 }));
@@ -153,6 +159,8 @@ impl IndexServer for IndexServerImpl {
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
+        API_METRICS.num_requests_inc("search", &collection_name);
+
         let vec = req.vector;
         let k = req.top_k;
         let record_metrics = req.record_metrics;
@@ -196,6 +204,10 @@ impl IndexServer for IndexServerImpl {
                             "[{}] Searched collection in {:?}",
                             collection_name, duration
                         );
+
+                        API_METRICS
+                            .request_latency_ms_observe("search", duration.as_millis() as f64);
+
                         return Ok(tonic::Response::new(SearchResponse {
                             doc_ids,
                             scores,
@@ -203,6 +215,9 @@ impl IndexServer for IndexServerImpl {
                         }));
                     }
                     None => {
+                        let duration = start.elapsed().as_millis() as f64;
+                        API_METRICS.request_latency_ms_observe("search", duration);
+
                         return Ok(tonic::Response::new(SearchResponse {
                             doc_ids: vec![],
                             scores: vec![],
@@ -230,6 +245,8 @@ impl IndexServer for IndexServerImpl {
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
+        API_METRICS.num_requests_inc("insert", &collection_name);
+
         let ids = ids_to_u128s(&req.doc_ids);
         let vectors = req.vectors;
         let user_ids = ids_to_u128s(&req.user_ids);
@@ -261,6 +278,9 @@ impl IndexServer for IndexServerImpl {
                 );
 
                 if collection.use_wal() {
+                    let latency_ms = start.elapsed().as_millis() as f64;
+                    API_METRICS.request_latency_ms_observe("insert", latency_ms);
+                    
                     return Ok(tonic::Response::new(InsertResponse { num_docs_inserted }));
                 }
 
@@ -282,6 +302,8 @@ impl IndexServer for IndexServerImpl {
                     collection_name, num_docs_inserted, duration
                 );
 
+                API_METRICS.request_latency_ms_observe("insert", duration.as_millis() as f64);
+
                 Ok(tonic::Response::new(InsertResponse { num_docs_inserted }))
             }
             None => Err(tonic::Status::new(
@@ -298,6 +320,8 @@ impl IndexServer for IndexServerImpl {
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
+        API_METRICS.num_requests_inc("remove", &collection_name);
+
         let ids = ids_to_u128s(&req.doc_ids);
         let user_ids = ids_to_u128s(&req.user_ids);
         let collection_opt = self
@@ -321,6 +345,9 @@ impl IndexServer for IndexServerImpl {
 
                 let success = true;
                 if collection.use_wal() {
+                    let latency_ms = start.elapsed().as_millis() as f64;
+                    API_METRICS.request_latency_ms_observe("remove", latency_ms);
+
                     return Ok(tonic::Response::new(RemoveResponse { success }));
                 }
 
@@ -338,6 +365,8 @@ impl IndexServer for IndexServerImpl {
                     collection_name, num_docs_removed, duration
                 );
 
+                API_METRICS.request_latency_ms_observe("remove", duration.as_millis() as f64);
+
                 Ok(tonic::Response::new(RemoveResponse { success }))
             }
             None => Err(tonic::Status::new(
@@ -354,6 +383,7 @@ impl IndexServer for IndexServerImpl {
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
+        API_METRICS.num_requests_inc("flush", &collection_name);
 
         let collection_opt = self
             .collection_catalog
@@ -369,6 +399,9 @@ impl IndexServer for IndexServerImpl {
                 let flushed_segment = collection.flush().unwrap();
                 let duration = end.duration_since(start);
                 info!("Flushed collection {} in {:?}", collection_name, duration);
+
+                API_METRICS.request_latency_ms_observe("flush", duration.as_millis() as f64);
+
                 Ok(tonic::Response::new(FlushResponse {
                     flushed_segments: vec![flushed_segment],
                 }))
@@ -387,6 +420,8 @@ impl IndexServer for IndexServerImpl {
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
+        API_METRICS.num_requests_inc("insert_packed", &collection_name);
+
         let doc_ids = bytes_to_u128s(&req.doc_ids);
         let num_docs = doc_ids.len();
         let vectors_buffer = req.vectors;
@@ -422,6 +457,9 @@ impl IndexServer for IndexServerImpl {
                 );
 
                 if collection.use_wal() {
+                    let latency_ms = start.elapsed().as_millis() as f64;
+                    API_METRICS.request_latency_ms_observe("insert_packed", latency_ms);
+                    
                     return Ok(tonic::Response::new(InsertPackedResponse {
                         num_docs_inserted,
                     }));
@@ -444,6 +482,10 @@ impl IndexServer for IndexServerImpl {
                     "[{}] Inserted {} vectors in {:?}",
                     collection_name, num_docs, duration
                 );
+
+                API_METRICS
+                    .request_latency_ms_observe("insert_packed", duration.as_millis() as f64);
+
                 Ok(tonic::Response::new(InsertPackedResponse {
                     num_docs_inserted,
                 }))
