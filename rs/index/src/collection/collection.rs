@@ -208,8 +208,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     continue;
                 }
 
-                INTERNAL_METRICS.num_searchable_docs_set(&collection_name, 0);
-
                 iterator.skip_to(seq_no)?;
                 for op in iterator {
                     if let anyhow::Result::Ok(wal_entry) = op {
@@ -222,6 +220,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                 let user_ids = wal_entry.user_ids;
                                 let data = wal_entry.data;
 
+                                let mut num_successful_inserts: i64 = 0;
                                 data.chunks(segment_config.num_features)
                                     .zip(doc_ids)
                                     .for_each(|(vector, doc_id)| {
@@ -235,17 +234,23 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                                 )
                                                 .unwrap();
 
-                                            // The doc is not immediately searchable, but we update the metrics anyway
-                                            INTERNAL_METRICS
-                                                .num_searchable_docs_inc(&collection_name);
+                                            num_successful_inserts += 1;
                                         }
                                     });
+
+                                // The doc is not immediately searchable, but we update the metrics anyway
+                                INTERNAL_METRICS.num_searchable_docs_inc_by(
+                                    &collection_name,
+                                    num_successful_inserts,
+                                );
                             }
                             WalOpType::Delete => {
                                 let doc_ids = wal_entry.doc_ids;
                                 let user_ids = wal_entry.user_ids;
                                 assert!(wal_entry.data.is_empty());
                                 let ver = versions.get(&version).unwrap();
+
+                                let mut num_successful_deletes: i64 = 0;
                                 user_ids.iter().try_for_each(|&user_id| {
                                     doc_ids.iter().try_for_each(|&doc_id| {
                                         Self::remove_impl(
@@ -258,12 +263,16 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                             entry_seq_no,
                                         )?;
 
-                                        // If deletion is successful, decrement the number of searchable documents
-                                        INTERNAL_METRICS.num_searchable_docs_dec(&collection_name);
-
+                                        num_successful_deletes += 1;
                                         Ok(())
                                     })
                                 })?;
+
+                                // The docs are immediately not searchable
+                                INTERNAL_METRICS.num_searchable_docs_dec_by(
+                                    &collection_name,
+                                    num_successful_deletes,
+                                );
                             }
                         }
                     } else {
@@ -632,7 +641,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         self.versions.insert(new_version, toc);
 
         // New TOC now contains the new segments. Update the metrics
-        INTERNAL_METRICS.num_active_segments_inc_by(&self.collection_name, names.len() as i64);
+        INTERNAL_METRICS.num_active_segments_set(&self.collection_name, new_toc.len() as i64);
 
         Ok(())
     }

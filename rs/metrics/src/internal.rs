@@ -70,11 +70,29 @@ impl InternalMetrics {
         self.num_searchable_docs.get_or_create(&label).dec();
     }
 
+    pub fn num_searchable_docs_dec_by(&self, collection_name: &str, num_docs: i64) {
+        let label = CollectionLabel {
+            name: collection_name.to_string(),
+        };
+        self.num_searchable_docs
+            .get_or_create(&label)
+            .dec_by(num_docs);
+    }
+
     pub fn num_searchable_docs_inc(&self, collection_name: &str) {
         let label = CollectionLabel {
             name: collection_name.to_string(),
         };
         self.num_searchable_docs.get_or_create(&label).inc();
+    }
+
+    pub fn num_searchable_docs_inc_by(&self, collection_name: &str, num_docs: i64) {
+        let label = CollectionLabel {
+            name: collection_name.to_string(),
+        };
+        self.num_searchable_docs
+            .get_or_create(&label)
+            .inc_by(num_docs);
     }
 
     pub fn num_searchable_docs_get(&self, collection_name: &str) -> i64 {
