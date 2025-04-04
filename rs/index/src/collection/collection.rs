@@ -612,6 +612,8 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         let mut new_toc = self.versions.get(&current_version).unwrap().toc.clone();
         new_toc.extend_from_slice(&names);
+        let num_new_segments = new_toc.len();
+
         let new_pending = self.versions.get(&current_version).unwrap().pending.clone();
 
         // Write the TOC to disk to a temporary file (with random name). Only rename atomically under the write lock.
@@ -641,7 +643,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         self.versions.insert(new_version, toc);
 
         // New TOC now contains the new segments. Update the metrics
-        INTERNAL_METRICS.num_active_segments_set(&self.collection_name, new_toc.len() as i64);
+        INTERNAL_METRICS.num_active_segments_set(&self.collection_name, num_new_segments as i64);
 
         Ok(())
     }
