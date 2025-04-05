@@ -280,7 +280,7 @@ impl IndexServer for IndexServerImpl {
                 if collection.use_wal() {
                     let latency_ms = start.elapsed().as_millis() as f64;
                     API_METRICS.request_latency_ms_observe("insert", latency_ms);
-                    
+
                     return Ok(tonic::Response::new(InsertResponse { num_docs_inserted }));
                 }
 
@@ -459,7 +459,7 @@ impl IndexServer for IndexServerImpl {
                 if collection.use_wal() {
                     let latency_ms = start.elapsed().as_millis() as f64;
                     API_METRICS.request_latency_ms_observe("insert_packed", latency_ms);
-                    
+
                     return Ok(tonic::Response::new(InsertPackedResponse {
                         num_docs_inserted,
                     }));
