@@ -86,6 +86,23 @@ mod tests {
     use crate::ivf::writer::IvfWriter;
     use crate::posting_list::combined_file::Version;
 
+    /// Tests the `IvfReader`'s ability to correctly read an IVF index that uses Elias-Fano encoding for posting lists.
+    ///
+    /// This test performs the following steps:
+    /// 1. Creates a temporary directory for storing the index files.
+    /// 2. Initializes an `IvfWriter` with `EliasFano` encoding.
+    /// 3. Creates an `IvfBuilder` to build the IVF index with randomly generated vectors.
+    /// 4. Writes the built index to disk using the `IvfWriter`.
+    /// 5. Initializes an `IvfReader` to read the index from disk.
+    /// 6. Reads the index using the `IvfReader`.
+    /// 7. Verifies the integrity of the read index by checking:
+    ///     - The existence of the vector and index files.
+    ///     - The consistency of vectors between the builder and the read index.
+    ///     - The correctness of index file headers.
+    ///     - The correctness of document ID mappings.
+    ///     - The consistency of centroid content.
+    ///     - The consistency of posting list content, ensuring that the Elias-Fano encoded
+    ///       posting lists are correctly decoded and match the original data.
     #[test]
     fn test_ivf_reader_elias_fano() {
         let temp_dir = TempDir::new("test_ivf_reader_elias_fano")
@@ -221,6 +238,26 @@ mod tests {
         }
     }
 
+    /// Tests the `IvfReader`'s ability to read an IVF index that was encoded using Elias-Fano,
+    /// and compares its search results with a reference index encoded using Plain encoding.
+    ///
+    /// The purpose of this test is to ensure that the Elias-Fano encoding and decoding process
+    /// does not introduce any discrepancies in the search results compared to a baseline.
+    ///
+    /// This test performs the following steps:
+    /// 1. Creates two temporary directories: one for the reference index (Plain encoding) and
+    ///    another for the index to be tested (Elias-Fano encoding).
+    /// 2. Initializes two `IvfWriter` instances, one with `PlainEncoder` and another with
+    ///    `EliasFano`.
+    /// 3. Creates an `IvfBuilder` and adds randomly generated vectors to it.
+    /// 4. Builds the IVF index using the builder.
+    /// 5. Writes both the reference index and the Elias-Fano encoded index to their
+    ///    respective directories.
+    /// 6. Initializes two `IvfReader` instances, one for the reference index and another for
+    ///    the Elias-Fano encoded index.
+    /// 7. Reads both indices using their respective readers.
+    /// 8. Generates random queries and performs searches on both indices.
+    /// 9. Compares the search results (IDs and scores) of both indices to ensure they are identical.
     #[tokio::test]
     async fn test_ivf_reader_read_elias_fano_encoding() {
         // Create reference index (using PlainEncoder/Decoder)
@@ -319,6 +356,23 @@ mod tests {
         }
     }
 
+    /// Tests the `IvfReader`'s ability to read a basic IVF index.
+    ///
+    /// This test performs the following steps:
+    /// 1.  Sets up a temporary directory and configurations for the IVF index.
+    /// 2.  Initializes a `NoQuantizer`.
+    /// 3.  Creates an `IvfWriter` to write the index to disk.
+    /// 4.  Builds an IVF index using `IvfBuilder` with randomly generated vectors.
+    /// 5.  Writes the built index to disk using the `IvfWriter`.
+    /// 6.  Creates an `IvfReader` to read the index from disk.
+    /// 7.  Reads the index using the `IvfReader`.
+    /// 8.  Verifies the integrity of the read index by checking:
+    ///     - The existence of the vector and index files.
+    ///     - The consistency of vectors.
+    ///     - The correctness of index file headers.
+    ///     - The correctness of document ID mappings.
+    ///     - The consistency of centroid content.
+    ///     - The consistency of posting list content.
     #[test]
     fn test_ivf_reader_read() {
         let temp_dir =
