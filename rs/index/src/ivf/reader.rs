@@ -704,7 +704,12 @@ mod tests {
         }
     }
 
-    // Test when the max posting list size is exceeded
+    /// Tests the IvfReader`s ability to limit the size of posting lists during index creation.
+    ///
+    /// This test verifies that the `max_posting_list_size` configuration parameter in `IvfBuilderConfig`
+    /// correctly restricts the number of vectors added to each posting list.
+    /// It checks if the posting list sizes in the created index are within the expected bounds, ensuring
+    /// that they do not exceed `max_posting_list_size` by a significant factor.
     #[test]
     fn test_ivf_reader_read_max_posting_list_size() {
         let temp_dir = TempDir::new("test_ivf_reader_read_max_posting_list_size")
