@@ -14,12 +14,13 @@ use crate::segment::pending_segment::PendingSegment;
 use crate::segment::{BoxedImmutableSegment, Segment};
 
 pub struct CollectionReader {
+    name: String,
     path: String,
 }
 
 impl CollectionReader {
-    pub fn new(path: String) -> Self {
-        Self { path }
+    pub fn new(name: String, path: String) -> Self {
+        Self { name, path }
     }
 
     pub fn read<Q: Quantizer + Clone + Send + Sync + 'static>(&self) -> Result<Arc<Collection<Q>>> {
@@ -79,6 +80,7 @@ impl CollectionReader {
         }
 
         let collection = Arc::new(Collection::init_from(
+            self.name.clone(),
             self.path.clone(),
             latest_version,
             toc,
@@ -133,7 +135,8 @@ mod tests {
 
     #[test]
     fn test_reader() {
-        let temp_dir = TempDir::new("test_reader").unwrap();
+        let collection_name = "test_reader";
+        let temp_dir = TempDir::new(collection_name).unwrap();
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
 
         // Write the collection config
@@ -164,7 +167,7 @@ mod tests {
         let toc = TableOfContent::new(vec!["segment1".to_string(), "segment2".to_string()]);
         serde_json::to_writer(std::fs::File::create(toc_path).unwrap(), &toc).unwrap();
 
-        let reader = CollectionReader::new(base_directory.clone());
+        let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
         let collection = reader.read().unwrap();
 
         // Check current version

@@ -69,7 +69,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_optimizer() -> Result<()> {
-        let tmp_dir = tempdir::TempDir::new("test_merge_optimizer")?;
+        let collection_name = "test_merge_optimizer";
+        let tmp_dir = tempdir::TempDir::new(collection_name)?;
         // Create directory if it doesn't exist
         std::fs::create_dir_all(&tmp_dir)?;
 
@@ -85,7 +86,7 @@ mod tests {
 
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
-        let reader = CollectionReader::new(base_directory.clone());
+        let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
         let collection = reader.read::<NoQuantizerL2>()?;
 
         collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0)?;
@@ -146,7 +147,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_invalidated_optimizer() -> Result<()> {
-        let tmp_dir = tempdir::TempDir::new("test_merge_invalidated_optimizer")?;
+        let collection_name = "test_merge_invalidated_optimizer";
+        let tmp_dir = tempdir::TempDir::new(collection_name)?;
         // Create directory if it doesn't exist
         std::fs::create_dir_all(&tmp_dir)?;
 
@@ -162,7 +164,7 @@ mod tests {
 
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
-        let reader = CollectionReader::new(base_directory.clone());
+        let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
         let collection = reader.read::<NoQuantizerL2>()?;
 
         collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0)?;
@@ -220,7 +222,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_optimizer_with_multiple_users() -> Result<()> {
-        let tmp_dir = tempdir::TempDir::new("test_merge_optimizer_with_multiple_users")?;
+        let collection_name = "test_merge_optimizer_with_multiple_users";
+        let tmp_dir = tempdir::TempDir::new(collection_name)?;
         // Create directory if it doesn't exist
         std::fs::create_dir_all(&tmp_dir)?;
 
@@ -236,7 +239,7 @@ mod tests {
 
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
-        let reader = CollectionReader::new(base_directory.clone());
+        let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
         let collection = reader.read::<NoQuantizerL2>()?;
 
         collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0)?;
@@ -297,8 +300,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_invalidated_optimizer_with_multiple_users() -> Result<()> {
-        let tmp_dir =
-            tempdir::TempDir::new("test_merge_invalidated_optimizer_with_multiple_users")?;
+        let collection_name = "test_merge_invalidated_optimizer_with_multiple_users";
+        let tmp_dir = tempdir::TempDir::new(collection_name)?;
         // Create directory if it doesn't exist
         std::fs::create_dir_all(&tmp_dir)?;
 
@@ -314,7 +317,7 @@ mod tests {
 
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
-        let reader = CollectionReader::new(base_directory.clone());
+        let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
         let collection = reader.read::<NoQuantizerL2>()?;
 
         collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0)?;

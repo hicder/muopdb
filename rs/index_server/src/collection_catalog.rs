@@ -57,12 +57,14 @@ mod tests {
         // Create a new catalog
         let mut catalog = CollectionCatalog::new();
 
-        let temp_dir = TempDir::new("test_num_collections_metrics").unwrap();
+        let collection_name = "test_num_collections_metrics";
+        let temp_dir = TempDir::new(collection_name).unwrap();
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
 
         // Create and add a mock collection
         let collection: BoxedCollection = BoxedCollection::CollectionNoQuantizationL2(Arc::new(
             Collection::<NoQuantizer<L2DistanceCalculator>>::new(
+                collection_name.to_string(),
                 base_directory,
                 CollectionConfig::default(),
             )

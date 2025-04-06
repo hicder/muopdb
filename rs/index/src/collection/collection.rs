@@ -68,12 +68,11 @@ pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
 }
 
 impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
-    pub fn new(base_directory: String, segment_config: CollectionConfig) -> Result<Self> {
-        let collection_name = base_directory
-            .split('/')
-            .last()
-            .unwrap_or("unknown")
-            .to_string();
+    pub fn new(
+        collection_name: String,
+        base_directory: String,
+        segment_config: CollectionConfig,
+    ) -> Result<Self> {
         let versions: DashMap<u64, TableOfContent> = DashMap::new();
         versions.insert(0, TableOfContent::new(vec![]));
 
@@ -139,17 +138,13 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     }
 
     pub fn init_from(
+        collection_name: String,
         base_directory: String,
         version: u64,
         toc: TableOfContent,
         segments: Vec<BoxedImmutableSegment<Q>>,
         segment_config: CollectionConfig,
     ) -> Result<Self> {
-        let collection_name = base_directory
-            .split('/')
-            .last()
-            .unwrap_or("unknown")
-            .to_string();
         let versions_info = RwLock::new(VersionsInfo::new());
         versions_info.write().current_version = version;
         versions_info.write().version_ref_counts.insert(version, 0);
@@ -290,7 +285,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         let (sender, receiver) = mpsc::channel(100);
         let receiver = AtomicRefCell::new(receiver);
 
-        // TODO: (hung) Get the number of searchable documents in all_segments to update num_searchable_docs
         INTERNAL_METRICS.num_active_segments_set(&collection_name, all_segments.len() as i64);
 
         Ok(Self {
@@ -612,7 +606,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         let mut new_toc = self.versions.get(&current_version).unwrap().toc.clone();
         new_toc.extend_from_slice(&names);
-        let num_new_segments = new_toc.len();
+        let num_new_toc_segments = new_toc.len();
 
         let new_pending = self.versions.get(&current_version).unwrap().pending.clone();
 
@@ -643,7 +637,8 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         self.versions.insert(new_version, toc);
 
         // New TOC now contains the new segments. Update the metrics
-        INTERNAL_METRICS.num_active_segments_set(&self.collection_name, num_new_segments as i64);
+        INTERNAL_METRICS
+            .num_active_segments_set(&self.collection_name, num_new_toc_segments as i64);
 
         Ok(())
     }
@@ -657,7 +652,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         is_pending: bool,
         versions_info_read: RwLockUpgradableReadGuard<RawRwLock, VersionsInfo>,
     ) -> Result<()> {
-        let num_old_segments = old_segment_names.len();
         // Make sure the old segments are active
         let current_toc = self
             .versions
@@ -687,11 +681,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         let mut new_toc = self.versions.get(&current_version).unwrap().toc.clone();
         new_toc.retain(|name| !old_segment_names.contains(name));
         new_toc.push(new_segment.name());
+        let num_new_toc_segments = new_toc.len();
 
         let mut new_pending = self.versions.get(&current_version).unwrap().pending.clone();
         let last_sequence_number = self.versions.get(&current_version).unwrap().sequence_number;
         if is_pending {
-            new_pending.insert(new_segment.name(), old_segment_names.clone());
+            new_pending.insert(new_segment.name(), old_segment_names);
         } else {
             // Cleanup the pending segment
             new_pending.retain(|name, _| new_toc.contains(name));
@@ -726,7 +721,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         // New TOC now got rid of the old segments and added the new segment. Update the metrics
         INTERNAL_METRICS
-            .num_active_segments_inc_by(&self.collection_name, 1 - (num_old_segments as i64));
+            .num_active_segments_set(&self.collection_name, num_new_toc_segments as i64);
 
         Ok(())
     }
@@ -999,11 +994,17 @@ mod tests {
 
     #[test]
     fn test_collection() -> Result<()> {
-        let temp_dir = TempDir::new("test_collection")?;
+        let collection_name = "test_collection";
+        let temp_dir = TempDir::new(collection_name)?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let segment_config = CollectionConfig::default_test_config();
         let collection = Arc::new(
-            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+            Collection::<NoQuantizerL2>::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                segment_config,
+            )
+            .unwrap(),
         );
 
         {
@@ -1080,12 +1081,18 @@ mod tests {
 
     #[test]
     fn test_collection_multi_thread() -> Result<()> {
-        let temp_dir = TempDir::new("test_collection")?;
+        let collection_name = "test_collection";
+        let temp_dir = TempDir::new(collection_name)?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let segment_config = CollectionConfig::default_test_config();
 
         let collection = Arc::new(
-            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+            Collection::<NoQuantizerL2>::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                segment_config,
+            )
+            .unwrap(),
         );
         let stopped = Arc::new(AtomicBool::new(false));
 
@@ -1151,11 +1158,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_collection_optimizer() -> Result<()> {
-        let temp_dir = TempDir::new("test_collection")?;
+        let collection_name = "test_collection";
+        let temp_dir = TempDir::new(collection_name)?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let segment_config = CollectionConfig::default_test_config();
         let collection = Arc::new(
-            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+            Collection::<NoQuantizerL2>::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                segment_config,
+            )
+            .unwrap(),
         );
 
         // Add a document and flush
@@ -1197,11 +1210,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_collection_multi_thread_optimizer() -> Result<()> {
-        let temp_dir = TempDir::new("test_collection")?;
+        let collection_name = "test_collection";
+        let temp_dir = TempDir::new(collection_name)?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let segment_config = CollectionConfig::default_test_config();
         let collection = Arc::new(
-            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+            Collection::<NoQuantizerL2>::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                segment_config,
+            )
+            .unwrap(),
         );
 
         collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
@@ -1274,7 +1293,8 @@ mod tests {
 
     #[test]
     fn test_collection_reader() -> Result<()> {
-        let temp_dir = TempDir::new("test_collection")?;
+        let collection_name = "test_collection";
+        let temp_dir = TempDir::new(collection_name)?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let segment_config = CollectionConfig::default_test_config();
         // write the collection config
@@ -1286,7 +1306,12 @@ mod tests {
 
         {
             let collection = Arc::new(
-                Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+                Collection::<NoQuantizerL2>::new(
+                    collection_name.to_string(),
+                    base_directory.clone(),
+                    segment_config,
+                )
+                .unwrap(),
             );
 
             collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
@@ -1302,7 +1327,7 @@ mod tests {
             assert_eq!(toc.pending.get(&pending_segment).unwrap().len(), 1);
         }
 
-        let reader = CollectionReader::new(base_directory);
+        let reader = CollectionReader::new(collection_name.to_string(), base_directory);
         let collection = reader.read::<NoQuantizerL2>()?;
         let toc = collection.get_current_toc();
         assert_eq!(toc.pending.len(), 1);
@@ -1311,13 +1336,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_collection_with_wal() -> Result<()> {
-        let temp_dir = TempDir::new("test_collection")?;
+        let collection_name = "test_collection";
+        let temp_dir = TempDir::new(collection_name)?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let mut segment_config = CollectionConfig::default_test_config();
         segment_config.wal_file_size = 1024 * 1024;
 
         let collection = Arc::new(
-            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+            Collection::<NoQuantizerL2>::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                segment_config,
+            )
+            .unwrap(),
         );
         collection
             .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
@@ -1377,7 +1408,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_collection_with_wal_reopen() -> Result<()> {
-        let temp_dir = TempDir::new("test_collection")?;
+        let collection_name = "test_collection";
+        let temp_dir = TempDir::new(collection_name)?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let mut segment_config = CollectionConfig::default_test_config();
         segment_config.wal_file_size = 1024 * 1024;
@@ -1386,7 +1418,7 @@ mod tests {
 
         // Insert but don't flush
         {
-            let reader = CollectionReader::new(base_directory.clone());
+            let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
             let collection = reader.read::<NoQuantizerL2>()?;
             collection
                 .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
@@ -1409,7 +1441,7 @@ mod tests {
 
         let segment1_name;
         {
-            let reader = CollectionReader::new(base_directory.clone());
+            let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
             let collection = reader.read::<NoQuantizerL2>()?;
             let toc = collection.get_current_toc();
             assert_eq!(toc.pending.len(), 0);
@@ -1462,7 +1494,7 @@ mod tests {
         }
 
         {
-            let reader = CollectionReader::new(base_directory.clone());
+            let reader = CollectionReader::new(collection_name.to_string(), base_directory);
             let collection = reader.read::<NoQuantizerL2>()?;
             let toc = collection.get_current_toc();
             assert_eq!(toc.pending.len(), 0);
@@ -1522,11 +1554,17 @@ mod tests {
         // Set the environment variable to activate the sleep during flush
         std::env::set_var("TEST_SLOW_FLUSH", "1");
 
-        let temp_dir = TempDir::new("test_collection_inval_during_flush")?;
+        let collection_name = "test_collection_inval_during_flush";
+        let temp_dir = TempDir::new(collection_name)?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let segment_config = CollectionConfig::default_test_config();
         let collection = Arc::new(
-            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+            Collection::<NoQuantizerL2>::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                segment_config,
+            )
+            .unwrap(),
         );
 
         collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
@@ -1587,11 +1625,17 @@ mod tests {
         // Set the environment variable to activate the sleep during flush
         std::env::set_var("TEST_SLOW_FLUSH", "1");
 
-        let temp_dir = TempDir::new("test_collection_inval_insert_inval_during_flush")?;
+        let collection_name = "test_collection_inval_insert_inval_during_flush";
+        let temp_dir = TempDir::new(collection_name)?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let segment_config = CollectionConfig::default_test_config();
         let collection = Arc::new(
-            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+            Collection::<NoQuantizerL2>::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                segment_config,
+            )
+            .unwrap(),
         );
 
         collection.insert(1, &[1.0, 2.0, 3.0, 4.0])?;
@@ -1667,12 +1711,17 @@ mod tests {
 
     #[test]
     fn test_collection_inval() {
-        let temp_dir =
-            TempDir::new("test_collection_inval").expect("Failed to create temporary directory");
+        let collection_name = "test_collection_inval";
+        let temp_dir = TempDir::new(collection_name).expect("Failed to create temporary directory");
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let segment_config = CollectionConfig::default_test_config();
         let collection = Arc::new(
-            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config).unwrap(),
+            Collection::<NoQuantizerL2>::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                segment_config,
+            )
+            .unwrap(),
         );
 
         assert!(collection
@@ -1753,13 +1802,18 @@ mod tests {
     }
     #[test]
     fn test_collection_metrics() {
-        let temp_dir = TempDir::new("test_collection_metrics").unwrap();
+        let collection_name = "test_collection_metrics";
+        let temp_dir = TempDir::new(collection_name).unwrap();
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let mut segment_config = CollectionConfig::default();
         segment_config.num_features = 16; // Set a specific feature size for precise calculations
         let collection = Arc::new(
-            Collection::<NoQuantizerL2>::new(base_directory.clone(), segment_config.clone())
-                .unwrap(),
+            Collection::<NoQuantizerL2>::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                segment_config.clone(),
+            )
+            .unwrap(),
         );
         let collection_name = &collection.collection_name;
 
