@@ -175,4 +175,26 @@ mod tests {
             ]
         );
     }
+
+    use rkyv::util::AlignedVec;
+
+    /// Write a test for transmute_u8_to_val_aligned
+    #[test]
+    fn test_transmute_u8_to_val_aligned() {
+        let value: u32 = 0x12345678;
+        let mut aligned_bytes: AlignedVec<4> = AlignedVec::new();
+        aligned_bytes.extend_from_slice(&value.to_le_bytes());
+        let transmuted_value: u32 = transmute_u8_to_val_aligned(&aligned_bytes);
+        assert_eq!(transmuted_value, value);
+    }
+
+    /// Write a test for transmute_u8_to_val_unaligned
+    #[test]
+    fn test_transmute_u8_to_val_unaligned() {
+        let value: u32 = 0x12345678;
+        let mut unaligned_bytes: Vec<u8> = Vec::new();
+        unaligned_bytes.extend_from_slice(&value.to_le_bytes());
+        let transmuted_value: u32 = transmute_u8_to_val_unaligned(&unaligned_bytes);
+        assert_eq!(transmuted_value, value);
+    }
 }
