@@ -123,13 +123,4 @@ impl InternalMetrics {
             .get_or_create(&label)
             .set(num_segments);
     }
-
-    pub fn num_active_segments_inc_by(&self, collection_name: &str, num_segments: i64) {
-        let label = CollectionLabel {
-            name: collection_name.to_string(),
-        };
-        self.num_active_segments
-            .get_or_create(&label)
-            .inc_by(num_segments);
-    }
 }
