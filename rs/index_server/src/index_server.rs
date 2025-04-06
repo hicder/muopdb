@@ -139,8 +139,11 @@ impl IndexServer for IndexServerImpl {
             .await
         {
             Ok(_) => {
-                let latency_ms = start.elapsed().as_millis() as f64;
-                API_METRICS.request_latency_ms_observe("create_collection", latency_ms);
+                let duration = start.elapsed();
+                info!("[{}] Created collection in {:?}", collection_name, duration);
+
+                API_METRICS
+                    .request_latency_ms_observe("create_collection", duration.as_millis() as f64);
 
                 return Ok(tonic::Response::new(CreateCollectionResponse {
                     message: format!("Collection {} created", collection_name),
