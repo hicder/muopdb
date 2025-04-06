@@ -69,10 +69,12 @@ impl IvfReader {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::mem::size_of;
 
     use compression::elias_fano::ef::{EliasFano, EliasFanoDecoder};
     use compression::noc::noc::{PlainDecoder, PlainEncoder};
     use quantization::noq::noq::NoQuantizer;
+    use quantization::pq::pq::ProductQuantizer;
     use quantization::quantization::WritableQuantizer;
     use tempdir::TempDir;
     use utils::distance::l2::L2DistanceCalculator;
@@ -442,6 +444,194 @@ mod tests {
                 assert!((*val_ref - *val_read).abs() < f32::EPSILON);
             }
         }
+        // Verify posting list content
+        for i in 0..num_clusters {
+            let ref_vector = builder
+                .posting_lists_mut()
+                .get(i as u32)
+                .expect("Failed to read vector from FileBackedAppendablePostingListStorage");
+            let read_vector = transmute_u8_to_slice::<u64>(
+                index
+                    .posting_list_storage
+                    .get_posting_list(i)
+                    .expect("Failed to read vector from FixedIndexFile"),
+            );
+            for (val_ref, val_read) in ref_vector.iter().zip(read_vector.iter()) {
+                assert_eq!(val_ref, *val_read);
+            }
+        }
+    }
+
+    /// Tests the IvfReader's ability to read an index that uses Product Quantization (PQ).
+    ///
+    /// This test verifies that:
+    /// 1. The index is properly written with ProductQuantizer
+    /// 2. Files are created correctly (vectors and index files)
+    /// 3. Vector storage content is consistent after quantization
+    /// 4. Index file components are correct:
+    ///    - Header information (version, dimensions, clusters, etc.)
+    ///    - Document ID mapping
+    ///    - Centroid content
+    ///    - Posting list content
+    ///
+    /// The test uses a random codebook for quantization, ensuring the same codebook
+    /// is used for both writing and reading to maintain consistency. The vector
+    /// comparisons account for quantization effects by comparing quantized versions
+    /// rather than original vectors.
+    #[test]
+    fn test_ivf_reader_read_product_quantizer() {
+        let temp_dir = TempDir::new("test_ivf_reader_read_product_quantizer")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let num_clusters = 10;
+        let num_vectors = 1000;
+        let num_features = 4;
+        let file_size = 4096;
+        let num_subvectors = 2;
+        let num_clusters_per_subvector = 256;
+
+        // Initialize codebook for product quantizer with random values
+        let codebook_size =
+            num_subvectors * num_clusters_per_subvector * (num_features / num_subvectors);
+        let codebook: Vec<f32> = (0..codebook_size)
+            .map(|_| generate_random_vector(1)[0])
+            .collect();
+        let quantizer = ProductQuantizer::<L2DistanceCalculator>::new(
+            num_features,
+            num_features / num_subvectors, // subvector_dimension
+            8,                             // num_bits (8 bits = 256 clusters per subvector)
+            codebook.clone(),              // Clone because we need it for the second initialization
+            base_directory.clone(),
+        )
+        .expect("Failed to create product quantizer");
+        let quantizer_directory = format!("{}/quantizer", base_directory);
+        std::fs::create_dir_all(&quantizer_directory)
+            .expect("Failed to create quantizer directory");
+        assert!(quantizer.write_to_directory(&quantizer_directory).is_ok());
+        let writer = IvfWriter::<_, PlainEncoder, L2DistanceCalculator>::new(
+            base_directory.clone(),
+            quantizer,
+        );
+
+        let mut builder: IvfBuilder<L2DistanceCalculator> = IvfBuilder::new(IvfBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+            num_clusters,
+            num_data_points_for_clustering: num_vectors,
+            max_clusters_per_vector: 1,
+            distance_threshold: 0.1,
+            base_directory: base_directory.clone(),
+            memory_size: 1024,
+            file_size,
+            num_features,
+            tolerance: 0.0,
+            max_posting_list_size: usize::MAX,
+        })
+        .expect("Failed to create builder");
+
+        // Generate 1000 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            builder
+                .add_vector((i + 100) as u128, &generate_random_vector(num_features))
+                .expect("Vector should be added");
+        }
+
+        assert!(builder.build().is_ok());
+        assert!(writer.write(&mut builder, false).is_ok());
+
+        // Use same codebook for consistency
+        let quantizer = ProductQuantizer::<L2DistanceCalculator>::new(
+            num_features,
+            num_features / num_subvectors, // subvector_dimension
+            8,                             // num_bits (8 bits = 256 clusters per subvector)
+            codebook,                      // Use the same codebook as before
+            base_directory.clone(),
+        )
+        .expect("Failed to create product quantizer");
+        let quantizer_directory = format!("{}/quantizer", base_directory);
+        std::fs::create_dir_all(&quantizer_directory)
+            .expect("Failed to create quantizer directory");
+        assert!(quantizer.write_to_directory(&quantizer_directory).is_ok());
+
+        let reader = IvfReader::new(base_directory.clone());
+        let index = reader
+            .read::<ProductQuantizer<L2DistanceCalculator>, L2DistanceCalculator, PlainDecoder>()
+            .expect("Failed to read index file");
+
+        // Check if files were created
+        assert!(fs::metadata(format!("{}/vectors", base_directory)).is_ok());
+        assert!(fs::metadata(format!("{}/index", base_directory)).is_ok());
+
+        // Verify vectors file content
+        for i in 0..num_vectors {
+            let ref_vector = builder
+                .vectors()
+                .get_no_context(i as u32)
+                .expect("Failed to read vector from FileBackedAppendableVectorStorage")
+                .to_vec();
+            let read_vector = index
+                .vector_storage
+                .get_no_context(i as u32)
+                .expect("Failed to read vector from FixedFileVectorStorage");
+            // For product quantizer, we need to compare the quantized vectors
+            let quantized_ref = index.quantizer.quantize(&ref_vector);
+            assert_eq!(quantized_ref.len(), read_vector.len());
+            for (val_ref, val_read) in quantized_ref.iter().zip(read_vector.iter()) {
+                assert_eq!(val_ref, val_read);
+            }
+        }
+
+        // Verify index file content
+        // Verify header
+        assert_eq!(index.posting_list_storage.header().version, Version::V0);
+        assert_eq!(
+            index.posting_list_storage.header().num_features,
+            num_features as u32
+        );
+        assert_eq!(
+            index.posting_list_storage.header().num_clusters,
+            num_clusters as u32
+        );
+        assert_eq!(
+            index.posting_list_storage.header().num_vectors,
+            num_vectors as u64
+        );
+        assert_eq!(
+            index.posting_list_storage.header().centroids_len,
+            (num_clusters * num_features * size_of::<f32>() + size_of::<u64>()) as u64
+        );
+
+        // Verify doc_id_mapping content
+        for i in 0..num_vectors {
+            let ref_id = builder.doc_id_mapping()[i];
+            let read_id = index
+                .posting_list_storage
+                .get_doc_id(i)
+                .expect("Failed to read doc_id from FixedFileVectorStorage");
+            assert_eq!(ref_id, read_id);
+        }
+
+        // Verify centroid content
+        for i in 0..num_clusters {
+            let ref_vector = builder
+                .centroids()
+                .get_no_context(i as u32)
+                .expect("Failed to read centroid from FileBackedAppendableVectorStorage")
+                .to_vec();
+            let read_vector = index
+                .posting_list_storage
+                .get_centroid(i)
+                .expect("Failed to read centroid from FixedFileVectorStorage");
+            assert_eq!(ref_vector.len(), read_vector.len());
+            for (val_ref, val_read) in ref_vector.iter().zip(read_vector.iter()) {
+                assert!((*val_ref - *val_read).abs() < f32::EPSILON);
+            }
+        }
+
         // Verify posting list content
         for i in 0..num_clusters {
             let ref_vector = builder
