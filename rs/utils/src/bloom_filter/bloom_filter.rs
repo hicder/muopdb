@@ -30,6 +30,10 @@ impl<T: ?Sized + Hash> InMemoryBloomFilter<T> {
         }
     }
 
+    fn combine_hashes(&self, hash1: u64, hash2: u64, seed: u64) -> usize {
+        ((hash1.wrapping_add(seed.wrapping_mul(hash2))) % self.bits.len() as u64) as usize
+    }
+
     /// Double hashing for more random, uniform distribution of bits
     fn double_hash(&self, item: &T, seed: u64) -> usize {
         // Two different hash functions
@@ -47,7 +51,7 @@ impl<T: ?Sized + Hash> InMemoryBloomFilter<T> {
         let hash2 = hasher2.finish();
 
         // Combine and map to bit vector size
-        ((hash1.wrapping_add(seed.wrapping_mul(hash2))) % self.bits.len() as u64) as usize
+        self.combine_hashes(hash1, hash2, seed)
     }
 
     pub fn insert(&mut self, item: &T) {
@@ -97,5 +101,16 @@ mod tests {
         u64_filter.insert(&42);
         assert!(u64_filter.may_contain(&42));
         assert!(!u64_filter.may_contain(&41));
+    }
+
+    #[test]
+    fn test_combine_hashes_overflow() {
+        let filter = InMemoryBloomFilter::<u64>::new(100, 0.01);
+
+        // Test with values known to cause overflow
+        let result = filter.combine_hashes(u64::MAX, u64::MAX, u64::MAX);
+
+        // The test passes if this doesn't panic
+        assert!(result < filter.bits.len());
     }
 }
