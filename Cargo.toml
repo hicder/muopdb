@@ -75,3 +75,4 @@ tonic-reflection = "0.12.3"
 utils = { path = './rs/utils' }
 metrics = { path = './rs/metrics' }
 prometheus-client = "0.23.1"
+uuid = { version = "1.16.0", features = ["v4"] }

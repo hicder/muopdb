@@ -1,3 +1,5 @@
+use std::ptr;
+
 use proto::muopdb::Id;
 
 pub fn transmute_u8_to_slice<T>(data: &[u8]) -> &[T] {
@@ -9,8 +11,23 @@ pub fn transmute_u8_to_slice<T>(data: &[u8]) -> &[T] {
     }
 }
 
-pub fn transmute_u8_to_val<T: Copy>(data: &[u8]) -> T {
+/// Use when we can guarantee the alignment of data.
+pub fn transmute_u8_to_val_aligned<T: Copy>(data: &[u8]) -> T {
+    #[cfg(debug_assertions)]
+    {
+        assert!(data.len() >= std::mem::size_of::<T>());
+        assert!(data.as_ptr().align_offset(std::mem::align_of::<T>()) == 0);
+    }
     unsafe { *(data.as_ptr() as *const T) }
+}
+
+/// Use when we're not sure about the alignment of data
+pub fn transmute_u8_to_val_unaligned<T: Copy>(data: &[u8]) -> T {
+    #[cfg(debug_assertions)]
+    {
+        assert!(data.len() >= std::mem::size_of::<T>());
+    }
+    unsafe { ptr::read_unaligned(data.as_ptr() as *const T) }
 }
 
 pub fn transmute_slice_to_u8<T>(slice: &[T]) -> &[u8] {
@@ -157,5 +174,27 @@ mod tests {
                 0x4312123456789abcdef2,
             ]
         );
+    }
+
+    use rkyv::util::AlignedVec;
+
+    /// Write a test for transmute_u8_to_val_aligned
+    #[test]
+    fn test_transmute_u8_to_val_aligned() {
+        let value: u32 = 0x12345678;
+        let mut aligned_bytes: AlignedVec<4> = AlignedVec::new();
+        aligned_bytes.extend_from_slice(&value.to_le_bytes());
+        let transmuted_value: u32 = transmute_u8_to_val_aligned(&aligned_bytes);
+        assert_eq!(transmuted_value, value);
+    }
+
+    /// Write a test for transmute_u8_to_val_unaligned
+    #[test]
+    fn test_transmute_u8_to_val_unaligned() {
+        let value: u32 = 0x12345678;
+        let mut unaligned_bytes: Vec<u8> = Vec::new();
+        unaligned_bytes.extend_from_slice(&value.to_le_bytes());
+        let transmuted_value: u32 = transmute_u8_to_val_unaligned(&unaligned_bytes);
+        assert_eq!(transmuted_value, value);
     }
 }

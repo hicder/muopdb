@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "muopdb"
 version = "0.1.0"
 authors = [
-  { name="Hieu Pham", email="hieupham@cs.stanford.edu" },
+  { name="Hieu Pham", email="dpham810@gmail.com" },
 ]
 dependencies = [
     "h5py>=3.10.0",
