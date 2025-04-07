@@ -47,7 +47,7 @@ impl<T: ?Sized + Hash> InMemoryBloomFilter<T> {
         let hash2 = hasher2.finish();
 
         // Combine and map to bit vector size
-        ((hash1 + seed * hash2) % self.bits.len() as u64) as usize
+        ((hash1.wrapping_add(seed.wrapping_mul(hash2))) % self.bits.len() as u64) as usize
     }
 
     pub fn insert(&mut self, item: &T) {
