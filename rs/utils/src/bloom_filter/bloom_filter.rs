@@ -151,6 +151,7 @@ mod tests {
         assert!(result < filter.bits.len());
     }
 
+    #[test]
     fn test_bloom_filter_persist() {
         let temp_dir = TempDir::new("test_bloom_filter_persist")
             .expect("Failed to create temporary directory");
