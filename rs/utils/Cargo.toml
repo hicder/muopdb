@@ -45,3 +45,7 @@ harness = false
 [[bin]]
 name = "run_kmeans"
 path = "src/scripts/run_kmeans.rs"
+
+[[bench]]
+name = "double_hash"
+harness = false

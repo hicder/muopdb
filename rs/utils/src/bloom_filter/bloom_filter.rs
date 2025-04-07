@@ -31,7 +31,7 @@ impl<T: ?Sized + Hash> InMemoryBloomFilter<T> {
     }
 
     /// Double hashing for more random, uniform distribution of bits
-    fn double_hash(&self, item: &T, seed: u64) -> usize {
+    pub fn double_hash(&self, item: &T, seed: u64) -> usize {
         // Two different hash functions
         let mut hasher1 = DefaultHasher::new();
         let mut hasher2 = DefaultHasher::new();
@@ -47,7 +47,37 @@ impl<T: ?Sized + Hash> InMemoryBloomFilter<T> {
         let hash2 = hasher2.finish();
 
         // Combine and map to bit vector size
-        ((hash1 + seed * hash2) % self.bits.len() as u64) as usize
+        // Use wrapping operations to prevent overflow
+        ((hash1.wrapping_add(seed.wrapping_mul(hash2))) % self.bits.len() as u64) as usize
+    }
+
+    /// This is an alternative implementation of double_hash. It's more accurate, but slower.
+    pub fn double_hash_alt(&self, item: &T, seed: u64) -> usize {
+        // Two different hash functions
+        let mut hasher1 = DefaultHasher::new();
+        let mut hasher2 = DefaultHasher::new();
+
+        // Use different seeds for different hash functions
+        hasher1.write_u64(seed);
+        hasher2.write_u64(seed.wrapping_mul(0x9e3779b9)); // A common technique for seed mixing
+
+        item.hash(&mut hasher1);
+        item.hash(&mut hasher2);
+
+        let hash1 = hasher1.finish();
+        let hash2 = hasher2.finish();
+
+        // Use modular arithmetic. Upcast to u128 to prevent overflow
+        let bits_len = self.bits.len() as u128;
+        let mod_hash1 = (hash1 as u128) % bits_len;
+        let mod_seed = (seed as u128) % bits_len;
+        let mod_hash2 = (hash2 as u128) % bits_len;
+
+        // Since mod_seed and mod_hash2 are both in the range [0, bits_len), their product is in the range [0, bits_len^2). Since bits_len cannot be larger than 2^64, bits_len^2 cannot be larger than 2^128. Thus the result of the product is still in the range [0, 2^128). We can safely multiply.
+        let multiplied = (mod_seed * mod_hash2) % bits_len;
+
+        // Since mod_hash1 and multiplied are both in the range [0, bits_len), their sum is in the range [0, 2*bits_len). We can safely add.
+        ((mod_hash1 + multiplied) % bits_len) as usize
     }
 
     pub fn insert(&mut self, item: &T) {
