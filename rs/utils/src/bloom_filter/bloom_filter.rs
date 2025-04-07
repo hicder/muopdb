@@ -1,7 +1,12 @@
 use std::collections::hash_map::DefaultHasher;
+use std::fs::File;
 use std::hash::{Hash, Hasher};
+use std::io::{BufWriter, Write};
 
+use anyhow::Result;
 use bitvec::prelude::*;
+
+use crate::io::wrap_write;
 
 #[derive(Hash)]
 pub struct HashKey {
@@ -10,7 +15,7 @@ pub struct HashKey {
 }
 
 pub struct InMemoryBloomFilter<T: ?Sized> {
-    bits: BitVec,
+    bits: BitVec<u64>,
     num_hash_functions: usize,
     _marker: std::marker::PhantomData<T>,
 }
@@ -23,8 +28,12 @@ impl<T: ?Sized + Hash> InMemoryBloomFilter<T> {
 
         let k = (m as f64 / expected_elements as f64 * 2.0_f64.ln()).ceil() as usize;
 
+        let mut bits = BitVec::with_capacity(m);
+        // Ensure bits is filled with false initially
+        bits.resize(m, false);
+
         Self {
-            bits: bitvec![0; m],
+            bits,
             num_hash_functions: k,
             _marker: std::marker::PhantomData,
         }
@@ -68,10 +77,38 @@ impl<T: ?Sized + Hash> InMemoryBloomFilter<T> {
     pub fn clear(&mut self) {
         self.bits.fill(false);
     }
+
+    pub fn persist(&self, file_path: String) -> Result<usize> {
+        let mut file = File::create(file_path)?;
+
+        // Create buffered writer with mutable file reference
+        let mut writer = BufWriter::new(&mut file);
+
+        // Write header (m and k as u64)
+        let mut total_bytes_written =
+            wrap_write(&mut writer, &((self.bits.len() as u64).to_le_bytes()))?;
+        total_bytes_written += wrap_write(
+            &mut writer,
+            &((self.num_hash_functions as u64).to_le_bytes()),
+        )?;
+        // Write bit vector
+        let bits: &[u64] = self.bits.as_raw_slice();
+        for &val in bits.iter() {
+            total_bytes_written += wrap_write(&mut writer, &val.to_le_bytes())?;
+        }
+
+        writer.flush()?;
+
+        Ok(total_bytes_written)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::io::{BufReader, Read};
+
+    use tempdir::TempDir;
+
     use super::*;
 
     #[test]
@@ -112,5 +149,61 @@ mod tests {
 
         // The test passes if this doesn't panic
         assert!(result < filter.bits.len());
+    }
+
+    fn test_bloom_filter_persist() {
+        let temp_dir = TempDir::new("test_bloom_filter_persist")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        // Create a Bloom filter with expected elements and false positive probability
+        let mut filter = InMemoryBloomFilter::<str>::new(100_000, 0.01);
+
+        // Insert an element into the Bloom filter
+        let test_item = "test_element";
+        filter.insert(&test_item);
+
+        // Persist the Bloom filter to disk
+        let file_path = format!("{}/bloom-filter", base_directory);
+        let total_bytes_written = filter
+            .persist(file_path.clone())
+            .expect("Failed to persist bloom filter to file");
+
+        let file = File::open(&file_path).expect("Failed to open persisted file");
+        let mut reader = BufReader::new(file);
+
+        // Read header: number of bits and hash functions
+        let mut buffer = [0u8; 8];
+        assert!(reader.read_exact(&mut buffer).is_ok());
+        let num_bits = u64::from_le_bytes(buffer) as usize;
+
+        assert!(reader.read_exact(&mut buffer).is_ok());
+        let num_hash_functions = u64::from_le_bytes(buffer) as usize;
+
+        // Verify that the metadata matches
+        assert_eq!(num_bits, filter.bits.len());
+        assert_eq!(num_hash_functions, filter.num_hash_functions);
+        let expected_num_u64_elements = (num_bits + 63) / 64;
+        // Verify that the raw slice length matches the expected padded length
+        assert_eq!(filter.bits.as_raw_slice().len(), expected_num_u64_elements,);
+
+        // Read the raw bit vector data
+        let mut raw_bits = vec![0u64; filter.bits.as_raw_slice().len()];
+        for raw_bit in &mut raw_bits {
+            let mut bit_buffer = [0u8; 8];
+            assert!(reader.read_exact(&mut bit_buffer).is_ok());
+            *raw_bit = u64::from_le_bytes(bit_buffer);
+        }
+
+        assert_eq!(&raw_bits[..], filter.bits.as_raw_slice());
+
+        // Verify the total bytes written matches the expected size
+        let expected_total_bytes =
+            8 + 8 + (filter.bits.as_raw_slice().len() * std::mem::size_of::<u64>()) as usize;
+        assert_eq!(total_bytes_written, expected_total_bytes);
     }
 }
