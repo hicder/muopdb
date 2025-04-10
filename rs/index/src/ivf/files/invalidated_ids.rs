@@ -14,6 +14,7 @@ pub struct InvalidatedIdsStorage {
     current_offset: usize,
 }
 
+#[derive(PartialEq)]
 pub struct InvalidatedUserDocId {
     pub user_id: u128,
     pub doc_id: u128,
