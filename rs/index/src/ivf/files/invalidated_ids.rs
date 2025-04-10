@@ -117,8 +117,6 @@ impl InvalidatedIdsStorage {
         Ok(())
     }
 
-    // TODO(tyb): have a invalidate_batch function that does not fsync on every invalidation, and
-    // fsync once at the end for performance.
     pub fn invalidate(&mut self, user_id: u128, doc_id: u128) -> Result<()> {
         if self.current_offset == self.backing_file_size {
             self.new_backing_file()?;
@@ -138,6 +136,43 @@ impl InvalidatedIdsStorage {
         // Ensure all written data is flushed to disk
         file.sync_all()?;
         self.current_offset += BYTES_PER_INVALIDATION;
+
+        Ok(())
+    }
+
+    /// Batch invalidates multiple `InvalidatedUserDocId`s without fsyncing on every invalidation.
+    /// Performs fsync at the end of each file.
+    pub fn invalidate_batch(&mut self, invalidations: &[InvalidatedUserDocId]) -> Result<()> {
+        let mut buffer = Vec::with_capacity(self.backing_file_size);
+
+        for invalidation in invalidations {
+            // Check if the current file has enough space for this invalidation
+            if self.current_offset == self.backing_file_size {
+                if !buffer.is_empty() {
+                    let file = &mut self.files[self.current_backing_id as usize];
+                    file.write_all(&buffer)?;
+                    file.sync_all()?;
+
+                    // Clear the buffer and create a new backing file
+                    buffer.clear();
+                }
+                self.new_backing_file()?;
+            }
+
+            // Write user_id and doc_id into the buffer
+            buffer.extend_from_slice(&invalidation.user_id.to_le_bytes());
+            buffer.extend_from_slice(&invalidation.doc_id.to_le_bytes());
+
+            // Update the current offset after writing to the buffer
+            self.current_offset += BYTES_PER_INVALIDATION;
+        }
+
+        // Write and sync any remaining data in the buffer to the current file
+        if !buffer.is_empty() {
+            let file = &mut self.files[self.current_backing_id as usize];
+            file.write_all(&buffer)?;
+            file.sync_all()?;
+        }
 
         Ok(())
     }
@@ -428,5 +463,96 @@ mod tests {
         assert_eq!(iter_data_after_add.len(), expected_data.len() + 1);
         assert_eq!(iter_data_after_add.last().unwrap().user_id, 31);
         assert_eq!(iter_data_after_add.last().unwrap().doc_id, 31);
+    }
+
+    #[test]
+    fn test_invalidate_batch() {
+        let temp_dir = tempdir::TempDir::new("test_invalidate_batch")
+            .expect("Failed to create temporary directory");
+        let base_dir = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let mut storage = InvalidatedIdsStorage::new(&base_dir, 1024);
+
+        // Case 1: only fill the current backing file
+        let user_id1: u128 = 123456789012345678901234567890123456;
+        let doc_id1: u128 = 987654321;
+        let user_id2: u128 = 223456789012345678901234567890123456;
+        let doc_id2: u128 = 987654322;
+
+        assert!(storage
+            .invalidate_batch(&[
+                InvalidatedUserDocId {
+                    user_id: user_id1,
+                    doc_id: doc_id1
+                },
+                InvalidatedUserDocId {
+                    user_id: user_id2,
+                    doc_id: doc_id2
+                }
+            ])
+            .is_ok());
+
+        // Verify state after case 1
+        let mut read_back_storage = InvalidatedIdsStorage::read(&base_dir)
+            .expect("Failed to read back invalidated ids storage");
+        assert_eq!(read_back_storage.current_backing_id, 0);
+        assert_eq!(
+            read_back_storage.current_offset,
+            2 * (size_of::<u128>() + size_of::<u128>())
+        );
+
+        // Verify invalidations in case 1
+        let mut iter = read_back_storage.iter();
+        let invalidation1 = iter.next();
+        assert!(invalidation1.is_some());
+        assert_eq!(invalidation1.as_ref().unwrap().user_id, user_id1);
+        assert_eq!(invalidation1.as_ref().unwrap().doc_id, doc_id1);
+
+        let invalidation2 = iter.next();
+        assert!(invalidation2.is_some());
+        assert_eq!(invalidation2.as_ref().unwrap().user_id, user_id2);
+        assert_eq!(invalidation2.as_ref().unwrap().doc_id, doc_id2);
+
+        // Case 2: write full buffers to multiple files
+        let mut large_invalidations = Vec::new();
+        for i in 0..2048 {
+            large_invalidations.push(InvalidatedUserDocId {
+                user_id: user_id1 + i as u128,
+                doc_id: doc_id1 + i as u128,
+            });
+        }
+        assert!(storage.invalidate_batch(&large_invalidations).is_ok());
+
+        // Verify state after case 2
+        read_back_storage = InvalidatedIdsStorage::read(&base_dir)
+            .expect("Failed to read back invalidated ids storage");
+        assert_eq!(
+            read_back_storage.current_offset,
+            2 * (size_of::<u128>() + size_of::<u128>())
+        );
+
+        // Verify invalidation in case 2
+        iter = read_back_storage.iter();
+
+        // Skip previous invalidations
+        for _ in 0..2 {
+            iter.next();
+        }
+
+        for i in 0..2048 {
+            let invalidation = iter.next();
+            assert!(invalidation.is_some());
+            assert_eq!(
+                invalidation.as_ref().unwrap().user_id,
+                large_invalidations[i].user_id
+            );
+            assert_eq!(
+                invalidation.as_ref().unwrap().doc_id,
+                large_invalidations[i].doc_id
+            );
+        }
     }
 }
