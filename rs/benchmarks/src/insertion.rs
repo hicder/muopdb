@@ -31,11 +31,8 @@ fn bench_insertion(c: &mut Criterion) {
         |bencher, _| {
             bencher.iter_with_setup(
                 || {
-                    println!("Setting up benchmark...");
-
                     // Remove everything under base_directory
                     std::fs::remove_dir_all(&base_directory).unwrap();
-                    std::fs::create_dir_all(&base_directory).unwrap();
 
                     // init the collection
                     Collection::<NoQuantizerL2>::init_new_collection(

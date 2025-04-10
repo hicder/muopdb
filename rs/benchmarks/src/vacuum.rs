@@ -28,7 +28,7 @@ fn vacuum(c: &mut Criterion) {
 
     // Get 100 random doc_id between 0 and 10000 to delete
     let mut doc_ids_to_delete = vec![];
-    for _ in 0..100 {
+    for _ in 0..500 {
         doc_ids_to_delete.push(rand::random::<u128>() % 10000);
     }
 
@@ -37,7 +37,6 @@ fn vacuum(c: &mut Criterion) {
             || {
                 // Remove everything under base_directory
                 std::fs::remove_dir_all(&base_directory).unwrap();
-                std::fs::create_dir_all(&base_directory).unwrap();
 
                 // init the collection
                 Collection::<NoQuantizerL2>::init_new_collection(
