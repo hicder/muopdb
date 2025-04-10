@@ -13,6 +13,11 @@ name = "deletion_and_vacuum"
 path = "src/deletion_and_vacuum.rs"
 harness = false
 
+[[bench]]
+name = "vacuum"
+path = "src/vacuum.rs"
+harness = false
+
 [dependencies]
 utils.workspace = true
 criterion.workspace = true

@@ -59,15 +59,18 @@ fn bench_deletion_vacuum(c: &mut Criterion) {
                         doc_id += 1;
                     }
                     let segment_name = collection.flush().unwrap();
-                    (collection, segment_name)
+                    (collection, vec![segment_name])
                 },
                 |collection_and_segment| {
-                    let (collection, segment_name) = collection_and_segment;
+                    let (collection, segment_names) = collection_and_segment;
+                    let pending_segment = collection.init_optimizing(&segment_names).unwrap();
                     for doc_id in doc_ids_to_delete.iter() {
                         collection.remove(user_ids[0], *doc_id, 0).unwrap();
                     }
                     let optimizer = VacuumOptimizer::<NoQuantizerL2>::new();
-                    collection.run_optimizer(&optimizer, &segment_name).unwrap();
+                    collection
+                        .run_optimizer(&optimizer, &pending_segment)
+                        .unwrap();
                 },
             );
         },
