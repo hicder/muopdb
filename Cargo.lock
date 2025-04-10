@@ -264,6 +264,7 @@ dependencies = [
  "criterion",
  "index",
  "quantization",
+ "rand 0.8.5",
  "tempdir",
  "utils",
 ]

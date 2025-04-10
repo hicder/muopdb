@@ -8,6 +8,10 @@ name = "insertion"
 path = "src/insertion.rs"
 harness = false
 
+[[bench]]
+name = "deletion_and_vacuum"
+path = "src/deletion_and_vacuum.rs"
+harness = false
 
 [dependencies]
 utils.workspace = true
@@ -16,3 +20,4 @@ tempdir.workspace = true
 config.workspace = true
 index.workspace = true
 quantization.workspace = true
+rand.workspace = true
