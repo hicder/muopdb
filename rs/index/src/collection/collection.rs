@@ -16,6 +16,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use super::snapshot::Snapshot;
 use super::{OpChannelEntry, TableOfContent, VersionsInfo};
 use crate::multi_spann::reader::MultiSpannReader;
+use crate::optimizers::vacuum::VacuumOptimizer;
 use crate::optimizers::SegmentOptimizer;
 use crate::segment::immutable_segment::ImmutableSegment;
 use crate::segment::mutable_segment::MutableSegment;
@@ -964,6 +965,33 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         // The doc is immediately not searchable
         INTERNAL_METRICS.num_searchable_docs_dec(&self.collection_name);
+
+        Ok(())
+    }
+
+    pub fn auto_vacuum(&self) -> Result<()> {
+        // Loop through all the segments and filter out segments that has a high deleted ratio
+        for segment in self.all_segments.iter() {
+            let segment_name = segment.key();
+            let segment_value = segment.value();
+
+            let total_size = segment_value.size_in_bytes_immutable_segments();
+            // Continue if total size is 0
+            if total_size == 0 {
+                continue;
+            }
+
+            let deleted_size = segment_value.size_in_bytes_deleted_documents();
+            let deleted_ratio = deleted_size as f32 / total_size as f32;
+
+            // If more than 10% documents are deleted, then run vacuum optimizer
+            if deleted_ratio > 0.1 {
+                let segments_to_optimize = vec![segment_name.clone()];
+                let pending_segment = self.init_optimizing(&segments_to_optimize)?;
+                let vacuum_optimizer = VacuumOptimizer::<Q>::new();
+                self.run_optimizer(&vacuum_optimizer, &pending_segment)?;
+            }
+        }
 
         Ok(())
     }
