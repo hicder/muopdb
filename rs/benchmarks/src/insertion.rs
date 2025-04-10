@@ -49,9 +49,9 @@ fn bench_insertion(c: &mut Criterion) {
                 },
                 |collection| {
                     let mut doc_id = 0;
-                    for vector in vectors.clone() {
+                    for vector in vectors.iter() {
                         collection
-                            .insert_for_users(&user_ids, doc_id, &vector, 0)
+                            .insert_for_users(&user_ids, doc_id, vector, 0)
                             .unwrap();
                         doc_id += 1;
                     }
