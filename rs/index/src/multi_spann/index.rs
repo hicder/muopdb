@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -9,7 +10,7 @@ use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
 
 use super::user_index_info::HashConfig;
-use crate::ivf::files::invalidated_ids::InvalidatedIdsStorage;
+use crate::ivf::files::invalidated_ids::{InvalidatedIdsStorage, InvalidatedUserDocId};
 use crate::spann::index::Spann;
 use crate::spann::iter::SpannIter;
 use crate::spann::reader::SpannReader;
@@ -126,6 +127,38 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         Ok(effectively_invalidated)
     }
 
+    pub fn invalidate_batch(&self, user_to_doc_ids: &HashMap<u128, Vec<u128>>) -> Result<usize> {
+        // Collect all effectively invalidated (user_id, doc_id) pairs
+        let mut effectively_invalidated_pairs = Vec::new();
+
+        // Track the total number of effectively invalidated doc_ids
+        let mut total_effectively_invalidated = 0;
+
+        // Process each user's invalidations
+        for (user_id, doc_ids) in user_to_doc_ids {
+            let index = self.get_or_create_index(*user_id)?;
+
+            let effectively_invalidated_doc_ids = index.invalidate_batch(&doc_ids);
+            total_effectively_invalidated += effectively_invalidated_doc_ids.len();
+
+            // Add (user_id, doc_id) pairs to the collection
+            effectively_invalidated_pairs.extend(effectively_invalidated_doc_ids.into_iter().map(
+                |doc_id| InvalidatedUserDocId {
+                    user_id: *user_id,
+                    doc_id,
+                },
+            ));
+        }
+
+        // Persist all effectively invalidated pairs in bulk
+        if !effectively_invalidated_pairs.is_empty() {
+            let mut invalidated_ids_storage_write = self.invalidated_ids_storage.write();
+            invalidated_ids_storage_write.invalidate_batch(&effectively_invalidated_pairs)?;
+        }
+
+        Ok(total_effectively_invalidated)
+    }
+
     pub fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         let index = self.get_or_create_index(user_id)?;
         Ok(index.is_invalidated(doc_id))
@@ -159,6 +192,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::fs;
 
     use config::collection::CollectionConfig;
@@ -166,7 +200,7 @@ mod tests {
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
 
-    use crate::ivf::files::invalidated_ids::InvalidatedIdsStorage;
+    use crate::ivf::files::invalidated_ids::{InvalidatedIdsStorage, InvalidatedUserDocId};
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::reader::MultiSpannReader;
     use crate::multi_spann::writer::MultiSpannWriter;
@@ -458,5 +492,116 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn test_multi_spann_invalidate_batch() {
+        let temp_dir = tempdir::TempDir::new("multi_spann_invalidate_batch_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_vectors = 10;
+        let num_features = 4;
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        // Generate 10 vectors of f32, dimension 4
+        for i in 0..num_vectors {
+            assert!(multi_spann_builder
+                .insert(0, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .is_ok());
+        }
+
+        assert!(multi_spann_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
+            .expect("Failed to read Multi-SPANN index");
+
+        // Batch invalidate some valid and invalid doc_ids
+        let mut invalidations: HashMap<u128, Vec<u128>> = HashMap::new();
+        invalidations.insert(
+            0,
+            vec![
+                /* Valid */ 0_u128,
+                1_u128,
+                /* Invalid */ num_vectors as u128,
+            ],
+        );
+
+        let effectively_invalidated_count = multi_spann_index
+            .invalidate_batch(&invalidations)
+            .expect("Failed to batch invalidate");
+
+        // Verify that only valid doc_ids were effectively invalidated
+        assert_eq!(effectively_invalidated_count, 2); // Only (0, 0) and (0, 1) are valid
+
+        // Verify that the invalidated IDs are stored persistently
+        let invalidated_ids: Vec<_> = multi_spann_index
+            .invalidated_ids_storage
+            .write()
+            .iter()
+            .collect();
+
+        assert_eq!(invalidated_ids.len(), 2); // Only two IDs should be stored
+        assert!(invalidated_ids.contains(&InvalidatedUserDocId {
+            user_id: 0,
+            doc_id: 0_u128
+        }));
+        assert!(invalidated_ids.contains(&InvalidatedUserDocId {
+            user_id: 0,
+            doc_id: 1_u128
+        }));
+
+        // Attempt another batch invalidate with already invalidated IDs and new ones
+        let mut new_invalidations: HashMap<u128, Vec<u128>> = HashMap::new();
+        new_invalidations.insert(
+            0,
+            vec![
+                /* Already invalidated */ 1_u128,
+                /* Valid */ 2_u128,
+                /* Invalid */ num_vectors as u128 + 1,
+            ],
+        );
+
+        let new_effectively_invalidated_count = multi_spann_index
+            .invalidate_batch(&new_invalidations)
+            .expect("Failed to batch invalidate");
+
+        // Verify that only the new valid doc_id was effectively invalidated
+        assert_eq!(new_effectively_invalidated_count, 1); // Only (0, 2) is valid and not already invalidated
+
+        // Verify that the invalidated IDs are updated persistently
+        let updated_invalidated_ids: Vec<_> = multi_spann_index
+            .invalidated_ids_storage
+            .write()
+            .iter()
+            .collect();
+
+        assert_eq!(updated_invalidated_ids.len(), 3); // Now three IDs should be stored
+        assert!(updated_invalidated_ids.contains(&InvalidatedUserDocId {
+            user_id: 0,
+            doc_id: 0_u128
+        }));
+        assert!(updated_invalidated_ids.contains(&InvalidatedUserDocId {
+            user_id: 0,
+            doc_id: 1_u128
+        }));
+        assert!(updated_invalidated_ids.contains(&InvalidatedUserDocId {
+            user_id: 0,
+            doc_id: 2_u128
+        }));
     }
 }
