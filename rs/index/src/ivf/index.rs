@@ -266,6 +266,31 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
         }
     }
 
+    /// Invalidates a list of doc_ids. Returns a list of doc_ids that were successfully
+    /// invalidated
+    pub fn invalidate_batch(&self, doc_ids: &[u128]) -> Vec<u128> {
+        // Collect valid point IDs and their corresponding doc_ids
+        let mut valid_doc_point_pairs: Vec<(u128, u32)> = doc_ids
+            .into_iter()
+            .filter_map(|doc_id| {
+                self.get_point_id(*doc_id)
+                    .map(|point_id| (*doc_id, point_id as u32))
+            })
+            .collect();
+
+        // Single write lock acquisition
+        let mut invalid_points_write = self.invalid_point_ids.write().unwrap();
+
+        // Filter out already invalidated points and insert new ones
+        valid_doc_point_pairs.retain(|(_, point_id)| invalid_points_write.insert(*point_id));
+
+        // Return the list of successfully invalidated doc_ids
+        valid_doc_point_pairs
+            .into_iter()
+            .map(|(doc_id, _)| doc_id)
+            .collect()
+    }
+
     pub fn is_invalidated(&self, doc_id: u128) -> bool {
         match self.get_point_id(doc_id) {
             Some(point_id) => self.invalid_point_ids.read().unwrap().contains(&point_id),
@@ -814,5 +839,85 @@ mod tests {
         assert_eq!(results.id_with_scores[0].doc_id, 100);
         assert_eq!(results.id_with_scores[1].doc_id, 101);
         assert_eq!(results.id_with_scores[2].doc_id, 102);
+    }
+
+    #[tokio::test]
+    async fn test_ivf_invalidate_batch() {
+        let temp_dir = tempdir::TempDir::new("test_ivf_invalidate_batch")
+            .expect("Failed to create temporary directory");
+        let base_dir = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let file_path = format!("{}/vectors", base_dir);
+        let dataset: Vec<Vec<f32>> = vec![
+            vec![1.0, 2.0, 3.0],
+            vec![4.0, 5.0, 6.0],
+            vec![7.0, 8.0, 9.0],
+            vec![2.0, 3.0, 4.0],
+        ];
+        assert!(create_fixed_file_vector_storage(&file_path, &dataset).is_ok());
+        let num_features = 3;
+        let storage = FixedFileVectorStorage::<f32>::new(file_path, num_features)
+            .expect("FixedFileVectorStorage should be created");
+
+        let file_path = format!("{}/index", base_dir);
+        let doc_id_mapping = vec![100, 101, 102, 103];
+        let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
+        let posting_lists = vec![vec![0, 3], vec![1, 2]];
+        assert!(create_fixed_file_index_storage(
+            &file_path,
+            &doc_id_mapping,
+            &centroids,
+            &posting_lists
+        )
+        .is_ok());
+        let index_storage = Box::new(PostingListStorage::FixedLocalFile(
+            FixedIndexFile::new(file_path).expect("FixedIndexFile should be created"),
+        ));
+
+        let num_clusters = 2;
+        let num_probes = 2;
+
+        let quantizer = NoQuantizer::<L2DistanceCalculator>::new(num_features);
+        let ivf: Ivf<_, L2DistanceCalculator, PlainDecoder> = Ivf::new(
+            Box::new(VectorStorage::FixedLocalFileBacked(storage)),
+            index_storage,
+            num_clusters,
+            quantizer,
+        );
+
+        let query = vec![2.0, 3.0, 4.0];
+        let k = 4;
+
+        // Batch invalidate doc_ids
+        let invalid_doc_ids = ivf.invalidate_batch(&vec![101, 103]);
+
+        // Verify that the correct doc_ids were invalidated
+        assert_eq!(invalid_doc_ids.len(), 2);
+        assert!(invalid_doc_ids.contains(&101));
+        assert!(invalid_doc_ids.contains(&103));
+
+        // Verify that invalidated doc_ids are excluded from the search results
+        let results = ivf
+            .search(&query, k, num_probes, false)
+            .await
+            .expect("IVF search should return a result");
+
+        assert_eq!(results.id_with_scores.len(), k - invalid_doc_ids.len());
+
+        // Ensure invalidated doc_ids are not in the results
+        for result in &results.id_with_scores {
+            assert!(!invalid_doc_ids.contains(&result.doc_id));
+        }
+
+        // Ensure valid doc_ids are present in the results
+        assert_eq!(results.id_with_scores[0].doc_id, 100);
+        assert_eq!(results.id_with_scores[1].doc_id, 102);
+
+        // Batch invalidate doc_ids again
+        assert!(ivf.invalidate_batch(&vec![101, 103]).is_empty());
     }
 }
