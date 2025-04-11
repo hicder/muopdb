@@ -55,7 +55,7 @@ impl<Q: Quantizer> Segment for ImmutableSegment<Q> {
     }
 
     /// ImmutableSegment does not support contains.
-    fn may_contains(&self, _doc_id: u128) -> bool {
+    fn may_contain(&self, _doc_id: u128) -> bool {
         // TODO(hicder): Implement this
         return true;
     }

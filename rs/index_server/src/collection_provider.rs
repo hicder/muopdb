@@ -17,7 +17,7 @@ impl CollectionProvider {
 
     pub fn read_collection(&self, name: &str) -> Option<BoxedCollection> {
         let collection_path = format!("{}/{}", self.data_directory, name);
-        let reader = CollectionReader::new(collection_path.clone());
+        let reader = CollectionReader::new(name.to_string(), collection_path.clone());
 
         // Read the collection config
         let config_path = format!("{}/collection_config.json", collection_path);

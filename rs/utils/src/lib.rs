@@ -1,10 +1,14 @@
 #![feature(portable_simd)]
+#![feature(btree_cursors)]
+#![feature(new_range_api)]
 
 use std::simd::{LaneCount, Simd, SupportedLaneCount};
+pub mod bloom_filter;
 pub mod distance;
 pub mod io;
 pub mod kmeans_builder;
 pub mod mem;
+pub mod on_disk_ordered_map;
 pub mod test_utils;
 
 pub trait DistanceCalculator {
@@ -32,6 +36,7 @@ pub trait CalculateSquared {
     fn calculate_squared(a: &[f32], b: &[f32]) -> f32;
 }
 
+#[inline(always)]
 pub fn ceil_div(a: usize, b: usize) -> usize {
-    (a + b - 1) / b
+    a.div_ceil(b)
 }

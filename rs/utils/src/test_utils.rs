@@ -1,9 +1,19 @@
+use rand::distributions::Standard;
+use rand::prelude::Distribution;
 use rand::Rng;
 
 // Generate a random vector with a given dimension
 pub fn generate_random_vector(dimension: usize) -> Vec<f32> {
     let mut rng = rand::thread_rng();
     (0..dimension).map(|_| rng.gen()).collect()
+}
+
+pub fn generate_random_vector_generic<T>(dimension: usize) -> Vec<T>
+where
+    Standard: Distribution<T>,
+{
+    let mut rng = rand::thread_rng();
+    (0..dimension).map(|_| rng.gen::<T>()).collect()
 }
 
 // This test is used to generate 10000 vectors of dimension 128
