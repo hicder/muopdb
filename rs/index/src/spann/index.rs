@@ -63,6 +63,10 @@ impl<Q: Quantizer> Spann<Q> {
         self.posting_lists.invalidate(doc_id)
     }
 
+    pub fn invalidate_batch(&self, doc_ids: &[u128]) -> Vec<u128> {
+        self.posting_lists.invalidate_batch(doc_ids)
+    }
+
     pub fn is_invalidated(&self, doc_id: u128) -> bool {
         self.posting_lists.is_invalidated(doc_id)
     }

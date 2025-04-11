@@ -91,6 +91,13 @@ impl<Q: Quantizer> IvfType<Q> {
         }
     }
 
+    pub fn invalidate_batch(&self, doc_ids: &[u128]) -> Vec<u128> {
+        match self {
+            IvfType::L2Plain(ivf) => ivf.invalidate_batch(doc_ids),
+            IvfType::L2EF(ivf) => ivf.invalidate_batch(doc_ids),
+        }
+    }
+
     pub fn is_invalidated(&self, doc_id: u128) -> bool {
         match self {
             IvfType::L2Plain(ivf) => ivf.is_invalidated(doc_id),

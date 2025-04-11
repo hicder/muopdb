@@ -124,14 +124,12 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
                 }
 
                 // TODO(tyb): hard link the storage? But still need to invalidate in the hash set
-                for (user_id, doc_ids) in self.temp_invalidated_ids.read().iter() {
-                    for doc_id in doc_ids {
-                        // doc_id may have been removed during optimizer run (e.g. we don't add
-                        // invalidated docs when merging), so we just need to make sure
-                        // invalidating doesn't result in error.
-                        let _ = index.invalidate(*user_id, *doc_id)?;
-                    }
-                }
+                //
+                // doc_id may have been removed during optimizer run (e.g. we don't add
+                // invalidated docs when merging), so we just need to make sure
+                // invalidating doesn't result in error, no need to verify the effectively
+                // invalidated element count.
+                let _ = index.invalidate_batch(&self.temp_invalidated_ids.read())?;
                 Ok(())
             }
             None => Err(anyhow!("Internal index does not exist")),
