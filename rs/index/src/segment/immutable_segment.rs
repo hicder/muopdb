@@ -38,7 +38,9 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
     }
 
     pub fn should_auto_vacuum(&self) -> bool {
-        (self.index.count_of_deleted_documents() as f64) / (self.index.count_of_all_documents() as f64) > 0.1
+        (self.index.count_of_deleted_documents() as f64)
+            / (self.index.count_of_all_documents() as f64)
+            > 0.1
     }
 }
 
