@@ -29,16 +29,16 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
         self.index.size_in_bytes()
     }
 
-    pub fn size_in_bytes_deleted_documents(&self) -> usize {
-        self.index.size_in_bytes_deleted_documents()
-    }
-
     pub fn get_point_id(&self, user_id: u128, doc_id: u128) -> Option<u32> {
         self.index.get_point_id(user_id, doc_id)
     }
 
     pub fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         self.index.is_invalidated(user_id, doc_id)
+    }
+
+    pub fn should_auto_vacuum(&self) -> bool {
+        self.index.count_of_deleted_documents() / self.index.count_of_all_documents() > 0.1
     }
 }
 

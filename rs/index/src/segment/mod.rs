@@ -88,13 +88,13 @@ impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
         }
     }
 
-    pub fn size_in_bytes_deleted_documents(&self) -> usize {
+    pub fn should_auto_vacuum(&self) -> bool {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment.read().size_in_bytes_deleted_documents()
+                immutable_segment.read().should_auto_vacuum()
             }
-            BoxedImmutableSegment::PendingSegment(_pending_segment) => 0,
-            BoxedImmutableSegment::MockedNoQuantizationSegment(_mocked_segment) => 0,
+            BoxedImmutableSegment::PendingSegment(_pending_segment) => false,
+            BoxedImmutableSegment::MockedNoQuantizationSegment(_mocked_segment) => false,
         }
     }
 }
