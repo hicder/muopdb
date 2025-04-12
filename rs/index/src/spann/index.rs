@@ -64,6 +64,10 @@ impl<Q: Quantizer> Spann<Q> {
     pub fn is_invalidated(&self, doc_id: u128) -> bool {
         self.posting_lists.is_invalidated(doc_id)
     }
+
+    pub fn count_of_all_documents(&self) -> usize {
+        self.posting_lists.num_vectors()
+    }
 }
 
 impl<Q: Quantizer> Spann<Q> {

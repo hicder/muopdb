@@ -42,8 +42,8 @@ impl InvalidatedIdsStorage {
         }
     }
 
-    pub fn invalidated_documents_size(&self) -> usize {
-        self.num_entries() * BYTES_PER_INVALIDATION
+    pub fn count_of_deleted_documents(&self) -> usize {
+        self.num_entries()
     }
 
     pub fn read(base_directory: &str) -> Result<Self> {

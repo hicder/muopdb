@@ -116,10 +116,18 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         size
     }
 
-    pub fn size_in_bytes_deleted_documents(&self) -> usize {
+    pub fn count_of_deleted_documents(&self) -> usize {
         self.invalidated_ids_storage
             .read()
-            .invalidated_documents_size()
+            .count_of_deleted_documents()
+    }
+
+    pub fn count_of_all_documents(&self) -> usize {
+        let mut count = 0;
+        for index in self.user_to_spann.iter() {
+            count += index.value().count_of_all_documents();
+        }
+        count
     }
 
     pub fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
