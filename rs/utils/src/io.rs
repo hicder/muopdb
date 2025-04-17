@@ -36,7 +36,7 @@ pub fn get_latest_version(config_path: &str) -> Result<u64> {
         if filename.starts_with("version_") {
             let version = filename
                 .split('_')
-                .last()
+                .next_back()
                 .ok_or_else(|| anyhow!("Invalid version format"))?
                 .parse::<u64>()?;
             latest_version = latest_version.max(version);
@@ -95,6 +95,26 @@ mod tests {
 
         let content = read(format!("{}/target_file", base_directory))?;
         assert_eq!(content, test_content);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_latest_version() -> Result<()> {
+        let temp_dir = TempDir::new("get_latest_version_test")?;
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Failed to convert temp directory path to string"))?
+            .to_string();
+
+        // Create three version files
+        write(format!("{}/version_1", base_directory), "version 1")?;
+        write(format!("{}/version_2", base_directory), "version 2")?;
+        write(format!("{}/version_3", base_directory), "version 3")?;
+
+        let latest_version = get_latest_version(&base_directory)?;
+        assert_eq!(latest_version, 3);
 
         Ok(())
     }
