@@ -32,6 +32,7 @@ pub struct Hnsw<Q: Quantizer> {
 }
 
 impl<Q: Quantizer> Hnsw<Q> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         graph_index_backing_file: File,
         vector_storage: Box<VectorStorage<Q::QuantizedT>>,
@@ -155,14 +156,14 @@ impl<Q: Quantizer> Hnsw<Q> {
     pub fn get_level_offsets_slice(&self) -> &[u64] {
         let start = self.level_offsets_offset;
         let slice = &self.graph_index_mmap[start..start + self.header.level_offsets_len as usize];
-        return utils::mem::transmute_u8_to_slice(slice);
+        utils::mem::transmute_u8_to_slice(slice)
     }
 
     /// Returns the doc_id_mapping slice
     pub fn get_doc_id_mapping_slice(&self) -> &[u128] {
         let start = self.doc_id_mapping_offset;
         let slice = &self.graph_index_mmap[start..start + self.header.doc_id_mapping_len as usize];
-        return utils::mem::transmute_u8_to_slice(slice);
+        utils::mem::transmute_u8_to_slice(slice)
     }
 
     // Return all entry points for this index
@@ -232,8 +233,9 @@ impl<Q: Quantizer> Hnsw<Q> {
         let level_idx_end = self.get_level_offsets_slice()[num_layers - layer as usize] as usize;
         if layer > 0 {
             let points = &self.get_points_slice()[level_idx_start..level_idx_end];
+            #[allow(clippy::needless_range_loop)]
             for i in 0..points.len() {
-                let idx = i as usize;
+                let idx = i;
 
                 let start_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx];
                 let end_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx + 1];
@@ -253,7 +255,7 @@ impl<Q: Quantizer> Hnsw<Q> {
         } else {
             let num_points = level_idx_end - level_idx_start - 1;
             for i in 0..num_points {
-                let idx = i as usize;
+                let idx = i;
                 let start_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx];
                 let end_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx + 1];
 
@@ -294,16 +296,16 @@ impl<Q: Quantizer> GraphTraversal<Q> for Hnsw<Q> {
 
         // id of into edge_offsets at current layer.
         // note that this starts at 0, so we need to add level_idx_start to get the actual idx
-        let mut idx_at_layer = -1 as i64;
+        #[allow(clippy::needless_late_init)]
+        let idx_at_layer;
 
         if layer > 0 {
             let points = &self.get_points_slice()[level_idx_start..level_idx_end];
-            for i in 0..points.len() {
-                if points[i] == point_id {
-                    idx_at_layer = i as i64;
-                    break;
-                }
-            }
+            idx_at_layer = points
+                .iter()
+                .position(|&p| p == point_id)
+                .map(|i| i as i64)
+                .unwrap_or(-1);
         } else {
             // At layer 0, we have all points.
             // TODO(hicder): Check that point_id is within range.
@@ -344,7 +346,7 @@ impl<Q: Quantizer> GraphTraversal<Q> for Hnsw<Q> {
                 if !predicate(layer, i as u32) {
                     continue;
                 }
-                let idx = i as usize;
+                let idx = i;
 
                 let start_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx];
                 let end_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx + 1];
@@ -360,7 +362,7 @@ impl<Q: Quantizer> GraphTraversal<Q> for Hnsw<Q> {
                 for e in edges {
                     print!("{}, ", e);
                 }
-                println!("");
+                println!();
             }
         } else {
             let num_points = level_idx_end - level_idx_start - 1;
@@ -370,7 +372,7 @@ impl<Q: Quantizer> GraphTraversal<Q> for Hnsw<Q> {
                     continue;
                 }
 
-                let idx = i as usize;
+                let idx = i;
                 let start_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx];
                 let end_idx_edges = self.get_edge_offsets_slice()[level_idx_start + idx + 1];
 
@@ -385,7 +387,7 @@ impl<Q: Quantizer> GraphTraversal<Q> for Hnsw<Q> {
                 for e in edges {
                     print!("{}, ", e);
                 }
-                println!("");
+                println!();
             }
         }
     }
@@ -410,7 +412,7 @@ mod tests {
         for _ in 0..10000 {
             let mut v = Vec::<f32>::with_capacity(128);
             for _i in 0..128 {
-                buffer_reader.read(&mut buffer).unwrap();
+                buffer_reader.read_exact(&mut buffer).unwrap();
                 v.push(f32::from_le_bytes(buffer));
             }
             dataset.push(v);

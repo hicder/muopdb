@@ -305,11 +305,11 @@ impl<D: DistanceCalculator> WritableQuantizer for ProductQuantizer<D> {
         // Write codebook
         let codebook_buffer = self.codebook_to_buffer();
         let mut codebook_file = File::create(Path::new(&base_directory).join(&CODEBOOK_NAME))?;
-        codebook_file.write(&codebook_buffer)?;
+        codebook_file.write_all(&codebook_buffer)?;
 
         // Write config
         let mut config_file = File::create(Path::new(&base_directory).join(CONFIG_FILE_NAME))?;
-        config_file.write(serde_yaml::to_string(&self.config())?.as_bytes())?;
+        config_file.write_all(serde_yaml::to_string(&self.config())?.as_bytes())?;
         Ok(())
     }
 }

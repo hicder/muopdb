@@ -35,10 +35,6 @@ pub fn transmute_slice_to_u8<T>(slice: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const u8, byte_count) }
 }
 
-pub fn get_ith_val_from_raw_ptr<T: Copy>(raw_ptr: *const T, index: usize) -> T {
-    unsafe { *raw_ptr.add(index) }
-}
-
 pub struct LowsAndHighs {
     pub lows: Vec<u64>,
     pub highs: Vec<u64>,
