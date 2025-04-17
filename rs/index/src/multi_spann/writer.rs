@@ -45,7 +45,7 @@ impl MultiSpannWriter {
                 }
 
                 let mut config_file = File::create(config_path)?;
-                config_file.write(serde_yaml::to_string(&pq_config)?.as_bytes())?;
+                config_file.write_all(serde_yaml::to_string(&pq_config)?.as_bytes())?;
             }
             QuantizerType::NoQuantizer => {
                 let ivf_quantizer = NoQuantizer::<L2DistanceCalculator>::new(config.num_features);
