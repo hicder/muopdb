@@ -42,7 +42,7 @@ impl<'a, C: IntegerCodec> OnDiskOrderedMap<'a, C> {
         offset += decoding_res.num_bytes_read;
         let index_len = decoding_res.value;
 
-        let mut read_bytes = 0 as usize;
+        let mut read_bytes = 0_usize;
         while read_bytes < index_len as usize {
             let res = codec.decode_u32(&mmap[offset..]);
             offset += res.num_bytes_read;
@@ -63,7 +63,7 @@ impl<'a, C: IntegerCodec> OnDiskOrderedMap<'a, C> {
 
         Ok(OnDiskOrderedMap {
             path,
-            mmap: &mmap,
+            mmap,
             codec,
             index: map,
             start_offset,
@@ -99,11 +99,11 @@ impl<'a, C: IntegerCodec> OnDiskOrderedMap<'a, C> {
                 // TODO: probably have some way to determine max key length.
                 let mut prev_key = Vec::<u8>::with_capacity(10);
                 loop {
-                    let res = self.codec.decode_u32(&self.mmap[offset as usize..]);
+                    let res = self.codec.decode_u32(&self.mmap[offset..]);
                     let shared = res.value;
                     offset += res.num_bytes_read;
 
-                    let res = self.codec.decode_u32(&self.mmap[offset as usize..]);
+                    let res = self.codec.decode_u32(&self.mmap[offset..]);
                     let unshared = res.value;
                     offset += res.num_bytes_read;
 
@@ -126,7 +126,7 @@ impl<'a, C: IntegerCodec> OnDiskOrderedMap<'a, C> {
                     }
                 }
             }
-            None => return None,
+            None => None,
         }
     }
 }

@@ -166,7 +166,7 @@ mod tests {
 
         // Insert an element into the Bloom filter
         let test_item = "test_element";
-        filter.insert(&test_item);
+        filter.insert(test_item);
 
         // Persist the Bloom filter to disk
         let file_path = format!("{}/bloom-filter", base_directory);
@@ -188,7 +188,7 @@ mod tests {
         // Verify that the metadata matches
         assert_eq!(num_bits, filter.bits.len());
         assert_eq!(num_hash_functions, filter.num_hash_functions);
-        let expected_num_u64_elements = (num_bits + 63) / 64;
+        let expected_num_u64_elements = num_bits.div_ceil(64);
         // Verify that the raw slice length matches the expected padded length
         assert_eq!(filter.bits.as_raw_slice().len(), expected_num_u64_elements,);
 
@@ -203,8 +203,7 @@ mod tests {
         assert_eq!(&raw_bits[..], filter.bits.as_raw_slice());
 
         // Verify the total bytes written matches the expected size
-        let expected_total_bytes =
-            8 + 8 + (filter.bits.as_raw_slice().len() * std::mem::size_of::<u64>()) as usize;
+        let expected_total_bytes = 8 + 8 + std::mem::size_of_val(filter.bits.as_raw_slice());
         assert_eq!(total_bytes_written, expected_total_bytes);
     }
 }
