@@ -126,16 +126,13 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
         match self.variant {
             KMeansVariant::Lloyd => {
                 if self.dimension % 16 == 0 {
-                    return self
-                        .run_lloyd::<LaneConformingDistanceCalculator<16, D>, 16>(flattened_data);
+                    self.run_lloyd::<LaneConformingDistanceCalculator<16, D>, 16>(flattened_data)
                 } else if self.dimension % 8 == 0 {
-                    return self
-                        .run_lloyd::<LaneConformingDistanceCalculator<8, D>, 8>(flattened_data);
+                    self.run_lloyd::<LaneConformingDistanceCalculator<8, D>, 8>(flattened_data)
                 } else if self.dimension % 4 == 0 {
-                    return self
-                        .run_lloyd::<LaneConformingDistanceCalculator<4, D>, 4>(flattened_data);
+                    self.run_lloyd::<LaneConformingDistanceCalculator<4, D>, 4>(flattened_data)
                 } else {
-                    return self.run_lloyd::<D, 1>(flattened_data);
+                    self.run_lloyd::<D, 1>(flattened_data)
                 }
             }
         }
@@ -144,12 +141,11 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
     fn init_random_points(&self, points: &Vec<&[f32]>, num_clusters: usize) -> Result<Vec<f32>> {
         match &self.cluster_init_values {
             Some(cluster_init_values) if cluster_init_values.len() == num_clusters => {
-                return Ok(cluster_init_values
+                Ok(cluster_init_values
                     .iter()
-                    .map(|point_id| points[*point_id])
-                    .flatten()
+                    .flat_map(|point_id| points[*point_id])
                     .cloned()
-                    .collect());
+                    .collect())
             }
             _ => {
                 let mut rng = rand::thread_rng();
@@ -157,9 +153,9 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
                 points
                     .choose_multiple(&mut rng, num_clusters)
                     .for_each(|point| {
-                        centroids.extend_from_slice(*point);
+                        centroids.extend_from_slice(point);
                     });
-                return Ok(centroids);
+                Ok(centroids)
             }
         }
     }
@@ -360,7 +356,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
         }
 
         Ok(KMeansResult {
-            centroids: centroids,
+            centroids,
             assignments: cluster_labels,
             error: last_dist,
         })
@@ -389,12 +385,7 @@ mod tests {
             vec![92.0, 92.0],
         ];
 
-        let flattened_data = data
-            .iter()
-            .map(|x| x.as_slice())
-            .flatten()
-            .cloned()
-            .collect();
+        let flattened_data = data.iter().flat_map(|x| x.as_slice()).cloned().collect();
 
         let kmeans = KMeansBuilder::<L2DistanceCalculator>::new_with_cluster_init_values(
             3,
@@ -437,12 +428,7 @@ mod tests {
             vec![92.0, 92.0],
         ];
 
-        let flattened_data = data
-            .iter()
-            .map(|x| x.as_slice())
-            .flatten()
-            .cloned()
-            .collect();
+        let flattened_data = data.iter().flat_map(|x| x.as_slice()).cloned().collect();
         let kmeans = KMeansBuilder::<L2DistanceCalculator>::new_with_cluster_init_values(
             3,
             100,
@@ -481,12 +467,7 @@ mod tests {
             vec![92.0, 92.0],
         ];
 
-        let flattened_data = data
-            .iter()
-            .map(|x| x.as_slice())
-            .flatten()
-            .cloned()
-            .collect();
+        let flattened_data = data.iter().flat_map(|x| x.as_slice()).cloned().collect();
         let kmeans = KMeansBuilder::<L2DistanceCalculator>::new_with_cluster_init_values(
             10,
             100,
@@ -501,8 +482,7 @@ mod tests {
             .expect("KMeans run should succeed");
 
         assert_eq!(result.centroids.len(), 9 * 2);
-        let asigned_clusters: HashSet<usize> =
-            result.assignments.iter().map(|x| *x as usize).collect();
+        let asigned_clusters: HashSet<usize> = result.assignments.iter().copied().collect();
         let expected_clusters: HashSet<usize> = HashSet::from([0, 1, 2, 3, 4, 5, 6, 7, 8]);
 
         assert_eq!(asigned_clusters, expected_clusters);

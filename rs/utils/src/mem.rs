@@ -31,7 +31,7 @@ pub fn transmute_u8_to_val_unaligned<T: Copy>(data: &[u8]) -> T {
 }
 
 pub fn transmute_slice_to_u8<T>(slice: &[T]) -> &[u8] {
-    let byte_count = slice.len() * std::mem::size_of::<T>();
+    let byte_count = std::mem::size_of_val(slice);
     unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const u8, byte_count) }
 }
 
@@ -112,14 +112,14 @@ mod tests {
 
     #[test]
     fn test_id_to_u128s() {
-        let lows = vec![
+        let lows = [
             0x123456789abcdef0,
             0x123456789abcdef1,
             0x123456789abcdef2,
             0x123456789abcdef3,
             0x123456789abcdef4,
         ];
-        let highs = vec![0x4312, 0x4312, 0x4312, 0x4312, 0x4312];
+        let highs = [0x4312, 0x4312, 0x4312, 0x4312, 0x4312];
 
         let id_proto: Vec<Id> = lows
             .iter()
@@ -131,7 +131,7 @@ mod tests {
 
         assert_eq!(
             ids,
-            vec![
+            [
                 0x4312123456789abcdef0,
                 0x4312123456789abcdef1,
                 0x4312123456789abcdef2,
@@ -164,7 +164,7 @@ mod tests {
 
         assert_eq!(
             ids,
-            vec![
+            [
                 0x4312123456789abcdef0,
                 0x4312123456789abcdef1,
                 0x4312123456789abcdef2,

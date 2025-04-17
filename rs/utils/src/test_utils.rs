@@ -34,8 +34,8 @@ mod tests {
         // Write to /tmp/dataset.bin
         let mut file = std::fs::File::create("/tmp/dataset.bin").expect("File should be created");
         for result in results {
-            for i in 0..dimension {
-                file.write_all(&result[i].to_le_bytes())
+            for r in result.iter().take(dimension) {
+                file.write_all(&r.to_le_bytes())
                     .expect("Write should succeed");
             }
         }

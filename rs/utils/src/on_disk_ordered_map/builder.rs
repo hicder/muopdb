@@ -22,6 +22,12 @@ struct IndexItem {
     pub value: u64,
 }
 
+impl Default for OnDiskOrderedMapBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Builder for the on disk ordered map. This will accumulate the keys and values in a BTreeMap.
 /// Then on build, it will write the map to a file.
 impl OnDiskOrderedMapBuilder {
