@@ -93,7 +93,6 @@ mod tests {
         let mut tokens: Vec<String> = vec![];
         while tokenizer.advance() == true {
             tokens.push(tokenizer.token().text);
-            println!("{}", tokenizer.token().text)
         }
 
         assert_eq!(tokens.len(), 4);
