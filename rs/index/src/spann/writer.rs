@@ -152,14 +152,14 @@ impl SpannWriter {
             QuantizerType::ProductQuantizer => {
                 Self::write_ivf_pq(
                     &ivf_directory,
-                    &index_writer_config,
+                    index_writer_config,
                     &mut spann_builder.ivf_builder,
                 )?;
             }
             QuantizerType::NoQuantizer => {
                 Self::write_ivf_noq(
                     &ivf_directory,
-                    &index_writer_config,
+                    index_writer_config,
                     &mut spann_builder.ivf_builder,
                 )?;
             }

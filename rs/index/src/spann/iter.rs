@@ -17,6 +17,7 @@ impl<Q: Quantizer> SpannIter<Q> {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<(u128, &[Q::QuantizedT])> {
         loop {
             if let Some(doc_id) = self.index.get_doc_id(self.next_point_id) {

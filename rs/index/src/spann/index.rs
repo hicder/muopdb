@@ -33,15 +33,13 @@ impl<Q: Quantizer> Spann<Q> {
         &self.posting_lists
     }
 
+    /// Get the doc_id for a point_id
+    /// Returns None if the point_id is not found
     pub fn get_doc_id(&self, point_id: u32) -> Option<u128> {
-        match self
-            .posting_lists
+        self.posting_lists
             .get_index_storage()
             .get_doc_id(point_id as usize)
-        {
-            Ok(doc_id) => Some(doc_id),
-            Err(_) => None,
-        }
+            .ok()
     }
 
     pub fn get_point_id(&self, doc_id: u128) -> Option<u32> {
@@ -49,14 +47,10 @@ impl<Q: Quantizer> Spann<Q> {
     }
 
     pub fn get_vector(&self, point_id: u32) -> Option<&[Q::QuantizedT]> {
-        match self
-            .posting_lists
+        self.posting_lists
             .get_vector_storage()
             .get_no_context(point_id)
-        {
-            Ok(v) => Some(v),
-            Err(_) => None,
-        }
+            .ok()
     }
 
     pub fn invalidate(&self, doc_id: u128) -> bool {
@@ -177,7 +171,7 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add(i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .add(i as u128, &[i as f32, i as f32, i as f32, i as f32])
                 .unwrap();
         }
         assert!(builder.build().is_ok());
@@ -249,7 +243,7 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add(i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .add(i as u128, &[i as f32, i as f32, i as f32, i as f32])
                 .unwrap();
         }
         assert!(builder.build().is_ok());
@@ -324,7 +318,7 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             builder
-                .add(i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .add(i as u128, &[i as f32, i as f32, i as f32, i as f32])
                 .unwrap();
         }
         assert!(builder.build().is_ok());

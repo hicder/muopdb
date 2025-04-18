@@ -198,7 +198,7 @@ impl SpannBuilder {
         for i in 0..num_centroids {
             self.centroid_builder.insert(
                 i as u128,
-                &centroid_storage.get(i as u32, &mut search_context).unwrap(),
+                centroid_storage.get(i as u32, &mut search_context).unwrap(),
             )?;
         }
         debug!("Finish building centroids");
