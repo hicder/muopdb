@@ -42,10 +42,6 @@ impl InvalidatedIdsStorage {
         }
     }
 
-    pub fn count_of_deleted_documents(&self) -> usize {
-        self.num_entries()
-    }
-
     pub fn read(base_directory: &str) -> Result<Self> {
         let base_path = Path::new(base_directory);
         // Create a storage from scratch if none exists.

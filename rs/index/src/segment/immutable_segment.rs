@@ -1,3 +1,5 @@
+use core::num;
+
 use anyhow::{anyhow, Result};
 use quantization::quantization::Quantizer;
 
@@ -5,6 +7,7 @@ use super::Segment;
 use crate::multi_spann::index::MultiSpannIndex;
 use crate::spann::iter::SpannIter;
 use crate::utils::SearchResult;
+use crate::vector::VectorStorage;
 
 /// This is an immutable segment. This usually contains a single index.
 pub struct ImmutableSegment<Q: Quantizer> {
@@ -37,10 +40,24 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
         self.index.is_invalidated(user_id, doc_id)
     }
 
-    pub fn should_auto_vacuum(&self) -> bool {
-        (self.index.count_of_deleted_documents() as f64)
-            / (self.index.count_of_all_documents() as f64)
-            > 0.1
+    pub fn should_auto_vacuum(&self, num_features: usize) -> bool {
+        let vector_storage_path = format!("{}/vectors", self.base_directory);
+        let vector_storage = Box::new(VectorStorage::FixedLocalFileBacked(
+            FixedFileVectorStorage::<Q::QuantizedT>::new_with_offset(
+                vector_storage_path,
+                index_storage.header().quantized_dimension as usize,
+                self.vector_offset,
+            )?,
+        ));
+
+        let count_deleted_documents = self.index.get_deleted_docs_count() as f64;
+        let count_all_documents = vector_storage.get_total_docs_count(num_features) as f64;
+
+        if count_all_documents == 0.0 {
+            return false;
+        }
+
+        return count_deleted_documents / count_all_documents > 0.1;
     }
 }
 
