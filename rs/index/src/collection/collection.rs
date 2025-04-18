@@ -975,7 +975,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             let segment_name = segment.key();
             let segment_value = segment.value();
 
-            if segment_value.should_auto_vacuum() {
+            if segment_value.should_auto_vacuum(self.segment_config.num_features) {
                 let segments_to_optimize = vec![segment_name.clone()];
                 let pending_segment = self.init_optimizing(&segments_to_optimize)?;
                 let vacuum_optimizer = VacuumOptimizer::<Q>::new();
