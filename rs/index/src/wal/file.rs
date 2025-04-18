@@ -320,7 +320,7 @@ mod tests {
         // Insert hello_x for x = 0, 1, 2, 3, 4
         for x in 0..5 {
             wal_file
-                .append_raw(&format!("hello_{}", x).as_bytes())
+                .append_raw(format!("hello_{}", x).as_bytes())
                 .unwrap();
         }
 

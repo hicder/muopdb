@@ -44,11 +44,8 @@ impl StorageContext for SearchContext {
     }
 
     fn record_pages(&mut self, page_id: String) {
-        match &mut self.visited_pages {
-            Some(visited_pages) => {
-                visited_pages.insert(page_id);
-            }
-            None => {}
+        if let Some(visited_pages) = &mut self.visited_pages {
+            visited_pages.insert(page_id);
         }
     }
 
@@ -134,6 +131,12 @@ pub struct SearchStats {
     pub num_pages_accessed: usize,
 }
 
+impl Default for SearchStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SearchStats {
     pub fn new() -> Self {
         Self {
@@ -152,6 +155,12 @@ pub struct SearchResult {
 }
 
 unsafe impl Send for SearchResult {}
+
+impl Default for SearchResult {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SearchResult {
     pub fn new() -> Self {
@@ -219,7 +228,7 @@ mod tests {
 
     #[test]
     fn test_id_with_score_sorting() {
-        let mut scores = vec![
+        let mut scores = [
             IdWithScore {
                 score: f32::NAN,
                 doc_id: 5,
@@ -248,7 +257,7 @@ mod tests {
 
         scores.sort();
 
-        let expected_order = vec![
+        let expected_order = [
             IdWithScore {
                 score: 1.0,
                 doc_id: 1,

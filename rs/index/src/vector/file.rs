@@ -81,8 +81,8 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
         let vector = &self.resident_vectors[resident_idx];
         let size_required = vector.len() * std::mem::size_of::<T>();
         let mut buffer: Vec<u8> = vec![];
-        for i in 0..vector.len() {
-            buffer.extend_from_slice(vector[i].to_le_bytes().as_ref());
+        for v in vector.iter() {
+            buffer.extend_from_slice(v.to_le_bytes().as_ref());
         }
 
         let mmap = &mut self.mmaps[self.current_backing_id as usize];
@@ -126,7 +126,7 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
         if self.current_offset == self.backing_file_size {
             self.new_backing_file()?;
         }
-        if self.current_offset + vector.len() * std::mem::size_of::<T>() > self.backing_file_size {
+        if self.current_offset + std::mem::size_of_val(vector) > self.backing_file_size {
             return Err(anyhow!("vector too big to be flushed to backing file"));
         }
 
@@ -180,7 +180,7 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
             ));
         }
 
-        let size_required = vector.len() * std::mem::size_of::<T>();
+        let size_required = std::mem::size_of_val(vector);
         let new_size_required = self.size_bytes + size_required;
         let current_resident = self.resident;
         if !current_resident || new_size_required > self.memory_threshold {
@@ -216,8 +216,8 @@ impl<T: ToBytes + Clone> FileBackedAppendableVectorStorage<T> {
         len += wrap_write(writer, &num_vectors.to_le_bytes())?;
         for i in 0..num_vectors {
             let vector = self.get_no_context(i as u32).unwrap();
-            for j in 0..self.num_features {
-                len += wrap_write(writer, vector[j].to_le_bytes().as_ref())?;
+            for feature in vector.iter() {
+                len += wrap_write(writer, feature.to_le_bytes().as_ref())?;
             }
             writer.flush()?;
         }

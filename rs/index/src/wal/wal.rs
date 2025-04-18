@@ -38,6 +38,7 @@ impl Wal {
         // Sort the files by the file id. Be careful that the file id is the last part of the file name.
         file_paths.sort_by_key(|path| path.split(".").last().unwrap().parse::<u32>().unwrap());
 
+        #[allow(clippy::needless_late_init)]
         let next_wal_id;
         if file_paths.is_empty() {
             info!("No wal files found, creating a new one");
@@ -135,9 +136,9 @@ mod tests {
         let dir = tmp_dir.path();
         for i in 0..3 {
             let file_path = dir.join(format!("wal.{}", i));
-            let mut wal = WalFile::create(&file_path.to_str().unwrap(), i * 10 - 1).unwrap();
+            let mut wal = WalFile::create(file_path.to_str().unwrap(), i * 10 - 1).unwrap();
             for j in 0..10 {
-                wal.append_raw(&format!("hello_{}", j).as_bytes()).unwrap();
+                wal.append_raw(format!("hello_{}", j).as_bytes()).unwrap();
             }
         }
 
@@ -163,7 +164,7 @@ mod tests {
         let dir = tmp_dir.path();
         let mut wal = Wal::open(dir.to_str().unwrap(), 1024, -1).unwrap();
         for i in 0..100 {
-            let seq_no = wal.append_raw(&format!("hello{}", i).as_bytes()).unwrap();
+            let seq_no = wal.append_raw(format!("hello{}", i).as_bytes()).unwrap();
             assert_eq!(seq_no, i as u64);
         }
         assert_eq!(wal.files.len(), 2);
@@ -189,7 +190,7 @@ mod tests {
         for i in 0..5 {
             let data = vec![i as f32; 10];
             let seq_no = wal
-                .append(&vec![i as u128], &vec![i as u128], &data, WalOpType::Insert)
+                .append(&[i as u128], &[i as u128], &data, WalOpType::Insert)
                 .unwrap();
             assert_eq!(seq_no, i as u64);
         }
@@ -215,7 +216,7 @@ mod tests {
         let mut wal = Wal::open(dir.to_str().unwrap(), 1024, -1).unwrap();
         for i in 0..5 {
             let seq_no = wal
-                .append(&vec![i as u128], &vec![i as u128], &[], WalOpType::Delete)
+                .append(&[i as u128], &[i as u128], &[], WalOpType::Delete)
                 .unwrap();
             assert_eq!(seq_no, i as u64);
         }
@@ -240,7 +241,7 @@ mod tests {
         let dir = tmp_dir.path();
         let mut wal = Wal::open(dir.to_str().unwrap(), 20, -1).unwrap();
         for i in 0..10 {
-            wal.append_raw(&format!("hello{}", i).as_bytes()).unwrap();
+            wal.append_raw(format!("hello{}", i).as_bytes()).unwrap();
         }
 
         assert_eq!(wal.files.len(), 11);
@@ -280,7 +281,7 @@ mod tests {
 
             // append 20 entries
             for i in 0..20 {
-                wal.append_raw(&format!("hello{}", i).as_bytes()).unwrap();
+                wal.append_raw(format!("hello{}", i).as_bytes()).unwrap();
             }
             assert_eq!(wal.files.len(), 7);
             assert_eq!(wal.files[0].get_num_entries(), 3);
@@ -293,7 +294,7 @@ mod tests {
 
             // append 20 more entries
             for i in 0..20 {
-                wal.append_raw(&format!("hello{}", i).as_bytes()).unwrap();
+                wal.append_raw(format!("hello{}", i).as_bytes()).unwrap();
             }
             assert_eq!(wal.files.len(), 13);
             assert_eq!(wal.files.iter().last().unwrap().get_wal_id(), 13);

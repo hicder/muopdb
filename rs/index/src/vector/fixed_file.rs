@@ -178,7 +178,7 @@ mod tests {
         let mut appendable_storage =
             FileBackedAppendableVectorStorage::<u32>::new(base_directory.clone(), 4, 8192, 4);
         for i in 0..257 {
-            appendable_storage.append(&vec![i, i, i, i]).unwrap();
+            appendable_storage.append(&[i, i, i, i]).unwrap();
         }
 
         let vectors_path = format!("{}/vector_storage", base_directory);
@@ -205,15 +205,9 @@ mod tests {
         let base_directory = tempdir.path().to_str().unwrap().to_string();
         let mut appendable_storage =
             FileBackedAppendableVectorStorage::<f32>::new(base_directory.clone(), 4, 1024, 4);
-        appendable_storage
-            .append(&vec![1.0, 2.0, 3.0, 4.0])
-            .unwrap();
-        appendable_storage
-            .append(&vec![5.0, 6.0, 7.0, 8.0])
-            .unwrap();
-        appendable_storage
-            .append(&vec![9.0, 10.0, 11.0, 12.0])
-            .unwrap();
+        appendable_storage.append(&[1.0, 2.0, 3.0, 4.0]).unwrap();
+        appendable_storage.append(&[5.0, 6.0, 7.0, 8.0]).unwrap();
+        appendable_storage.append(&[9.0, 10.0, 11.0, 12.0]).unwrap();
 
         let vectors_path = format!("{}/vector_storage", base_directory);
         let mut vectors_file = File::create(vectors_path.clone()).unwrap();
