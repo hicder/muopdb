@@ -188,6 +188,23 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
     pub fn base_directory(&self) -> &String {
         &self.base_directory
     }
+
+    pub fn get_deleted_docs_count(&self) -> usize {
+        return self.invalidated_ids_storage.read().num_entries();
+    }
+
+    pub fn get_total_docs_count(&self, num_features: usize) -> usize {
+        let num_users = self.user_index_infos.len();
+
+        // Get the length of the raw_vectors file with stats
+        // FIXME: Get the correct path here
+        let raw_vectors_file_path = format!("{}/ivf/raw_vectors", self.base_directory);
+        let raw_vectors_file = std::fs::File::open(raw_vectors_file_path)?;
+        let raw_vectors_file_metadata = raw_vectors_file.metadata()?;
+        let raw_vectors_file_len = raw_vectors_file_metadata.len() as usize;
+
+        return raw_vectors_file_len - num_users * 8 / (num_features * 4);
+    }
 }
 
 #[cfg(test)]

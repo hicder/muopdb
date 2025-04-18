@@ -111,6 +111,13 @@ impl<Q: Quantizer> IvfType<Q> {
             IvfType::L2EF(ivf) => ivf.num_clusters,
         }
     }
+
+    pub fn num_vectors(&self) -> usize {
+        match self {
+            IvfType::L2Plain(ivf) => ivf.vector_storage.num_vectors(),
+            IvfType::L2EF(ivf) => ivf.vector_storage.num_vectors(),
+        }
+    }
 }
 
 impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, DC, D> {
