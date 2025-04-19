@@ -138,7 +138,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         for (user_id, doc_ids) in user_to_doc_ids {
             let index = self.get_or_create_index(*user_id)?;
 
-            let effectively_invalidated_doc_ids = index.invalidate_batch(&doc_ids);
+            let effectively_invalidated_doc_ids = index.invalidate_batch(doc_ids);
             total_effectively_invalidated += effectively_invalidated_doc_ids.len();
 
             // Add (user_id, doc_id) pairs to the collection
@@ -227,11 +227,11 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             assert!(multi_spann_builder
-                .insert(0, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .insert(0, i, &[i as f32, i as f32, i as f32, i as f32])
                 .is_ok());
         }
         assert!(multi_spann_builder
-            .insert(0, num_vectors as u128, &[1.2, 2.2, 3.2, 4.2])
+            .insert(0, num_vectors, &[1.2, 2.2, 3.2, 4.2])
             .is_ok());
         assert!(multi_spann_builder.build().is_ok());
 
@@ -280,11 +280,11 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             assert!(multi_spann_builder
-                .insert(0, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .insert(0, i, &[i as f32, i as f32, i as f32, i as f32])
                 .is_ok());
         }
         assert!(multi_spann_builder
-            .insert(0, num_vectors as u128, &[1.2, 2.2, 3.2, 4.2])
+            .insert(0, num_vectors, &[1.2, 2.2, 3.2, 4.2])
             .is_ok());
         assert!(multi_spann_builder.build().is_ok());
 
@@ -322,11 +322,11 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             assert!(multi_spann_builder
-                .insert(0, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .insert(0, i, &[i as f32, i as f32, i as f32, i as f32])
                 .is_ok());
         }
         assert!(multi_spann_builder
-            .insert(0, num_vectors as u128, &[1.2, 2.2, 3.2, 4.2])
+            .insert(0, num_vectors, &[1.2, 2.2, 3.2, 4.2])
             .is_ok());
         assert!(multi_spann_builder.build().is_ok());
 
@@ -343,10 +343,10 @@ mod tests {
         let num_probes = 2;
 
         assert!(multi_spann_index
-            .invalidate(0, num_vectors as u128)
+            .invalidate(0, num_vectors)
             .expect("Failed to invalidate"));
         assert!(multi_spann_index
-            .is_invalidated(0, num_vectors as u128)
+            .is_invalidated(0, num_vectors)
             .expect("Failed to query invalidation"));
 
         let results = multi_spann_index
@@ -379,7 +379,7 @@ mod tests {
         let mut storage = InvalidatedIdsStorage::new(&invalidated_ids_dir, 1024);
 
         // Invalidate a user ID and doc ID
-        assert!(storage.invalidate(0, num_vectors as u128).is_ok());
+        assert!(storage.invalidate(0, num_vectors).is_ok());
 
         let mut spann_builder_config = CollectionConfig::default_test_config();
         spann_builder_config.num_features = num_features;
@@ -390,11 +390,11 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             assert!(multi_spann_builder
-                .insert(0, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .insert(0, i, &[i as f32, i as f32, i as f32, i as f32])
                 .is_ok());
         }
         assert!(multi_spann_builder
-            .insert(0, num_vectors as u128, &[1.2, 2.2, 3.2, 4.2])
+            .insert(0, num_vectors, &[1.2, 2.2, 3.2, 4.2])
             .is_ok());
         assert!(multi_spann_builder.build().is_ok());
 
@@ -406,7 +406,7 @@ mod tests {
             .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
             .expect("Failed to read Multi-SPANN index");
         assert!(multi_spann_index
-            .is_invalidated(0, num_vectors as u128)
+            .is_invalidated(0, num_vectors)
             .expect("Failed to query invalidation"));
         assert_eq!(
             multi_spann_index
@@ -453,7 +453,7 @@ mod tests {
         // Generate 10 vectors of f32, dimension 4
         for i in 0..num_vectors {
             assert!(multi_spann_builder
-                .insert(0, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .insert(0, i, &[i as f32, i as f32, i as f32, i as f32])
                 .is_ok());
         }
 
@@ -468,7 +468,7 @@ mod tests {
             .expect("Failed to read Multi-SPANN index");
 
         assert!(multi_spann_index
-            .invalidate(0, 0 as u128)
+            .invalidate(0, 0)
             .expect("Failed to invalidate"));
         assert_eq!(
             multi_spann_index
@@ -481,7 +481,7 @@ mod tests {
         );
 
         assert!(!multi_spann_index
-            .invalidate(0, num_vectors as u128)
+            .invalidate(0, num_vectors)
             .expect("Failed to invalidate"));
         assert_eq!(
             multi_spann_index
@@ -516,7 +516,7 @@ mod tests {
         // Generate 10 vectors of f32, dimension 4
         for i in 0..num_vectors {
             assert!(multi_spann_builder
-                .insert(0, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .insert(0, i, &[i as f32, i as f32, i as f32, i as f32])
                 .is_ok());
         }
 
@@ -537,7 +537,7 @@ mod tests {
             vec![
                 /* Valid */ 0_u128,
                 1_u128,
-                /* Invalid */ num_vectors as u128,
+                /* Invalid */ num_vectors,
             ],
         );
 
@@ -572,7 +572,7 @@ mod tests {
             vec![
                 /* Already invalidated */ 1_u128,
                 /* Valid */ 2_u128,
-                /* Invalid */ num_vectors as u128 + 1,
+                /* Invalid */ num_vectors + 1,
             ],
         );
 

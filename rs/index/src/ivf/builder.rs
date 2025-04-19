@@ -92,6 +92,7 @@ impl PostingListWithStoppingPoints {
     }
 }
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for PostingListWithStoppingPoints {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if let (Some(sp), Some(osp)) = (self.stopping_points.first(), other.stopping_points.first())
@@ -191,7 +192,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
     }
 
     pub fn doc_id_mapping(&self) -> &[u128] {
-        &*self.doc_id_mapping
+        &self.doc_id_mapping
     }
 
     pub fn centroids(&self) -> &FileBackedAppendableVectorStorage<f32> {
@@ -208,7 +209,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 
     /// Add a new vector to the dataset for training
     pub fn add_vector(&mut self, doc_id: u128, data: &[f32]) -> Result<()> {
-        self.vectors.append(&data)?;
+        self.vectors.append(data)?;
         self.generate_id(doc_id)?;
         Ok(())
     }
@@ -249,11 +250,11 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         flattened_centroids: &[f32],
         dimension: usize,
     ) -> usize {
-        let mut max_distance = std::f32::MIN;
+        let mut max_distance = f32::MIN;
         let mut centroid_index = 0;
         for i in 0..flattened_centroids.len() / dimension {
             let centroid = &flattened_centroids[i * dimension..(i + 1) * dimension];
-            let dist = D::calculate(&vector, &centroid);
+            let dist = D::calculate(vector, centroid);
             if dist > max_distance {
                 max_distance = dist;
                 centroid_index = i;
@@ -270,7 +271,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         let mut distances: Vec<PointAndDistance> = Vec::new();
         for i in 0..centroids.num_vectors() {
             let centroid = centroids.get_no_context(i as u32)?;
-            let dist = L2DistanceCalculator::calculate_squared(&vector, &centroid);
+            let dist = L2DistanceCalculator::calculate_squared(vector, centroid);
             distances.push(PointAndDistance::new(dist, i as u32));
         }
         distances.select_nth_unstable_by(num_probes - 1, |a, b| a.distance.total_cmp(&b.distance));
@@ -341,7 +342,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             "{}/builder_posting_list_storage",
             self.config.base_directory
         );
-        create_dir(&posting_list_storage_location).unwrap_or_else(|_| {});
+        create_dir(&posting_list_storage_location).unwrap_or(());
 
         self.posting_lists = FileBackedAppendablePostingListStorage::new(
             posting_list_storage_location,
@@ -367,8 +368,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         point_ids: Vec<usize>,
         flattened_centroids: &[f32],
     ) -> Result<Vec<PostingListInfo>> {
-        let mut posting_list_infos: Vec<PostingListInfo> = Vec::new();
-        posting_list_infos.reserve(point_ids.len());
+        let mut posting_list_infos: Vec<PostingListInfo> = Vec::with_capacity(point_ids.len());
         for i in 0..flattened_centroids.len() / self.config.num_features {
             let centroid = flattened_centroids
                 [i * self.config.num_features..(i + 1) * self.config.num_features]
@@ -385,7 +385,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             .map(|point_id| {
                 Self::find_nearest_centroid_inmemory(
                     self.vectors.get_no_context(*point_id as u32).unwrap(),
-                    &flattened_centroids,
+                    flattened_centroids,
                     num_features,
                 )
             })
@@ -505,8 +505,8 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             heap.push(posting_list_info);
         }
 
-        let mut num_iter = 0 as usize;
-        while heap.len() > 0 {
+        let mut num_iter = 0;
+        while !heap.is_empty() {
             match heap.peek() {
                 None => break,
                 Some(longest_posting_list) => {
@@ -535,7 +535,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         // We don't need to add the posting lists to the posting list storage, since later on
         // we will add them
         for posting_list_info in heap {
-            if posting_list_info.posting_list.len() == 0 {
+            if posting_list_info.posting_list.is_empty() {
                 continue;
             }
             self.add_centroid(&posting_list_info.centroid)?;
@@ -571,7 +571,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             for vector_storage_index in posting_list.iter() {
                 occurrence_map
                     .entry(vector_storage_index)
-                    .or_insert(Vec::new())
+                    .or_default()
                     .push(list_index);
             }
         }
@@ -596,7 +596,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         Ok(filtered_lists)
     }
 
-    fn assign_ids_until_last_stopping_point(&mut self, assigned_ids: &mut Vec<i64>) -> Result<i64> {
+    fn assign_ids_until_last_stopping_point(&mut self, assigned_ids: &mut [i64]) -> Result<i64> {
         let mut min_heap: BinaryHeap<Reverse<PostingListWithStoppingPoints>> = BinaryHeap::from(
             self.build_posting_lists_with_stopping_points()?
                 .into_iter()
@@ -746,11 +746,10 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             self.config.num_features,
         );
 
-        for i in 0..reverse_assigned_ids.len() {
-            let mapped_id = reverse_assigned_ids[i];
-            if mapped_id != -1 {
+        for mapped_id in reverse_assigned_ids.iter() {
+            if *mapped_id != -1 {
                 new_vector_storage
-                    .append(self.vectors.get_no_context(mapped_id as u32).unwrap())
+                    .append(self.vectors.get_no_context(*mapped_id as u32).unwrap())
                     .unwrap_or_else(|_| panic!("append failed"));
             }
         }
@@ -783,13 +782,13 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
 // Test
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use utils::test_utils::generate_random_vector;
 
     use super::*;
 
-    fn count_files_with_prefix(directory: &PathBuf, file_name_prefix: &str) -> usize {
+    fn count_files_with_prefix(directory: &Path, file_name_prefix: &str) -> usize {
         let mut count = 0;
 
         for entry in directory.read_dir().expect("Cannot read directory") {
@@ -902,8 +901,8 @@ mod tests {
         })
         .expect("Failed to create builder");
 
-        assert!(builder.add_posting_list(&vec![1, 2, 3]).is_ok());
-        assert!(builder.add_posting_list(&vec![4, 5, 6]).is_ok());
+        assert!(builder.add_posting_list(&[1, 2, 3]).is_ok());
+        assert!(builder.add_posting_list(&[4, 5, 6]).is_ok());
         let result = builder.build_posting_lists_with_stopping_points().unwrap();
         assert!(result.is_empty());
     }
@@ -940,9 +939,9 @@ mod tests {
         })
         .expect("Failed to create builder");
 
-        assert!(builder.add_posting_list(&vec![1, 2, 3]).is_ok());
-        assert!(builder.add_posting_list(&vec![2, 4, 5]).is_ok());
-        assert!(builder.add_posting_list(&vec![3, 6, 7]).is_ok());
+        assert!(builder.add_posting_list(&[1, 2, 3]).is_ok());
+        assert!(builder.add_posting_list(&[2, 4, 5]).is_ok());
+        assert!(builder.add_posting_list(&[3, 6, 7]).is_ok());
 
         let result = builder.build_posting_lists_with_stopping_points().unwrap();
 
@@ -996,11 +995,11 @@ mod tests {
         })
         .expect("Failed to create builder");
 
-        assert!(builder.add_posting_list(&vec![9, 18, 20]).is_ok());
-        assert!(builder.add_posting_list(&vec![1, 3, 5, 7, 18, 20]).is_ok());
-        assert!(builder.add_posting_list(&vec![14, 15, 16, 18]).is_ok());
-        assert!(builder.add_posting_list(&vec![0, 2, 4, 6, 8, 20]).is_ok());
-        assert!(builder.add_posting_list(&vec![10, 15, 21]).is_ok());
+        assert!(builder.add_posting_list(&[9, 18, 20]).is_ok());
+        assert!(builder.add_posting_list(&[1, 3, 5, 7, 18, 20]).is_ok());
+        assert!(builder.add_posting_list(&[14, 15, 16, 18]).is_ok());
+        assert!(builder.add_posting_list(&[0, 2, 4, 6, 8, 20]).is_ok());
+        assert!(builder.add_posting_list(&[10, 15, 21]).is_ok());
 
         let mut assigned_ids = vec![-1; 22];
         assert_eq!(
@@ -1069,13 +1068,13 @@ mod tests {
                 .expect("Vector should be added");
         }
 
-        assert!(builder.add_posting_list(&vec![11, 12, 13]).is_ok());
-        assert!(builder.add_posting_list(&vec![0, 2, 4, 6, 8, 20]).is_ok());
-        assert!(builder.add_posting_list(&vec![9, 18, 20]).is_ok());
-        assert!(builder.add_posting_list(&vec![14, 15, 16, 18]).is_ok());
-        assert!(builder.add_posting_list(&vec![1, 3, 5, 7, 18, 20]).is_ok());
-        assert!(builder.add_posting_list(&vec![10, 15, 21]).is_ok());
-        assert!(builder.add_posting_list(&vec![10, 15, 17, 19]).is_ok());
+        assert!(builder.add_posting_list(&[11, 12, 13]).is_ok());
+        assert!(builder.add_posting_list(&[0, 2, 4, 6, 8, 20]).is_ok());
+        assert!(builder.add_posting_list(&[9, 18, 20]).is_ok());
+        assert!(builder.add_posting_list(&[14, 15, 16, 18]).is_ok());
+        assert!(builder.add_posting_list(&[1, 3, 5, 7, 18, 20]).is_ok());
+        assert!(builder.add_posting_list(&[10, 15, 21]).is_ok());
+        assert!(builder.add_posting_list(&[10, 15, 17, 19]).is_ok());
 
         let assigned_ids = builder
             .get_reassigned_ids()
@@ -1142,15 +1141,15 @@ mod tests {
                 .expect("Vector should be added");
         }
 
-        assert!(builder.add_posting_list(&vec![0, 1, 2, 3]).is_ok());
-        assert!(builder.add_posting_list(&vec![4, 5, 6, 7]).is_ok());
-        assert!(builder.add_posting_list(&vec![8, 9, 10, 11]).is_ok());
-        assert!(builder.add_posting_list(&vec![12, 13, 14, 15]).is_ok());
-        assert!(builder.add_posting_list(&vec![16, 17, 18, 19]).is_ok());
-        assert!(builder.add_posting_list(&vec![0, 4, 8, 12, 16]).is_ok());
-        assert!(builder.add_posting_list(&vec![1, 5, 9, 13, 17]).is_ok());
-        assert!(builder.add_posting_list(&vec![2, 6, 10, 14, 18]).is_ok());
-        assert!(builder.add_posting_list(&vec![3, 7, 11, 15, 19]).is_ok());
+        assert!(builder.add_posting_list(&[0, 1, 2, 3]).is_ok());
+        assert!(builder.add_posting_list(&[4, 5, 6, 7]).is_ok());
+        assert!(builder.add_posting_list(&[8, 9, 10, 11]).is_ok());
+        assert!(builder.add_posting_list(&[12, 13, 14, 15]).is_ok());
+        assert!(builder.add_posting_list(&[16, 17, 18, 19]).is_ok());
+        assert!(builder.add_posting_list(&[0, 4, 8, 12, 16]).is_ok());
+        assert!(builder.add_posting_list(&[1, 5, 9, 13, 17]).is_ok());
+        assert!(builder.add_posting_list(&[2, 6, 10, 14, 18]).is_ok());
+        assert!(builder.add_posting_list(&[3, 7, 11, 15, 19]).is_ok());
 
         let assigned_ids = builder
             .get_reassigned_ids()
@@ -1215,27 +1214,13 @@ mod tests {
                 .expect("Vector should be added");
         }
 
-        assert!(builder
-            .add_posting_list(&vec![0, 5, 10, 15, 20, 25])
-            .is_ok());
-        assert!(builder
-            .add_posting_list(&vec![1, 6, 11, 16, 21, 26])
-            .is_ok());
-        assert!(builder
-            .add_posting_list(&vec![0, 7, 12, 17, 22, 27])
-            .is_ok());
-        assert!(builder
-            .add_posting_list(&vec![2, 8, 13, 18, 23, 28])
-            .is_ok());
-        assert!(builder
-            .add_posting_list(&vec![3, 9, 14, 19, 24, 29])
-            .is_ok());
-        assert!(builder
-            .add_posting_list(&vec![4, 20, 21, 22, 23, 24])
-            .is_ok());
-        assert!(builder
-            .add_posting_list(&vec![1, 25, 26, 27, 28, 29])
-            .is_ok());
+        assert!(builder.add_posting_list(&[0, 5, 10, 15, 20, 25]).is_ok());
+        assert!(builder.add_posting_list(&[1, 6, 11, 16, 21, 26]).is_ok());
+        assert!(builder.add_posting_list(&[0, 7, 12, 17, 22, 27]).is_ok());
+        assert!(builder.add_posting_list(&[2, 8, 13, 18, 23, 28]).is_ok());
+        assert!(builder.add_posting_list(&[3, 9, 14, 19, 24, 29]).is_ok());
+        assert!(builder.add_posting_list(&[4, 20, 21, 22, 23, 24]).is_ok());
+        assert!(builder.add_posting_list(&[1, 25, 26, 27, 28, 29]).is_ok());
 
         let assigned_ids = builder
             .get_reassigned_ids()
@@ -1310,16 +1295,12 @@ mod tests {
                 .expect("Vector should be added");
         }
 
-        assert!(builder.add_posting_list(&vec![0, 4, 8, 12, 16, 20]).is_ok());
-        assert!(builder.add_posting_list(&vec![1, 5, 9, 13, 17, 21]).is_ok());
-        assert!(builder
-            .add_posting_list(&vec![2, 6, 10, 14, 18, 22])
-            .is_ok());
-        assert!(builder
-            .add_posting_list(&vec![3, 7, 11, 15, 19, 23])
-            .is_ok());
-        assert!(builder.add_posting_list(&vec![0, 6, 12, 18]).is_ok());
-        assert!(builder.add_posting_list(&vec![1, 7, 13, 19]).is_ok());
+        assert!(builder.add_posting_list(&[0, 4, 8, 12, 16, 20]).is_ok());
+        assert!(builder.add_posting_list(&[1, 5, 9, 13, 17, 21]).is_ok());
+        assert!(builder.add_posting_list(&[2, 6, 10, 14, 18, 22]).is_ok());
+        assert!(builder.add_posting_list(&[3, 7, 11, 15, 19, 23]).is_ok());
+        assert!(builder.add_posting_list(&[0, 6, 12, 18]).is_ok());
+        assert!(builder.add_posting_list(&[1, 7, 13, 19]).is_ok());
 
         let assigned_ids = builder
             .get_reassigned_ids()
@@ -1388,13 +1369,13 @@ mod tests {
                 .expect("Vector should be added");
         }
 
-        assert!(builder.add_posting_list(&vec![11, 12, 13]).is_ok());
-        assert!(builder.add_posting_list(&vec![0, 2, 4, 6, 8, 20]).is_ok());
-        assert!(builder.add_posting_list(&vec![9, 18, 20]).is_ok());
-        assert!(builder.add_posting_list(&vec![14, 15, 16, 18]).is_ok());
-        assert!(builder.add_posting_list(&vec![1, 3, 5, 7, 18, 20]).is_ok());
-        assert!(builder.add_posting_list(&vec![10, 15, 21]).is_ok());
-        assert!(builder.add_posting_list(&vec![10, 15, 17, 19]).is_ok());
+        assert!(builder.add_posting_list(&[11, 12, 13]).is_ok());
+        assert!(builder.add_posting_list(&[0, 2, 4, 6, 8, 20]).is_ok());
+        assert!(builder.add_posting_list(&[9, 18, 20]).is_ok());
+        assert!(builder.add_posting_list(&[14, 15, 16, 18]).is_ok());
+        assert!(builder.add_posting_list(&[1, 3, 5, 7, 18, 20]).is_ok());
+        assert!(builder.add_posting_list(&[10, 15, 21]).is_ok());
+        assert!(builder.add_posting_list(&[10, 15, 17, 19]).is_ok());
 
         builder.reindex().expect("Failed to reindex");
 
@@ -1403,13 +1384,13 @@ mod tests {
             11.0, 12.0, 13.0, 21.0, 17.0, 19.0,
         ];
 
-        for i in 0..NUM_VECTORS {
+        for (i, expected_vector) in expected_vectors.iter().enumerate().take(NUM_VECTORS) {
             assert_eq!(
                 builder
                     .vectors
                     .get_no_context(i as u32)
-                    .expect(&format!("Failed to retrieve vector #{}", i))[0],
-                expected_vectors[i]
+                    .unwrap_or_else(|_| panic!("Failed to get vector at index {i}"))[0],
+                *expected_vector
             );
         }
 
@@ -1695,10 +1676,8 @@ mod tests {
             .get(0)
             .expect("Failed to get a posting list");
         assert_eq!(posting_list.elem_count, num_vectors / 2);
-        let mut i = 0;
-        for index in posting_list.iter() {
+        for (i, index) in posting_list.iter().enumerate() {
             assert!(index == i as u64);
-            i += 1;
         }
     }
 
