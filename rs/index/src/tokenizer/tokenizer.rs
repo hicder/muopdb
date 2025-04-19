@@ -1,4 +1,3 @@
-
 #[derive(Clone)]
 pub struct Token {
     pub text: String,
@@ -22,8 +21,4 @@ pub trait Tokenizer {
     type TokenStream<'a>: TokenStream;
 
     fn input<'a>(&mut self, text: &'a str) -> Self::TokenStream<'a>;
-}
-
-mod tests {
-    
 }

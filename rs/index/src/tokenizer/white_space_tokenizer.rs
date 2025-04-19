@@ -12,7 +12,7 @@ impl Tokenizer for WhiteSpaceTokenizer {
     }
 }
 
-pub struct WhiteSpaceTokenStream<'a>{
+pub struct WhiteSpaceTokenStream<'a> {
     text: &'a str,
     chars: CharIndices<'a>,
     token: Token,
@@ -20,9 +20,9 @@ pub struct WhiteSpaceTokenStream<'a>{
 
 impl<'a> WhiteSpaceTokenStream<'a> {
     pub fn new(text: &'a str) -> Self {
-        WhiteSpaceTokenStream{
-            text, 
-            chars: text.char_indices(), 
+        WhiteSpaceTokenStream {
+            text,
+            chars: text.char_indices(),
             token: Token::new(String::from("")),
         }
     }
@@ -53,10 +53,10 @@ impl<'a> WhiteSpaceTokenStream<'a> {
                     if ch.1.is_whitespace() == true {
                         return ch.0;
                     }
-                },
+                }
                 None => {
                     return self.text.len();
-                },
+                }
             }
         }
     }
@@ -76,7 +76,7 @@ impl<'a> TokenStream for WhiteSpaceTokenStream<'a> {
     fn token(&self) -> Token {
         self.token.clone()
     }
-    
+
     fn next(&mut self) -> Option<Token> {
         if self.advance() {
             Some(self.token.clone())
@@ -107,8 +107,9 @@ mod tests {
 
     #[test]
     fn test_tokenizer() {
-        let mut tokenizer = WhiteSpaceTokenizer{};
-        let mut token_stream: WhiteSpaceTokenStream<'_> = tokenizer.input("   .  happy      new  year ");
+        let mut tokenizer = WhiteSpaceTokenizer {};
+        let mut token_stream: WhiteSpaceTokenStream<'_> =
+            tokenizer.input("   .  happy      new  year ");
         let mut tokens: Vec<String> = vec![];
         while let Some(token) = token_stream.next() {
             tokens.push(token.text.clone());
