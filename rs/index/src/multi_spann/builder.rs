@@ -23,6 +23,13 @@ impl MultiSpannBuilder {
         })
     }
 
+    /// Inserts data for a given user and document ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The ID of the user.
+    /// * `doc_id` - The ID of the document.
+    /// * `data` - The data to insert.
     pub fn insert(&self, user_id: u128, doc_id: u128, data: &[f32]) -> Result<()> {
         let spann_builder = self.inner_builders.entry(user_id).or_insert_with(|| {
             let user_directory = format!("{}/{}", self.base_directory, user_id);
@@ -38,6 +45,17 @@ impl MultiSpannBuilder {
         Ok(())
     }
 
+    /// Invalidates a document ID for a given user.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The ID of the user.
+    /// * `doc_id` - The ID of the document to invalidate.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(true)` if the document ID was successfully invalidated.
+    /// * `Ok(false)` if the user ID does not exist.
     pub fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         // Check if the user_id exists in the inner_builders map
         if let Entry::Occupied(entry) = self.inner_builders.entry(user_id) {
@@ -50,6 +68,17 @@ impl MultiSpannBuilder {
         }
     }
 
+    /// Checks if a document ID is valid for a given user.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The ID of the user.
+    /// * `doc_id` - The ID of the document to check.
+    ///
+    /// # Returns
+    ///
+    /// * `true` if the document ID is valid for the user.
+    /// * `false` otherwise.
     pub fn is_valid_doc_id(&self, user_id: u128, doc_id: u128) -> bool {
         let entry = self.inner_builders.entry(user_id).or_insert_with(|| {
             let user_directory = format!("{}/{}", self.base_directory, user_id);
@@ -65,6 +94,8 @@ impl MultiSpannBuilder {
         spann_builder.is_valid_doc_id(doc_id)
     }
 
+    /// Builds the segment for each user.
+    /// Iterates through the inner_builders, triggers the build process for each SpannBuilder.
     pub fn build(&self) -> Result<()> {
         for entry in self.inner_builders.iter() {
             debug!("Building segment for user {}", entry.key());
