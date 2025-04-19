@@ -14,11 +14,15 @@ pub trait TokenStream {
     fn advance(&mut self) -> bool;
 
     fn token(&self) -> Token;
+
+    fn next(&mut self) -> Option<Token>;
 }
 
-/*pub trait Tokenizer: TokenStream {
-    fn tokenstream(text: String) -> TokenStream;
-*/
+pub trait Tokenizer {
+    type TokenStream<'a>: TokenStream;
+
+    fn input<'a>(&mut self, text: &'a str) -> Self::TokenStream<'a>;
+}
 
 mod tests {
     

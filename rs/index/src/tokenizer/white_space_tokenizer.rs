@@ -1,16 +1,26 @@
 use std::str::CharIndices;
 
-use super::tokenizer::{TokenStream, Token};
+use super::tokenizer::{Token, TokenStream, Tokenizer};
 
-pub struct WhiteSpaceTokenizer<'a>{
+pub struct WhiteSpaceTokenizer {}
+
+impl Tokenizer for WhiteSpaceTokenizer {
+    type TokenStream<'a> = WhiteSpaceTokenStream<'a>;
+
+    fn input<'a>(&mut self, text: &'a str) -> WhiteSpaceTokenStream<'a> {
+        WhiteSpaceTokenStream::new(text)
+    }
+}
+
+pub struct WhiteSpaceTokenStream<'a>{
     text: &'a str,
     chars: CharIndices<'a>,
     token: Token,
 }
 
-impl<'a> WhiteSpaceTokenizer<'a> {
+impl<'a> WhiteSpaceTokenStream<'a> {
     pub fn new(text: &'a str) -> Self {
-        WhiteSpaceTokenizer{
+        WhiteSpaceTokenStream{
             text, 
             chars: text.char_indices(), 
             token: Token::new(String::from("")),
@@ -51,8 +61,8 @@ impl<'a> WhiteSpaceTokenizer<'a> {
         }
     }
 }
- 
-impl<'a> TokenStream for WhiteSpaceTokenizer<'a> {
+
+impl<'a> TokenStream for WhiteSpaceTokenStream<'a> {
     fn advance(&mut self) -> bool {
         if let Some(start_offset) = self.find_start() {
             let end_offset = self.find_end();
@@ -66,19 +76,27 @@ impl<'a> TokenStream for WhiteSpaceTokenizer<'a> {
     fn token(&self) -> Token {
         self.token.clone()
     }
+    
+    fn next(&mut self) -> Option<Token> {
+        if self.advance() {
+            Some(self.token.clone())
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::tokenizer::tokenizer::TokenStream;
-    use crate::tokenizer::white_space_tokenizer::WhiteSpaceTokenizer;
+    use crate::tokenizer::tokenizer::{TokenStream, Tokenizer};
+    use crate::tokenizer::white_space_tokenizer::{WhiteSpaceTokenStream, WhiteSpaceTokenizer};
 
     #[test]
     fn test_token_stream_simple() {
-        let mut tokenizer = WhiteSpaceTokenizer::new("happy new year");
+        let mut token_stream = WhiteSpaceTokenStream::new("happy new year");
         let mut tokens: Vec<String> = vec![];
-        while tokenizer.advance() == true {
-            tokens.push(tokenizer.token().text);
+        while token_stream.advance() == true {
+            tokens.push(token_stream.token().text);
         }
 
         assert_eq!(tokens.len(), 3);
@@ -88,11 +106,12 @@ mod tests {
     }
 
     #[test]
-    fn test_token_stream_multiple_whitespace() {
-        let mut tokenizer = WhiteSpaceTokenizer::new("   .  happy      new  year ");
+    fn test_tokenizer() {
+        let mut tokenizer = WhiteSpaceTokenizer{};
+        let mut token_stream: WhiteSpaceTokenStream<'_> = tokenizer.input("   .  happy      new  year ");
         let mut tokens: Vec<String> = vec![];
-        while tokenizer.advance() == true {
-            tokens.push(tokenizer.token().text);
+        while let Some(token) = token_stream.next() {
+            tokens.push(token.text.clone());
         }
 
         assert_eq!(tokens.len(), 4);
