@@ -7,7 +7,7 @@ use config::collection::CollectionConfig;
 use dashmap::DashMap;
 use fs_extra::dir::CopyOptions;
 use lock_api::RwLockUpgradableReadGuard;
-use log::debug;
+use log::{debug, info, warn};
 use metrics::INTERNAL_METRICS;
 use parking_lot::{RawRwLock, RwLock};
 use quantization::quantization::Quantizer;
@@ -974,16 +974,31 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     }
 
     pub fn auto_vacuum(&self) -> Result<()> {
-        // Loop through all the segments and filter out segments that has a high deleted ratio
-        for segment in self.all_segments.iter() {
-            let segment_name = segment.key();
-            let segment_value = segment.value();
+        // Get current list of segments
+        // It's ok if this version is changed - we won't init optimizing a segment that's not active
+        let current_version = self.current_version();
+        let version = self.versions.get(&current_version).unwrap();
+        let current_segments = version.toc.clone();
 
-            if segment_value.should_auto_vacuum() {
-                let segments_to_optimize = vec![segment_name.clone()];
-                let pending_segment = self.init_optimizing(&segments_to_optimize)?;
-                let vacuum_optimizer = VacuumOptimizer::<Q>::new();
-                self.run_optimizer(&vacuum_optimizer, &pending_segment)?;
+        for segment_name in current_segments.iter() {
+            if let Some(segment) = self.all_segments.get(segment_name) {
+                if segment.should_auto_vacuum() {
+                    info!(
+                        "{}: Auto vacuuming segment {}",
+                        self.collection_name, segment_name
+                    );
+                    let segments_to_optimize = vec![segment_name.clone()];
+                    if let Result::Ok(pending_segment) = self.init_optimizing(&segments_to_optimize)
+                    {
+                        let vacuum_optimizer = VacuumOptimizer::<Q>::new();
+                        self.run_optimizer(&vacuum_optimizer, &pending_segment)?;
+                    } else {
+                        warn!(
+                            "{}: Failed to init optimizing segment {}. Skipping",
+                            self.collection_name, segment_name
+                        );
+                    }
+                }
             }
         }
 
