@@ -16,6 +16,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use super::snapshot::Snapshot;
 use super::{OpChannelEntry, TableOfContent, VersionsInfo};
 use crate::multi_spann::reader::MultiSpannReader;
+use crate::optimizers::merge::MergeOptimizer;
 use crate::optimizers::vacuum::VacuumOptimizer;
 use crate::optimizers::SegmentOptimizer;
 use crate::segment::immutable_segment::ImmutableSegment;
@@ -29,6 +30,7 @@ use crate::wal::wal::Wal;
 pub struct SegmentInfo {
     pub name: String,
     pub size_in_bytes: u64,
+    pub num_docs: u64,
 }
 
 pub struct SegmentInfoAndVersion {
@@ -731,6 +733,8 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
     /// Replace old segments with a new segment.
     /// This function is thread-safe.
+    ///
+    /// If some of the segment names in old_segment_names are not active, this function will fail.
     pub fn replace_segment_safe(
         &self,
         new_segment: BoxedImmutableSegment<Q>,
@@ -796,6 +800,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             .collect()
     }
 
+    /// Retrieves information about the currently active segments in the collection.
+    ///
+    /// Returns a `SegmentInfoAndVersion` struct containing a vector of `SegmentInfo`
+    /// for each active segment, as well as the current version of the collection.
     pub fn get_active_segment_infos(&self) -> SegmentInfoAndVersion {
         let current_version = self.versions_info.read().current_version;
         let active_segments = self.versions.get(&current_version).unwrap().toc.clone();
@@ -806,6 +814,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             .map(|pair| SegmentInfo {
                 name: pair.key().clone(),
                 size_in_bytes: pair.value().size_in_bytes_immutable_segments(),
+                num_docs: pair.value().num_docs(),
             })
             .collect();
         SegmentInfoAndVersion {
@@ -884,25 +893,22 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             .unwrap()
             .value()
             .clone();
-        match segment {
-            BoxedImmutableSegment::PendingSegment(pending_segment) => {
-                let temp_storage_dir;
-                {
-                    let mut pending_segment = pending_segment.upgradable_read();
-                    temp_storage_dir = pending_segment.temp_invalidated_ids_storage_directory();
-                    optimizer.optimize(&pending_segment)?;
-                    pending_segment.build_index()?;
-                    pending_segment.with_upgraded(|pending_segment_write| {
-                        pending_segment_write.apply_pending_deletions()?;
-                        pending_segment_write.switch_to_internal_index();
-                        Ok(())
-                    })?;
-                }
-
-                // Remove temporary invalidated ids storage from pending segment.
-                std::fs::remove_dir_all(&temp_storage_dir)?;
+        if let BoxedImmutableSegment::PendingSegment(pending_segment) = segment {
+            let temp_storage_dir;
+            {
+                let mut pending_segment = pending_segment.upgradable_read();
+                temp_storage_dir = pending_segment.temp_invalidated_ids_storage_directory();
+                optimizer.optimize(&pending_segment)?;
+                pending_segment.build_index()?;
+                pending_segment.with_upgraded(|pending_segment_write| {
+                    pending_segment_write.apply_pending_deletions()?;
+                    pending_segment_write.switch_to_internal_index();
+                    Ok(())
+                })?;
             }
-            _ => {}
+
+            // Remove temporary invalidated ids storage from pending segment.
+            std::fs::remove_dir_all(&temp_storage_dir)?;
         }
 
         // Make the pending segment finalized
@@ -948,6 +954,15 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         Ok(())
     }
 
+    /// Removes a document with the given `user_id` and `doc_id` from the collection.
+    ///
+    /// This function marks the document as invalid in the mutable segment and removes it from all immutable segments.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The user ID of the document to remove.
+    /// * `doc_id` - The document ID of the document to remove.
+    /// * `sequence_number` - The sequence number of the operation.
     pub fn remove(&self, user_id: u128, doc_id: u128, sequence_number: u64) -> Result<()> {
         let version_info_read = self.versions_info.read();
         let current_version = version_info_read.current_version;
@@ -973,14 +988,15 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         Ok(())
     }
 
-    pub fn auto_vacuum(&self) -> Result<()> {
-        // Get current list of segments
-        // It's ok if this version is changed - we won't init optimizing a segment that's not active
-        let current_version = self.current_version();
-        let version = self.versions.get(&current_version).unwrap();
-        let current_segments = version.toc.clone();
+    /// Iterates through the active segments and initiates vacuuming for segments that exceed the auto-vacuum threshold.
+    ///
+    /// This function checks each active segment to determine if it should be auto-vacuumed based on its configuration.
+    /// If a segment exceeds the threshold, a vacuuming operation is initiated to optimize the segment.
+    fn auto_vacuum(&self) -> Result<()> {
+        let segment_infos = self.get_active_segment_infos().segment_infos;
 
-        for segment_name in current_segments.iter() {
+        for segment_info in segment_infos.iter() {
+            let segment_name = &segment_info.name;
             if let Some(segment) = self.all_segments.get(segment_name) {
                 if segment.should_auto_vacuum() {
                     info!(
@@ -1001,6 +1017,58 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    /// Checks if the number of segments exceeds the maximum allowed and initiates a merge operation.
+    ///
+    /// If the number of active segments in the collection is greater than the configured
+    /// `max_number_of_segments`, this function selects the smallest segments and merges them
+    /// into a single segment, reducing the overall number of segments in the collection.
+    fn auto_merge(&self) -> Result<()> {
+        let mut segment_infos = self.get_active_segment_infos().segment_infos;
+        let max_num_segments = self.segment_config.max_number_of_segments;
+
+        if segment_infos.len() <= max_num_segments {
+            return Ok(());
+        }
+
+        // TODO(hicder): For now, we only merge the smallest segments together until
+        // we have less than max_num_segments segments. We should also support having
+        // a minimum number of docs per segment, so that segment isn't too small.
+        segment_infos.sort_by(|a, b| a.num_docs.cmp(&b.num_docs));
+        let num_segments_to_merge = segment_infos.len() - (max_num_segments - 1);
+
+        let segmens_to_merge = segment_infos
+            .iter()
+            .take(num_segments_to_merge)
+            .map(|s| s.name.clone())
+            .collect::<Vec<_>>();
+
+        info!(
+            "{}: Auto merging segments {:?}",
+            self.collection_name, segmens_to_merge
+        );
+
+        if let Result::Ok(pending_segment) = self.init_optimizing(&segmens_to_merge) {
+            let merge_optimizer = MergeOptimizer::<Q>::new();
+            self.run_optimizer(&merge_optimizer, &pending_segment)?;
+        } else {
+            warn!(
+                "{}: Failed to init optimizing segment {:?}. Skipping",
+                self.collection_name, segmens_to_merge
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Checks for segments that should be auto-vacuumed and initiates optimization for them.
+    pub fn auto_optimize(&self) -> Result<()> {
+        info!("{}: Auto optimizing", self.collection_name);
+        self.auto_vacuum()?;
+        self.auto_merge()?;
 
         Ok(())
     }

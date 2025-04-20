@@ -259,10 +259,15 @@ impl BoxedCollection {
         }
     }
 
-    pub fn auto_vacuum(&self) -> Result<()> {
+    /// Triggers an automatic optimization process for the collection.
+    ///
+    /// This method delegates the optimization call to the underlying collection type.
+    pub fn auto_optimize(&self) -> Result<()> {
         match self {
-            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.auto_vacuum(),
-            BoxedCollection::CollectionProductQuantization(collection) => collection.auto_vacuum(),
+            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.auto_optimize(),
+            BoxedCollection::CollectionProductQuantization(collection) => {
+                collection.auto_optimize()
+            }
         }
     }
 }

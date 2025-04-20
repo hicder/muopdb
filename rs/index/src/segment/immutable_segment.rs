@@ -37,9 +37,13 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
         self.index.is_invalidated(user_id, doc_id)
     }
 
+    pub fn num_docs(&self) -> Result<usize> {
+        self.index.get_total_docs_count()
+    }
+
     pub fn should_auto_vacuum(&self) -> bool {
         let count_deleted_documents = self.index.get_deleted_docs_count() as f64;
-        if let Ok(count_all_documents) = self.index.get_total_docs_count() {
+        if let Ok(count_all_documents) = self.num_docs() {
             let count_all_documents = count_all_documents as f64;
             if count_deleted_documents / count_all_documents > 0.1 {
                 return true;
