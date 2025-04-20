@@ -116,13 +116,16 @@ impl IndexServer for IndexServerImpl {
             collection_config.reindex = reindex;
         }
         if let Some(wal_file_size) = req.wal_file_size {
-            collection_config.wal_file_size = wal_file_size as u64;
+            collection_config.wal_file_size = wal_file_size;
         }
         if let Some(max_pending_ops) = req.max_pending_ops {
-            collection_config.max_pending_ops = max_pending_ops as u64;
+            collection_config.max_pending_ops = max_pending_ops;
         }
         if let Some(max_time_to_flush_ms) = req.max_time_to_flush_ms {
-            collection_config.max_time_to_flush_ms = max_time_to_flush_ms as u64;
+            collection_config.max_time_to_flush_ms = max_time_to_flush_ms;
+        }
+        if let Some(max_number_of_segments) = req.max_number_of_segments {
+            collection_config.max_number_of_segments = max_number_of_segments as usize;
         }
 
         if let Some(proto_schema) = req.attribute_schema {

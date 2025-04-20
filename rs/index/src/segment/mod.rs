@@ -88,6 +88,16 @@ impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
         }
     }
 
+    pub fn num_docs(&self) -> u64 {
+        match self {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                immutable_segment.read().num_docs().unwrap_or(0) as u64
+            }
+            BoxedImmutableSegment::PendingSegment(_pending_segment) => 0,
+            BoxedImmutableSegment::MockedNoQuantizationSegment(_mocked_segment) => 0,
+        }
+    }
+
     pub fn should_auto_vacuum(&self) -> bool {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {

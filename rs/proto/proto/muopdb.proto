@@ -58,6 +58,7 @@ message CreateCollectionRequest {
   optional uint64 wal_file_size = 25;
   optional uint64 max_pending_ops = 26;
   optional uint64 max_time_to_flush_ms = 27;
+  optional uint64 max_number_of_segments = 29;
 
   // for hybrid-search
   optional AttributeSchema attribute_schema = 28; 

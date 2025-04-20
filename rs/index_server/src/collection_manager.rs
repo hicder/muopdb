@@ -274,13 +274,16 @@ impl CollectionManager {
         hash as u32 % num_workers
     }
 
-    pub async fn auto_vacuum(&self) -> Result<()> {
+    /// Iterates through all collections and calls the `auto_optimize` method on each collection.
+    pub async fn auto_optimize(&self) -> Result<()> {
         let collections = self
             .collection_catalog
             .lock()
             .await
             .get_all_collection_names_sorted()
             .await;
+
+        info!("Auto optimizing collections: {:?}", collections);
 
         for collection_name in collections {
             let collection = self
@@ -291,7 +294,7 @@ impl CollectionManager {
                 .await
                 .unwrap();
 
-            collection.auto_vacuum().unwrap();
+            collection.auto_optimize().unwrap();
         }
         Ok(())
     }

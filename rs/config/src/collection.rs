@@ -129,6 +129,11 @@ pub struct CollectionConfig {
     #[serde(default = "default_max_time_to_flush_ms")]
     pub max_time_to_flush_ms: u64,
 
+    /// Try to maintain the max number of segments.
+    /// More segments means slower query as well as deletes.
+    #[serde(default = "default_max_number_of_segments")]
+    pub max_number_of_segments: usize,
+
     pub attribute_schema: Option<AttributeSchema>,
 }
 
@@ -142,6 +147,10 @@ fn default_max_pending_ops() -> u64 {
 
 fn default_max_time_to_flush_ms() -> u64 {
     10000
+}
+
+fn default_max_number_of_segments() -> usize {
+    10
 }
 
 impl Default for CollectionConfig {
@@ -172,6 +181,7 @@ impl Default for CollectionConfig {
             wal_file_size: 0,
             max_pending_ops: 0,
             max_time_to_flush_ms: 0,
+            max_number_of_segments: 10,
             attribute_schema: None,
         }
     }
@@ -205,6 +215,7 @@ impl CollectionConfig {
             wal_file_size: 1024 * 1024 * 1024,
             max_pending_ops: 10000,
             max_time_to_flush_ms: 10000,
+            max_number_of_segments: 10,
             attribute_schema: None,
         }
     }

@@ -47,8 +47,11 @@ struct Args {
     #[arg(long, default_value_t = 10)]
     num_flush_workers: u32,
 
-    #[arg(long, default_value_t = false)]
-    auto_vacuum: bool,
+    #[arg(long, default_value_t = true)]
+    enable_auto_optimizing: bool,
+
+    #[arg(long, default_value_t = 10000)]
+    auto_optimizing_sleep_interval_ms: u64,
 }
 
 #[tokio::main]
@@ -94,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let collection_manager_clone_for_cleanup = collection_manager.clone();
     let automatic_segments_cleanup_thread = spawn(async move {
-        if !arg.auto_vacuum {
+        if !arg.enable_auto_optimizing {
             info!("Automatic vacuum is disabled");
             return;
         }
@@ -104,10 +107,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             collection_manager_clone_for_cleanup
                 .read()
                 .await
-                .auto_vacuum()
+                .auto_optimize()
                 .await
                 .unwrap();
-            sleep(std::time::Duration::from_secs(60)).await;
+            sleep(std::time::Duration::from_secs(
+                arg.auto_optimizing_sleep_interval_ms / 1000,
+            ))
+            .await;
         }
     });
 
