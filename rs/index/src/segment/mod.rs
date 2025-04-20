@@ -87,6 +87,16 @@ impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
             BoxedImmutableSegment::MockedNoQuantizationSegment(_mocked_segment) => 0,
         }
     }
+
+    pub fn should_auto_vacuum(&self) -> bool {
+        match self {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                immutable_segment.read().should_auto_vacuum()
+            }
+            BoxedImmutableSegment::PendingSegment(_pending_segment) => false,
+            BoxedImmutableSegment::MockedNoQuantizationSegment(_mocked_segment) => false,
+        }
+    }
 }
 
 impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {

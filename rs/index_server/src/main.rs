@@ -46,6 +46,9 @@ struct Args {
 
     #[arg(long, default_value_t = 10)]
     num_flush_workers: u32,
+
+    #[arg(long, default_value_t = false)]
+    auto_vacuum: bool,
 }
 
 #[tokio::main]
@@ -85,6 +88,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             {
                 error!("Error checking for index manager update: {}", e);
             }
+            sleep(std::time::Duration::from_secs(60)).await;
+        }
+    });
+
+    let collection_manager_clone_for_cleanup = collection_manager.clone();
+    let automatic_segments_cleanup_thread = spawn(async move {
+        if !arg.auto_vacuum {
+            info!("Automatic vacuum is disabled");
+            return;
+        }
+
+        info!("Automatic vacuum is enabled");
+        loop {
+            collection_manager_clone_for_cleanup
+                .read()
+                .await
+                .auto_vacuum()
+                .await
+                .unwrap();
             sleep(std::time::Duration::from_secs(60)).await;
         }
     });
@@ -163,6 +185,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO(hicder): Add graceful shutdown
     info!("Received signal, shutting down");
     collection_manager_thread.await?;
+    automatic_segments_cleanup_thread.await?;
     for thread in ingestion_worker_threads {
         thread.await?;
     }

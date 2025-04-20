@@ -273,4 +273,26 @@ impl CollectionManager {
         let hash = hasher.finish();
         hash as u32 % num_workers
     }
+
+    pub async fn auto_vacuum(&self) -> Result<()> {
+        let collections = self
+            .collection_catalog
+            .lock()
+            .await
+            .get_all_collection_names_sorted()
+            .await;
+
+        for collection_name in collections {
+            let collection = self
+                .collection_catalog
+                .lock()
+                .await
+                .get_collection(&collection_name)
+                .await
+                .unwrap();
+
+            collection.auto_vacuum().unwrap();
+        }
+        Ok(())
+    }
 }

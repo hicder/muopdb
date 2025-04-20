@@ -16,6 +16,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use super::snapshot::Snapshot;
 use super::{OpChannelEntry, TableOfContent, VersionsInfo};
 use crate::multi_spann::reader::MultiSpannReader;
+use crate::optimizers::vacuum::VacuumOptimizer;
 use crate::optimizers::SegmentOptimizer;
 use crate::segment::immutable_segment::ImmutableSegment;
 use crate::segment::mutable_segment::MutableSegment;
@@ -514,8 +515,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     self.base_directory,
                     name_for_new_segment.clone()
                 ));
-                let index = spann_reader
-                    .read::<Q>(self.segment_config.posting_list_encoding_type.clone())?;
+                let index = spann_reader.read::<Q>(
+                    self.segment_config.posting_list_encoding_type.clone(),
+                    self.segment_config.num_features,
+                )?;
                 let segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
                     ImmutableSegment::new(index, name_for_new_segment.clone()),
                 )));
@@ -854,8 +857,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         )?;
 
         // Replace the pending segment with the new segment
-        let index = MultiSpannReader::new(new_segment_path.clone())
-            .read::<Q>(self.segment_config.posting_list_encoding_type.clone())?;
+        let index = MultiSpannReader::new(new_segment_path.clone()).read::<Q>(
+            self.segment_config.posting_list_encoding_type.clone(),
+            self.segment_config.num_features,
+        )?;
         let new_segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
             ImmutableSegment::new(index, random_name.clone()),
         )));
@@ -964,6 +969,23 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         // The doc is immediately not searchable
         INTERNAL_METRICS.num_searchable_docs_dec(&self.collection_name);
+
+        Ok(())
+    }
+
+    pub fn auto_vacuum(&self) -> Result<()> {
+        // Loop through all the segments and filter out segments that has a high deleted ratio
+        for segment in self.all_segments.iter() {
+            let segment_name = segment.key();
+            let segment_value = segment.value();
+
+            if segment_value.should_auto_vacuum() {
+                let segments_to_optimize = vec![segment_name.clone()];
+                let pending_segment = self.init_optimizing(&segments_to_optimize)?;
+                let vacuum_optimizer = VacuumOptimizer::<Q>::new();
+                self.run_optimizer(&vacuum_optimizer, &pending_segment)?;
+            }
+        }
 
         Ok(())
     }

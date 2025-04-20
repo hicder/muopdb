@@ -14,14 +14,23 @@ impl MultiSpannReader {
         Self { base_directory }
     }
 
-    pub fn read<Q: Quantizer>(&self, ivf_type: IntSeqEncodingType) -> Result<MultiSpannIndex<Q>> {
+    pub fn read<Q: Quantizer>(
+        &self,
+        ivf_type: IntSeqEncodingType,
+        num_features: usize,
+    ) -> Result<MultiSpannIndex<Q>> {
         let user_index_info_file_path = format!("{}/user_index_info", self.base_directory);
         let user_index_info_file = std::fs::OpenOptions::new()
             .read(true)
             .open(user_index_info_file_path)?;
 
         let user_index_info_mmap = unsafe { Mmap::map(&user_index_info_file)? };
-        MultiSpannIndex::<Q>::new(self.base_directory.clone(), user_index_info_mmap, ivf_type)
+        MultiSpannIndex::<Q>::new(
+            self.base_directory.clone(),
+            user_index_info_mmap,
+            ivf_type,
+            num_features,
+        )
     }
 }
 
@@ -56,7 +65,7 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)?;
+            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding, 4)?;
 
         let result = multi_spann_index
             .search_for_user(0, vec![1.0, 2.0, 3.0, 4.0], 3, 100, false)
@@ -98,7 +107,7 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<ProductQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)?;
+            .read::<ProductQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding, 4)?;
 
         let result = multi_spann_index
             .search_for_user(0, vec![1.0, 2.0, 3.0, 4.0], 3, 100, false)

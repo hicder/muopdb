@@ -44,8 +44,10 @@ impl CollectionReader {
 
             let spann_path = format!("{}/{}", self.path, name);
             let spann_reader = MultiSpannReader::new(spann_path);
-            let index =
-                spann_reader.read::<Q>(collection_config.posting_list_encoding_type.clone())?;
+            let index = spann_reader.read::<Q>(
+                collection_config.posting_list_encoding_type.clone(),
+                collection_config.num_features,
+            )?;
             segments.push(BoxedImmutableSegment::FinalizedSegment(Arc::new(
                 RwLock::new(ImmutableSegment::new(index, name.clone())),
             )));

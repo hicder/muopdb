@@ -36,6 +36,19 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
     pub fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         self.index.is_invalidated(user_id, doc_id)
     }
+
+    pub fn should_auto_vacuum(&self) -> bool {
+        let count_deleted_documents = self.index.get_deleted_docs_count() as f64;
+        if let Ok(count_all_documents) = self.index.get_total_docs_count() {
+            let count_all_documents = count_all_documents as f64;
+            if count_deleted_documents / count_all_documents > 0.1 {
+                return true;
+            }
+            return false;
+        } else {
+            return false;
+        }
+    }
 }
 
 /// This is the implementation of Segment for ImmutableSegment.
@@ -126,7 +139,10 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
+            .read::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::PlainEncoding,
+                num_features,
+            )
             .expect("Failed to read Multi-SPANN index");
 
         let name_for_new_segment = format!("segment_{}", rand::random::<u64>());
@@ -188,7 +204,10 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
+            .read::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::PlainEncoding,
+                num_features,
+            )
             .expect("Failed to read Multi-SPANN index");
 
         let name_for_new_segment = format!("segment_{}", rand::random::<u64>());
