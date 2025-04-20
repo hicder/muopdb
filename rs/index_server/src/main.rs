@@ -46,6 +46,9 @@ struct Args {
 
     #[arg(long, default_value_t = 10)]
     num_flush_workers: u32,
+
+    #[arg(long, default_value_t = false)]
+    auto_vacuum: bool,
 }
 
 #[tokio::main]
@@ -91,6 +94,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let collection_manager_clone_for_cleanup = collection_manager.clone();
     let automatic_segments_cleanup_thread = spawn(async move {
+        if !arg.auto_vacuum {
+            info!("Automatic vacuum is disabled");
+            return;
+        }
+
+        info!("Automatic vacuum is enabled");
         loop {
             collection_manager_clone_for_cleanup
                 .read()

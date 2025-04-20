@@ -92,7 +92,10 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
 
         let current_directory = format!("{}/{}", self.parent_directory, self.name);
         let reader = MultiSpannReader::new(current_directory);
-        let index = reader.read::<Q>(self.collection_config.posting_list_encoding_type.clone())?;
+        let index = reader.read::<Q>(
+            self.collection_config.posting_list_encoding_type.clone(),
+            self.collection_config.num_features,
+        )?;
         self.index.write().replace(index);
         Ok(())
     }
@@ -333,7 +336,7 @@ mod tests {
 
     fn read_segment(base_directory: String) -> Result<MultiSpannIndex<NoQuantizerL2>> {
         let reader = MultiSpannReader::new(base_directory);
-        let index = reader.read::<NoQuantizerL2>(IntSeqEncodingType::PlainEncoding)?;
+        let index = reader.read::<NoQuantizerL2>(IntSeqEncodingType::PlainEncoding, 4)?;
         Ok(index)
     }
 

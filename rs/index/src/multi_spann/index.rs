@@ -24,6 +24,7 @@ pub struct MultiSpannIndex<Q: Quantizer> {
     user_index_infos: HashTableOwned<HashConfig>,
     invalidated_ids_storage: RwLock<InvalidatedIdsStorage>,
     ivf_type: IntSeqEncodingType,
+    num_features: usize,
 }
 
 impl<Q: Quantizer> MultiSpannIndex<Q> {
@@ -31,6 +32,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         base_directory: String,
         user_index_info_mmap: Mmap,
         ivf_type: IntSeqEncodingType,
+        num_features: usize,
     ) -> Result<Self> {
         let user_index_infos = HashTableOwned::from_raw_bytes(&user_index_info_mmap).unwrap();
 
@@ -48,6 +50,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             user_index_infos,
             invalidated_ids_storage: RwLock::new(invalidated_ids_storage),
             ivf_type,
+            num_features,
         };
 
         // Iterate over invalidated ids and invalidate each entry. Do not call
@@ -193,17 +196,15 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         return self.invalidated_ids_storage.read().num_entries();
     }
 
-    pub fn get_total_docs_count(&self, num_features: usize) -> usize {
+    pub fn get_total_docs_count(&self) -> Result<usize> {
         let num_users = self.user_index_infos.len();
 
-        // Get the length of the raw_vectors file with stats
-        // FIXME: Get the correct path here
         let raw_vectors_file_path = format!("{}/ivf/raw_vectors", self.base_directory);
         let raw_vectors_file = std::fs::File::open(raw_vectors_file_path)?;
         let raw_vectors_file_metadata = raw_vectors_file.metadata()?;
         let raw_vectors_file_len = raw_vectors_file_metadata.len() as usize;
 
-        return raw_vectors_file_len - num_users * 8 / (num_features * 4);
+        Ok(raw_vectors_file_len - num_users * 8 / (self.num_features * 4))
     }
 }
 
@@ -257,7 +258,10 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
+            .read::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::PlainEncoding,
+                num_features,
+            )
             .expect("Failed to read Multi-SPANN index");
 
         let query = vec![1.4, 2.4, 3.4, 4.4];
@@ -310,7 +314,10 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
+            .read::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::PlainEncoding,
+                num_features,
+            )
             .expect("Failed to read Multi-SPANN index");
 
         let size_in_bytes = multi_spann_index.size_in_bytes();
@@ -352,7 +359,10 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
+            .read::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::PlainEncoding,
+                num_features,
+            )
             .expect("Failed to read Multi-SPANN index");
 
         let query = vec![1.4, 2.4, 3.4, 4.4];
@@ -420,7 +430,10 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
+            .read::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::PlainEncoding,
+                num_features,
+            )
             .expect("Failed to read Multi-SPANN index");
         assert!(multi_spann_index
             .is_invalidated(0, num_vectors)
@@ -481,7 +494,10 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding)
+            .read::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::PlainEncoding,
+                num_features,
+            )
             .expect("Failed to read Multi-SPANN index");
 
         assert!(multi_spann_index

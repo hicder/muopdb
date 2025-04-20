@@ -515,8 +515,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     self.base_directory,
                     name_for_new_segment.clone()
                 ));
-                let index = spann_reader
-                    .read::<Q>(self.segment_config.posting_list_encoding_type.clone())?;
+                let index = spann_reader.read::<Q>(
+                    self.segment_config.posting_list_encoding_type.clone(),
+                    self.segment_config.num_features,
+                )?;
                 let segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
                     ImmutableSegment::new(index, name_for_new_segment.clone()),
                 )));
@@ -855,8 +857,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         )?;
 
         // Replace the pending segment with the new segment
-        let index = MultiSpannReader::new(new_segment_path.clone())
-            .read::<Q>(self.segment_config.posting_list_encoding_type.clone())?;
+        let index = MultiSpannReader::new(new_segment_path.clone()).read::<Q>(
+            self.segment_config.posting_list_encoding_type.clone(),
+            self.segment_config.num_features,
+        )?;
         let new_segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
             ImmutableSegment::new(index, random_name.clone()),
         )));
@@ -975,7 +979,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             let segment_name = segment.key();
             let segment_value = segment.value();
 
-            if segment_value.should_auto_vacuum(self.segment_config.num_features) {
+            if segment_value.should_auto_vacuum() {
                 let segments_to_optimize = vec![segment_name.clone()];
                 let pending_segment = self.init_optimizing(&segments_to_optimize)?;
                 let vacuum_optimizer = VacuumOptimizer::<Q>::new();
