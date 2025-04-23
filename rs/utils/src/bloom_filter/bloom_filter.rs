@@ -113,8 +113,8 @@ mod tests {
 
     #[test]
     fn test_bloom_filter() {
-        // Create a Bloom filter up to 4 billion documents and 1% false positive rate
-        let mut filter = InMemoryBloomFilter::<HashKey>::new(4_000_000_000, 0.01);
+        // Create a Bloom filter up to 400 documents and 1% false positive rate
+        let mut filter = InMemoryBloomFilter::<HashKey>::new(400, 0.01);
 
         let item1 = HashKey {
             user_id: 1u128,
@@ -129,12 +129,12 @@ mod tests {
         assert!(filter.may_contain(&item1));
         assert!(!filter.may_contain(&item2));
 
-        let mut str_filter = InMemoryBloomFilter::<str>::new(4_000_000_000, 0.01);
+        let mut str_filter = InMemoryBloomFilter::<str>::new(400, 0.01);
         str_filter.insert("hello");
         assert!(str_filter.may_contain("hello"));
         assert!(!str_filter.may_contain("world"));
 
-        let mut u64_filter = InMemoryBloomFilter::<u64>::new(4_000_000_000, 0.01);
+        let mut u64_filter = InMemoryBloomFilter::<u64>::new(400, 0.01);
         u64_filter.insert(&42);
         assert!(u64_filter.may_contain(&42));
         assert!(!u64_filter.may_contain(&41));
