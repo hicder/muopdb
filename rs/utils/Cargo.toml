@@ -21,6 +21,7 @@ rkyv.workspace = true
 strum.workspace = true
 tempdir.workspace = true
 uuid.workspace = true
+xxhash-rust.workspace = true
 
 [[bench]]
 name = "l2"
