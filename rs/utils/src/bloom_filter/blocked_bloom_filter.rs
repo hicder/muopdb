@@ -66,6 +66,14 @@ impl BlockedBloomFilter {
         self.check_bits(hash_idx.h2, block_idx)
     }
 
+    pub fn bits(&self) -> &BitVec<u8> {
+        &self.bits
+    }
+
+    pub fn num_hash_functions(&self) -> usize {
+        self.num_hash_functions
+    }
+
     fn hash_key<T: Hash + ?Sized>(&self, key: &T) -> HashIdx {
         let mut hasher = Xxh3::default();
         key.hash(&mut hasher);
