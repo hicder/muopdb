@@ -74,6 +74,10 @@ impl BlockedBloomFilter {
         self.num_hash_functions
     }
 
+    pub fn num_blocks(&self) -> usize {
+        self.num_blocks
+    }
+
     fn hash_key<T: Hash + ?Sized>(&self, key: &T) -> HashIdx {
         let mut hasher = Xxh3::default();
         key.hash(&mut hasher);
