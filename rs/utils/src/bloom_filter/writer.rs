@@ -32,7 +32,7 @@ impl BloomFilterWriter {
         )?;
         bytes_written += wrap_write(
             &mut writer,
-            &(bloom_filter.bits().len() as u64).to_le_bytes(),
+            &(bloom_filter.num_blocks() as u64).to_le_bytes(),
         )?;
 
         // Write bit vector
@@ -95,12 +95,12 @@ mod tests {
         let num_hashes = u64::from_le_bytes(buf);
 
         assert!(reader.read_exact(&mut buf).is_ok());
-        let bit_len = u64::from_le_bytes(buf);
+        let num_blocks = u64::from_le_bytes(buf);
 
         // Verify header values
         assert_eq!(block_size as usize, BlockedBloomFilter::BLOCK_SIZE_IN_BITS);
         assert_eq!(num_hashes as usize, bloom_filter.num_hash_functions());
-        assert_eq!(bit_len as usize, bloom_filter.bits().len());
+        assert_eq!(num_blocks as usize, bloom_filter.num_blocks());
 
         // Verify bit data
         let expected_bits = bloom_filter.bits().as_raw_slice();
