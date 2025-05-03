@@ -130,6 +130,31 @@ impl WalFile {
         Ok((self.start_seq_no + num_entries as i64) as u64)
     }
 
+    pub fn append_without_flush(
+        &mut self,
+        doc_ids: &[u128],
+        user_ids: &[u128],
+        data: &[f32],
+        op_type: WalOpType,
+    ) -> Result<u64> {
+        let len = (8 + 8 + doc_ids.len() * 16 + user_ids.len() * 16 + data.len() * 4 + 1) as u32;
+        self.file.write_all(&len.to_le_bytes())?;
+        self.file.write_all(&(doc_ids.len() as u64).to_le_bytes())?;
+        self.file
+            .write_all(&(user_ids.len() as u64).to_le_bytes())?;
+        self.file.write_all(transmute_slice_to_u8(doc_ids))?;
+        self.file.write_all(transmute_slice_to_u8(user_ids))?;
+        self.file.write_all(transmute_slice_to_u8(data))?;
+        self.file.write_all(&(op_type as u8).to_le_bytes())?;
+
+        // Increment the number of entries in the file
+        let mut num_entries = Self::read_num_entries(&self.mmap)?;
+        num_entries += 1;
+        self.mmap[0..4].copy_from_slice(&num_entries.to_le_bytes());
+
+        Ok((self.start_seq_no + num_entries as i64) as u64)
+    }
+
     pub fn append_raw(&mut self, data: &[u8]) -> Result<u64> {
         // Write the length first as u32
         let length = data.len() as u32;

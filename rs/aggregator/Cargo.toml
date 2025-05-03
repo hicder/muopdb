@@ -4,20 +4,20 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-proto.workspace = true
-tonic.workspace = true
-prost.workspace = true
-tokio.workspace = true
-tokio-stream.workspace = true
-futures.workspace = true
-clap.workspace = true
-tonic-reflection.workspace = true
-serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.9"
-rand = "0.8.5"
-log.workspace = true
-env_logger.workspace = true
-utils.workspace = true
-serde_json.workspace = true
-tempdir.workspace = true
 anyhow.workspace = true
+clap.workspace = true
+env_logger.workspace = true
+futures.workspace = true
+log.workspace = true
+prost.workspace = true
+proto.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+tempdir.workspace = true
+tokio-stream.workspace = true
+tokio.workspace = true
+tonic-reflection.workspace = true
+tonic.workspace = true
+utils.workspace = true
