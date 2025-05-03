@@ -3,19 +3,7 @@ use std::hash::{Hash, Hasher};
 use bitvec::prelude::*;
 use xxhash_rust::xxh3::Xxh3;
 
-#[derive(Copy, Clone)]
-pub struct HashIdx {
-    // h1 (lower 32 bits of XXH3) selects the block
-    // h2 (upper 32 bits of XXH3) sets bits within the block
-    //
-    // Rationale:
-    // - lower bits are more chaotic, reducing collisions between
-    // keys mapping to the same block.
-    // - upper bits are more stable across hash computations,
-    // ensuring uniform bit distribution within a block.
-    h1: u32,
-    h2: u32,
-}
+use crate::bloom_filter::HashIdx;
 
 /// A blocked bloom filter improves upon the classing bloom filter by
 /// 1. Dividing the bit vector into fixed-size blocks
