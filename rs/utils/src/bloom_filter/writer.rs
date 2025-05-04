@@ -4,6 +4,7 @@ use std::io::{BufWriter, Write};
 use anyhow::Result;
 
 use crate::bloom_filter::blocked_bloom_filter::BlockedBloomFilter;
+use crate::bloom_filter::BLOCK_SIZE_IN_BITS;
 use crate::io::wrap_write;
 
 pub struct BloomFilterWriter {
@@ -22,10 +23,8 @@ impl BloomFilterWriter {
         let mut writer = BufWriter::new(&mut file);
 
         // Write header (metadata)
-        let mut bytes_written = wrap_write(
-            &mut writer,
-            &(BlockedBloomFilter::BLOCK_SIZE_IN_BITS as u64).to_le_bytes(),
-        )?;
+        let mut bytes_written =
+            wrap_write(&mut writer, &(BLOCK_SIZE_IN_BITS as u64).to_le_bytes())?;
         bytes_written += wrap_write(
             &mut writer,
             &(bloom_filter.num_hash_functions() as u64).to_le_bytes(),
@@ -98,7 +97,7 @@ mod tests {
         let num_blocks = u64::from_le_bytes(buf);
 
         // Verify header values
-        assert_eq!(block_size as usize, BlockedBloomFilter::BLOCK_SIZE_IN_BITS);
+        assert_eq!(block_size as usize, BLOCK_SIZE_IN_BITS);
         assert_eq!(num_hashes as usize, bloom_filter.num_hash_functions());
         assert_eq!(num_blocks as usize, bloom_filter.num_blocks());
 

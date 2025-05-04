@@ -4,14 +4,13 @@ use anyhow::Result;
 use memmap2::Mmap;
 use xxhash_rust::xxh3::Xxh3;
 
-use crate::bloom_filter::HashIdx;
+use crate::bloom_filter::{HashIdx, BLOCK_SIZE_IN_BITS};
 
 pub struct ImmutableBloomFilter {
     mmap: Mmap,
     data_offset: usize,
     num_blocks: usize,
     num_hash_functions: usize,
-    block_size_in_bits: usize,
 }
 
 impl ImmutableBloomFilter {
@@ -20,7 +19,6 @@ impl ImmutableBloomFilter {
         data_offset: usize,
         num_blocks: usize,
         num_hash_functions: usize,
-        block_size_in_bits: usize,
     ) -> Result<Self> {
         let file = std::fs::OpenOptions::new()
             .read(true)
@@ -32,7 +30,6 @@ impl ImmutableBloomFilter {
             data_offset,
             num_blocks,
             num_hash_functions,
-            block_size_in_bits,
         })
     }
 
@@ -58,12 +55,12 @@ impl ImmutableBloomFilter {
     }
 
     fn check_bits(&self, mut h: u32, block_idx: usize) -> bool {
-        let block_start = self.data_offset + (block_idx * self.block_size_in_bits / 8);
-        let block_end = block_start + self.block_size_in_bits / 8;
+        let block_start = self.data_offset + (block_idx * BLOCK_SIZE_IN_BITS / 8);
+        let block_end = block_start + BLOCK_SIZE_IN_BITS / 8;
         let block = &self.mmap[block_start..block_end];
 
         for _ in 0..self.num_hash_functions {
-            let bit_pos_in_block = (h >> (32 - self.block_size_in_bits.trailing_zeros())) as usize;
+            let bit_pos_in_block = (h >> (32 - BLOCK_SIZE_IN_BITS.trailing_zeros())) as usize;
             let byte = block[bit_pos_in_block / 8];
             if (byte & (1 << (bit_pos_in_block % 8))) == 0 {
                 return false;
@@ -104,7 +101,6 @@ mod tests {
             /* data_offset */ 24,
             bloom_filter.num_blocks(),
             bloom_filter.num_hash_functions(),
-            BlockedBloomFilter::BLOCK_SIZE_IN_BITS,
         )
         .expect("Failed to create immutable bloom filter");
 
