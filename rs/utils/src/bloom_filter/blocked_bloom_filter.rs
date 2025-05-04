@@ -84,8 +84,8 @@ impl BlockedBloomFilter {
     fn set_bits(&mut self, mut h: u32, block_idx: usize) {
         let block_offset = block_idx * Self::BLOCK_SIZE_IN_BITS;
         for _ in 0..self.num_hash_functions {
-            let bit_pos = (h >> (32 - Self::BLOCK_SIZE_IN_BITS.trailing_zeros())) as usize;
-            self.bits.set(block_offset + bit_pos, true);
+            let bit_pos_in_block = (h >> (32 - Self::BLOCK_SIZE_IN_BITS.trailing_zeros())) as usize;
+            self.bits.set(block_offset + bit_pos_in_block, true);
             h = h.wrapping_mul(0x9e3779b9);
         }
     }
@@ -93,8 +93,8 @@ impl BlockedBloomFilter {
     fn check_bits(&self, mut h: u32, block_idx: usize) -> bool {
         let block_offset = block_idx * Self::BLOCK_SIZE_IN_BITS;
         for _ in 0..self.num_hash_functions {
-            let bit_pos = (h >> (32 - Self::BLOCK_SIZE_IN_BITS.trailing_zeros())) as usize;
-            if !self.bits[block_offset + bit_pos] {
+            let bit_pos_in_block = (h >> (32 - Self::BLOCK_SIZE_IN_BITS.trailing_zeros())) as usize;
+            if !self.bits[block_offset + bit_pos_in_block] {
                 return false;
             }
             h = h.wrapping_mul(0x9e3779b9);
