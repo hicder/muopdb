@@ -109,6 +109,7 @@ impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
     }
 }
 
+#[allow(clippy::await_holding_lock)]
 impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
     pub fn search_with_id(
         s: BoxedImmutableSegment<Q>,
