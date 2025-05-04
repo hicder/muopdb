@@ -244,7 +244,7 @@ mod tests {
             wal.append_raw(format!("hello{}", i).as_bytes()).unwrap();
         }
 
-        assert_eq!(wal.files.len(), 11);
+        assert_eq!(wal.files.len(), 10);
 
         wal.trim_wal(5).unwrap();
         assert_eq!(wal.files.len(), 4);
@@ -283,27 +283,27 @@ mod tests {
             for i in 0..20 {
                 wal.append_raw(format!("hello{}", i).as_bytes()).unwrap();
             }
-            assert_eq!(wal.files.len(), 7);
-            assert_eq!(wal.files[0].get_num_entries(), 3);
-            assert_eq!(wal.files[0].get_last_seq_no(), 13);
+            assert_eq!(wal.files.len(), 5);
+            assert_eq!(wal.files[0].get_num_entries(), 4);
+            assert_eq!(wal.files[0].get_last_seq_no(), 14);
 
             // now, trim up to seq_no 15
             wal.trim_wal(15).unwrap();
-            assert_eq!(wal.files.len(), 6);
-            assert_eq!(wal.files.iter().last().unwrap().get_wal_id(), 6);
+            assert_eq!(wal.files.len(), 4);
+            assert_eq!(wal.files.iter().last().unwrap().get_wal_id(), 4);
 
             // append 20 more entries
             for i in 0..20 {
                 wal.append_raw(format!("hello{}", i).as_bytes()).unwrap();
             }
-            assert_eq!(wal.files.len(), 13);
-            assert_eq!(wal.files.iter().last().unwrap().get_wal_id(), 13);
+            assert_eq!(wal.files.len(), 9);
+            assert_eq!(wal.files.iter().last().unwrap().get_wal_id(), 9);
             assert_eq!(wal.files.iter().last().unwrap().get_last_seq_no(), 50);
 
             // now, trim up to seq_no 50
             wal.trim_wal(50).unwrap();
             assert_eq!(wal.files.len(), 1);
-            assert_eq!(wal.files.iter().last().unwrap().get_wal_id(), 13);
+            assert_eq!(wal.files.iter().last().unwrap().get_wal_id(), 9);
             assert_eq!(wal.files.iter().last().unwrap().get_last_seq_no(), 50);
         }
 
@@ -311,7 +311,7 @@ mod tests {
             let wal = Wal::open(dir.to_str().unwrap(), 50, 50).unwrap();
             assert_eq!(wal.last_flushed_seq_no, 50);
             assert_eq!(wal.files.len(), 1);
-            assert_eq!(wal.files.iter().last().unwrap().get_wal_id(), 13);
+            assert_eq!(wal.files.iter().last().unwrap().get_wal_id(), 9);
             assert_eq!(wal.files.iter().last().unwrap().get_last_seq_no(), 50);
         }
     }
