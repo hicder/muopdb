@@ -3,8 +3,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 
 use anyhow::Result;
 use byteorder::{LittleEndian, ReadBytesExt};
-use log::info;
-use memmap2::{MmapMut, MmapOptions};
+use log::{info, warn};
 use rkyv::util::AlignedVec;
 use utils::mem::{transmute_slice_to_u8, transmute_u8_to_val_unaligned};
 
@@ -13,8 +12,8 @@ use super::entry::{WalEntry, WalOpType};
 const VERSION_1: &[u8] = b"version1";
 
 /// A single WAL file. This file will have 3 sections:
-/// | version1 | start_seq_no | num_entries | data |
-/// | 8 bytes  | 8 bytes      | 4 bytes     | ...  |
+/// | version1 | start_seq_no | data |
+/// | 8 bytes  | 8 bytes      | ...  |
 ///
 /// Each data entry will have the following format (n is number of doc_ids, m is number of user_ids):
 /// | length   | n       | m       | doc_ids      | user_ids     | data                       | op_type |
@@ -23,53 +22,42 @@ const VERSION_1: &[u8] = b"version1";
 #[allow(unused)]
 pub struct WalFile {
     file: File,
-    file_mmap: File,
-    // mmap for the number of entries in the file
-    mmap: MmapMut,
+
     // metadata: Metadata,
     path: String,
 
     // The start sequence number of the file
     start_seq_no: i64,
+
+    // The number of entries in the file
+    num_entries: u32,
 }
 
 impl WalFile {
     pub fn create(path: &str, start_seq_no: i64) -> Result<Self> {
         // If the file does not exist, create it
-        let mut file = OpenOptions::new()
-            .read(true)
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
         // Write "version1" to the file
         file.write_all(b"version1")?;
         // Write the start sequence number to the file
         file.write_all(&start_seq_no.to_le_bytes())?;
-        // Write 0 as u32 to the file
-        file.write_all(&0u32.to_le_bytes())?;
         // Flush
         file.flush()?;
 
-        let file_mmap = OpenOptions::new().read(true).write(true).open(path)?;
-
-        // Mmap only 4 bytes after version_1
-        let mmap = unsafe {
-            MmapOptions::new()
-                .offset(VERSION_1.len() as u64 + 8)
-                .len(4)
-                .map_mut(&file_mmap)?
-        };
         Ok(Self {
             file,
-            file_mmap,
-            mmap,
             path: path.to_string(),
             start_seq_no,
+            num_entries: 0,
         })
     }
 
     pub fn open(path: &str) -> Result<Self> {
         let mut file = OpenOptions::new().read(true).write(true).open(path)?;
+
+        // Interestingly, you should always sync the file on open.
+        file.sync_all()?;
+
         file.seek(SeekFrom::Start(VERSION_1.len() as u64))?;
 
         // Read the start sequence number
@@ -77,29 +65,25 @@ impl WalFile {
         file.read_exact(&mut buf)?;
         let start_seq_no = transmute_u8_to_val_unaligned::<i64>(&buf);
 
-        // Reopen with append only
-        file = OpenOptions::new().append(true).open(path)?;
+        // This will traverse the entire file.
+        let num_entries = Self::read_num_entries_from_file(&mut file)?;
 
-        // We mmap the number of entries in the file, so that every time we append, we don't have to
-        // read the file
-        let file_mmap = OpenOptions::new().read(true).write(true).open(path)?;
-        let mmap = unsafe {
-            MmapOptions::new()
-                .offset(VERSION_1.len() as u64 + 8)
-                .len(4)
-                .map_mut(&file_mmap)?
-        };
-        let num_entries = Self::read_num_entries(&mmap)?;
+        info!(
+            "Opened WAL file {} with start seq no {} and {} entries",
+            path, start_seq_no, num_entries
+        );
+
+        // Reopen with append only for writing.
+        file = OpenOptions::new().append(true).open(path)?;
         info!(
             "Opened WAL file {} with start seq no {} and {} entries",
             path, start_seq_no, num_entries
         );
         Ok(Self {
             file,
-            file_mmap,
-            mmap,
             path: path.to_string(),
             start_seq_no,
+            num_entries,
         })
     }
 
@@ -122,12 +106,8 @@ impl WalFile {
         self.file.flush()?;
 
         // Increment the number of entries in the file
-        let mut num_entries = Self::read_num_entries(&self.mmap)?;
-        num_entries += 1;
-        self.mmap[0..4].copy_from_slice(&num_entries.to_le_bytes());
-        self.mmap.flush()?;
-
-        Ok((self.start_seq_no + num_entries as i64) as u64)
+        self.num_entries += 1;
+        Ok((self.start_seq_no + self.num_entries as i64) as u64)
     }
 
     pub fn append_raw(&mut self, data: &[u8]) -> Result<u64> {
@@ -138,26 +118,40 @@ impl WalFile {
         self.file.flush()?;
 
         // Increment the number of entries in the file
-        let mut num_entries = Self::read_num_entries(&self.mmap)?;
-        num_entries += 1;
-        self.mmap[0..4].copy_from_slice(&num_entries.to_le_bytes());
-        self.mmap.flush()?;
-        Ok((self.start_seq_no + num_entries as i64) as u64)
-    }
-
-    pub fn get_num_entries(&self) -> u32 {
-        Self::read_num_entries(&self.mmap).unwrap()
+        self.num_entries += 1;
+        Ok((self.start_seq_no + self.num_entries as i64) as u64)
     }
 
     pub fn get_iterator(&self) -> Result<WalFileIterator> {
         let f = File::open(&self.path)?;
-        WalFileIterator::new(f)
+        WalFileIterator::new(f, self.num_entries)
     }
 
-    fn read_num_entries(mmap: &[u8]) -> Result<u32> {
-        Ok(transmute_u8_to_val_unaligned::<u32>(
-            mmap[0..4].try_into().unwrap(),
-        ))
+    pub fn get_num_entries(&self) -> u32 {
+        self.num_entries
+    }
+
+    pub fn read_num_entries_from_file(file: &mut File) -> Result<u32> {
+        let mut num_entries = 0;
+
+        // Start reading from offset 16
+        let mut offset = 16;
+        let file_len = file.metadata()?.len();
+
+        while offset < file_len {
+            num_entries += 1;
+            file.seek(SeekFrom::Start(offset))?;
+
+            // Read the length (4 bytes)
+            let length = file.read_u32::<LittleEndian>()?;
+            offset = offset + 4 + length as u64;
+        }
+
+        if offset != file_len {
+            warn!("WAL file is not complete");
+        }
+
+        Ok(num_entries)
     }
 
     pub fn get_file_size(&self) -> Result<u64> {
@@ -170,7 +164,7 @@ impl WalFile {
     }
 
     pub fn get_last_seq_no(&self) -> i64 {
-        self.start_seq_no + self.get_num_entries() as i64
+        self.start_seq_no + self.num_entries as i64
     }
 
     pub fn get_path(&self) -> &str {
@@ -192,7 +186,7 @@ pub struct WalFileIterator {
 }
 
 impl WalFileIterator {
-    pub fn new(file: File) -> Result<Self> {
+    pub fn new(file: File, num_entries: u32) -> Result<Self> {
         let mut file = file;
         let file_size = file.metadata()?.len();
         file.seek(SeekFrom::Start(VERSION_1.len() as u64))?;
@@ -201,14 +195,10 @@ impl WalFileIterator {
         file.read_exact(&mut buf)?;
         let start_seq_no = transmute_u8_to_val_unaligned::<i64>(&buf);
 
-        let mut buf = vec![0; 4];
-        file.read_exact(&mut buf)?;
-        let num_entries = transmute_u8_to_val_unaligned::<u32>(&buf);
-
         Ok(Self {
             file,
             file_size,
-            offset: VERSION_1.len() as u64 + 4 + 8,
+            offset: VERSION_1.len() as u64 + 8,
             current_seq_no: start_seq_no,
             num_entries,
         })
@@ -227,9 +217,9 @@ impl WalFileIterator {
                 break;
             }
 
+            self.file.seek(SeekFrom::Start(self.offset))?;
             let length = self.file.read_u32::<LittleEndian>()?;
             self.offset += length as u64 + 4;
-            self.file.seek(SeekFrom::Start(self.offset))?;
             self.current_seq_no += 1;
             idx -= 1;
         }
@@ -244,6 +234,8 @@ impl Iterator for WalFileIterator {
         if self.offset >= self.file_size {
             return None;
         }
+
+        self.file.seek(SeekFrom::Start(self.offset)).unwrap();
 
         let length = self.file.read_u32::<LittleEndian>().unwrap();
         self.offset += 4;
@@ -295,7 +287,7 @@ mod tests {
         wal_file.append_raw(b"hello").unwrap();
         wal_file.append_raw(b"world").unwrap();
 
-        let mut iter = WalFileIterator::new(wal_file.file).unwrap();
+        let mut iter = wal_file.get_iterator().unwrap();
         let start_seq_no = iter.current_seq_no;
         assert_eq!(start_seq_no, 100);
 
@@ -324,7 +316,7 @@ mod tests {
                 .unwrap();
         }
 
-        let mut iter = WalFileIterator::new(wal_file.file).unwrap();
+        let mut iter = wal_file.get_iterator().unwrap();
         assert_eq!(iter.last_seq_no(), 4);
 
         iter.skip_to(2).unwrap();
