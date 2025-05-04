@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 use bitvec::prelude::*;
 use xxhash_rust::xxh3::Xxh3;
 
-use crate::bloom_filter::HashIdx;
+use crate::bloom_filter::{HashIdx, BLOCK_SIZE_IN_BITS};
 
 /// A blocked bloom filter improves upon the classing bloom filter by
 /// 1. Dividing the bit vector into fixed-size blocks
@@ -18,10 +18,6 @@ pub struct BlockedBloomFilter {
 }
 
 impl BlockedBloomFilter {
-    /// Another optimization: modern processors typically use 64-byte or 128-byte cache lines,
-    /// so having a block size of 512 bits (64 bytes) would minimize cache misses during lookups.
-    pub const BLOCK_SIZE_IN_BITS: usize = 512;
-
     pub fn new(expected_elements: usize, false_positive_prob: f64) -> Self {
         // Calculate optimal parameters
         let m = -((expected_elements as f64) * false_positive_prob.ln()) / (2.0_f64.ln().powi(2));
@@ -30,10 +26,10 @@ impl BlockedBloomFilter {
         let k = (m as f64 / expected_elements as f64 * 2.0_f64.ln()).ceil() as usize;
 
         // Round up to BLOCK_SIZE_IN_BITS blocks
-        let num_blocks = m.div_ceil(Self::BLOCK_SIZE_IN_BITS);
+        let num_blocks = m.div_ceil(BLOCK_SIZE_IN_BITS);
 
         // Ensure bits is filled with false initially
-        let bits = bitvec![u8, Lsb0; 0; num_blocks * Self::BLOCK_SIZE_IN_BITS];
+        let bits = bitvec![u8, Lsb0; 0; num_blocks * BLOCK_SIZE_IN_BITS];
 
         Self {
             bits,
@@ -82,18 +78,18 @@ impl BlockedBloomFilter {
     }
 
     fn set_bits(&mut self, mut h: u32, block_idx: usize) {
-        let block_offset = block_idx * Self::BLOCK_SIZE_IN_BITS;
+        let block_offset = block_idx * BLOCK_SIZE_IN_BITS;
         for _ in 0..self.num_hash_functions {
-            let bit_pos_in_block = (h >> (32 - Self::BLOCK_SIZE_IN_BITS.trailing_zeros())) as usize;
+            let bit_pos_in_block = (h >> (32 - BLOCK_SIZE_IN_BITS.trailing_zeros())) as usize;
             self.bits.set(block_offset + bit_pos_in_block, true);
             h = h.wrapping_mul(0x9e3779b9);
         }
     }
 
     fn check_bits(&self, mut h: u32, block_idx: usize) -> bool {
-        let block_offset = block_idx * Self::BLOCK_SIZE_IN_BITS;
+        let block_offset = block_idx * BLOCK_SIZE_IN_BITS;
         for _ in 0..self.num_hash_functions {
-            let bit_pos_in_block = (h >> (32 - Self::BLOCK_SIZE_IN_BITS.trailing_zeros())) as usize;
+            let bit_pos_in_block = (h >> (32 - BLOCK_SIZE_IN_BITS.trailing_zeros())) as usize;
             if !self.bits[block_offset + bit_pos_in_block] {
                 return false;
             }

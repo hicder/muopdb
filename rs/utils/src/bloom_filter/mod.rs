@@ -5,6 +5,10 @@ pub mod builder;
 pub mod immutable_bloom_filter;
 pub mod writer;
 
+/// Optimized block size: modern processors typically use 64-byte or 128-byte cache lines,
+/// so having a block size of 512 bits (64 bytes) would minimize cache misses during lookups.
+pub const BLOCK_SIZE_IN_BITS: usize = 512;
+
 #[derive(Copy, Clone)]
 pub struct HashIdx {
     // h1 (lower 32 bits of XXH3) selects the block
