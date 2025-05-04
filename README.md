@@ -209,4 +209,8 @@ cargo test --release
 ```
 
 ## Contributions
+Main contributors:
+* [Hieu Pham](https://www.linkedin.com/in/phamduchieu/)
+* [Son Tuan Vu](https://www.linkedin.com/in/sontuanvu/)
+ 
 This project is done with [TechCare Coaching](https://techcarecoaching.com/). I am mentoring mentees who made contributions to this project.
