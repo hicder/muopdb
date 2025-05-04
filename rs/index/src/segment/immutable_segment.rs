@@ -44,13 +44,9 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
     pub fn should_auto_vacuum(&self) -> bool {
         let count_deleted_documents = self.index.get_deleted_docs_count() as f64;
         if let Ok(count_all_documents) = self.num_docs() {
-            let count_all_documents = count_all_documents as f64;
-            if count_deleted_documents / count_all_documents > 0.1 {
-                return true;
-            }
-            return false;
+            (count_deleted_documents / (count_all_documents as f64)) > 0.1
         } else {
-            return false;
+            false
         }
     }
 }
@@ -70,7 +66,7 @@ impl<Q: Quantizer> Segment for ImmutableSegment<Q> {
     /// ImmutableSegment does not support contains.
     fn may_contain(&self, _doc_id: u128) -> bool {
         // TODO(hicder): Implement this
-        return true;
+        true
     }
 
     fn name(&self) -> String {
@@ -130,11 +126,11 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             assert!(multi_spann_builder
-                .insert(0, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .insert(0, i, &[i as f32, i as f32, i as f32, i as f32])
                 .is_ok());
         }
         assert!(multi_spann_builder
-            .insert(0, num_vectors as u128, &[1.2, 2.2, 3.2, 4.2])
+            .insert(0, num_vectors, &[1.2, 2.2, 3.2, 4.2])
             .is_ok());
         assert!(multi_spann_builder.build().is_ok());
 
@@ -190,12 +186,12 @@ mod tests {
         // Generate 1000 vectors of f32, dimension 4
         for i in 0..num_vectors {
             assert!(multi_spann_builder
-                .insert(0, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .insert(0, i as u128, &[i as f32, i as f32, i as f32, i as f32])
                 .is_ok());
         }
         for i in 0..num_vectors {
             assert!(multi_spann_builder
-                .insert(1, i as u128, &vec![i as f32, i as f32, i as f32, i as f32])
+                .insert(1, i as u128, &[i as f32, i as f32, i as f32, i as f32])
                 .is_ok());
         }
         assert!(multi_spann_builder

@@ -205,7 +205,7 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
 
             // Acquire the write lock
             let mut temp_invalidated_ids = self.temp_invalidated_ids.write();
-            let entry = temp_invalidated_ids.entry(user_id).or_insert_with(Vec::new);
+            let entry = temp_invalidated_ids.entry(user_id).or_default();
             if entry.contains(&doc_id) {
                 Ok(false)
             } else {
@@ -234,6 +234,7 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
     }
 }
 
+#[allow(clippy::await_holding_lock)]
 impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
     pub async fn search_with_id(
         &self,
