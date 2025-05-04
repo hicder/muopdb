@@ -3,6 +3,7 @@ pub mod blocked_bloom_filter;
 pub mod bloom_filter;
 pub mod builder;
 pub mod immutable_bloom_filter;
+pub mod reader;
 pub mod writer;
 
 /// Optimized block size: modern processors typically use 64-byte or 128-byte cache lines,
