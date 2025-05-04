@@ -54,6 +54,7 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
+    use crate::bloom_filter::HEADER_SIZE;
 
     #[test]
     fn test_bloom_filter_writer() {
@@ -104,7 +105,7 @@ mod tests {
         // Verify bit data
         let expected_bits = bloom_filter.bits().as_raw_slice();
         let file_size = fs::metadata(&path).expect("Failed to get file size").len() as usize;
-        let expected_file_size = 8 + 8 + 8 + expected_bits.len();
+        let expected_file_size = HEADER_SIZE + expected_bits.len();
         assert_eq!(file_size, expected_file_size);
         assert_eq!(bytes_written, expected_file_size);
 
