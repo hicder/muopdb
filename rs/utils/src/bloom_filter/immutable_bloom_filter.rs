@@ -1,10 +1,7 @@
-use std::hash::{Hash, Hasher};
-
 use anyhow::Result;
 use memmap2::Mmap;
-use xxhash_rust::xxh3::Xxh3;
 
-use crate::bloom_filter::{HashIdx, BLOCK_SIZE_IN_BITS};
+use crate::bloom_filter::{BloomFilter, BLOCK_SIZE_IN_BITS};
 
 pub struct ImmutableBloomFilter {
     mmap: Mmap,
@@ -32,42 +29,21 @@ impl ImmutableBloomFilter {
             num_hash_functions,
         })
     }
+}
 
-    pub fn may_contain<T: Hash + ?Sized>(&self, key: &T) -> bool {
-        let hash_idx = self.hash_key(key);
-        let block_idx = self.get_block_idx(hash_idx.h1);
-        self.check_bits(hash_idx.h2, block_idx)
+impl BloomFilter for ImmutableBloomFilter {
+    fn num_hash_functions(&self) -> usize {
+        self.num_hash_functions
     }
 
-    fn hash_key<T: Hash + ?Sized>(&self, key: &T) -> HashIdx {
-        let mut hasher = Xxh3::default();
-        key.hash(&mut hasher);
-        let hash = hasher.finish();
-        HashIdx {
-            h1: hash as u32,
-            h2: (hash >> 32) as u32,
-        }
+    fn num_blocks(&self) -> usize {
+        self.num_blocks
     }
 
-    fn get_block_idx(&self, h1: u32) -> usize {
-        // This is just FastRange32
-        (h1 as usize).wrapping_mul(self.num_blocks) >> 32
-    }
-
-    fn check_bits(&self, mut h: u32, block_idx: usize) -> bool {
+    fn is_bit_set(&self, block_idx: usize, bit_pos_in_block: usize) -> bool {
         let block_start = self.data_offset + (block_idx * BLOCK_SIZE_IN_BITS / 8);
-        let block_end = block_start + BLOCK_SIZE_IN_BITS / 8;
-        let block = &self.mmap[block_start..block_end];
-
-        for _ in 0..self.num_hash_functions {
-            let bit_pos_in_block = (h >> (32 - BLOCK_SIZE_IN_BITS.trailing_zeros())) as usize;
-            let byte = block[bit_pos_in_block / 8];
-            if (byte & (1 << (bit_pos_in_block % 8))) == 0 {
-                return false;
-            }
-            h = h.wrapping_mul(0x9e3779b9);
-        }
-        true
+        let byte = self.mmap[block_start + bit_pos_in_block / 8];
+        (byte & (1 << (bit_pos_in_block % 8))) != 0
     }
 }
 
@@ -78,6 +54,7 @@ mod tests {
     use super::*;
     use crate::bloom_filter::blocked_bloom_filter::BlockedBloomFilter;
     use crate::bloom_filter::writer::BloomFilterWriter;
+    use crate::bloom_filter::BloomFilter;
 
     #[test]
     fn test_immutable_bloom_filter() {

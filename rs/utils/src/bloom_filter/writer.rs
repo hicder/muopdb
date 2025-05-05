@@ -4,7 +4,7 @@ use std::io::{BufWriter, Write};
 use anyhow::Result;
 
 use crate::bloom_filter::blocked_bloom_filter::BlockedBloomFilter;
-use crate::bloom_filter::BLOCK_SIZE_IN_BITS;
+use crate::bloom_filter::{BloomFilter, BLOCK_SIZE_IN_BITS};
 use crate::io::wrap_write;
 
 pub struct BloomFilterWriter {
@@ -54,7 +54,7 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
-    use crate::bloom_filter::HEADER_SIZE;
+    use crate::bloom_filter::{BloomFilter, HEADER_SIZE};
 
     #[test]
     fn test_bloom_filter_writer() {

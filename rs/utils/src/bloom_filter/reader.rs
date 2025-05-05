@@ -44,6 +44,7 @@ mod tests {
     use super::*;
     use crate::bloom_filter::blocked_bloom_filter::BlockedBloomFilter;
     use crate::bloom_filter::writer::BloomFilterWriter;
+    use crate::bloom_filter::BloomFilter;
 
     #[test]
     fn test_bloom_filter_reader() {
