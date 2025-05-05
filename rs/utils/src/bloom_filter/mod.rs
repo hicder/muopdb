@@ -9,6 +9,12 @@ pub mod writer;
 /// so having a block size of 512 bits (64 bytes) would minimize cache misses during lookups.
 pub const BLOCK_SIZE_IN_BITS: usize = 512;
 
+/// 3 u64 values:
+/// - block_size_in_bits
+/// - num_hash_functions
+/// - num_blocks
+pub const HEADER_SIZE: usize = 24;
+
 #[derive(Copy, Clone)]
 pub struct HashIdx {
     // h1 (lower 32 bits of XXH3) selects the block
