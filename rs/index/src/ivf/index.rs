@@ -63,6 +63,8 @@ impl<Q: Quantizer> IvfType<Q> {
         }
     }
 
+    /// This is very expensive and should only be used for testing.
+    #[cfg(test)]
     pub fn get_point_id(&self, doc_id: u128) -> Option<u32> {
         match self {
             IvfType::L2Plain(ivf) => ivf.get_point_id(doc_id),

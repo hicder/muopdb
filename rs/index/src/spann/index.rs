@@ -42,6 +42,8 @@ impl<Q: Quantizer> Spann<Q> {
             .ok()
     }
 
+    /// This is very expensive and should only be used for testing.
+    #[cfg(test)]
     pub fn get_point_id(&self, doc_id: u128) -> Option<u32> {
         self.posting_lists.get_point_id(doc_id)
     }
