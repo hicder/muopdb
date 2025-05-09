@@ -1,9 +1,8 @@
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 
 use bitvec::prelude::*;
-use xxhash_rust::xxh3::Xxh3;
 
-use crate::bloom_filter::{HashIdx, BLOCK_SIZE_IN_BITS};
+use crate::bloom_filter::{BloomFilter, BLOCK_SIZE_IN_BITS};
 
 /// A blocked bloom filter improves upon the classing bloom filter by
 /// 1. Dividing the bit vector into fixed-size blocks
@@ -44,37 +43,8 @@ impl BlockedBloomFilter {
         self.set_bits(hash_idx.h2, block_idx);
     }
 
-    pub fn may_contain<T: Hash + ?Sized>(&self, key: &T) -> bool {
-        let hash_idx = self.hash_key(key);
-        let block_idx = self.get_block_idx(hash_idx.h1);
-        self.check_bits(hash_idx.h2, block_idx)
-    }
-
     pub fn bits(&self) -> &BitVec<u8> {
         &self.bits
-    }
-
-    pub fn num_hash_functions(&self) -> usize {
-        self.num_hash_functions
-    }
-
-    pub fn num_blocks(&self) -> usize {
-        self.num_blocks
-    }
-
-    fn hash_key<T: Hash + ?Sized>(&self, key: &T) -> HashIdx {
-        let mut hasher = Xxh3::default();
-        key.hash(&mut hasher);
-        let hash = hasher.finish();
-        HashIdx {
-            h1: hash as u32,
-            h2: (hash >> 32) as u32,
-        }
-    }
-
-    fn get_block_idx(&self, h1: u32) -> usize {
-        // This is just FastRange32
-        (h1 as usize).wrapping_mul(self.num_blocks) >> 32
     }
 
     fn set_bits(&mut self, mut h: u32, block_idx: usize) {
@@ -85,17 +55,20 @@ impl BlockedBloomFilter {
             h = h.wrapping_mul(0x9e3779b9);
         }
     }
+}
 
-    fn check_bits(&self, mut h: u32, block_idx: usize) -> bool {
+impl BloomFilter for BlockedBloomFilter {
+    fn num_hash_functions(&self) -> usize {
+        self.num_hash_functions
+    }
+
+    fn num_blocks(&self) -> usize {
+        self.num_blocks
+    }
+
+    fn is_bit_set(&self, block_idx: usize, bit_pos_in_block: usize) -> bool {
         let block_offset = block_idx * BLOCK_SIZE_IN_BITS;
-        for _ in 0..self.num_hash_functions {
-            let bit_pos_in_block = (h >> (32 - BLOCK_SIZE_IN_BITS.trailing_zeros())) as usize;
-            if !self.bits[block_offset + bit_pos_in_block] {
-                return false;
-            }
-            h = h.wrapping_mul(0x9e3779b9);
-        }
-        true
+        self.bits[block_offset + bit_pos_in_block]
     }
 }
 
