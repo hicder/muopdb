@@ -29,6 +29,8 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
         self.index.size_in_bytes()
     }
 
+    /// This is very expensive and should only be used for testing.
+    #[cfg(test)]
     pub fn get_point_id(&self, user_id: u128, doc_id: u128) -> Option<u32> {
         self.index.get_point_id(user_id, doc_id)
     }
