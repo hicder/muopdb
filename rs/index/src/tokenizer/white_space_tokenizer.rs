@@ -32,7 +32,7 @@ impl<'a> WhiteSpaceTokenStream<'a> {
             let next_value = self.chars.next();
             match next_value {
                 Some(ch) => {
-                    if ch.1.is_whitespace() == true {
+                    if ch.1.is_whitespace() {
                         continue;
                     } else {
                         return Some(ch.0);
@@ -50,7 +50,7 @@ impl<'a> WhiteSpaceTokenStream<'a> {
             let next_value = self.chars.next();
             match next_value {
                 Some(ch) => {
-                    if ch.1.is_whitespace() == true {
+                    if ch.1.is_whitespace() {
                         return ch.0;
                     }
                 }
@@ -67,9 +67,9 @@ impl<'a> TokenStream for WhiteSpaceTokenStream<'a> {
         if let Some(start_offset) = self.find_start() {
             let end_offset = self.find_end();
             self.token = Token::new(String::from(&self.text[start_offset..end_offset]));
-            return true;
+            true
         } else {
-            return false;
+            false
         }
     }
 
@@ -95,7 +95,7 @@ mod tests {
     fn test_token_stream_simple() {
         let mut token_stream = WhiteSpaceTokenStream::new("happy new year");
         let mut tokens: Vec<String> = vec![];
-        while token_stream.advance() == true {
+        while token_stream.advance() {
             tokens.push(token_stream.token().text);
         }
 
