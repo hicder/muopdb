@@ -37,11 +37,56 @@ impl OnDiskOrderedMapBuilder {
         }
     }
 
+    /// Adds a key-value pair to the builder's in-memory map.
+    ///
+    /// If the key already exists, its value will be updated.
+    /// The keys are stored in a BTreeMap, ensuring they are
+    /// sorted before being written to disk during the build process.
     #[allow(dead_code)]
     pub fn add(&mut self, key: String, value: u64) {
         self.map.insert(key, value);
     }
 
+    /// Builds the on-disk ordered map by serializing the in-memory `BTreeMap` to a file.
+    ///
+    /// This process involves writing the key-value pairs to a data file and creating a separate
+    /// index file for faster lookups. The data is written using key compression (shared prefixes)
+    /// and values/lengths are encoded using the provided `IntegerCodec`. The file is structured
+    /// into pages to potentially support partial loading.
+    ///
+    /// The final file structure is:
+    /// 1. Codec identifier (4 bytes, little-endian)
+    /// 2. Length of the index section (encoded using the codec)
+    /// 3. Index data
+    /// 4. Data section
+    ///
+    /// Temporary files (`data.bin` and `index.bin`) are created in a temporary directory
+    /// within the parent directory of the target `file_path`, and then appended to the
+    /// final file before the temporary directory is removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `codec` - An implementation of the `IntegerCodec` trait to encode lengths and values.
+    /// * `file_path` - The path where the final on-disk map file will be created.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success (`Ok(())`) or an error if file operations or writing fails.
+    ///
+    /// # Errors
+    ///
+    /// This function can return an error if:
+    /// - Creating directories or files fails.
+    /// - Writing to files fails.
+    /// - Flushing buffered writers fails.
+    /// - Appending temporary files fails.
+    /// - Removing the temporary directory fails.
+    /// - The map is empty (causing `max().unwrap()` to panic - *Note: This should ideally be handled*).
+    /// - File operations (open, write, close) fail.
+    /// - I/O operations fail.
+    ///
+    /// Note: The current implementation handles some I/O errors via `Result`.
+    ///
     pub fn build(&self, codec: impl IntegerCodec, file_path: &str) -> Result<()> {
         // Get parent of `file_path`
         let parent = std::path::Path::new(file_path).parent().unwrap();
