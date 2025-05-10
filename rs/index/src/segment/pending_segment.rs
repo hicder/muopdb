@@ -13,6 +13,26 @@ use crate::multi_spann::index::MultiSpannIndex;
 use crate::multi_spann::reader::MultiSpannReader;
 use crate::utils::SearchResult;
 
+/// Represents an intermediate segment used during optimization processes (like merging or vacuuming).
+///
+/// A `PendingSegment` wraps one or more existing immutable segments and provides a mutable
+/// view for optimization operations. Initially, it delegates search queries to its inner segments
+/// and records invalidation operations (removals) in temporary storage.
+///
+/// Once the optimization process is complete, the `PendingSegment` builds an internal index
+/// from the optimized data. At this point, the `use_internal_index` flag is set to true,
+/// and subsequent search queries are handled by the internal index, with the recorded
+/// invalidations applied to it.
+///
+/// This design allows for concurrent reads (searches) on the original segments while the
+/// optimization is in progress, and then seamlessly switches to the optimized internal index
+/// once it's ready.
+///
+/// **Locking:**
+/// - `temp_invalidated_ids_storage`: Protected by a `RwLock` for concurrent read/write access to the on-disk storage.
+/// - `temp_invalidated_ids`: Protected by a `RwLock` for concurrent read/write access to the in-memory map of invalidated IDs.
+/// - `index`: Protected by a `RwLock` for concurrent read/write access to the internal index once built.
+/// - `use_internal_index`: An `AtomicBool` is used to signal when the internal index is ready and should be used for searches, ensuring visibility across threads.
 pub struct PendingSegment<Q: Quantizer + Clone + Send + Sync> {
     inner_segments: Vec<BoxedImmutableSegment<Q>>,
     inner_segments_names: Vec<String>,
@@ -80,7 +100,18 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
         }
     }
 
-    // Caller must hold the read lock before calling this function.
+    /// Builds the internal `MultiSpannIndex` for the pending segment.
+    ///
+    /// This function reads the data files generated during the optimization process
+    /// from the pending segment's directory and constructs an in-memory index.
+    /// This index will be used for subsequent search operations once the
+    /// `switch_to_internal_index` method is called.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The internal index has already been built (`use_internal_index` is true).
+    /// - Reading the index data from disk fails.
     pub fn build_index(&self) -> Result<()> {
         if self
             .use_internal_index

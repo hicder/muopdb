@@ -882,6 +882,22 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         Ok(random_name)
     }
 
+    /// Runs the specified optimizer on a pending segment.
+    ///
+    /// This function takes a pending segment (created by `init_optimizing`), applies the
+    /// optimization logic defined by the `optimizer`, builds the index for the optimized
+    /// segment, applies any pending deletions, and then converts the pending segment
+    /// into a finalized immutable segment.
+    ///
+    /// # Arguments
+    ///
+    /// * `optimizer` - The optimizer implementation to run (e.g., `MergeOptimizer`, `VacuumOptimizer`).
+    /// * `pending_segment` - The name of the pending segment to optimize.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the name of the newly created finalized segment on success,
+    /// or an error if the optimization process fails.
     pub fn run_optimizer(
         &self,
         optimizer: &impl SegmentOptimizer<Q>,
@@ -1905,6 +1921,67 @@ mod tests {
             }
         }
     }
+
+    /// Tests invalidation logic with a larger number of documents.
+    ///
+    /// This test inserts 20 documents into the collection, then removes 5 of them.
+    /// It verifies that the removed documents are marked as invalid in the mutable segment
+    /// and that the remaining documents are still valid.
+    #[test]
+    fn test_collection_inval_large() {
+        let collection_name = "test_collection_inval_large";
+        let temp_dir = TempDir::new(collection_name).expect("Failed to create temporary directory");
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let segment_config = CollectionConfig::default_test_config();
+        let collection = Arc::new(
+            Collection::<NoQuantizerL2>::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                segment_config,
+            )
+            .unwrap(),
+        );
+
+        let num_docs_to_add = 20;
+        let num_docs_to_delete = 5;
+        let user_id = 0;
+        let vector: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0]; // Dummy vector
+
+        // Add 20 data points
+        for i in 0..num_docs_to_add {
+            assert!(collection
+                .insert_for_users(&[user_id], i as u128, &vector, i as u64)
+                .is_ok());
+        }
+
+        // Delete 5 data points (e.g., doc_ids 0 to 4)
+        for i in 0..num_docs_to_delete {
+            assert!(collection
+                .remove(user_id, i as u128, (num_docs_to_add + i) as u64)
+                .is_ok());
+        }
+
+        // Verify that the 5 deleted documents are invalidated
+        for i in 0..num_docs_to_delete {
+            assert!(!collection
+                .mutable_segments
+                .read()
+                .mutable_segment
+                .read()
+                .is_valid_doc_id(user_id, i as u128));
+        }
+
+        // Verify that the remaining 15 documents are still valid
+        for i in num_docs_to_delete..num_docs_to_add {
+            assert!(collection
+                .mutable_segments
+                .read()
+                .mutable_segment
+                .read()
+                .is_valid_doc_id(user_id, i as u128));
+        }
+    }
+
     #[test]
     fn test_collection_metrics() {
         let collection_name = "test_collection_metrics";
