@@ -25,10 +25,12 @@ impl<Q: Quantizer> Spann<Q> {
         }
     }
 
+    #[cfg(test)]
     pub fn get_centroids(&self) -> &Hnsw<NoQuantizer<L2DistanceCalculator>> {
         &self.centroids
     }
 
+    #[cfg(test)]
     pub fn get_posting_lists(&self) -> &IvfType<Q> {
         &self.posting_lists
     }
