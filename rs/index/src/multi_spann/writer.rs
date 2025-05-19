@@ -9,6 +9,7 @@ use odht::HashTableOwned;
 use quantization::noq::noq::NoQuantizer;
 use quantization::pq::pq::{ProductQuantizerConfig, CODEBOOK_NAME, CONFIG_FILE_NAME};
 use quantization::quantization::WritableQuantizer;
+use utils::bloom_filter::writer::BloomFilterWriter;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::io::{append_file_to_writer, write_pad};
 
@@ -60,7 +61,13 @@ impl MultiSpannWriter {
         user_ids.sort();
         let base_directory = self.base_directory.clone();
 
-        // Build individual spanns
+        // Write bloom filter
+        let bloom_filter_writer = BloomFilterWriter::new(base_directory.clone());
+        if let Some(bloom_filter) = multi_spann.bloom_filter() {
+            let _ = bloom_filter_writer.write(bloom_filter)?;
+        }
+
+        // Write individual SPANNs
         for user_id in user_ids.iter() {
             let spann_directory = format!("{}/{}", base_directory, *user_id);
             let spann_writer = SpannWriter::new(spann_directory);
@@ -294,13 +301,15 @@ mod tests {
         assert_eq!(user_index_infos.len(), 5);
 
         // Check if output directories and files exist
+        let bloom_filter_directory_path = format!("{}/bloom_filter", base_directory);
         let centroids_directory_path = format!("{}/centroids/hnsw", base_directory);
         let centroids_directory = PathBuf::from(&centroids_directory_path);
         let hnsw_vector_storage_path =
             format!("{}/vector_storage", centroids_directory.to_str().unwrap());
         let hnsw_index_path = format!("{}/index", centroids_directory.to_str().unwrap());
 
-        assert!(PathBuf::from(&centroids_directory_path).exists());
+        assert!(PathBuf::from(&bloom_filter_directory_path).exists());
+        assert!(centroids_directory.exists());
         assert!(PathBuf::from(&hnsw_vector_storage_path).exists());
         assert!(PathBuf::from(&hnsw_index_path).exists());
     }
@@ -344,6 +353,7 @@ mod tests {
         assert_eq!(user_index_infos.len(), 5);
 
         // Check if output directories and files exist
+        let bloom_filter_directory_path = format!("{}/bloom_filter", base_directory);
         let centroids_directory_path = format!("{}/centroids/hnsw", base_directory);
         let centroids_directory = PathBuf::from(&centroids_directory_path);
         let hnsw_vector_storage_path =
@@ -354,7 +364,8 @@ mod tests {
         let ivf_quantizer_codebook_path = format!("{}/codebook", ivf_quantizer_directory.clone());
         let ivf_quantizer_config_path = format!("{}/{}", ivf_quantizer_directory, CONFIG_FILE_NAME);
 
-        assert!(PathBuf::from(&centroids_directory_path).exists());
+        assert!(PathBuf::from(&bloom_filter_directory_path).exists());
+        assert!(centroids_directory.exists());
         assert!(PathBuf::from(&hnsw_vector_storage_path).exists());
         assert!(PathBuf::from(&hnsw_index_path).exists());
         assert!(PathBuf::from(&ivf_quantizer_codebook_path).exists());
