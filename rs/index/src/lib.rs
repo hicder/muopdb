@@ -9,6 +9,7 @@ pub mod optimizers;
 pub mod posting_list;
 pub mod segment;
 pub mod spann;
+pub mod terms;
 pub mod tokenizer;
 pub mod traverse_state;
 pub mod utils;

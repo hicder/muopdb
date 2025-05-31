@@ -450,6 +450,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         Ok(())
     }
 
+    /// Returns the number of features in the collection
     pub fn dimensions(&self) -> usize {
         self.segment_config.num_features
     }

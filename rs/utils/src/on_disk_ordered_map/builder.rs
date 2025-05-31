@@ -47,6 +47,17 @@ impl OnDiskOrderedMapBuilder {
         self.map.insert(key, value);
     }
 
+    /// Adds a key-value pair to the builder's in-memory map.
+    /// If the key already exists, returns its value.
+    /// Otherwise, assigns a new value and returns it.
+    pub fn add_or_get(&mut self, key: String, value: u64) -> u64 {
+        if let Some(&value) = self.map.get(&key) {
+            return value;
+        }
+        self.map.insert(key, value);
+        value
+    }
+
     /// Builds the on-disk ordered map by serializing the in-memory `BTreeMap` to a file.
     ///
     /// This process involves writing the key-value pairs to a data file and creating a separate
@@ -226,6 +237,10 @@ impl OnDiskOrderedMapBuilder {
         std::fs::remove_dir_all(tmp_dir)?;
 
         Ok(())
+    }
+
+    pub fn get_value(&self, key: &str) -> Option<u64> {
+        self.map.get(key).cloned()
     }
 }
 
