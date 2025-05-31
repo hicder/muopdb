@@ -20,6 +20,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install dependencies
         run: brew install hdf5 protobuf openblas
+      - name: Install rustfmt
+        run: rustup component add --toolchain nightly-aarch64-apple-darwin rustfmt
       - name: Build
         run: cargo build --release --verbose
       - name: Run tests
