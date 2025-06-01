@@ -1,16 +1,15 @@
-use std::pin::Pin;
-
 use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};
 use compression::compression::IntSeqDecoder;
 use compression::elias_fano::ef::{EliasFanoDecoder, EliasFanoDecodingIterator};
 use log::debug;
+use ouroboros::self_referencing;
 use utils::on_disk_ordered_map::encoder::VarintIntegerCodec;
 use utils::on_disk_ordered_map::map::OnDiskOrderedMap;
 
 pub struct TermIndex {
     // Box the inner data to make it self-referential
-    inner: Pin<Box<TermIndexInner>>,
+    inner: TermIndexInner,
 }
 
 #[allow(dead_code)]
@@ -19,12 +18,13 @@ pub struct OffsetLength {
     length: usize,
 }
 
+#[self_referencing]
 struct TermIndexInner {
-    term_map: Option<OnDiskOrderedMap<'static, VarintIntegerCodec>>,
     mmap: memmap2::Mmap,
 
-    #[allow(dead_code)]
-    backing_file: std::fs::File,
+    #[borrows(mmap)]
+    #[covariant]
+    term_map: OnDiskOrderedMap<'this, VarintIntegerCodec>,
 
     offsets_offset: usize,
     pl_offset: usize,
@@ -58,59 +58,28 @@ impl TermIndex {
         let offsets_offset = offsets_offset.div_ceil(8) * 8;
 
         let pl_offset = offsets_offset + offset_len as usize;
-        let mut inner = Box::pin(TermIndexInner {
-            term_map: None,
+        let inner = TermIndexInnerBuilder {
+            term_map_builder: |mmap| {
+                OnDiskOrderedMap::<VarintIntegerCodec>::new(
+                    path,
+                    &mmap,
+                    term_map_offset,
+                    term_map_offset + term_map_len as usize,
+                )
+                .unwrap()
+            },
             mmap,
-            backing_file,
             offsets_offset,
             pl_offset,
             offset_len,
-        });
-
-        // SAFETY: We're creating a self-referential structure here.
-        // The mmap will live as long as the TermIndexInner, and we're
-        // ensuring the term_map references are valid through Pin.
-        let mmap_ptr = unsafe {
-            let inner_ref = inner.as_mut().get_unchecked_mut();
-            &inner_ref.mmap as *const memmap2::Mmap
-        };
-
-        debug!(
-            "Term map offset: {}, term map len: {}",
-            term_map_offset, term_map_len
-        );
-        let term_map = unsafe {
-            let mmap_ref = &*mmap_ptr;
-            // let mut v = Vec::new();
-            // // copy mmap_ref[term_map_offset..term_map_offset + term_map_len as usize] into v
-            // v.extend_from_slice(&mmap_ref[term_map_offset..term_map_offset + term_map_len as usize]);
-
-            OnDiskOrderedMap::<VarintIntegerCodec>::new(
-                path,
-                &mmap_ref,
-                term_map_offset,
-                term_map_offset + term_map_len as usize,
-            )?
-        };
-
-        // SAFETY: We transmute the lifetime to 'static because we know
-        // the mmap will live as long as this struct due to Pin
-        let term_map: OnDiskOrderedMap<'static, VarintIntegerCodec> =
-            unsafe { std::mem::transmute(term_map) };
-
-        unsafe {
-            inner.as_mut().get_unchecked_mut().term_map = Some(term_map);
         }
+        .build();
 
         Ok(TermIndex { inner })
     }
 
-    pub fn term_map(&self) -> &OnDiskOrderedMap<'static, VarintIntegerCodec> {
-        self.inner.term_map.as_ref().unwrap()
-    }
-
     pub fn get_term_id(&self, term: &str) -> Option<u64> {
-        self.inner.term_map.as_ref().unwrap().get(term)
+        self.inner.borrow_term_map().get(term)
     }
 
     /// Retrieves the offset and length of the posting list for a given term ID.
@@ -128,24 +97,26 @@ impl TermIndex {
     /// An `Option` containing an `OffsetLength` struct with the calculated offset and length
     /// if the `term_id` is valid, otherwise `None`.
     pub fn get_term_offset_len(&self, term_id: u64) -> Option<OffsetLength> {
-        if term_id == self.inner.offset_len / 8 - 1 {
-            let offset = self.inner.offsets_offset + term_id as usize * 8;
-            let offset = LittleEndian::read_u64(&self.inner.mmap[offset..offset + 8]) as usize;
-            let length = self.inner.mmap.len() - (offset + self.inner.pl_offset);
+        if term_id == self.inner.borrow_offset_len() / 8 - 1 {
+            let offset = self.inner.borrow_offsets_offset() + term_id as usize * 8;
+            let offset =
+                LittleEndian::read_u64(&self.inner.borrow_mmap()[offset..offset + 8]) as usize;
+            let length = self.inner.borrow_mmap().len() - (offset + self.inner.borrow_pl_offset());
             return Some(OffsetLength {
-                offset: offset + self.inner.pl_offset,
+                offset: offset + self.inner.borrow_pl_offset(),
                 length: length,
             });
         }
 
-        let offset = self.inner.offsets_offset as usize + term_id as usize * 8;
-        let offset = LittleEndian::read_u64(&self.inner.mmap[offset..offset + 8]) as usize;
+        let offset = *self.inner.borrow_offsets_offset() as usize + term_id as usize * 8;
+        let offset = LittleEndian::read_u64(&self.inner.borrow_mmap()[offset..offset + 8]) as usize;
 
-        let next_offset = self.inner.offsets_offset as usize + (term_id + 1) as usize * 8;
+        let next_offset = *self.inner.borrow_offsets_offset() as usize + (term_id + 1) as usize * 8;
         let next_offset =
-            LittleEndian::read_u64(&self.inner.mmap[next_offset..next_offset + 8]) as usize;
+            LittleEndian::read_u64(&self.inner.borrow_mmap()[next_offset..next_offset + 8])
+                as usize;
         Some(OffsetLength {
-            offset: offset + self.inner.pl_offset,
+            offset: offset + self.inner.borrow_pl_offset(),
             length: next_offset - offset,
         })
     }
@@ -179,7 +150,7 @@ impl TermIndex {
             offset, length
         );
 
-        let byte_slice = &self.inner.mmap[offset..offset + length];
+        let byte_slice = &self.inner.borrow_mmap()[offset..offset + length];
         let decoder = EliasFanoDecoder::new_decoder(byte_slice)
             .expect("Failed to create posting list decoder");
         Ok(decoder.get_iterator(byte_slice))
