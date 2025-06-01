@@ -19,6 +19,39 @@ impl TermWriter {
         Self { base_dir }
     }
 
+    /// Writes the term map, posting lists, and their offsets to disk.
+    ///
+    /// The data is organized into three main components:
+    /// 1.  **Term Map**: A mapping from term IDs to term strings, stored as an `OnDiskOrderedMap`.
+    /// 2.  **Posting Lists**: Elias-Fano encoded lists of document IDs for each term.
+    /// 3.  **Offsets**: A list of offsets indicating the start position of each posting list within the posting lists file.
+    ///
+    /// These components are written into separate temporary files (`term_map`, `posting_lists`, `offsets`)
+    /// and then combined into a single `combined` file in the following format:
+    ///
+    /// ```text
+    /// +---------------------+
+    /// | term_map_len (8B)   |
+    /// +---------------------+
+    /// | offsets_len (8B)    |
+    /// +---------------------+
+    /// | posting_lists_len (8B)|
+    /// +---------------------+
+    /// | Term Map Data       |
+    /// | (padded to 8-byte   |
+    /// |  alignment)         |
+    /// +---------------------+
+    /// | Offsets Data        |
+    /// +---------------------+
+    /// | Posting Lists Data  |
+    /// +---------------------+
+    /// ```
+    ///
+    /// # Arguments
+    /// * `builder` - A mutable reference to a `TermBuilder` instance that has been built.
+    ///
+    /// # Returns
+    /// `Result<()>` indicating success or an error if the `TermBuilder` is not built or an I/O error occurs.
     pub fn write(&self, builder: &mut TermBuilder) -> Result<()> {
         if !builder.is_built() {
             return Err(anyhow!("TermBuilder is not built"));
@@ -49,6 +82,10 @@ impl TermWriter {
                 EliasFano::new_encoder(*posting_list.last().unwrap() as usize, posting_list.len());
             encoder.encode_batch(&posting_list).unwrap();
             let len = encoder.write(&mut pl_writer)?;
+            debug!(
+                "[write] Term ID: {}, Offset: {}, Length: {}",
+                term_id, last_pl_offset, len
+            );
             offsets.push(last_pl_offset);
             last_pl_offset += len;
         }
@@ -59,9 +96,9 @@ impl TermWriter {
         let offset_path = format!("{}/offsets", self.base_dir);
         let mut offset_file = File::create(offset_path.as_str()).unwrap();
         let mut offset_writer = BufWriter::new(&mut offset_file);
-        let mut offset_bytes = 0;
+        let mut offset_len = 0;
         for offset in offsets {
-            offset_bytes += wrap_write(&mut offset_writer, &offset.to_le_bytes())?;
+            offset_len += wrap_write(&mut offset_writer, &offset.to_le_bytes())?;
         }
         offset_writer.flush()?;
 
@@ -74,13 +111,13 @@ impl TermWriter {
 
             let offset_file = File::open(offset_path.as_str()).unwrap();
             let offset_file_len = offset_file.metadata().unwrap().len();
-            assert_eq!(offset_file_len, offset_bytes as u64);
+            assert_eq!(offset_file_len, offset_len as u64);
         }
 
         // Print the length for each file, in the same line
         debug!(
             "Term map length: {}, Offset length: {}, Posting list length: {}",
-            term_map_len, offset_bytes, last_pl_offset
+            term_map_len, offset_len, last_pl_offset
         );
 
         // Write the combined file. First, write the length of term_map file, then length of offsets file, then length of posting lists file
@@ -88,7 +125,7 @@ impl TermWriter {
         let mut combined_file = File::create(combined_path.as_str()).unwrap();
         let mut combined_writer = BufWriter::new(&mut combined_file);
         wrap_write(&mut combined_writer, &term_map_len.to_le_bytes())?;
-        wrap_write(&mut combined_writer, &offset_bytes.to_le_bytes())?;
+        wrap_write(&mut combined_writer, &offset_len.to_le_bytes())?;
         wrap_write(&mut combined_writer, &last_pl_offset.to_le_bytes())?;
 
         let mut total_size = 24;
@@ -102,7 +139,7 @@ impl TermWriter {
         }
 
         append_file_to_writer(offset_path.as_str(), &mut combined_writer)?;
-        total_size += offset_bytes as usize;
+        total_size += offset_len as usize;
         let padding = 8 - (total_size % 8) as usize;
         if padding != 8 {
             let padding_buffer = vec![0; padding];
@@ -116,9 +153,9 @@ impl TermWriter {
         debug!("Total size: {}", total_size);
 
         // Remove term_map, offsets, posting lists files
-        std::fs::remove_file(term_map_path.as_str())?;
-        std::fs::remove_file(offset_path.as_str())?;
-        std::fs::remove_file(posting_list_path.as_str())?;
+        // std::fs::remove_file(term_map_path.as_str())?;
+        // std::fs::remove_file(offset_path.as_str())?;
+        // std::fs::remove_file(posting_list_path.as_str())?;
 
         Ok(())
     }
