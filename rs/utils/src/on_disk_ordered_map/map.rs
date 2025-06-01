@@ -133,6 +133,11 @@ impl<'a, C: IntegerCodec> OnDiskOrderedMap<'a, C> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+
+    use rand::Rng;
+
     use super::*;
     use crate::on_disk_ordered_map::builder::OnDiskOrderedMapBuilder;
     use crate::on_disk_ordered_map::encoder::{FixedIntegerCodec, VarintIntegerCodec};
@@ -168,6 +173,70 @@ mod tests {
         assert_eq!(map.get("key3").unwrap(), 3);
         assert_eq!(map.get("key0"), None);
         assert_eq!(map.get("key4"), None);
+    }
+
+    #[test]
+    fn test_map_varint_custom_entries() {
+        let tmp_dir = tempdir::TempDir::new("test_map").unwrap();
+        let base_directory = tmp_dir.path().to_str().unwrap();
+        let final_map_file_path = base_directory.to_string() + "/map.bin";
+
+        let mut builder = OnDiskOrderedMapBuilder::new();
+
+        // Add entries in the order specified: {"a", 0}, {"c", 1}, {"b", 2}
+        builder.add(String::from("a"), 0);
+        builder.add(String::from("c"), 1);
+        builder.add(String::from("b"), 2);
+
+        let codec = VarintIntegerCodec {};
+        builder.build(codec, &final_map_file_path).unwrap();
+
+        let mmap =
+            unsafe { memmap2::Mmap::map(&std::fs::File::open(&final_map_file_path).unwrap()) }
+                .unwrap();
+
+        println!("Mmap len: {}", mmap.len());
+
+        // Read the original content
+        let original_content = std::fs::read(&final_map_file_path).unwrap();
+
+        // Generate 24 random bytes
+        let mut rng = rand::thread_rng();
+        let random_bytes: Vec<u8> = (0..24).map(|_| rng.gen::<u8>()).collect();
+
+        // Prepend random bytes and write back to file
+        let mut file = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&final_map_file_path)
+            .unwrap();
+        file.write_all(&random_bytes).unwrap();
+        file.write_all(&original_content).unwrap();
+        file.flush().unwrap();
+
+        let mmap =
+            unsafe { memmap2::Mmap::map(&std::fs::File::open(&final_map_file_path).unwrap()) }
+                .unwrap();
+
+        println!("Mmap len: {}", mmap.len());
+
+        let map =
+            OnDiskOrderedMap::<VarintIntegerCodec>::new(final_map_file_path, &mmap, 24, mmap.len())
+                .unwrap();
+
+        // Assert the index structure
+        assert_eq!(map.index.len(), 1);
+        assert_eq!(map.index.get("a").unwrap(), &0);
+
+        // Assert that we can retrieve all the entries correctly
+        assert_eq!(map.get("a").unwrap(), 0);
+        assert_eq!(map.get("b").unwrap(), 2);
+        assert_eq!(map.get("c").unwrap(), 1);
+
+        // Assert that non-existent keys return None
+        assert_eq!(map.get("d"), None);
+        assert_eq!(map.get("z"), None);
+        assert_eq!(map.get(""), None);
     }
 
     #[test]

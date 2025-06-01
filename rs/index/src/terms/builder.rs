@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
+use log::debug;
 use utils::on_disk_ordered_map::builder::OnDiskOrderedMapBuilder;
 
 use super::scratch::Scratch;
@@ -31,6 +32,10 @@ impl TermBuilder {
     pub fn add(&mut self, doc_id: u64, key: String) -> Result<()> {
         if self.built {
             return Err(anyhow!("TermBuilder is already built"));
+        }
+        #[cfg(debug_assertions)]
+        {
+            debug!("Adding doc: {}, term: {}", doc_id, key);
         }
 
         let term_id = self.persist_and_get_term_id(key);
@@ -62,6 +67,7 @@ impl TermBuilder {
         // Sort the posting lists
         for (_, posting_list) in self.posting_lists.iter_mut() {
             posting_list.sort();
+            posting_list.dedup();
         }
         Ok(())
     }
