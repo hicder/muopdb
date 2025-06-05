@@ -1,16 +1,28 @@
-use std::sync::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use config::collection::CollectionConfig;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
+use lock_api::RwLockUpgradableReadGuard;
 use log::debug;
+use parking_lot::RwLock;
+use utils::bloom_filter::blocked_bloom_filter::BlockedBloomFilter;
 
 use crate::spann::builder::{SpannBuilder, SpannBuilderConfig};
+
+#[derive(Hash)]
+pub struct BloomFilterKey {
+    user_id: u128,
+    doc_id: u128,
+}
 
 pub struct MultiSpannBuilder {
     config: CollectionConfig,
     inner_builders: DashMap<u128, RwLock<SpannBuilder>>,
+    bloom_filter: OnceLock<BlockedBloomFilter>,
+    doc_id_counts: AtomicU64,
     base_directory: String,
 }
 
@@ -19,6 +31,8 @@ impl MultiSpannBuilder {
         Ok(Self {
             config,
             inner_builders: DashMap::new(),
+            bloom_filter: OnceLock::new(),
+            doc_id_counts: AtomicU64::new(0),
             base_directory,
         })
     }
@@ -41,7 +55,8 @@ impl MultiSpannBuilder {
                 .unwrap(),
             )
         });
-        spann_builder.write().unwrap().add(doc_id, data)?;
+        spann_builder.write().add(doc_id, data)?;
+        self.doc_id_counts.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 
@@ -60,7 +75,10 @@ impl MultiSpannBuilder {
         // Check if the user_id exists in the inner_builders map
         if let Entry::Occupied(entry) = self.inner_builders.entry(user_id) {
             // If the entry exists, invalidate the doc_id and return the result
-            let effectively_invalidated = entry.get().write().unwrap().invalidate(doc_id);
+            let effectively_invalidated = entry.get().write().invalidate(doc_id);
+            if effectively_invalidated {
+                self.doc_id_counts.fetch_sub(1, Ordering::Relaxed);
+            }
             Ok(effectively_invalidated)
         } else {
             // If the entry does not exist, return false instead of error
@@ -90,18 +108,39 @@ impl MultiSpannBuilder {
                 .unwrap(),
             )
         });
-        let spann_builder = entry.read().unwrap();
+        let spann_builder = entry.read();
         spann_builder.is_valid_doc_id(doc_id)
     }
 
     /// Builds the segment for each user.
     /// Iterates through the inner_builders, triggers the build process for each SpannBuilder.
+    /// Additionally, build the blocked bloom filter, which will later be used for optimizing
+    /// deletions.
     pub fn build(&self) -> Result<()> {
+        let mut bloom_filter = BlockedBloomFilter::new(
+            self.doc_id_counts.load(Ordering::Relaxed) as usize,
+            self.config.fpr,
+        );
         for entry in self.inner_builders.iter() {
+            // Step 1: Build bloom filter
+            let spann_builder = entry.value().upgradable_read();
+            for doc_id in spann_builder.ivf_builder.doc_id_mapping() {
+                let key = BloomFilterKey {
+                    user_id: *entry.key(),
+                    doc_id: *doc_id,
+                };
+                bloom_filter.insert::<BloomFilterKey>(&key);
+            }
+            // Step 2: Build segment
             debug!("Building segment for user {}", entry.key());
-            entry.value().write().unwrap().build()?;
+            let mut writable_spann_builder = RwLockUpgradableReadGuard::upgrade(spann_builder);
+            writable_spann_builder.build()?;
         }
-        Ok(())
+
+        match self.bloom_filter.set(bloom_filter) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(anyhow!("build() was called multiple times")),
+        }
     }
 
     pub fn user_ids(&self) -> Vec<u128> {
@@ -115,13 +154,17 @@ impl MultiSpannBuilder {
         &self.base_directory
     }
 
-    /// This function will remove the builder for the given user id.
+    /// This function will remove and return the SPANN builder for the given user id.
     /// If the builder is not found, it will return None.
     pub fn take_builder_for_user(&self, user_id: u128) -> Option<SpannBuilder> {
         self.inner_builders
             .remove(&user_id)
-            .map(|builder| builder.1.into_inner().unwrap())
+            .map(|builder| builder.1.into_inner())
             .or(None)
+    }
+
+    pub fn bloom_filter(&self) -> Option<&BlockedBloomFilter> {
+        self.bloom_filter.get()
     }
 
     pub fn config(&self) -> &CollectionConfig {
@@ -169,7 +212,7 @@ mod tests {
         // Verify the content of each builder
         for ref_multi in multi_builder.inner_builders.iter() {
             let user_id = *ref_multi.key();
-            let builder = ref_multi.value().read().unwrap();
+            let builder = ref_multi.value().read();
             match user_id {
                 1 => {
                     assert_eq!(builder.ivf_builder.vectors().num_vectors(), 1);
@@ -283,7 +326,7 @@ mod tests {
         assert!(!multi_builder.invalidate(user_id_2, doc_id_2).unwrap());
 
         let builder_lock = multi_builder.inner_builders.get(&user_id_1).unwrap();
-        let builder = builder_lock.read().unwrap();
+        let builder = builder_lock.read();
         assert!(builder.ivf_builder.is_valid_doc_id(doc_id_1));
         assert!(!builder.ivf_builder.is_valid_doc_id(doc_id_2));
     }
