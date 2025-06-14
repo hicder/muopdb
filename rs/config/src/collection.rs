@@ -136,6 +136,7 @@ pub struct CollectionConfig {
 
     /// The false positive rate for bloom filter.
     /// Default: 0.01
+    #[serde(default = "default_fpr")]
     pub fpr: f64,
 
     /// Attribute schema for the collection
@@ -156,6 +157,10 @@ fn default_max_time_to_flush_ms() -> u64 {
 
 fn default_max_number_of_segments() -> usize {
     10
+}
+
+fn default_fpr() -> f64 {
+    0.01
 }
 
 impl Default for CollectionConfig {
@@ -187,7 +192,7 @@ impl Default for CollectionConfig {
             max_pending_ops: 0,
             max_time_to_flush_ms: 0,
             max_number_of_segments: 10,
-            fpr: 0.01,
+            fpr: default_fpr(),
             attribute_schema: None,
         }
     }
@@ -222,7 +227,7 @@ impl CollectionConfig {
             max_pending_ops: 10000,
             max_time_to_flush_ms: 10000,
             max_number_of_segments: 10,
-            fpr: 0.01,
+            fpr: default_fpr(),
             attribute_schema: None,
         }
     }
