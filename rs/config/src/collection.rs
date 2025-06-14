@@ -138,6 +138,7 @@ pub struct CollectionConfig {
     /// Default: 0.01
     pub fpr: f64,
 
+    /// Attribute schema for the collection
     pub attribute_schema: Option<AttributeSchema>,
 }
 
