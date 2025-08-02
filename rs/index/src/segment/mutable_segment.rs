@@ -46,8 +46,7 @@ impl MutableSegment {
         sequence_number: u64,
     ) -> Result<()> {
         debug!(
-            "Inserting for user: {}, doc_id: {}, sequence_number: {}",
-            user_id, doc_id, sequence_number
+            "Inserting for user: {user_id}, doc_id: {doc_id}, sequence_number: {sequence_number}"
         );
         if self.finalized {
             return Err(anyhow::anyhow!("Cannot insert into a finalized segment"));
@@ -76,7 +75,7 @@ impl MutableSegment {
             return Err(anyhow::anyhow!("Cannot build a finalized segment"));
         }
 
-        let segment_directory = format!("{}/{}", base_directory, name);
+        let segment_directory = format!("{base_directory}/{name}");
         std::fs::create_dir_all(&segment_directory)?;
 
         self.multi_spann_builder.build()?;

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use anyhow::{anyhow, Ok, Result};
+use anyhow::{anyhow, Result};
 use config::collection::CollectionConfig;
 use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
@@ -73,7 +73,7 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
             .collect();
 
         let temp_invalidated_ids_directory =
-            format!("{}/temp_invalidated_ids_storage", data_directory);
+            format!("{data_directory}/temp_invalidated_ids_storage");
         // TODO(tyb) avoid unwrap here
         let temp_invalidated_ids_storage =
             InvalidatedIdsStorage::read(&temp_invalidated_ids_directory).unwrap();
@@ -257,7 +257,7 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
     }
 
     fn may_contain(&self, _doc_id: u128) -> bool {
-        todo!()
+        false
     }
 
     fn name(&self) -> String {
@@ -379,7 +379,7 @@ mod tests {
         let base_dir = tmp_dir.path().to_str().unwrap().to_string();
 
         // Create dir for segment1
-        let segment1_dir = format!("{}/segment_1", base_dir);
+        let segment1_dir = format!("{base_dir}/segment_1");
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
         let segment1 = read_segment(segment1_dir.clone())?;
@@ -392,7 +392,7 @@ mod tests {
             "pending_segment_{}",
             rand::thread_rng().gen_range(0..1000000)
         );
-        let pending_dir = format!("{}/{}", base_dir, random_name);
+        let pending_dir = format!("{base_dir}/{random_name}");
         std::fs::create_dir_all(pending_dir.clone()).unwrap();
 
         // Create a pending segment
@@ -419,7 +419,7 @@ mod tests {
         let base_dir = tmp_dir.path().to_str().unwrap().to_string();
 
         // Create dir for segment1
-        let segment1_dir = format!("{}/segment_1", base_dir);
+        let segment1_dir = format!("{base_dir}/segment_1");
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
         let segment1 = read_segment(segment1_dir.clone())?;
@@ -432,7 +432,7 @@ mod tests {
             "pending_segment_{}",
             rand::thread_rng().gen_range(0..1000000)
         );
-        let pending_dir = format!("{}/{}", base_dir, random_name);
+        let pending_dir = format!("{base_dir}/{random_name}");
         std::fs::create_dir_all(pending_dir.clone()).unwrap();
 
         // Create a pending segment
@@ -461,7 +461,7 @@ mod tests {
         let base_dir = tmp_dir.path().to_str().unwrap().to_string();
 
         // Create dir for segment1
-        let segment1_dir = format!("{}/segment_1", base_dir);
+        let segment1_dir = format!("{base_dir}/segment_1");
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
         let segment1 = read_segment(segment1_dir.clone())?;
@@ -474,9 +474,9 @@ mod tests {
             "pending_segment_{}",
             rand::thread_rng().gen_range(0..1000000)
         );
-        let pending_dir = format!("{}/{}", base_dir, random_name);
+        let pending_dir = format!("{base_dir}/{random_name}");
 
-        let invalidated_ids_dir = format!("{}/temp_invalidated_ids_storage", pending_dir);
+        let invalidated_ids_dir = format!("{pending_dir}/temp_invalidated_ids_storage");
 
         assert!(std::fs::create_dir_all(&invalidated_ids_dir).is_ok());
 
