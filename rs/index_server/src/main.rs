@@ -89,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .check_for_update()
                 .await
             {
-                error!("Error checking for index manager update: {}", e);
+                error!("Error checking for index manager update: {e}");
             }
             sleep(std::time::Duration::from_secs(60)).await;
         }
@@ -128,7 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .process_ops(i)
                     .await
                     .unwrap();
-                debug!("Processed {} ops for worker {}", processed_ops, i);
+                debug!("Processed {processed_ops} ops for worker {i}");
                 // if there is no ops to process, sleep for 1 second
                 if processed_ops == 0 {
                     sleep(std::time::Duration::from_secs(1)).await;
@@ -149,7 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .flush(i)
                     .await
                     .unwrap();
-                debug!("Flushed {} ops for worker {}", flushed_ops, i);
+                debug!("Flushed {flushed_ops} ops for worker {i}");
                 if flushed_ops == 0 {
                     sleep(std::time::Duration::from_secs(1)).await;
                 }
@@ -160,10 +160,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start the metrics server
     let http_server_addr = SocketAddr::new(addr.ip(), arg.http_port);
-    info!("Starting HTTP server on {}", http_server_addr);
+    info!("Starting HTTP server on {http_server_addr}");
     spawn(async move {
         if let Err(e) = HttpServer::new().serve(http_server_addr).await {
-            error!("HTTP server error: {}", e);
+            error!("HTTP server error: {e}");
         }
     });
 

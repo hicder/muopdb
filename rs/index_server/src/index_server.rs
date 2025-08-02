@@ -139,7 +139,7 @@ impl IndexServer for IndexServerImpl {
         {
             return Err(tonic::Status::new(
                 tonic::Code::AlreadyExists,
-                format!("Collection {} already exists", collection_name),
+                format!("Collection {collection_name} already exists"),
             ));
         }
         match collection_manager_locked
@@ -148,13 +148,13 @@ impl IndexServer for IndexServerImpl {
         {
             Ok(_) => {
                 let duration = start.elapsed();
-                info!("[{}] Created collection in {:?}", collection_name, duration);
+                info!("[{collection_name}] Created collection in {duration:?}");
 
                 API_METRICS
                     .request_latency_ms_observe("create_collection", duration.as_millis() as f64);
 
                 return Ok(tonic::Response::new(CreateCollectionResponse {
-                    message: format!("Collection {} created", collection_name),
+                    message: format!("Collection {collection_name} created"),
                 }));
             }
             Err(e) => {
@@ -211,10 +211,7 @@ impl IndexServer for IndexServerImpl {
                         }
                         let end = std::time::Instant::now();
                         let duration = end.duration_since(start);
-                        info!(
-                            "[{}] Searched collection in {:?}",
-                            collection_name, duration
-                        );
+                        info!("[{collection_name}] Searched collection in {duration:?}");
 
                         API_METRICS
                             .request_latency_ms_observe("search", duration.as_millis() as f64);
@@ -284,8 +281,7 @@ impl IndexServer for IndexServerImpl {
                     .unwrap_or(0);
                 let num_docs_inserted = ids.len() as u32;
                 info!(
-                    "[{}] Inserted {} vectors in WAL with seq_no {}",
-                    collection_name, num_docs_inserted, seq_no
+                    "[{collection_name}] Inserted {num_docs_inserted} vectors in WAL with seq_no {seq_no}"
                 );
 
                 if collection.use_wal() {
@@ -308,10 +304,7 @@ impl IndexServer for IndexServerImpl {
                 // log the duration
                 let end = std::time::Instant::now();
                 let duration = end.duration_since(start);
-                info!(
-                    "[{}] Inserted {} vectors in {:?}",
-                    collection_name, num_docs_inserted, duration
-                );
+                info!("[{collection_name}] Inserted {num_docs_inserted} vectors in {duration:?}");
 
                 API_METRICS.request_latency_ms_observe("insert", duration.as_millis() as f64);
 
@@ -350,8 +343,7 @@ impl IndexServer for IndexServerImpl {
                     .unwrap_or(0);
                 let num_docs_removed = ids.len() as u32;
                 info!(
-                    "[{}] Removed {} vectors from WAL with seq_no {}",
-                    collection_name, num_docs_removed, seq_no
+                    "[{collection_name}] Removed {num_docs_removed} vectors from WAL with seq_no {seq_no}"
                 );
 
                 let success = true;
@@ -371,10 +363,7 @@ impl IndexServer for IndexServerImpl {
                 // log the duration
                 let end = std::time::Instant::now();
                 let duration = end.duration_since(start);
-                info!(
-                    "[{}] Removed {} vectors in {:?}",
-                    collection_name, num_docs_removed, duration
-                );
+                info!("[{collection_name}] Removed {num_docs_removed} vectors in {duration:?}");
 
                 API_METRICS.request_latency_ms_observe("remove", duration.as_millis() as f64);
 
@@ -409,7 +398,7 @@ impl IndexServer for IndexServerImpl {
             Some(collection) => {
                 let flushed_segment = collection.flush().unwrap();
                 let duration = end.duration_since(start);
-                info!("Flushed collection {} in {:?}", collection_name, duration);
+                info!("Flushed collection {collection_name} in {duration:?}");
 
                 API_METRICS.request_latency_ms_observe("flush", duration.as_millis() as f64);
 
@@ -458,14 +447,11 @@ impl IndexServer for IndexServerImpl {
                 }
 
                 let seq_no = collection
-                    .write_to_wal(&doc_ids, &user_ids, &vectors, WalOpType::Insert)
+                    .write_to_wal(&doc_ids, &user_ids, vectors, WalOpType::Insert)
                     .await
                     .unwrap_or(0);
                 let num_docs_inserted = doc_ids.len() as u32;
-                info!(
-                    "Inserted {} vectors in WAL with seq_no {}",
-                    num_docs_inserted, seq_no
-                );
+                info!("Inserted {num_docs_inserted} vectors in WAL with seq_no {seq_no}");
 
                 if collection.use_wal() {
                     let latency_ms = start.elapsed().as_millis() as f64;
@@ -489,10 +475,7 @@ impl IndexServer for IndexServerImpl {
                 // log the duration
                 let end = std::time::Instant::now();
                 let duration = end.duration_since(start);
-                info!(
-                    "[{}] Inserted {} vectors in {:?}",
-                    collection_name, num_docs, duration
-                );
+                info!("[{collection_name}] Inserted {num_docs} vectors in {duration:?}");
 
                 API_METRICS
                     .request_latency_ms_observe("insert_packed", duration.as_millis() as f64);
