@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use collection::{Collection, SegmentInfoAndVersion};
+use proto::muopdb::DocumentAttribute;
 use quantization::noq::noq::NoQuantizer;
 use quantization::pq::pq::ProductQuantizer;
 use serde::{Deserialize, Serialize};
@@ -182,13 +183,14 @@ impl BoxedCollection {
         doc_id: u128,
         data: &[f32],
         seq_no: u64,
+        document_attribute: Option<DocumentAttribute>,
     ) -> Result<()> {
         match self {
             BoxedCollection::CollectionNoQuantizationL2(collection) => {
-                collection.insert_for_users(user_ids, doc_id, data, seq_no)
+                collection.insert_for_users(user_ids, doc_id, data, seq_no, document_attribute)
             }
             BoxedCollection::CollectionProductQuantization(collection) => {
-                collection.insert_for_users(user_ids, doc_id, data, seq_no)
+                collection.insert_for_users(user_ids, doc_id, data, seq_no, document_attribute)
             }
         }
     }

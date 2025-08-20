@@ -1370,6 +1370,7 @@ dependencies = [
  "ordered-float",
  "ouroboros",
  "parking_lot",
+ "proto",
  "quantization",
  "rand 0.8.5",
  "rayon",

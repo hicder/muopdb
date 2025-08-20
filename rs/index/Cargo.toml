@@ -10,6 +10,7 @@ byteorder.workspace = true
 compression.workspace = true
 config.workspace = true
 dashmap.workspace = true
+proto.workspace = true
 env_logger.workspace = true
 futures.workspace = true
 kmeans.workspace = true

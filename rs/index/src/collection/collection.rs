@@ -10,6 +10,7 @@ use lock_api::RwLockUpgradableReadGuard;
 use log::{debug, info, warn};
 use metrics::INTERNAL_METRICS;
 use parking_lot::{RawRwLock, RwLock};
+use proto::muopdb::DocumentAttribute;
 use quantization::quantization::Quantizer;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
@@ -229,6 +230,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                                     *doc_id,
                                                     vector,
                                                     entry_seq_no,
+                                                    None,
                                                 )
                                                 .unwrap();
 
@@ -393,7 +395,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     data.chunks(self.segment_config.num_features)
                         .zip(doc_ids)
                         .for_each(|(vector, doc_id)| {
-                            self.insert_for_users(user_ids, *doc_id, vector, op.seq_no)
+                            self.insert_for_users(user_ids, *doc_id, vector, op.seq_no, None)
                                 .unwrap();
                         });
                 }
@@ -435,13 +437,20 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         doc_id: u128,
         data: &[f32],
         sequence_number: u64,
+        document_attribute: Option<DocumentAttribute>,
     ) -> Result<()> {
         for user_id in user_ids {
             self.mutable_segments
                 .read()
                 .mutable_segment
                 .read()
-                .insert_for_user(*user_id, doc_id, data, sequence_number)?;
+                .insert_for_user(
+                    *user_id,
+                    doc_id,
+                    data,
+                    sequence_number,
+                    document_attribute.clone(),
+                )?;
         }
 
         // The doc is not immediately searchable, but we update the metrics anyway
@@ -1294,7 +1303,7 @@ mod tests {
         );
 
         // Add a document and flush
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0, None)?;
         collection.flush()?;
 
         let segment_names = collection.get_all_segment_names();
@@ -1345,7 +1354,7 @@ mod tests {
             .unwrap(),
         );
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0, None)?;
         collection.flush()?;
 
         // A thread to optimize the segment
@@ -1436,7 +1445,7 @@ mod tests {
                 .unwrap(),
             );
 
-            collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
+            collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0, None)?;
             collection.flush()?;
 
             let segment_names = collection.get_all_segment_names();
@@ -1689,9 +1698,9 @@ mod tests {
             .unwrap(),
         );
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)?;
-        collection.insert_for_users(&[0], 2, &[2.0, 2.0, 3.0, 4.0], 1)?;
-        collection.insert_for_users(&[0], 3, &[3.0, 2.0, 3.0, 4.0], 2)?;
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0, None)?;
+        collection.insert_for_users(&[0], 2, &[2.0, 2.0, 3.0, 4.0], 1, None)?;
+        collection.insert_for_users(&[0], 3, &[3.0, 2.0, 3.0, 4.0], 2, None)?;
         assert!(collection.remove(0, 2, 3).is_ok());
 
         let collection_cpy_for_flush = collection.clone();
@@ -1699,15 +1708,6 @@ mod tests {
 
         // Use a channel to communicate the segment name from the flush thread
         let (tx, rx) = tokio::sync::oneshot::channel();
-
-        // A thread to flush
-        tokio::spawn(async move {
-            let start = Instant::now();
-            println!("Flush thread: Starting flush...");
-            let segment_name = collection_cpy_for_flush.flush().unwrap();
-            println!("Flush thread: Flush completed in {:?}", start.elapsed());
-            tx.send(segment_name).unwrap();
-        });
 
         // A thread to invalidate
         tokio::spawn(async move {
@@ -1720,6 +1720,15 @@ mod tests {
                 "Invalidate thread: Invalidation completed in {:?}",
                 start.elapsed()
             );
+        });
+
+        // A thread to flush
+        tokio::spawn(async move {
+            let start = Instant::now();
+            println!("Flush thread: Starting flush...");
+            let segment_name = collection_cpy_for_flush.flush().unwrap();
+            println!("Flush thread: Flush completed in {:?}", start.elapsed());
+            tx.send(segment_name).unwrap();
         });
 
         // Receive the segment name from the flush thread
@@ -1770,15 +1779,6 @@ mod tests {
         // Use a channel to communicate the segment name from the flush thread
         let (tx, rx) = tokio::sync::oneshot::channel();
 
-        // A thread to flush
-        tokio::spawn(async move {
-            let start = Instant::now();
-            println!("Flush thread: Starting flush...");
-            let segment_name = collection_cpy_for_flush.flush().unwrap();
-            println!("Flush thread: Flush completed in {:?}", start.elapsed());
-            tx.send(segment_name).unwrap();
-        });
-
         // A thread to invalidate
         tokio::spawn(async move {
             let start = Instant::now();
@@ -1798,6 +1798,15 @@ mod tests {
                 "Invalidate thread: Invalidation completed in {:?}",
                 start.elapsed()
             );
+        });
+
+        // A thread to flush
+        tokio::spawn(async move {
+            let start = Instant::now();
+            println!("Flush thread: Starting flush...");
+            let segment_name = collection_cpy_for_flush.flush().unwrap();
+            println!("Flush thread: Flush completed in {:?}", start.elapsed());
+            tx.send(segment_name).unwrap();
         });
 
         // Receive the segment name from the flush thread
@@ -1847,28 +1856,28 @@ mod tests {
         );
 
         assert!(collection
-            .insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)
+            .insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0, None)
             .is_ok());
         assert!(collection
-            .insert_for_users(&[0], 2, &[2.0, 2.0, 3.0, 4.0], 1)
+            .insert_for_users(&[0], 2, &[2.0, 2.0, 3.0, 4.0], 1, None)
             .is_ok());
         assert!(collection
-            .insert_for_users(&[0], 3, &[3.0, 2.0, 3.0, 4.0], 2)
+            .insert_for_users(&[0], 3, &[3.0, 2.0, 3.0, 4.0], 2, None)
             .is_ok());
         assert!(collection.remove(0, 2, 3).is_ok());
 
         assert!(collection.flush().is_ok());
         assert!(collection
-            .insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0)
+            .insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0, None)
             .is_ok());
         assert!(collection
-            .insert_for_users(&[0], 2, &[1.0, 2.0, 3.0, 4.0], 1)
+            .insert_for_users(&[0], 2, &[1.0, 2.0, 3.0, 4.0], 1, None)
             .is_ok());
         assert!(collection
-            .insert_for_users(&[0], 3, &[2.0, 2.0, 3.0, 4.0], 2)
+            .insert_for_users(&[0], 3, &[2.0, 2.0, 3.0, 4.0], 2, None)
             .is_ok());
         assert!(collection
-            .insert_for_users(&[0], 4, &[3.0, 2.0, 3.0, 4.0], 3)
+            .insert_for_users(&[0], 4, &[3.0, 2.0, 3.0, 4.0], 3, None)
             .is_ok());
         assert!(collection.remove(0, 2, 4).is_ok());
         assert!(collection.remove(0, 3, 5).is_ok());
@@ -1951,7 +1960,7 @@ mod tests {
         // Add 20 data points
         for i in 0..num_docs_to_add {
             assert!(collection
-                .insert_for_users(&[user_id], i as u128, &vector, i as u64)
+                .insert_for_users(&[user_id], i as u128, &vector, i as u64, None)
                 .is_ok());
         }
 
@@ -2019,7 +2028,7 @@ mod tests {
         for (idx, &doc_id) in doc_ids.iter().enumerate() {
             let vector = &test_vectors[idx * num_features..(idx + 1) * num_features];
             collection
-                .insert_for_users(&user_ids, doc_id, vector, 0)
+                .insert_for_users(&user_ids, doc_id, vector, 0, None)
                 .unwrap();
         }
 
@@ -2066,7 +2075,7 @@ mod tests {
         for (idx, &doc_id) in docs_to_insert.iter().enumerate() {
             let vector = &test_vectors[idx * num_features..(idx + 1) * num_features];
             collection
-                .insert_for_users(&user_ids, doc_id, vector, 0)
+                .insert_for_users(&user_ids, doc_id, vector, 0, None)
                 .unwrap();
         }
 
