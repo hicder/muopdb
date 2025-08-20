@@ -86,8 +86,8 @@ mod tests {
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
         let collection = reader.read::<NoQuantizerL2>()?;
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0)?;
-        collection.insert_for_users(&[0], 2, &[14.0, 15.0, 16.0], 1)?;
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, None)?;
+        collection.insert_for_users(&[0], 2, &[14.0, 15.0, 16.0], 1, None)?;
         collection.flush()?;
 
         // Now we have 1 segment, let vacuum it
@@ -156,9 +156,9 @@ mod tests {
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
         let collection = reader.read::<NoQuantizerL2>()?;
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0)?;
-        collection.insert_for_users(&[0], 2, &[20.0, 21.0, 22.0], 1)?;
-        collection.insert_for_users(&[0], 3, &[27.0, 28.0, 29.0], 2)?;
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, None)?;
+        collection.insert_for_users(&[0], 2, &[20.0, 21.0, 22.0], 1, None)?;
+        collection.insert_for_users(&[0], 3, &[27.0, 28.0, 29.0], 2, None)?;
         collection.flush()?;
 
         // Now we have 1 segment, let vacuum it
@@ -223,8 +223,8 @@ mod tests {
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
         let collection = reader.read::<NoQuantizerL2>()?;
 
-        collection.insert_for_users(&[0], 101, &[1.0, 2.0, 3.0], 0)?;
-        collection.insert_for_users(&[1], 202, &[14.0, 15.0, 16.0], 1)?;
+        collection.insert_for_users(&[0], 101, &[1.0, 2.0, 3.0], 0, None)?;
+        collection.insert_for_users(&[1], 202, &[14.0, 15.0, 16.0], 1, None)?;
         collection.flush()?;
 
         // Now we have 1 segment, let vacuum it
@@ -294,13 +294,13 @@ mod tests {
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
         let collection = reader.read::<NoQuantizerL2>()?;
 
-        collection.insert_for_users(&[0], 11, &[1.0, 2.0, 3.0], 0)?;
-        collection.insert_for_users(&[0], 12, &[20.0, 21.0, 22.0], 1)?;
-        collection.insert_for_users(&[0], 13, &[27.0, 28.0, 29.0], 2)?;
+        collection.insert_for_users(&[0], 11, &[1.0, 2.0, 3.0], 0, None)?;
+        collection.insert_for_users(&[0], 12, &[20.0, 21.0, 22.0], 1, None)?;
+        collection.insert_for_users(&[0], 13, &[27.0, 28.0, 29.0], 2, None)?;
 
-        collection.insert_for_users(&[1], 201, &[1.0, 2.0, 3.0], 0)?;
-        collection.insert_for_users(&[1], 202, &[20.0, 21.0, 22.0], 1)?;
-        collection.insert_for_users(&[1], 203, &[27.0, 28.0, 29.0], 2)?;
+        collection.insert_for_users(&[1], 201, &[1.0, 2.0, 3.0], 0, None)?;
+        collection.insert_for_users(&[1], 202, &[20.0, 21.0, 22.0], 1, None)?;
+        collection.insert_for_users(&[1], 203, &[27.0, 28.0, 29.0], 2, None)?;
         collection.flush()?;
 
         // Now we have 1 segment, let vacuum it

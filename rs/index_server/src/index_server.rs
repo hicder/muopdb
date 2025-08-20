@@ -291,13 +291,19 @@ impl IndexServer for IndexServerImpl {
                     return Ok(tonic::Response::new(InsertResponse { num_docs_inserted }));
                 }
 
+                let doc_attrs = req.attributes.as_ref().map_or_else(
+                    || vec![None; ids.len()],
+                    |attrs| attrs.values.iter().cloned().map(Some).collect::<Vec<_>>(),
+                );
+
                 vectors
                     .chunks(dimensions)
                     .zip(&ids)
-                    .for_each(|(vector, id)| {
+                    .zip(doc_attrs)
+                    .for_each(|((vector, id), doc_attr)| {
                         // TODO(hicder): Handle errors
                         collection
-                            .insert_for_users(&user_ids, *id, vector, seq_no)
+                            .insert_for_users(&user_ids, *id, vector, seq_no, doc_attr)
                             .unwrap()
                     });
 
@@ -462,13 +468,19 @@ impl IndexServer for IndexServerImpl {
                     }));
                 }
 
+                let doc_attrs = req.attributes.as_ref().map_or_else(
+                    || vec![None; doc_ids.len()],
+                    |attrs| attrs.values.iter().cloned().map(Some).collect::<Vec<_>>(),
+                );
+
                 vectors
                     .chunks(dimensions)
                     .zip(doc_ids)
-                    .for_each(|(vector, id)| {
+                    .zip(doc_attrs)
+                    .for_each(|((vector, id), doc_attr)| {
                         // TODO(hicder): Handle errors
                         collection
-                            .insert_for_users(&user_ids, id, vector, seq_no)
+                            .insert_for_users(&user_ids, id, vector, seq_no, doc_attr)
                             .unwrap()
                     });
 

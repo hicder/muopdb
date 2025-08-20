@@ -57,6 +57,10 @@ impl TermWriter {
             return Err(anyhow!("TermBuilder is not built"));
         }
 
+        if builder.num_terms() == 0 {
+            return Ok(());
+        }
+
         // Write the term map
         let term_map_path = format!("{}/term_map", self.base_dir);
         builder
