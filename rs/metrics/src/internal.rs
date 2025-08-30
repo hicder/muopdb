@@ -9,6 +9,7 @@ pub struct CollectionLabel {
     pub name: String,
 }
 
+#[derive(Default)]
 pub struct InternalMetrics {
     pub prometheus_requests: Counter<u64>,
     pub num_collections: Gauge<i64>,
@@ -16,22 +17,7 @@ pub struct InternalMetrics {
     pub num_searchable_docs: Family<CollectionLabel, Gauge>,
 }
 
-impl Default for InternalMetrics {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl InternalMetrics {
-    pub fn new() -> Self {
-        Self {
-            prometheus_requests: Counter::default(),
-            num_collections: Gauge::default(),
-            num_active_segments: Family::<CollectionLabel, Gauge>::default(),
-            num_searchable_docs: Family::<CollectionLabel, Gauge>::default(),
-        }
-    }
-
     pub fn register_metrics(&self, metrics_registry: &mut Registry) {
         metrics_registry.register(
             "metrics_requests",
