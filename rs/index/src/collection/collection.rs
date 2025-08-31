@@ -51,7 +51,7 @@ struct MutableSegments {
 
 /// Collection is thread-safe. All pub fn are thread-safe.
 pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
-    pub versions: DashMap<u64, TableOfContent>,
+    versions: DashMap<u64, TableOfContent>,
     all_segments: DashMap<String, BoxedImmutableSegment<Q>>,
     versions_info: RwLock<VersionsInfo>,
     base_directory: String,
@@ -966,15 +966,14 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     ) -> Result<()> {
         mutable_segment.invalidate(user_id, doc_id, sequence_number)?;
 
-        if pending_mutable_segment.is_some() {
-            pending_mutable_segment
-                .unwrap()
-                .invalidate(user_id, doc_id)?;
+        if let Some(seg) = pending_mutable_segment {
+            seg.invalidate(user_id, doc_id)?;
         }
 
         for segment_name in version.toc.iter() {
-            let segment = all_segments.get(segment_name).unwrap();
-            segment.remove(user_id, doc_id)?;
+            if let Some(segment) = all_segments.get(segment_name) {
+                segment.remove(user_id, doc_id)?;
+            }
         }
 
         Ok(())
