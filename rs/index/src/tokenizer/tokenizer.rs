@@ -20,5 +20,5 @@ pub trait TokenStream {
 pub trait Tokenizer {
     type TokenStream<'a>: TokenStream;
 
-    fn input<'a>(&mut self, text: &'a str) -> Self::TokenStream<'a>;
+    fn input<'a>(&self, text: &'a str) -> Self::TokenStream<'a>;
 }

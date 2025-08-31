@@ -7,7 +7,7 @@ pub struct WhiteSpaceTokenizer {}
 impl Tokenizer for WhiteSpaceTokenizer {
     type TokenStream<'a> = WhiteSpaceTokenStream<'a>;
 
-    fn input<'a>(&mut self, text: &'a str) -> WhiteSpaceTokenStream<'a> {
+    fn input<'a>(&self, text: &'a str) -> WhiteSpaceTokenStream<'a> {
         WhiteSpaceTokenStream::new(text)
     }
 }
@@ -107,7 +107,7 @@ mod tests {
 
     #[test]
     fn test_tokenizer() {
-        let mut tokenizer = WhiteSpaceTokenizer {};
+        let tokenizer = WhiteSpaceTokenizer {};
         let mut token_stream: WhiteSpaceTokenStream<'_> =
             tokenizer.input("   .  happy      new  year ");
         let mut tokens: Vec<String> = vec![];
