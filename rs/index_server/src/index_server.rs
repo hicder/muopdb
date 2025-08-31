@@ -298,12 +298,12 @@ impl IndexServer for IndexServerImpl {
 
                 vectors
                     .chunks(dimensions)
-                    .zip(&ids)
+                    .zip(ids)
                     .zip(doc_attrs)
                     .for_each(|((vector, id), doc_attr)| {
                         // TODO(hicder): Handle errors
                         collection
-                            .insert_for_users(&user_ids, *id, vector, seq_no, doc_attr)
+                            .insert_for_users(&user_ids, id, vector, seq_no, doc_attr)
                             .unwrap()
                     });
 
