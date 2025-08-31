@@ -22,12 +22,6 @@ pub struct APIMetrics {
 
 impl Default for APIMetrics {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl APIMetrics {
-    pub fn new() -> Self {
         Self {
             num_requests: Family::<CollectionRequestLabel, Counter>::default(),
             request_latency_ms: Family::<RequestLabel, Histogram>::new_with_constructor(|| {
@@ -35,7 +29,9 @@ impl APIMetrics {
             }),
         }
     }
+}
 
+impl APIMetrics {
     pub fn register_metrics(&self, metrics_registry: &mut Registry) {
         metrics_registry.register(
             "num_requests",
