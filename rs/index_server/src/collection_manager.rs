@@ -76,8 +76,7 @@ impl CollectionManager {
                         collection_name
                     ),
                     &collection_config,
-                )
-                .unwrap();
+                )?;
             }
             QuantizerType::ProductQuantizer => {
                 Collection::<ProductQuantizerL2>::init_new_collection(
@@ -87,8 +86,7 @@ impl CollectionManager {
                         collection_name
                     ),
                     &collection_config,
-                )
-                .unwrap();
+                )?;
             }
         }
 
