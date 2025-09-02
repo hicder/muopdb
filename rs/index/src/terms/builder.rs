@@ -39,7 +39,7 @@ impl TermBuilder {
         }
 
         let term_id = self.persist_and_get_term_id(key);
-        self.scratch_file.write(doc_id, term_id).unwrap();
+        self.scratch_file.write(doc_id, term_id)?;
         self.posting_lists
             .entry(term_id)
             .or_insert_with(Vec::new)

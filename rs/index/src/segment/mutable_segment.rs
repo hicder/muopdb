@@ -68,7 +68,7 @@ impl MutableSegment {
 
         // Process document attributes if present
         if let Some(attributes) = document_attribute {
-            let mut tokenizer = WhiteSpaceTokenizer {};
+            let tokenizer = WhiteSpaceTokenizer {};
             let mut term_builder = self.term_builder.lock().unwrap();
             let doc_id_u64 = doc_id as u64;
 
