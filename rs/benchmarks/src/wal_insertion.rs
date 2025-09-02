@@ -57,6 +57,21 @@ fn bench_wal_insertion(c: &mut Criterion) {
         }
     });
 
+    // Start background thread to sync WAL outside of benchmark
+    let sync_running = Arc::new(AtomicBool::new(true));
+    let sync_running_clone = sync_running.clone();
+    let collection_clone_for_sync = collection.clone();
+    let sync_thread = thread::spawn(move || {
+        while sync_running_clone.load(Ordering::Relaxed) {
+            // Sync WAL in a blocking context
+            if let Err(e) = collection_clone_for_sync.sync_wal() {
+                eprintln!("Error syncing WAL: {}", e);
+            }
+            // Small delay to prevent busy looping
+            thread::sleep(Duration::from_micros(100));
+        }
+    });
+
     let num_vectors = 1000;
     let num_features = segment_config.num_features;
     let vectors = (0..num_vectors)
@@ -73,8 +88,8 @@ fn bench_wal_insertion(c: &mut Criterion) {
                 let mut handles = vec![];
 
                 // Number of threads and documents per thread
-                const NUM_THREADS: usize = 10;
-                const DOCS_PER_THREAD: usize = 100;
+                const NUM_THREADS: usize = 40;
+                const DOCS_PER_THREAD: usize = 25;
 
                 // Clone the collection for each thread
                 let collection_clones: Vec<_> =
@@ -117,9 +132,11 @@ fn bench_wal_insertion(c: &mut Criterion) {
         },
     );
 
-    // Stop the background thread
+    // Stop the background threads
     running.store(false, Ordering::Relaxed);
+    sync_running.store(false, Ordering::Relaxed);
     background_thread.join().unwrap();
+    sync_thread.join().unwrap();
 
     group.finish();
 }
