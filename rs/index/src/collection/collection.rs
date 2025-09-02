@@ -1106,7 +1106,6 @@ mod tests {
 
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
-    use std::time::Instant;
 
     use anyhow::{Ok, Result};
     use config::collection::CollectionConfig;
