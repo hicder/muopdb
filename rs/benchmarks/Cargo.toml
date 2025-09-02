@@ -18,6 +18,11 @@ name = "vacuum"
 path = "src/vacuum.rs"
 harness = false
 
+[[bench]]
+name = "wal_insertion"
+path = "src/wal_insertion.rs"
+harness = false
+
 [dependencies]
 utils.workspace = true
 criterion.workspace = true
@@ -26,3 +31,5 @@ config.workspace = true
 index.workspace = true
 quantization.workspace = true
 rand.workspace = true
+tokio.workspace = true
+log.workspace = true

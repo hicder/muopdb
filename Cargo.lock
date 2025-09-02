@@ -269,9 +269,11 @@ dependencies = [
  "config",
  "criterion",
  "index",
+ "log",
  "quantization",
  "rand 0.8.5",
  "tempdir",
+ "tokio",
  "utils",
 ]
 
