@@ -104,7 +104,7 @@ impl WalFile {
         self.file.write_all(transmute_slice_to_u8(data))?;
         self.file.write_all(&(op_type as u8).to_le_bytes())?;
         self.file.flush()?;
-        self.file.sync_data()?;
+        // self.file.sync_data()?;
 
         // Increment the number of entries in the file
         self.num_entries += 1;
@@ -117,7 +117,7 @@ impl WalFile {
         self.file.write_all(&length.to_le_bytes())?;
         self.file.write_all(data)?;
         self.file.flush()?;
-        self.file.sync_data()?;
+        // self.file.sync_data()?;
 
         // Increment the number of entries in the file
         self.num_entries += 1;
@@ -175,6 +175,11 @@ impl WalFile {
 
     pub fn get_wal_id(&self) -> u32 {
         self.path.split(".").last().unwrap().parse::<u32>().unwrap()
+    }
+
+    pub fn sync_data(&self) -> Result<()> {
+        self.file.sync_data()?;
+        Ok(())
     }
 }
 

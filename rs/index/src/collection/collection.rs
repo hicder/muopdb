@@ -371,14 +371,32 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             // Write to WAL, and persist to disk.
             // Intentionally keep the write lock until we send the message to the channel.
             // This ensures that message in the channel is the same order as WAL.
-            let mut wal_write = wal.write();
-            let seq_no = wal_write.append(doc_ids, user_ids, data, wal_op_type.clone())?;
+            let seq_no = {
+                let mut wal_write = wal.write();
+                let seq_no = wal_write.append(doc_ids, user_ids, data, wal_op_type.clone())?;
 
-            // Once the WAL is written, send the op to the channel
-            let op_channel_entry =
-                OpChannelEntry::new(doc_ids, user_ids, data, seq_no, wal_op_type);
-            self.sender.send(op_channel_entry).await?;
+                // Once the WAL is written, send the op to the channel
+                let op_channel_entry =
+                    OpChannelEntry::new(doc_ids, user_ids, data, seq_no, wal_op_type);
+                self.sender.send(op_channel_entry).await?;
+                seq_no
+            };
+
+            // Wait for seq_no to be synced
+            let mut rx = wal.read().get_rx();
+            rx.wait_for(|&v| v >= seq_no.try_into().unwrap()).await?;
+
             Ok(seq_no)
+        } else {
+            Err(anyhow::anyhow!("WAL is not enabled"))
+        }
+    }
+
+    pub fn sync_wal(&self) -> Result<u64> {
+        if let Some(wal) = &self.wal {
+            let wal_read = wal.read();
+            let entries_synced = wal_read.sync()?;
+            Ok(entries_synced)
         } else {
             Err(anyhow::anyhow!("WAL is not enabled"))
         }
@@ -1479,6 +1497,24 @@ mod tests {
             )
             .unwrap(),
         );
+
+        // Create a background thread that calls sync_wal on collection
+        let stopped = Arc::new(AtomicBool::new(false));
+        let collection_for_sync = collection.clone();
+        let stopped_for_sync = stopped.clone();
+
+        let sync_thread = std::thread::spawn(move || {
+            while !stopped_for_sync.load(std::sync::atomic::Ordering::Relaxed) {
+                // Call sync_wal on collection
+                if let Err(e) = collection_for_sync.sync_wal() {
+                    println!("Error syncing WAL: {:?}", e);
+                }
+
+                // Sleep for a short interval before syncing again
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        });
+
         collection
             .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
             .await?;
@@ -1532,6 +1568,11 @@ mod tests {
         let toc = collection.get_current_toc();
         assert_eq!(toc.pending.len(), 0);
         assert_eq!(toc.sequence_number, 5);
+
+        // Stop the sync thread
+        stopped.store(true, std::sync::atomic::Ordering::Relaxed);
+        sync_thread.join().unwrap();
+
         Ok(())
     }
 
@@ -1549,6 +1590,24 @@ mod tests {
         {
             let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
             let collection = reader.read::<NoQuantizerL2>()?;
+
+            // Create a background thread that calls sync_wal on this collection
+            let stopped = Arc::new(AtomicBool::new(false));
+            let collection_for_sync = collection.clone();
+            let stopped_for_sync = stopped.clone();
+
+            let sync_thread = std::thread::spawn(move || {
+                while !stopped_for_sync.load(std::sync::atomic::Ordering::Relaxed) {
+                    // Call sync_wal on collection
+                    if let Err(e) = collection_for_sync.sync_wal() {
+                        println!("Error syncing WAL: {:?}", e);
+                    }
+
+                    // Sleep for a short interval before syncing again
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            });
+
             collection
                 .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
                 .await?;
@@ -1566,12 +1625,34 @@ mod tests {
                     break;
                 }
             }
+
+            // Stop the sync thread when collection goes out of scope
+            stopped.store(true, std::sync::atomic::Ordering::Relaxed);
+            sync_thread.join().unwrap();
         }
 
         let segment1_name;
         {
             let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
             let collection = reader.read::<NoQuantizerL2>()?;
+
+            // Create a background thread that calls sync_wal on this collection
+            let stopped = Arc::new(AtomicBool::new(false));
+            let collection_for_sync = collection.clone();
+            let stopped_for_sync = stopped.clone();
+
+            let sync_thread = std::thread::spawn(move || {
+                while !stopped_for_sync.load(std::sync::atomic::Ordering::Relaxed) {
+                    // Call sync_wal on collection
+                    if let Err(e) = collection_for_sync.sync_wal() {
+                        println!("Error syncing WAL: {:?}", e);
+                    }
+
+                    // Sleep for a short interval before syncing again
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            });
+
             let toc = collection.get_current_toc();
             assert_eq!(toc.pending.len(), 0);
             assert_eq!(toc.sequence_number, -1);
@@ -1620,11 +1701,33 @@ mod tests {
             collection
                 .write_to_wal(&[3], &[0], &[], WalOpType::Delete)
                 .await?;
+
+            // Stop the sync thread when collection goes out of scope
+            stopped.store(true, std::sync::atomic::Ordering::Relaxed);
+            sync_thread.join().unwrap();
         }
 
         {
             let reader = CollectionReader::new(collection_name.to_string(), base_directory);
             let collection = reader.read::<NoQuantizerL2>()?;
+
+            // Create a background thread that calls sync_wal on this collection
+            let stopped = Arc::new(AtomicBool::new(false));
+            let collection_for_sync = collection.clone();
+            let stopped_for_sync = stopped.clone();
+
+            let sync_thread = std::thread::spawn(move || {
+                while !stopped_for_sync.load(std::sync::atomic::Ordering::Relaxed) {
+                    // Call sync_wal on collection
+                    if let Err(e) = collection_for_sync.sync_wal() {
+                        println!("Error syncing WAL: {:?}", e);
+                    }
+
+                    // Sleep for a short interval before syncing again
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            });
+
             let toc = collection.get_current_toc();
             assert_eq!(toc.pending.len(), 0);
             assert_eq!(toc.sequence_number, 2);
@@ -1673,6 +1776,10 @@ mod tests {
             let toc = collection.get_current_toc();
             assert_eq!(toc.pending.len(), 0);
             assert_eq!(toc.sequence_number, 8);
+
+            // Stop the sync thread when collection goes out of scope
+            stopped.store(true, std::sync::atomic::Ordering::Relaxed);
+            sync_thread.join().unwrap();
         }
 
         Ok(())

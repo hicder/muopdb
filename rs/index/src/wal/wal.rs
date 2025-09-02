@@ -1,7 +1,9 @@
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 use anyhow::Result;
 use log::info;
+use tokio::sync::watch;
 
 use crate::wal::entry::WalOpType;
 use crate::wal::file::{WalFile, WalFileIterator};
@@ -19,6 +21,12 @@ pub struct Wal {
 
     // The last flushed sequence number.
     last_flushed_seq_no: i64,
+
+    // The last synced sequence number.
+    last_synced_seq_no: AtomicI64,
+
+    synced_seq_no_rx: watch::Receiver<i64>,
+    synced_seq_no_tx: watch::Sender<i64>,
 }
 
 impl Wal {
@@ -55,12 +63,19 @@ impl Wal {
             next_wal_id = files.back().unwrap().get_wal_id() + 1;
         }
 
+        let last_synced_seq_no = AtomicI64::new(last_flushed_seq_no);
+        let (synced_seq_no_tx, synced_seq_no_rx) =
+            watch::channel(last_synced_seq_no.load(Ordering::SeqCst));
+
         Ok(Self {
             directory: directory.to_string(),
             files,
             max_file_size,
             next_wal_id,
             last_flushed_seq_no,
+            last_synced_seq_no,
+            synced_seq_no_rx,
+            synced_seq_no_tx,
         })
     }
 
@@ -86,10 +101,19 @@ impl Wal {
             self.files.push_back(wal);
             self.next_wal_id += 1;
         }
-        self.files
+
+        match self
+            .files
             .back_mut()
             .unwrap()
             .append(doc_ids, user_ids, data, op_type)
+        {
+            Ok(seq_no) => {
+                self.last_flushed_seq_no = seq_no.try_into().unwrap();
+                Ok(seq_no)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Append a new entry to the wal. If the last file is full, create a new file.
@@ -102,7 +126,14 @@ impl Wal {
             self.files.push_back(wal);
             self.next_wal_id += 1;
         }
-        self.files.back_mut().unwrap().append_raw(data)
+
+        match self.files.back_mut().unwrap().append_raw(data) {
+            Ok(seq_no) => {
+                self.last_flushed_seq_no = seq_no.try_into().unwrap();
+                Ok(seq_no)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub fn trim_wal(&mut self, flushed_seq_no: i64) -> Result<()> {
@@ -122,6 +153,46 @@ impl Wal {
             std::fs::remove_file(wal.get_path())?;
         }
         Ok(())
+    }
+
+    pub fn get_rx(&self) -> watch::Receiver<i64> {
+        self.synced_seq_no_rx.clone()
+    }
+
+    pub fn sync(&self) -> Result<u64> {
+        let flushed_seq_no = self.last_flushed_seq_no;
+        let current_synced_seq_no = self.last_synced_seq_no.load(Ordering::SeqCst);
+
+        // Return early if there is no need to sync
+        if flushed_seq_no == current_synced_seq_no {
+            return Ok(0);
+        }
+
+        // Sync files that contain flushed_seq_no or have sequence numbers less than flushed_seq_no
+        for file in self.files.iter() {
+            let file_start_seq_no = file.get_start_seq_no();
+            let file_last_seq_no = file.get_last_seq_no();
+
+            // Check if flushed_seq_no is within the range of the file or less than the file's range
+            if file_start_seq_no <= current_synced_seq_no
+                && file_last_seq_no >= current_synced_seq_no
+            {
+                file.sync_data()?;
+            } else if file_start_seq_no > current_synced_seq_no {
+                file.sync_data()?;
+            }
+        }
+
+        self.last_synced_seq_no
+            .store(flushed_seq_no, Ordering::SeqCst);
+        self.synced_seq_no_tx.send(flushed_seq_no).unwrap();
+
+        // The number of entries synced is the difference between flushed and current synced sequence numbers
+        Ok((flushed_seq_no - current_synced_seq_no) as u64)
+    }
+
+    pub fn get_synced_seq_no(&self) -> watch::Receiver<i64> {
+        self.synced_seq_no_rx.clone()
     }
 }
 

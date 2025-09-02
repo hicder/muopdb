@@ -272,4 +272,11 @@ impl BoxedCollection {
             }
         }
     }
+
+    pub fn sync_wal(&self) -> Result<u64> {
+        match self {
+            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.sync_wal(),
+            BoxedCollection::CollectionProductQuantization(collection) => collection.sync_wal(),
+        }
+    }
 }
