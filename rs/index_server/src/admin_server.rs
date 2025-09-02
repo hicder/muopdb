@@ -60,8 +60,7 @@ impl IndexServerAdmin for AdminServerImpl {
             }
         } else {
             return Err(tonic::Status::not_found(format!(
-                "Collection {} not found",
-                collection_name
+                "Collection {collection_name} not found"
             )));
         }
 
@@ -98,7 +97,7 @@ impl IndexServerAdmin for AdminServerImpl {
                     .collect();
                 let end = std::time::Instant::now();
                 let duration = end.duration_since(start);
-                info!("[{}] Get segments in {:?}", collection_name, duration);
+                info!("[{collection_name}] Get segments in {duration:?}");
 
                 Ok(tonic::Response::new(GetSegmentsResponse {
                     segment_infos: returned_segment_infos,

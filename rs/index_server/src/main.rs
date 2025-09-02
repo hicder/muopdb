@@ -19,7 +19,7 @@ use proto::admin::index_server_admin_server::IndexServerAdminServer;
 use proto::muopdb::index_server_server::IndexServerServer;
 use proto::muopdb::FILE_DESCRIPTOR_SET;
 use tokio::spawn;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tonic::transport::Server;
 

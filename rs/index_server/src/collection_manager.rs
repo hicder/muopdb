@@ -1,6 +1,5 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::atomic::AtomicU64;
-use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use config::enums::QuantizerType;
@@ -10,7 +9,6 @@ use log::{debug, info, warn};
 use quantization::noq::noq::NoQuantizerL2;
 use quantization::pq::pq::ProductQuantizerL2;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
 use utils::io::get_latest_version;
 
 use crate::collection_catalog::CollectionCatalog;
@@ -137,7 +135,7 @@ impl CollectionManager {
     ) -> Vec<String> {
         let mut collections_to_add = vec![];
         for new_collection_name in new_collection_names {
-            if !current_collection_names.contains(&new_collection_name) {
+            if !current_collection_names.contains(new_collection_name) {
                 collections_to_add.push(new_collection_name.clone());
             }
         }
@@ -151,7 +149,7 @@ impl CollectionManager {
     ) -> Vec<String> {
         let mut collections_to_remove = vec![];
         for current_collection_name in current_collection_names {
-            if !new_collection_names.contains(&current_collection_name) {
+            if !new_collection_names.contains(current_collection_name) {
                 collections_to_remove.push(current_collection_name.clone());
             }
         }
@@ -166,7 +164,7 @@ impl CollectionManager {
                 .latest_version
                 .load(std::sync::atomic::Ordering::Relaxed)
         {
-            info!("New version available: {}", latest_version);
+            info!("New version available: {latest_version}");
             let latest_config_path = format!("{}/version_{}", self.config_path, latest_version);
 
             let config_str = std::fs::read_to_string(&latest_config_path)
@@ -191,14 +189,14 @@ impl CollectionManager {
             let collections_to_add =
                 Self::get_collections_to_add(&current_collection_names, &new_collection_names);
             for collection_name in collections_to_add.iter() {
-                info!("Fetching collection {}", collection_name);
+                info!("Fetching collection {collection_name}");
                 let collection_opt = self.collection_provider.read_collection(collection_name);
                 if let Some(collection) = collection_opt {
                     self.collection_catalog
                         .add_collection(collection_name.clone(), collection)
                         .await;
                 } else {
-                    warn!("Failed to fetch collection {}", collection_name);
+                    warn!("Failed to fetch collection {collection_name}");
                 }
             }
         } else {
@@ -222,7 +220,7 @@ impl CollectionManager {
                     .await
                     .unwrap();
                 if collection.use_wal() {
-                    debug!("Processing ops for collection {}", collection_name);
+                    debug!("Processing ops for collection {collection_name}");
                     processed_ops += collection.process_one_op().await?;
                 }
             }
@@ -246,8 +244,8 @@ impl CollectionManager {
                     .await
                     .unwrap();
                 if collection.should_auto_flush() {
-                    debug!("Automatically flushing collection {}", collection_name);
-                    flushed_ops += (collection.flush().unwrap().len() > 0) as usize;
+                    debug!("Automatically flushing collection {collection_name}");
+                    flushed_ops += (!collection.flush().unwrap().is_empty()) as usize;
                 }
             }
         }
@@ -268,7 +266,7 @@ impl CollectionManager {
             .get_all_collection_names_sorted()
             .await;
 
-        info!("Auto optimizing collections: {:?}", collections);
+        info!("Auto optimizing collections: {collections:?}");
 
         for collection_name in collections {
             let collection = self
