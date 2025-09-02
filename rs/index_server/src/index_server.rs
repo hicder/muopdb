@@ -13,26 +13,18 @@ use proto::muopdb::{
     InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, RemoveRequest,
     RemoveResponse, SearchRequest, SearchResponse,
 };
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use utils::mem::{bytes_to_u128s, ids_to_u128s, transmute_u8_to_slice};
 
-use crate::collection_catalog::CollectionCatalog;
 use crate::collection_manager::CollectionManager;
 
 pub struct IndexServerImpl {
-    pub collection_catalog: Arc<Mutex<CollectionCatalog>>,
-    pub collection_manager: Arc<RwLock<CollectionManager>>,
+    collection_manager: Arc<RwLock<CollectionManager>>,
 }
 
 impl IndexServerImpl {
-    pub fn new(
-        index_catalog: Arc<Mutex<CollectionCatalog>>,
-        collection_manager: Arc<RwLock<CollectionManager>>,
-    ) -> Self {
-        Self {
-            collection_catalog: index_catalog,
-            collection_manager,
-        }
+    pub fn new(collection_manager: Arc<RwLock<CollectionManager>>) -> Self {
+        Self { collection_manager }
     }
 }
 
@@ -179,8 +171,8 @@ impl IndexServer for IndexServerImpl {
         let user_ids = ids_to_u128s(&req.user_ids);
 
         let collection_opt = self
-            .collection_catalog
-            .lock()
+            .collection_manager
+            .read()
             .await
             .get_collection(&collection_name)
             .await;
@@ -259,8 +251,8 @@ impl IndexServer for IndexServerImpl {
         let vectors = req.vectors;
         let user_ids = ids_to_u128s(&req.user_ids);
         let collection_opt = self
-            .collection_catalog
-            .lock()
+            .collection_manager
+            .read()
             .await
             .get_collection(&collection_name)
             .await;
@@ -296,16 +288,14 @@ impl IndexServer for IndexServerImpl {
                     |attrs| attrs.values.iter().cloned().map(Some).collect::<Vec<_>>(),
                 );
 
-                vectors
-                    .chunks(dimensions)
-                    .zip(ids)
-                    .zip(doc_attrs)
-                    .for_each(|((vector, id), doc_attr)| {
+                vectors.chunks(dimensions).zip(ids).zip(doc_attrs).for_each(
+                    |((vector, id), doc_attr)| {
                         // TODO(hicder): Handle errors
                         collection
                             .insert_for_users(&user_ids, id, vector, seq_no, doc_attr)
                             .unwrap()
-                    });
+                    },
+                );
 
                 // log the duration
                 let end = std::time::Instant::now();
@@ -335,8 +325,8 @@ impl IndexServer for IndexServerImpl {
         let ids = ids_to_u128s(&req.doc_ids);
         let user_ids = ids_to_u128s(&req.user_ids);
         let collection_opt = self
-            .collection_catalog
-            .lock()
+            .collection_manager
+            .read()
             .await
             .get_collection(&collection_name)
             .await;
@@ -392,8 +382,8 @@ impl IndexServer for IndexServerImpl {
         API_METRICS.num_requests_inc("flush", &collection_name);
 
         let collection_opt = self
-            .collection_catalog
-            .lock()
+            .collection_manager
+            .read()
             .await
             .get_collection(&collection_name)
             .await;
@@ -434,8 +424,8 @@ impl IndexServer for IndexServerImpl {
         let user_ids = ids_to_u128s(&req.user_ids);
 
         let collection_opt = self
-            .collection_catalog
-            .lock()
+            .collection_manager
+            .read()
             .await
             .get_collection(&collection_name)
             .await;

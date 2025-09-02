@@ -8,17 +8,17 @@ use proto::admin::{
     GetSegmentsRequest, GetSegmentsResponse, MergeSegmentsRequest, MergeSegmentsResponse,
     SegmentInfo,
 };
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
-use crate::collection_catalog::CollectionCatalog;
+use crate::collection_manager::CollectionManager;
 
 pub struct AdminServerImpl {
-    pub collection_catalog: Arc<Mutex<CollectionCatalog>>,
+    collection_manager: Arc<RwLock<CollectionManager>>,
 }
 
 impl AdminServerImpl {
-    pub fn new(collection_catalog: Arc<Mutex<CollectionCatalog>>) -> Self {
-        Self { collection_catalog }
+    pub fn new(collection_manager: Arc<RwLock<CollectionManager>>) -> Self {
+        Self { collection_manager }
     }
 }
 
@@ -33,8 +33,8 @@ impl IndexServerAdmin for AdminServerImpl {
         let segment_names = req.segment_names;
         let returned_segment_name;
         if let Some(collection) = self
-            .collection_catalog
-            .lock()
+            .collection_manager
+            .read()
             .await
             .get_collection(&collection_name)
             .await
@@ -79,8 +79,8 @@ impl IndexServerAdmin for AdminServerImpl {
         let collection_name = req.collection_name;
 
         let collection_opt = self
-            .collection_catalog
-            .lock()
+            .collection_manager
+            .read()
             .await
             .get_collection(&collection_name)
             .await;

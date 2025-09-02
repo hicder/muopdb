@@ -63,19 +63,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let collection_data_path = arg.index_data_path;
     let node_id = arg.node_id;
 
-    let collection_catalog = Arc::new(Mutex::new(CollectionCatalog::new()));
-    let collection_catalog_for_manager = collection_catalog.clone();
-    let collection_catalog_for_server = collection_catalog.clone();
-
     info!("Node: {}, listening on port {}", node_id, arg.port);
     info!("Number of ingestion workers: {}", arg.num_ingestion_workers);
     info!("Number of flush workers: {}", arg.num_flush_workers);
 
+    let collection_catalog = CollectionCatalog::new();
     let collection_provider = CollectionProvider::new(collection_data_path);
     let collection_manager = Arc::new(RwLock::new(CollectionManager::new(
         collection_config_path,
         collection_provider,
-        collection_catalog_for_manager,
+        collection_catalog,
         arg.num_ingestion_workers,
         arg.num_flush_workers,
     )));
@@ -84,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let collection_manager_thread = spawn(async move {
         loop {
             if let Err(e) = collection_manager_clone
-                .read()
+                .write()
                 .await
                 .check_for_update()
                 .await
@@ -175,11 +172,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
         .build_v1alpha()?;
 
-    let server_impl = IndexServerImpl::new(
-        collection_catalog_for_server.clone(),
-        collection_manager.clone(),
-    );
-    let admin_impl = AdminServerImpl::new(collection_catalog_for_server.clone());
+    let server_impl = IndexServerImpl::new(collection_manager.clone());
+    let admin_impl = AdminServerImpl::new(collection_manager.clone());
     Server::builder()
         .add_service(IndexServerServer::new(server_impl))
         .add_service(IndexServerAdminServer::new(admin_impl))

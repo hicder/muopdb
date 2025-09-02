@@ -5,6 +5,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use config::enums::QuantizerType;
 use index::collection::collection::Collection;
+use index::collection::BoxedCollection;
 use log::{debug, info, warn};
 use quantization::noq::noq::NoQuantizerL2;
 use quantization::pq::pq::ProductQuantizerL2;
@@ -28,7 +29,7 @@ pub struct CollectionManagerConfig {
 pub struct CollectionManager {
     config_path: String,
     collection_provider: CollectionProvider,
-    collection_catalog: Arc<Mutex<CollectionCatalog>>,
+    collection_catalog: CollectionCatalog,
     latest_version: AtomicU64,
     num_ingestion_workers: u32,
     num_flush_workers: u32,
@@ -38,7 +39,7 @@ impl CollectionManager {
     pub fn new(
         config_path: String,
         collection_provider: CollectionProvider,
-        collection_catalog: Arc<Mutex<CollectionCatalog>>,
+        collection_catalog: CollectionCatalog,
         num_ingestion_workers: u32,
         num_flush_workers: u32,
     ) -> Self {
@@ -54,9 +55,13 @@ impl CollectionManager {
 
     pub async fn collection_exists(&self, collection_name: &str) -> bool {
         self.collection_catalog
-            .lock()
-            .await
             .collection_exists(collection_name)
+            .await
+    }
+
+    pub async fn get_collection(&self, collection_name: &str) -> Option<BoxedCollection> {
+        self.collection_catalog
+            .get_collection(collection_name)
             .await
     }
 
@@ -93,8 +98,6 @@ impl CollectionManager {
         match self.collection_provider.read_collection(&collection_name) {
             Some(collection) => {
                 self.collection_catalog
-                    .lock()
-                    .await
                     .add_collection(collection_name.clone(), collection)
                     .await;
             }
@@ -115,8 +118,6 @@ impl CollectionManager {
         );
         let all_collection_names = self
             .collection_catalog
-            .lock()
-            .await
             .get_all_collection_names_sorted()
             .await;
         let toc = CollectionManagerConfig {
@@ -157,7 +158,7 @@ impl CollectionManager {
         collections_to_remove
     }
 
-    pub async fn check_for_update(&self) -> Result<()> {
+    pub async fn check_for_update(&mut self) -> Result<()> {
         let latest_version =
             get_latest_version(&self.config_path).context("Failed to get latest version")?;
         if latest_version
@@ -183,8 +184,6 @@ impl CollectionManager {
                 .store(latest_version, std::sync::atomic::Ordering::Relaxed);
             let current_collection_names = self
                 .collection_catalog
-                .lock()
-                .await
                 .get_all_collection_names_sorted()
                 .await;
 
@@ -196,8 +195,6 @@ impl CollectionManager {
                 let collection_opt = self.collection_provider.read_collection(collection_name);
                 if let Some(collection) = collection_opt {
                     self.collection_catalog
-                        .lock()
-                        .await
                         .add_collection(collection_name.clone(), collection)
                         .await;
                 } else {
@@ -214,8 +211,6 @@ impl CollectionManager {
         let mut processed_ops = 0;
         let collections = self
             .collection_catalog
-            .lock()
-            .await
             .get_all_collection_names_sorted()
             .await;
 
@@ -223,8 +218,6 @@ impl CollectionManager {
             if self.get_worker_id(&collection_name, self.num_ingestion_workers) == worker_id {
                 let collection = self
                     .collection_catalog
-                    .lock()
-                    .await
                     .get_collection(&collection_name)
                     .await
                     .unwrap();
@@ -242,8 +235,6 @@ impl CollectionManager {
         let mut flushed_ops = 0;
         let collections = self
             .collection_catalog
-            .lock()
-            .await
             .get_all_collection_names_sorted()
             .await;
 
@@ -251,8 +242,6 @@ impl CollectionManager {
             if self.get_worker_id(&collection_name, self.num_flush_workers) == worker_id {
                 let collection = self
                     .collection_catalog
-                    .lock()
-                    .await
                     .get_collection(&collection_name)
                     .await
                     .unwrap();
@@ -276,8 +265,6 @@ impl CollectionManager {
     pub async fn auto_optimize(&self) -> Result<()> {
         let collections = self
             .collection_catalog
-            .lock()
-            .await
             .get_all_collection_names_sorted()
             .await;
 
@@ -286,8 +273,6 @@ impl CollectionManager {
         for collection_name in collections {
             let collection = self
                 .collection_catalog
-                .lock()
-                .await
                 .get_collection(&collection_name)
                 .await
                 .unwrap();
