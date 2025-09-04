@@ -1,12 +1,12 @@
-pub mod collection;
+pub mod core;
 pub mod reader;
 pub mod snapshot;
 
+use core::{Collection, SegmentInfoAndVersion};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
-use collection::{Collection, SegmentInfoAndVersion};
 use proto::muopdb::DocumentAttribute;
 use quantization::noq::noq::NoQuantizer;
 use quantization::pq::pq::ProductQuantizer;

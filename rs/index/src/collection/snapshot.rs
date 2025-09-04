@@ -4,7 +4,7 @@ use quantization::noq::noq::NoQuantizerL2;
 use quantization::pq::pq::ProductQuantizerL2;
 use quantization::quantization::Quantizer;
 
-use super::collection::Collection;
+use super::core::Collection;
 use crate::segment::BoxedImmutableSegment;
 use crate::utils::SearchResult;
 

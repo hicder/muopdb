@@ -1132,7 +1132,7 @@ mod tests {
     use rand::Rng;
     use tempdir::TempDir;
 
-    use crate::collection::collection::Collection;
+    use crate::collection::core::Collection;
     use crate::collection::reader::CollectionReader;
     use crate::collection::snapshot::Snapshot;
     use crate::optimizers::noop::NoopOptimizer;

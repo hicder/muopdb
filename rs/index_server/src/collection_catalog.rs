@@ -41,7 +41,7 @@ mod tests {
     use std::sync::Arc;
 
     use config::collection::CollectionConfig;
-    use index::collection::collection::Collection;
+    use index::collection::core::Collection;
     use metrics::INTERNAL_METRICS;
     use quantization::noq::noq::NoQuantizer;
     use tempdir::TempDir;

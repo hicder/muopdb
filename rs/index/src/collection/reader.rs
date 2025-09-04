@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
 use utils::io::get_latest_version;
 
-use super::collection::Collection;
+use super::core::Collection;
 use super::TableOfContent;
 use crate::multi_spann::reader::MultiSpannReader;
 use crate::segment::immutable_segment::ImmutableSegment;

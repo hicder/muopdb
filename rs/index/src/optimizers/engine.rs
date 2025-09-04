@@ -6,7 +6,7 @@ use quantization::quantization::Quantizer;
 use super::merge::MergeOptimizer;
 use super::noop::NoopOptimizer;
 use super::vacuum::VacuumOptimizer;
-use crate::collection::collection::Collection;
+use crate::collection::core::Collection;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum OptimizingType {

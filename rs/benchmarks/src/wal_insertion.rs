@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use config::collection::CollectionConfig;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use index::collection::collection::Collection;
+use index::collection::core::Collection;
 use index::collection::reader::CollectionReader;
 use index::wal::entry::WalOpType;
 use quantization::noq::noq::NoQuantizerL2;

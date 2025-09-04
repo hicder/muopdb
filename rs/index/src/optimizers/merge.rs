@@ -63,7 +63,7 @@ mod tests {
     use config::collection::CollectionConfig;
 
     use super::*;
-    use crate::collection::collection::Collection;
+    use crate::collection::core::Collection;
     use crate::collection::reader::CollectionReader;
     use crate::segment::Segment;
 

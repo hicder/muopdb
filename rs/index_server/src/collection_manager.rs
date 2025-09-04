@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicU64;
 
 use anyhow::{Context, Result};
 use config::enums::QuantizerType;
-use index::collection::collection::Collection;
+use index::collection::core::Collection;
 use index::collection::BoxedCollection;
 use log::{debug, info, warn};
 use quantization::noq::noq::NoQuantizerL2;
