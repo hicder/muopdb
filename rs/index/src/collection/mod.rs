@@ -147,9 +147,9 @@ impl BoxedCollection {
 
     pub async fn write_to_wal(
         &self,
-        doc_ids: &[u128],
-        user_ids: &[u128],
-        data: &[f32],
+        doc_ids: Arc<[u128]>,
+        user_ids: Arc<[u128]>,
+        data: Arc<[f32]>,
         wal_op_type: WalOpType,
     ) -> Result<u64> {
         match self {
