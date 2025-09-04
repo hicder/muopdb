@@ -88,8 +88,8 @@ fn bench_wal_insertion(c: &mut Criterion) {
                 let mut handles = vec![];
 
                 // Number of threads and documents per thread
-                const NUM_THREADS: usize = 40;
-                const DOCS_PER_THREAD: usize = 25;
+                const NUM_THREADS: usize = 100;
+                const DOCS_PER_THREAD: usize = 10;
 
                 // Clone the collection for each thread
                 let collection_clones: Vec<_> =
