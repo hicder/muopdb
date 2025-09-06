@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
-use log::debug;
 use utils::on_disk_ordered_map::builder::OnDiskOrderedMapBuilder;
 
 use super::scratch::Scratch;
@@ -35,7 +34,7 @@ impl TermBuilder {
         }
         #[cfg(debug_assertions)]
         {
-            debug!("Adding doc: {}, term: {}", doc_id, key);
+            log::debug!("Adding doc: {}, term: {}", doc_id, key);
         }
 
         let term_id = self.persist_and_get_term_id(key);
