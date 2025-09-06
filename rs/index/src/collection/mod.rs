@@ -77,7 +77,7 @@ pub struct OpChannelEntry {
     pub data_length: usize,
 
     pub seq_no: u64,
-    pub op_type: WalOpType,
+    pub op_type: WalOpType<()>,
     pub buffer: Vec<u8>,
 }
 
@@ -85,10 +85,15 @@ impl OpChannelEntry {
     pub fn new(
         doc_ids: &[u128],
         user_ids: &[u128],
-        data: &[f32],
         seq_no: u64,
-        op_type: WalOpType,
+        op_type: WalOpType<Arc<[f32]>>,
     ) -> Self {
+        // Convert the op_type to drop the Arc<[f32]> data and extract the data
+        let (data, op_type_unit): (&[f32], WalOpType<()>) = match &op_type {
+            WalOpType::Insert(data) => (data.as_ref(), WalOpType::Insert(())),
+            WalOpType::Delete => (&[], WalOpType::Delete),
+        };
+
         let mut buffer: Vec<u8> = Vec::new();
         buffer.extend_from_slice(transmute_slice_to_u8(doc_ids));
         buffer.extend_from_slice(transmute_slice_to_u8(user_ids));
@@ -102,7 +107,7 @@ impl OpChannelEntry {
             data_offset: doc_ids.len() * 16 + user_ids.len() * 16,
             data_length: data.len() * 4,
             seq_no,
-            op_type,
+            op_type: op_type_unit,
             buffer,
         }
     }
@@ -149,18 +154,17 @@ impl BoxedCollection {
         &self,
         doc_ids: Arc<[u128]>,
         user_ids: Arc<[u128]>,
-        data: Arc<[f32]>,
-        wal_op_type: WalOpType,
+        wal_op_type: WalOpType<Arc<[f32]>>,
     ) -> Result<u64> {
         match self {
             BoxedCollection::CollectionNoQuantizationL2(collection) => {
                 collection
-                    .write_to_wal(doc_ids, user_ids, data, wal_op_type)
+                    .write_to_wal(doc_ids, user_ids, wal_op_type)
                     .await
             }
             BoxedCollection::CollectionProductQuantization(collection) => {
                 collection
-                    .write_to_wal(doc_ids, user_ids, data, wal_op_type)
+                    .write_to_wal(doc_ids, user_ids, wal_op_type)
                     .await
             }
         }

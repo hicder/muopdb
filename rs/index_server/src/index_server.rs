@@ -275,8 +275,7 @@ impl IndexServer for IndexServerImpl {
                     .write_to_wal(
                         doc_ids.clone(),
                         user_ids.clone(),
-                        vectors.clone(),
-                        WalOpType::Insert,
+                        WalOpType::Insert(vectors.clone()),
                     )
                     .await
                     .unwrap_or(0);
@@ -348,12 +347,7 @@ impl IndexServer for IndexServerImpl {
                 let user_ids: Arc<[u128]> = Arc::from(user_ids);
 
                 let seq_no = collection
-                    .write_to_wal(
-                        ids.clone(),
-                        user_ids.clone(),
-                        Arc::from([]),
-                        WalOpType::Delete,
-                    )
+                    .write_to_wal(ids.clone(), user_ids.clone(), WalOpType::Delete)
                     .await
                     .unwrap_or(0);
                 let num_docs_removed = ids.len() as u32;
@@ -469,8 +463,7 @@ impl IndexServer for IndexServerImpl {
                     .write_to_wal(
                         doc_ids.clone(),
                         user_ids.clone(),
-                        vectors.clone(),
-                        WalOpType::Insert,
+                        WalOpType::Insert(vectors.clone()),
                     )
                     .await
                     .unwrap_or(0);

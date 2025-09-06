@@ -33,8 +33,7 @@ use crate::wal::wal::Wal;
 struct AppendArgs {
     doc_ids: Arc<[u128]>,
     user_ids: Arc<[u128]>,
-    data: Arc<[f32]>,
-    op_type: WalOpType,
+    op_type: WalOpType<Arc<[f32]>>,
 }
 
 /// Represents an entry for a follower task
@@ -279,10 +278,9 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                         debug!("Processing op with seq_no: {}", entry_seq_no);
                         let wal_entry = wal_entry.decode(segment_config.num_features);
                         match wal_entry.op_type {
-                            WalOpType::Insert => {
+                            WalOpType::Insert(data) => {
                                 let doc_ids = wal_entry.doc_ids;
                                 let user_ids = wal_entry.user_ids;
-                                let data = wal_entry.data;
 
                                 let mut num_successful_inserts: i64 = 0;
                                 data.chunks(segment_config.num_features)
@@ -312,7 +310,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                             WalOpType::Delete => {
                                 let doc_ids = wal_entry.doc_ids;
                                 let user_ids = wal_entry.user_ids;
-                                assert!(wal_entry.data.is_empty());
                                 let ver = versions.get(&version).unwrap();
 
                                 let mut num_successful_deletes: i64 = 0;
@@ -433,8 +430,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         &self,
         doc_ids: Arc<[u128]>,
         user_ids: Arc<[u128]>,
-        data: Arc<[f32]>,
-        wal_op_type: WalOpType,
+        wal_op_type: WalOpType<Arc<[f32]>>,
     ) -> Result<u64> {
         if let Some(wal) = &self.wal {
             // Lock the write coordinator and take out the current group
@@ -449,17 +445,21 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             let append_wal = async |wal: &RwLock<Wal>,
                                     doc_ids: Arc<[u128]>,
                                     user_ids: Arc<[u128]>,
-                                    data: Arc<[f32]>,
-                                    wal_op_type: WalOpType|
+                                    wal_op_type: WalOpType<Arc<[f32]>>|
                    -> Result<u64> {
+                // Convert Arc<[f32]> to &[f32] in the enum
+                let wal_op_type_ref = match &wal_op_type {
+                    WalOpType::Insert(data) => WalOpType::Insert(data.as_ref()),
+                    WalOpType::Delete => WalOpType::Delete,
+                };
                 // Write to WAL, and persist to disk.
                 // Intentionally keep the write lock until we send the message to the channel.
                 // This ensures that message in the channel is the same order as WAL.
                 let mut wal_write = wal.write();
-                let seq_no = wal_write.append(&doc_ids, &user_ids, &data, wal_op_type.clone())?;
+                let seq_no = wal_write.append(&doc_ids, &user_ids, wal_op_type_ref)?;
                 // Once the WAL is written, send the op to the channel
                 let op_channel_entry =
-                    OpChannelEntry::new(&doc_ids, &user_ids, &data, seq_no, wal_op_type);
+                    OpChannelEntry::new(&doc_ids, &user_ids, seq_no, wal_op_type);
                 self.sender.send(op_channel_entry).await?;
                 Ok(seq_no)
             };
@@ -477,7 +477,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                         wal,
                         entry.args.doc_ids,
                         entry.args.user_ids,
-                        entry.args.data,
                         entry.args.op_type,
                     )
                     .await?;
@@ -506,7 +505,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 write_follower_entries(current_group).await?;
 
                 // Write the leader's own entry
-                let leader_seq_no = append_wal(wal, doc_ids, user_ids, data, wal_op_type).await?;
+                let leader_seq_no = append_wal(wal, doc_ids, user_ids, wal_op_type).await?;
 
                 // Sync the WAL at once
                 let entries_synced = self.sync_wal()?;
@@ -529,7 +528,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     args: AppendArgs {
                         doc_ids: doc_ids.clone(),
                         user_ids: user_ids.clone(),
-                        data: data.clone(),
                         op_type: wal_op_type.clone(),
                     },
                     seq_tx,
@@ -618,7 +616,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     pub async fn process_one_op(&self) -> Result<usize> {
         if let std::result::Result::Ok(op) = self.receiver.borrow_mut().try_recv() {
             match op.op_type {
-                WalOpType::Insert => {
+                WalOpType::Insert(_) => {
                     debug!("Processing insert operation with seq_no {}", op.seq_no);
                     let doc_ids = op.doc_ids();
                     let user_ids = op.user_ids();
@@ -1724,49 +1722,39 @@ mod tests {
             .write_to_wal(
                 Arc::from([1u128]),
                 Arc::from([0u128]),
-                Arc::from([1.0, 2.0, 3.0, 4.0]),
-                WalOpType::Insert,
+                WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
             )
             .await?;
         collection
             .write_to_wal(
                 Arc::from([2u128]),
                 Arc::from([0u128]),
-                Arc::from([1.0, 2.0, 3.0, 4.0]),
-                WalOpType::Insert,
+                WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
             )
             .await?;
         collection
             .write_to_wal(
                 Arc::from([3u128]),
                 Arc::from([0u128]),
-                Arc::from([1.0, 2.0, 3.0, 4.0]),
-                WalOpType::Insert,
+                WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
             )
             .await?;
         collection
             .write_to_wal(
                 Arc::from([4u128]),
                 Arc::from([0u128]),
-                Arc::from([1.0, 2.0, 3.0, 4.0]),
-                WalOpType::Insert,
+                WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
             )
             .await?;
         collection
             .write_to_wal(
                 Arc::from([5u128]),
                 Arc::from([0u128]),
-                Arc::from([1.0, 2.0, 3.0, 4.0]),
-                WalOpType::Insert,
+                WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
             )
             .await?;
         collection
-            .write_to_wal(
-                Arc::from([5u128]),
-                Arc::from([0u128]),
-                Arc::from([]),
-                WalOpType::Delete,
-            )
+            .write_to_wal(Arc::from([5u128]), Arc::from([0u128]), WalOpType::Delete)
             .await?;
 
         // Process all ops
@@ -1828,25 +1816,18 @@ mod tests {
                 .write_to_wal(
                     Arc::from([1u128]),
                     Arc::from([0u128]),
-                    Arc::from([1.0, 2.0, 3.0, 4.0]),
-                    WalOpType::Insert,
+                    WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
                 )
                 .await?;
             collection
                 .write_to_wal(
                     Arc::from([2u128]),
                     Arc::from([0u128]),
-                    Arc::from([1.0, 2.0, 3.0, 4.0]),
-                    WalOpType::Insert,
+                    WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
                 )
                 .await?;
             collection
-                .write_to_wal(
-                    Arc::from([1u128]),
-                    Arc::from([0u128]),
-                    Arc::from([]),
-                    WalOpType::Delete,
-                )
+                .write_to_wal(Arc::from([1u128]), Arc::from([0u128]), WalOpType::Delete)
                 .await?;
 
             // Process all ops
@@ -1897,49 +1878,31 @@ mod tests {
                 .write_to_wal(
                     Arc::from([2u128]),
                     Arc::from([0u128]),
-                    Arc::from([1.0, 2.0, 3.0, 4.0]),
-                    WalOpType::Insert,
+                    WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
                 )
                 .await?;
             collection
                 .write_to_wal(
                     Arc::from([3u128]),
                     Arc::from([0u128]),
-                    Arc::from([1.0, 2.0, 3.0, 4.0]),
-                    WalOpType::Insert,
+                    WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
                 )
                 .await?;
             collection
                 .write_to_wal(
                     Arc::from([4u128]),
                     Arc::from([0u128]),
-                    Arc::from([1.0, 2.0, 3.0, 4.0]),
-                    WalOpType::Insert,
+                    WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
                 )
                 .await?;
             collection
-                .write_to_wal(
-                    Arc::from([1u128]),
-                    Arc::from([0u128]),
-                    Arc::from([]),
-                    WalOpType::Delete,
-                )
+                .write_to_wal(Arc::from([1u128]), Arc::from([0u128]), WalOpType::Delete)
                 .await?;
             collection
-                .write_to_wal(
-                    Arc::from([2u128]),
-                    Arc::from([0u128]),
-                    Arc::from([]),
-                    WalOpType::Delete,
-                )
+                .write_to_wal(Arc::from([2u128]), Arc::from([0u128]), WalOpType::Delete)
                 .await?;
             collection
-                .write_to_wal(
-                    Arc::from([3u128]),
-                    Arc::from([0u128]),
-                    Arc::from([]),
-                    WalOpType::Delete,
-                )
+                .write_to_wal(Arc::from([3u128]), Arc::from([0u128]), WalOpType::Delete)
                 .await?;
         }
 
@@ -2291,7 +2254,6 @@ mod tests {
                             .write_to_wal(
                                 Arc::from([doc_to_delete]),
                                 Arc::from([USER_ID]),
-                                Arc::from([]), // Empty data for delete
                                 WalOpType::Delete,
                             )
                             .await
@@ -2310,8 +2272,7 @@ mod tests {
                             .write_to_wal(
                                 Arc::from([doc_id]),
                                 Arc::from([USER_ID]),
-                                Arc::from(vector_data.as_slice()),
-                                WalOpType::Insert,
+                                WalOpType::Insert(Arc::from(vector_data.as_slice())),
                             )
                             .await
                             .unwrap();
@@ -2465,8 +2426,7 @@ mod tests {
                     .write_to_wal(
                         Arc::from([doc_id]),
                         Arc::from([USER_ID]),
-                        Arc::from(vector_data.as_slice()),
-                        WalOpType::Insert,
+                        WalOpType::Insert(Arc::from(vector_data.as_slice())),
                     )
                     .await
                     .unwrap();
