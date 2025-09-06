@@ -545,7 +545,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                         debug!("[WAL follower] Received seq_no {follower_seq_no} from leader");
                         Ok(follower_seq_no)
                     }
-                    _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                    _ = tokio::time::sleep(Duration::from_millis(10)) => {
                         debug!("[WAL follower] Timeout reached, checking if I should become leader");
 
                         // Timeout: check if I'm the first entry and should become leader
