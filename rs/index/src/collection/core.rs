@@ -521,6 +521,9 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 // This task will be the follower and join the current group.
                 let (seq_tx, mut seq_rx) = oneshot::channel();
 
+                // Get the 0-based index of this entry in the group
+                let follower_entry_id = current_group.entries.len();
+
                 // Create a new entry in the current group
                 current_group.entries.push(GroupEntry {
                     args: AppendArgs {
@@ -531,9 +534,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     },
                     seq_tx,
                 });
-
-                // Get the 1-based index of this entry in the group
-                let follower_entry_id = current_group.entries.len();
 
                 // Put the current group back to the coordinator
                 coordinator.current_group = Some(current_group);
@@ -552,17 +552,17 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     _ = tokio::time::sleep(Duration::from_millis(100)) => {
                         debug!("[WAL follower] Timeout reached, checking if I should become leader");
 
-                        // Timeout: check if I'm the last entry and should become leader
+                        // Timeout: check if I'm the first entry and should become leader
                         let mut coordinator = self.write_coordinator.lock().await;
 
                         if let Some(group) = coordinator.current_group.take() {
-                            // Check if I'm the last added entry (highest index)
-                            let is_last_follower = follower_entry_id == group.entries.len();
+                            // Check if I'm the first added entry (index 0)
+                            let is_first_follower = follower_entry_id == 0;
 
-                            if is_last_follower {
-                                debug!("[WAL follower] I'm the last entry, becoming timeout leader");
+                            if is_first_follower {
+                                debug!("[WAL follower] I'm the first entry, becoming timeout leader");
 
-                                // I'm the last entry - become leader!
+                                // I'm the first entry - become leader!
                                 coordinator.current_group = Some(coordinator.new_wal_write_group());
                                 drop(coordinator);
 
@@ -579,22 +579,22 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                 debug!("[WAL timeout leader] Returning my own seq_no {leader_seq_no}");
                                 Ok(leader_seq_no)
                             } else {
-                                debug!("[WAL follower] Not the last entry, putting group back and continuing to wait");
+                                debug!("[WAL timeout follower] Not the first entry, putting group back and continuing to wait");
 
                                 // Not the last entry, put group back and continue waiting
                                 coordinator.current_group = Some(group);
                                 drop(coordinator);
 
                                 // Continue waiting for the actual leader or timeout leader
-                                let follower_seq_no = seq_rx.await.expect("WAL follower: leader's sender dropped");
-                                debug!("[WAL follower] Finally received seq_no {follower_seq_no} from leader");
+                                let follower_seq_no = seq_rx.await.expect("WAL timeout follower: leader's sender dropped");
+                                debug!("[WAL timeout follower] Finally received seq_no {follower_seq_no} from leader");
                                 Ok(follower_seq_no)
                             }
                         } else {
                             // Group was already taken by another leader, wait for result
                             drop(coordinator);
                             let follower_seq_no = seq_rx.await.expect("WAL follower: leader's sender dropped");
-                            debug!("[WAL follower] Received seq_no {follower_seq_no} from leader after timeout");
+                            debug!("[WAL timeout follower] Received seq_no {follower_seq_no} from leader after timeout");
                             Ok(follower_seq_no)
                         }
                     }
