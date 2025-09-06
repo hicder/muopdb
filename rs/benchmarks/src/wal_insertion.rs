@@ -5,12 +5,12 @@ use std::time::Duration;
 
 use config::collection::CollectionConfig;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use index::collection::collection::Collection;
+use index::collection::core::Collection;
 use index::collection::reader::CollectionReader;
 use index::wal::entry::WalOpType;
 use quantization::noq::noq::NoQuantizerL2;
 use tempdir::TempDir;
-use tokio;
+use tokio::task::JoinSet;
 use utils::test_utils::generate_random_vector;
 
 fn bench_wal_insertion(c: &mut Criterion) {
@@ -21,12 +21,14 @@ fn bench_wal_insertion(c: &mut Criterion) {
     let collection_name = "test_collection_wal";
     let temp_dir = TempDir::new(collection_name).expect("Failed to create temporary directory");
     let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
-    let mut segment_config = CollectionConfig::default();
-    segment_config.num_features = 128;
-    // Enable WAL for this benchmark
-    segment_config.wal_file_size = 1024 * 1024; // 1MB WAL file size
+    let segment_config = CollectionConfig {
+        num_features: 128,
+        // Enable WAL for this benchmark with write grouping
+        wal_file_size: 1024 * 1024, // 1MB WAL file size
+        wal_write_group_size: 970,  // Group size for batching (tuned for this benchmark)
+        ..CollectionConfig::default()
+    };
 
-    // Create the collection outside of the benchmark
     // Remove everything under base_directory
     std::fs::remove_dir_all(&base_directory).unwrap();
 
@@ -44,7 +46,7 @@ fn bench_wal_insertion(c: &mut Criterion) {
         let rt = tokio::runtime::Runtime::new().unwrap();
         while running_clone.load(Ordering::Relaxed) {
             // Process pending operations in a blocking context
-            let _ = rt.block_on(async {
+            rt.block_on(async {
                 loop {
                     let processed = collection_clone.process_one_op().await.unwrap();
                     if processed == 0 {
@@ -57,86 +59,59 @@ fn bench_wal_insertion(c: &mut Criterion) {
         }
     });
 
-    // Start background thread to sync WAL outside of benchmark
-    let sync_running = Arc::new(AtomicBool::new(true));
-    let sync_running_clone = sync_running.clone();
-    let collection_clone_for_sync = collection.clone();
-    let sync_thread = thread::spawn(move || {
-        while sync_running_clone.load(Ordering::Relaxed) {
-            // Sync WAL in a blocking context
-            if let Err(e) = collection_clone_for_sync.sync_wal() {
-                eprintln!("Error syncing WAL: {}", e);
-            }
-            // Small delay to prevent busy looping
-            thread::sleep(Duration::from_micros(100));
-        }
-    });
-
     let num_vectors = 1000;
     let num_features = segment_config.num_features;
-    let vectors = (0..num_vectors)
-        .map(|_| generate_random_vector(num_features))
-        .collect::<Vec<_>>();
-    let user_ids = vec![0];
+    let vectors: Vec<Arc<[f32]>> = (0..num_vectors)
+        .map(|_| Arc::from(generate_random_vector(num_features).as_slice()))
+        .collect();
+    let vectors = Arc::new(vectors); // Share the entire collection
+    let user_ids: Arc<[u128]> = Arc::from(vec![0].as_slice());
+
+    // Number of concurrent tasks
+    const NUM_TASKS: usize = 1000;
+
+    // Use async runtime for proper concurrent context
+    let rt = tokio::runtime::Runtime::new().unwrap();
 
     group.bench_with_input(
         BenchmarkId::new("WalInsertion", 1000),
         &1000,
         |bencher, _| {
             bencher.iter(|| {
-                // Create a vector to store thread handles
-                let mut handles = vec![];
+                rt.block_on(async {
+                    let mut join_set = JoinSet::new();
 
-                // Number of threads and documents per thread
-                const NUM_THREADS: usize = 100;
-                const DOCS_PER_THREAD: usize = 10;
+                    // Spawn concurrent async tasks instead of threads
+                    for task_id in 0..NUM_TASKS {
+                        let collection_clone = collection.clone();
+                        let user_ids_clone = user_ids.clone();
+                        let vectors_clone = vectors.clone(); // Just cloning the Arc pointer
 
-                // Clone the collection for each thread
-                let collection_clones: Vec<_> =
-                    (0..NUM_THREADS).map(|_| collection.clone()).collect();
+                        join_set.spawn(async move {
+                            let doc_id = task_id as u128;
+                            let data = vectors_clone[task_id % vectors_clone.len()].clone();
+                            let user_ids_ref = user_ids_clone.clone();
+                            let doc_ids: Arc<[u128]> = Arc::from([doc_id]);
 
-                // Spawn 10 threads, each handling 100 document IDs
-                for thread_idx in 0..NUM_THREADS {
-                    let collection_clone = collection_clones[thread_idx].clone();
-                    let user_ids_clone = user_ids.clone();
-                    let vectors_clone = vectors.clone();
+                            collection_clone
+                                .write_to_wal(doc_ids, user_ids_ref, data, WalOpType::Insert)
+                                .await
+                                .unwrap()
+                        });
+                    }
 
-                    let handle = std::thread::spawn(move || {
-                        // Create a Tokio runtime for each thread
-                        let rt = tokio::runtime::Runtime::new().unwrap();
-                        let start_doc_id = thread_idx * DOCS_PER_THREAD;
-                        let end_doc_id = start_doc_id + DOCS_PER_THREAD;
-
-                        for doc_id in start_doc_id..end_doc_id {
-                            let vector = &vectors_clone[doc_id];
-                            // Use write_to_wal instead of insert_for_users
-                            // This is the only operation being measured in the benchmark
-                            rt.block_on(collection_clone.write_to_wal(
-                                &[doc_id as u128],
-                                &user_ids_clone,
-                                vector,
-                                WalOpType::Insert,
-                            ))
-                            .unwrap();
-                        }
-                    });
-
-                    handles.push(handle);
-                }
-
-                // Wait for all threads to complete
-                for handle in handles {
-                    handle.join().unwrap();
-                }
+                    // Wait for all tasks to complete concurrently
+                    while let Some(result) = join_set.join_next().await {
+                        result.unwrap(); // Ensure no task panicked
+                    }
+                });
             });
         },
     );
 
     // Stop the background threads
     running.store(false, Ordering::Relaxed);
-    sync_running.store(false, Ordering::Relaxed);
     background_thread.join().unwrap();
-    sync_thread.join().unwrap();
 
     group.finish();
 }

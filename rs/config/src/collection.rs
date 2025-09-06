@@ -119,6 +119,12 @@ pub struct CollectionConfig {
     #[serde(default = "default_wal_file_size")]
     pub wal_file_size: u64,
 
+    /// Maximum follower entries per WAL write group before closing for batch processing.
+    /// Small values = lower latency, higher sync overhead. Large values = higher throughput, higher latency.
+    /// Default: 940
+    #[serde(default = "default_wal_write_group_size")]
+    pub wal_write_group_size: usize,
+
     /// The maximum number of pending operations before flushing.
     /// Default: 0 (not using max pending ops)
     #[serde(default = "default_max_pending_ops")]
@@ -145,6 +151,10 @@ pub struct CollectionConfig {
 
 fn default_wal_file_size() -> u64 {
     0
+}
+
+fn default_wal_write_group_size() -> usize {
+    940
 }
 
 fn default_max_pending_ops() -> u64 {
@@ -189,6 +199,7 @@ impl Default for CollectionConfig {
             posting_list_kmeans_unbalanced_penalty: 0.0,
             reindex: true,
             wal_file_size: 0,
+            wal_write_group_size: default_wal_write_group_size(),
             max_pending_ops: 0,
             max_time_to_flush_ms: 0,
             max_number_of_segments: 10,
@@ -224,6 +235,7 @@ impl CollectionConfig {
             reindex: true,
             quantization_type: QuantizerType::NoQuantizer,
             wal_file_size: 1024 * 1024 * 1024,
+            wal_write_group_size: default_wal_write_group_size(),
             max_pending_ops: 10000,
             max_time_to_flush_ms: 10000,
             max_number_of_segments: 10,

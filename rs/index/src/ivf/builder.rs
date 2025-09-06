@@ -806,7 +806,7 @@ mod tests {
 
     #[test]
     fn test_build_posting_lists() {
-        env_logger::init();
+        env_logger::try_init().ok();
 
         let temp_dir = tempdir::TempDir::new("build_posting_lists_test")
             .expect("Failed to create temporary directory");

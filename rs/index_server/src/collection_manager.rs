@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicU64;
 
 use anyhow::{Context, Result};
 use config::enums::QuantizerType;
-use index::collection::collection::Collection;
+use index::collection::core::Collection;
 use index::collection::BoxedCollection;
 use log::{debug, info, warn};
 use quantization::noq::noq::NoQuantizerL2;
@@ -250,30 +250,6 @@ impl CollectionManager {
             }
         }
         Ok(flushed_ops)
-    }
-
-    pub async fn sync_wal(&self, worker_id: u32) -> Result<u64> {
-        let mut synced_entries = 0;
-        let collections = self
-            .collection_catalog
-            .get_all_collection_names_sorted()
-            .await;
-
-        for collection_name in collections {
-            // Use a simple hash-based distribution for sync_wal workers
-            if self.get_worker_id(&collection_name, self.num_flush_workers) == worker_id {
-                let collection = self
-                    .collection_catalog
-                    .get_collection(&collection_name)
-                    .await
-                    .unwrap();
-                if collection.use_wal() {
-                    debug!("Syncing WAL for collection {}", collection_name);
-                    synced_entries += collection.sync_wal()?;
-                }
-            }
-        }
-        Ok(synced_entries)
     }
 
     pub fn get_worker_id(&self, collection_name: &str, num_workers: u32) -> u32 {

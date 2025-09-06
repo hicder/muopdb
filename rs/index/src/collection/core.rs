@@ -1,5 +1,5 @@
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{Ok, Result};
 use atomic_refcell::AtomicRefCell;
@@ -13,6 +13,7 @@ use parking_lot::{RawRwLock, RwLock};
 use proto::muopdb::DocumentAttribute;
 use quantization::quantization::Quantizer;
 use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::{oneshot, Mutex as AsyncMutex};
 
 use super::snapshot::Snapshot;
 use super::{OpChannelEntry, TableOfContent, VersionsInfo};
@@ -27,6 +28,64 @@ use crate::segment::pending_segment::PendingSegment;
 use crate::segment::{BoxedImmutableSegment, Segment};
 use crate::wal::entry::WalOpType;
 use crate::wal::wal::Wal;
+
+/// Group of args to pass to `Wal::append` method
+struct AppendArgs {
+    doc_ids: Arc<[u128]>,
+    user_ids: Arc<[u128]>,
+    data: Arc<[f32]>,
+    op_type: WalOpType,
+}
+
+/// Represents an entry for a follower task
+struct GroupEntry {
+    /// follower's args
+    args: AppendArgs,
+    /// sender to send the returned sequence number from calling `Wal::append` to the corresponding follower
+    seq_tx: oneshot::Sender<u64>,
+}
+
+/// Represents a group that the leader will own and use to append to WAL and sync WAl
+struct WalWriteGroup {
+    /// maximum number of followers in a write group
+    max_num_entries: usize,
+    /// the followers' contents
+    entries: Vec<GroupEntry>,
+}
+
+impl WalWriteGroup {
+    fn new(max_num_entries: usize) -> Self {
+        Self {
+            entries: vec![],
+            max_num_entries,
+        }
+    }
+
+    /// Determines whether this group should be closed for processing
+    fn should_close(&self) -> bool {
+        self.entries.len() >= self.max_num_entries
+    }
+}
+
+/// Coordinator to keep the current open `WalWriteGroup`
+struct WalWriteCoordinator {
+    /// The current open group. If None, the next WAL-write task will create a new group
+    pub current_group: Option<WalWriteGroup>,
+    wal_write_group_size: usize,
+}
+
+impl WalWriteCoordinator {
+    fn new(wal_write_group_size: usize) -> Self {
+        Self {
+            current_group: None,
+            wal_write_group_size,
+        }
+    }
+
+    fn new_wal_write_group(&self) -> WalWriteGroup {
+        WalWriteGroup::new(self.wal_write_group_size)
+    }
+}
 
 pub struct SegmentInfo {
     pub name: String,
@@ -69,6 +128,8 @@ pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
 
     // A mutex for flushing
     flushing: Mutex<()>,
+
+    write_coordinator: Arc<AsyncMutex<WalWriteCoordinator>>,
 }
 
 impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
@@ -102,6 +163,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         let (sender, receiver) = mpsc::channel(100);
         let receiver = AtomicRefCell::new(receiver);
+        let wal_write_group_size = segment_config.wal_write_group_size;
 
         // Initialize the metrics
         INTERNAL_METRICS.num_active_segments_set(&collection_name, 0);
@@ -123,6 +185,9 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             sender,
             receiver,
             last_flush_time: Mutex::new(Instant::now()),
+            write_coordinator: Arc::new(AsyncMutex::new(WalWriteCoordinator::new(
+                wal_write_group_size,
+            ))),
         })
     }
 
@@ -289,6 +354,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         let (sender, receiver) = mpsc::channel(100);
         let receiver = AtomicRefCell::new(receiver);
+        let wal_write_group_size = segment_config.wal_write_group_size;
 
         INTERNAL_METRICS.num_active_segments_set(&collection_name, all_segments.len() as i64);
 
@@ -308,6 +374,9 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             sender,
             receiver,
             last_flush_time: Mutex::new(Instant::now()),
+            write_coordinator: Arc::new(AsyncMutex::new(WalWriteCoordinator::new(
+                wal_write_group_size,
+            ))),
         })
     }
 
@@ -362,31 +431,175 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
     pub async fn write_to_wal(
         &self,
-        doc_ids: &[u128],
-        user_ids: &[u128],
-        data: &[f32],
+        doc_ids: Arc<[u128]>,
+        user_ids: Arc<[u128]>,
+        data: Arc<[f32]>,
         wal_op_type: WalOpType,
     ) -> Result<u64> {
         if let Some(wal) = &self.wal {
-            // Write to WAL, and persist to disk.
-            // Intentionally keep the write lock until we send the message to the channel.
-            // This ensures that message in the channel is the same order as WAL.
-            let seq_no = {
-                let mut wal_write = wal.write();
-                let seq_no = wal_write.append(doc_ids, user_ids, data, wal_op_type.clone())?;
-
-                // Once the WAL is written, send the op to the channel
-                let op_channel_entry =
-                    OpChannelEntry::new(doc_ids, user_ids, data, seq_no, wal_op_type);
-                self.sender.send(op_channel_entry).await?;
-                seq_no
+            // Lock the write coordinator and take out the current group
+            let mut coordinator = self.write_coordinator.lock().await;
+            let mut current_group = match coordinator.current_group.take() {
+                Some(group) => group,
+                // Create a new group if current group is None
+                None => coordinator.new_wal_write_group(),
             };
 
-            // Wait for seq_no to be synced
-            let mut rx = wal.read().get_rx();
-            rx.wait_for(|&v| v >= seq_no.try_into().unwrap()).await?;
+            // A closure to append to WAL and send op to channel
+            let append_wal = async |wal: &RwLock<Wal>,
+                                    doc_ids: Arc<[u128]>,
+                                    user_ids: Arc<[u128]>,
+                                    data: Arc<[f32]>,
+                                    wal_op_type: WalOpType|
+                   -> Result<u64> {
+                // Write to WAL, and persist to disk.
+                // Intentionally keep the write lock until we send the message to the channel.
+                // This ensures that message in the channel is the same order as WAL.
+                let mut wal_write = wal.write();
+                let seq_no = wal_write.append(&doc_ids, &user_ids, &data, wal_op_type.clone())?;
+                // Once the WAL is written, send the op to the channel
+                let op_channel_entry =
+                    OpChannelEntry::new(&doc_ids, &user_ids, &data, seq_no, wal_op_type);
+                self.sender.send(op_channel_entry).await?;
+                Ok(seq_no)
+            };
 
-            Ok(seq_no)
+            // A closure to run as the leader
+            let write_follower_entries = |group: WalWriteGroup| async move {
+                info!(
+                    "[WAL leader] Writing {} append entries to WAL",
+                    &group.entries.len()
+                );
+
+                // Go through all entries in the group and send seq_no immediately
+                for entry in group.entries {
+                    let seq_no = append_wal(
+                        wal,
+                        entry.args.doc_ids,
+                        entry.args.user_ids,
+                        entry.args.data,
+                        entry.args.op_type,
+                    )
+                    .await?;
+
+                    // Send seq_no immediately - follower can return now!
+                    debug!("[WAL leader] sending seq_no {seq_no} to follower");
+                    entry
+                        .seq_tx
+                        .send(seq_no)
+                        .expect("WAL Leader: follower's receiver dropped");
+                }
+
+                Ok(())
+            };
+
+            if current_group.should_close() {
+                debug!(
+                    "[LEADER] group is closing. current size: {}",
+                    current_group.entries.len()
+                );
+                // This task will be the leader. Own the current group and put a new group in the coordinator.
+                coordinator.current_group = Some(coordinator.new_wal_write_group());
+                drop(coordinator);
+
+                // Write all follower entries to WAL
+                write_follower_entries(current_group).await?;
+
+                // Write the leader's own entry
+                let leader_seq_no = append_wal(wal, doc_ids, user_ids, data, wal_op_type).await?;
+
+                // Sync the WAL at once
+                let entries_synced = self.sync_wal()?;
+                info!("[WAL leader] Synced {entries_synced} entries to WAL");
+
+                Ok(leader_seq_no)
+            } else {
+                debug!(
+                    "[FOLLOWER] joining existing group. current size: {}",
+                    current_group.entries.len()
+                );
+                // This task will be the follower and join the current group.
+                let (seq_tx, mut seq_rx) = oneshot::channel();
+
+                // Get the 0-based index of this entry in the group
+                let follower_entry_id = current_group.entries.len();
+
+                // Create a new entry in the current group
+                current_group.entries.push(GroupEntry {
+                    args: AppendArgs {
+                        doc_ids: doc_ids.clone(),
+                        user_ids: user_ids.clone(),
+                        data: data.clone(),
+                        op_type: wal_op_type.clone(),
+                    },
+                    seq_tx,
+                });
+
+                // Put the current group back to the coordinator
+                coordinator.current_group = Some(current_group);
+                drop(coordinator);
+
+                debug!("[FOLLOWER] Waiting for leader to write to WAL");
+
+                // Wait for either leader completion OR timeout
+                tokio::select! {
+                    result = &mut seq_rx => {
+                        // Normal case: leader processed us
+                        let follower_seq_no = result.expect("WAL follower: leader's sender dropped");
+                        debug!("[WAL follower] Received seq_no {follower_seq_no} from leader");
+                        Ok(follower_seq_no)
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                        debug!("[WAL follower] Timeout reached, checking if I should become leader");
+
+                        // Timeout: check if I'm the first entry and should become leader
+                        let mut coordinator = self.write_coordinator.lock().await;
+
+                        if let Some(group) = coordinator.current_group.take() {
+                            // Check if I'm the first added entry (index 0)
+                            let is_first_follower = follower_entry_id == 0;
+
+                            if is_first_follower {
+                                debug!("[WAL follower] I'm the first entry, becoming timeout leader");
+
+                                // I'm the first entry - become leader!
+                                coordinator.current_group = Some(coordinator.new_wal_write_group());
+                                drop(coordinator);
+
+                                // Run leader job with the timed-out group
+                                write_follower_entries(group).await?;
+
+                                // Get the seq_no for myself
+                                let leader_seq_no = seq_rx.await.expect("Should receive my own seq_no");
+
+                                // Sync the WAL at once
+                                let entries_synced = self.sync_wal()?;
+                                info!("[WAL timeout leader] Synced {entries_synced} entries to WAL");
+
+                                debug!("[WAL timeout leader] Returning my own seq_no {leader_seq_no}");
+                                Ok(leader_seq_no)
+                            } else {
+                                debug!("[WAL timeout follower] Not the first entry, putting group back and continuing to wait");
+
+                                // Not the last entry, put group back and continue waiting
+                                coordinator.current_group = Some(group);
+                                drop(coordinator);
+
+                                // Continue waiting for the actual leader or timeout leader
+                                let follower_seq_no = seq_rx.await.expect("WAL timeout follower: leader's sender dropped");
+                                debug!("[WAL timeout follower] Finally received seq_no {follower_seq_no} from leader");
+                                Ok(follower_seq_no)
+                            }
+                        } else {
+                            // Group was already taken by another leader, wait for result
+                            drop(coordinator);
+                            let follower_seq_no = seq_rx.await.expect("WAL follower: leader's sender dropped");
+                            debug!("[WAL timeout follower] Received seq_no {follower_seq_no} from leader after timeout");
+                            Ok(follower_seq_no)
+                        }
+                    }
+                }
+            }
         } else {
             Err(anyhow::anyhow!("WAL is not enabled"))
         }
@@ -1131,13 +1344,19 @@ mod tests {
     use quantization::noq::noq::NoQuantizerL2;
     use rand::Rng;
     use tempdir::TempDir;
+    use tokio::task::JoinSet;
 
-    use crate::collection::collection::Collection;
+    use crate::collection::core::Collection;
     use crate::collection::reader::CollectionReader;
     use crate::collection::snapshot::Snapshot;
     use crate::optimizers::noop::NoopOptimizer;
     use crate::segment::{BoxedImmutableSegment, MockedSegment, Segment};
     use crate::wal::entry::WalOpType;
+
+    // Used for multi-threaded WAL write tests
+    const USER_ID: u128 = 0;
+    const NUM_GROUPS: usize = 10; // 10 groups of 4 operations each
+    const OPERATIONS_PER_GROUP: usize = 4; // 3 inserts + 1 delete per group
 
     #[test]
     fn test_collection() -> Result<()> {
@@ -1483,11 +1702,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_collection_with_wal() -> Result<()> {
+        env_logger::try_init().ok();
         let collection_name = "test_collection";
         let temp_dir = TempDir::new(collection_name)?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
-        let mut segment_config = CollectionConfig::default_test_config();
-        segment_config.wal_file_size = 1024 * 1024;
+        let segment_config = CollectionConfig {
+            wal_file_size: 1024 * 1024,
+            ..CollectionConfig::default_test_config()
+        };
 
         let collection = Arc::new(
             Collection::<NoQuantizerL2>::new(
@@ -1498,40 +1720,53 @@ mod tests {
             .unwrap(),
         );
 
-        // Create a background thread that calls sync_wal on collection
-        let stopped = Arc::new(AtomicBool::new(false));
-        let collection_for_sync = collection.clone();
-        let stopped_for_sync = stopped.clone();
-
-        let sync_thread = std::thread::spawn(move || {
-            while !stopped_for_sync.load(std::sync::atomic::Ordering::Relaxed) {
-                // Call sync_wal on collection
-                if let Err(e) = collection_for_sync.sync_wal() {
-                    println!("Error syncing WAL: {:?}", e);
-                }
-
-                // Sleep for a short interval before syncing again
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-        });
-
         collection
-            .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
+            .write_to_wal(
+                Arc::from([1u128]),
+                Arc::from([0u128]),
+                Arc::from([1.0, 2.0, 3.0, 4.0]),
+                WalOpType::Insert,
+            )
             .await?;
         collection
-            .write_to_wal(&[2], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
+            .write_to_wal(
+                Arc::from([2u128]),
+                Arc::from([0u128]),
+                Arc::from([1.0, 2.0, 3.0, 4.0]),
+                WalOpType::Insert,
+            )
             .await?;
         collection
-            .write_to_wal(&[3], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
+            .write_to_wal(
+                Arc::from([3u128]),
+                Arc::from([0u128]),
+                Arc::from([1.0, 2.0, 3.0, 4.0]),
+                WalOpType::Insert,
+            )
             .await?;
         collection
-            .write_to_wal(&[4], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
+            .write_to_wal(
+                Arc::from([4u128]),
+                Arc::from([0u128]),
+                Arc::from([1.0, 2.0, 3.0, 4.0]),
+                WalOpType::Insert,
+            )
             .await?;
         collection
-            .write_to_wal(&[5], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
+            .write_to_wal(
+                Arc::from([5u128]),
+                Arc::from([0u128]),
+                Arc::from([1.0, 2.0, 3.0, 4.0]),
+                WalOpType::Insert,
+            )
             .await?;
         collection
-            .write_to_wal(&[5], &[0], &[], WalOpType::Delete)
+            .write_to_wal(
+                Arc::from([5u128]),
+                Arc::from([0u128]),
+                Arc::from([]),
+                WalOpType::Delete,
+            )
             .await?;
 
         // Process all ops
@@ -1569,21 +1804,19 @@ mod tests {
         assert_eq!(toc.pending.len(), 0);
         assert_eq!(toc.sequence_number, 5);
 
-        // Stop the sync thread
-        stopped.store(true, std::sync::atomic::Ordering::Relaxed);
-        sync_thread.join().unwrap();
-
         Ok(())
     }
 
     #[tokio::test]
     async fn test_collection_with_wal_reopen() -> Result<()> {
+        env_logger::try_init().ok();
         let collection_name = "test_collection";
         let temp_dir = TempDir::new(collection_name)?;
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
-        let mut segment_config = CollectionConfig::default_test_config();
-        segment_config.wal_file_size = 1024 * 1024;
-
+        let segment_config = CollectionConfig {
+            wal_file_size: 1024 * 1024,
+            ..CollectionConfig::default_test_config()
+        };
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &segment_config)?;
 
         // Insert but don't flush
@@ -1591,31 +1824,29 @@ mod tests {
             let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
             let collection = reader.read::<NoQuantizerL2>()?;
 
-            // Create a background thread that calls sync_wal on this collection
-            let stopped = Arc::new(AtomicBool::new(false));
-            let collection_for_sync = collection.clone();
-            let stopped_for_sync = stopped.clone();
-
-            let sync_thread = std::thread::spawn(move || {
-                while !stopped_for_sync.load(std::sync::atomic::Ordering::Relaxed) {
-                    // Call sync_wal on collection
-                    if let Err(e) = collection_for_sync.sync_wal() {
-                        println!("Error syncing WAL: {:?}", e);
-                    }
-
-                    // Sleep for a short interval before syncing again
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                }
-            });
-
             collection
-                .write_to_wal(&[1], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
+                .write_to_wal(
+                    Arc::from([1u128]),
+                    Arc::from([0u128]),
+                    Arc::from([1.0, 2.0, 3.0, 4.0]),
+                    WalOpType::Insert,
+                )
                 .await?;
             collection
-                .write_to_wal(&[2], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
+                .write_to_wal(
+                    Arc::from([2u128]),
+                    Arc::from([0u128]),
+                    Arc::from([1.0, 2.0, 3.0, 4.0]),
+                    WalOpType::Insert,
+                )
                 .await?;
             collection
-                .write_to_wal(&[1], &[0], &[], WalOpType::Delete)
+                .write_to_wal(
+                    Arc::from([1u128]),
+                    Arc::from([0u128]),
+                    Arc::from([]),
+                    WalOpType::Delete,
+                )
                 .await?;
 
             // Process all ops
@@ -1625,33 +1856,12 @@ mod tests {
                     break;
                 }
             }
-
-            // Stop the sync thread when collection goes out of scope
-            stopped.store(true, std::sync::atomic::Ordering::Relaxed);
-            sync_thread.join().unwrap();
         }
 
         let segment1_name;
         {
             let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
             let collection = reader.read::<NoQuantizerL2>()?;
-
-            // Create a background thread that calls sync_wal on this collection
-            let stopped = Arc::new(AtomicBool::new(false));
-            let collection_for_sync = collection.clone();
-            let stopped_for_sync = stopped.clone();
-
-            let sync_thread = std::thread::spawn(move || {
-                while !stopped_for_sync.load(std::sync::atomic::Ordering::Relaxed) {
-                    // Call sync_wal on collection
-                    if let Err(e) = collection_for_sync.sync_wal() {
-                        println!("Error syncing WAL: {:?}", e);
-                    }
-
-                    // Sleep for a short interval before syncing again
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                }
-            });
 
             let toc = collection.get_current_toc();
             assert_eq!(toc.pending.len(), 0);
@@ -1684,49 +1894,58 @@ mod tests {
 
             // Write 2 more ops, but don't flush
             collection
-                .write_to_wal(&[2], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
+                .write_to_wal(
+                    Arc::from([2u128]),
+                    Arc::from([0u128]),
+                    Arc::from([1.0, 2.0, 3.0, 4.0]),
+                    WalOpType::Insert,
+                )
                 .await?;
             collection
-                .write_to_wal(&[3], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
+                .write_to_wal(
+                    Arc::from([3u128]),
+                    Arc::from([0u128]),
+                    Arc::from([1.0, 2.0, 3.0, 4.0]),
+                    WalOpType::Insert,
+                )
                 .await?;
             collection
-                .write_to_wal(&[4], &[0], &[1.0, 2.0, 3.0, 4.0], WalOpType::Insert)
+                .write_to_wal(
+                    Arc::from([4u128]),
+                    Arc::from([0u128]),
+                    Arc::from([1.0, 2.0, 3.0, 4.0]),
+                    WalOpType::Insert,
+                )
                 .await?;
             collection
-                .write_to_wal(&[1], &[0], &[], WalOpType::Delete)
+                .write_to_wal(
+                    Arc::from([1u128]),
+                    Arc::from([0u128]),
+                    Arc::from([]),
+                    WalOpType::Delete,
+                )
                 .await?;
             collection
-                .write_to_wal(&[2], &[0], &[], WalOpType::Delete)
+                .write_to_wal(
+                    Arc::from([2u128]),
+                    Arc::from([0u128]),
+                    Arc::from([]),
+                    WalOpType::Delete,
+                )
                 .await?;
             collection
-                .write_to_wal(&[3], &[0], &[], WalOpType::Delete)
+                .write_to_wal(
+                    Arc::from([3u128]),
+                    Arc::from([0u128]),
+                    Arc::from([]),
+                    WalOpType::Delete,
+                )
                 .await?;
-
-            // Stop the sync thread when collection goes out of scope
-            stopped.store(true, std::sync::atomic::Ordering::Relaxed);
-            sync_thread.join().unwrap();
         }
 
         {
             let reader = CollectionReader::new(collection_name.to_string(), base_directory);
             let collection = reader.read::<NoQuantizerL2>()?;
-
-            // Create a background thread that calls sync_wal on this collection
-            let stopped = Arc::new(AtomicBool::new(false));
-            let collection_for_sync = collection.clone();
-            let stopped_for_sync = stopped.clone();
-
-            let sync_thread = std::thread::spawn(move || {
-                while !stopped_for_sync.load(std::sync::atomic::Ordering::Relaxed) {
-                    // Call sync_wal on collection
-                    if let Err(e) = collection_for_sync.sync_wal() {
-                        println!("Error syncing WAL: {:?}", e);
-                    }
-
-                    // Sleep for a short interval before syncing again
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                }
-            });
 
             let toc = collection.get_current_toc();
             assert_eq!(toc.pending.len(), 0);
@@ -1776,10 +1995,6 @@ mod tests {
             let toc = collection.get_current_toc();
             assert_eq!(toc.pending.len(), 0);
             assert_eq!(toc.sequence_number, 8);
-
-            // Stop the sync thread when collection goes out of scope
-            stopped.store(true, std::sync::atomic::Ordering::Relaxed);
-            sync_thread.join().unwrap();
         }
 
         Ok(())
@@ -2031,5 +2246,281 @@ mod tests {
         // Final metrics verification
         assert_eq!(get_searchable_docs(), 5);
         assert_eq!(get_active_segments(), 2);
+    }
+
+    /// Tests concurrent WAL write groups with mixed insert and delete operations
+    ///
+    /// This test spawns multiple concurrent async tasks that write both inserts and deletes
+    /// to the WAL simultaneously. Each group contains 3 inserts and 1 delete,
+    /// testing the write group mechanism under real concurrent load with mixed operations.
+    async fn test_collection_concurrent_wal_write_groups_with_size(
+        wal_write_group_size: usize,
+    ) -> Result<()> {
+        let collection_name = &format!("test_collection_concurrent_wal_{wal_write_group_size}");
+        let temp_dir = TempDir::new(collection_name)?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let segment_config = CollectionConfig {
+            wal_file_size: 1024 * 1024,
+            wal_write_group_size,
+            ..CollectionConfig::default_test_config()
+        };
+        let collection = Arc::new(
+            Collection::<NoQuantizerL2>::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                segment_config,
+            )
+            .unwrap(),
+        );
+
+        let mut join_set = JoinSet::new();
+
+        // Spawn multiple concurrent async tasks organized in groups
+        for group_idx in 0..NUM_GROUPS {
+            for op_idx in 0..OPERATIONS_PER_GROUP {
+                let collection_clone = collection.clone();
+                let task_id = group_idx * OPERATIONS_PER_GROUP + op_idx;
+
+                join_set.spawn(async move {
+                    if op_idx == OPERATIONS_PER_GROUP - 1 {
+                        // Last operation in each group is a delete
+                        // Delete the document from the first insert in this group
+                        let doc_to_delete = (group_idx * OPERATIONS_PER_GROUP) as u128;
+
+                        collection_clone
+                            .write_to_wal(
+                                Arc::from([doc_to_delete]),
+                                Arc::from([USER_ID]),
+                                Arc::from([]), // Empty data for delete
+                                WalOpType::Delete,
+                            )
+                            .await
+                            .unwrap();
+                    } else {
+                        // First 3 operations in each group are inserts
+                        let doc_id = task_id as u128;
+                        let vector_data = vec![
+                            doc_id as f32,
+                            (doc_id + 1) as f32,
+                            (doc_id + 2) as f32,
+                            (doc_id + 3) as f32,
+                        ];
+
+                        collection_clone
+                            .write_to_wal(
+                                Arc::from([doc_id]),
+                                Arc::from([USER_ID]),
+                                Arc::from(vector_data.as_slice()),
+                                WalOpType::Insert,
+                            )
+                            .await
+                            .unwrap();
+                    }
+                });
+            }
+        }
+
+        // Wait for all tasks to complete concurrently
+        while let Some(result) = join_set.join_next().await {
+            result.unwrap(); // Ensure no task panicked
+        }
+
+        // Process all ops from the WAL
+        loop {
+            let ops_processed = collection.process_one_op().await?;
+            if ops_processed == 0 {
+                break;
+            }
+        }
+
+        // Flush and verify results
+        collection.flush()?;
+        let segment_names = collection.get_all_segment_names();
+        assert_eq!(segment_names.len(), 1);
+
+        let segment_name = segment_names[0].clone();
+        let segment = collection
+            .all_segments()
+            .get(&segment_name)
+            .unwrap()
+            .value()
+            .clone();
+
+        match segment {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                // Verify the results for each group
+                for group_idx in 0..NUM_GROUPS {
+                    let base_doc_id = (group_idx * OPERATIONS_PER_GROUP) as u128;
+
+                    // First document in each group should be deleted (not exist)
+                    let deleted_doc_id = base_doc_id;
+                    assert!(
+                        immutable_segment
+                            .read()
+                            .get_point_id(0, deleted_doc_id)
+                            .is_none(),
+                        "Document {deleted_doc_id} should be deleted",
+                    );
+
+                    // Other documents in the group should exist (inserted but not deleted)
+                    for op_idx in 1..OPERATIONS_PER_GROUP - 1 {
+                        // The 2 middle documents in each group
+                        let existing_doc_id = base_doc_id + op_idx as u128;
+                        assert!(
+                            immutable_segment
+                                .read()
+                                .get_point_id(0, existing_doc_id)
+                                .is_some(),
+                            "Document {existing_doc_id} should exist",
+                        );
+                    }
+                }
+            }
+            _ => {
+                panic!("Expected FinalizedSegment");
+            }
+        }
+
+        let toc = collection.get_current_toc();
+        assert_eq!(toc.pending.len(), 0);
+
+        // Should have sequence number equal to total number of operations - 1
+        let total_operations = NUM_GROUPS * OPERATIONS_PER_GROUP;
+        assert_eq!(toc.sequence_number, (total_operations - 1) as i64);
+
+        Ok(())
+    }
+
+    /// Original test function that calls the parameterized version with different group sizes
+    #[tokio::test]
+    async fn test_collection_concurrent_wal_write_groups() -> Result<()> {
+        env_logger::try_init().ok();
+
+        // Group size = 0 : every write is its own leader
+        test_collection_concurrent_wal_write_groups_with_size(0).await?;
+
+        // Group size < number of writes - 1 : multiple groups with leaders without timeout, except
+        // possibly the last one
+        // Here we set group size to <= 1/3 of total writes to ensure multiple groups
+        test_collection_concurrent_wal_write_groups_with_size(
+            (NUM_GROUPS * OPERATIONS_PER_GROUP) / 3,
+        )
+        .await?;
+
+        // Group size = number of writes - 1 : last write is the leader
+        test_collection_concurrent_wal_write_groups_with_size(
+            NUM_GROUPS * OPERATIONS_PER_GROUP - 1,
+        )
+        .await?;
+
+        // Group size = number of writes : last write takes over and becomes leader after timeout
+        test_collection_concurrent_wal_write_groups_with_size(NUM_GROUPS * OPERATIONS_PER_GROUP)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Test focused on timeout behavior with slow operations
+    #[tokio::test]
+    async fn test_collection_wal_write_group_timeout_behavior() -> Result<()> {
+        env_logger::try_init().ok();
+
+        let collection_name = "test_collection_wal_timeout";
+        let temp_dir = TempDir::new(collection_name)?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+        let segment_config = CollectionConfig {
+            wal_file_size: 1024 * 1024,
+            // Large group size to have followers per group (> 0 is enough)
+            wal_write_group_size: 1000,
+            ..CollectionConfig::default_test_config()
+        };
+
+        let collection = Arc::new(
+            Collection::<NoQuantizerL2>::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                segment_config,
+            )
+            .unwrap(),
+        );
+
+        let mut join_set = JoinSet::new();
+
+        // Spawn 3 concurrent tasks with delays to test timeout
+        for i in 0..3 {
+            let collection_clone = collection.clone();
+            join_set.spawn(async move {
+                // Add delay to ensure we hit timeout rather than group size limit
+                tokio::time::sleep(std::time::Duration::from_millis(i * 1000)).await;
+
+                let doc_id = i as u128;
+                let vector_data = vec![
+                    doc_id as f32,
+                    (doc_id + 1) as f32,
+                    (doc_id + 2) as f32,
+                    (doc_id + 3) as f32,
+                ];
+
+                collection_clone
+                    .write_to_wal(
+                        Arc::from([doc_id]),
+                        Arc::from([USER_ID]),
+                        Arc::from(vector_data.as_slice()),
+                        WalOpType::Insert,
+                    )
+                    .await
+                    .unwrap();
+            });
+        }
+
+        // Wait for all tasks to complete
+        while let Some(result) = join_set.join_next().await {
+            result.unwrap();
+        }
+
+        // Process all ops from the WAL
+        loop {
+            let ops_processed = collection.process_one_op().await?;
+            if ops_processed == 0 {
+                break;
+            }
+        }
+
+        // Flush and verify results
+        collection.flush()?;
+        let segment_names = collection.get_all_segment_names();
+        assert_eq!(segment_names.len(), 1);
+
+        let segment_name = segment_names[0].clone();
+        let segment = collection
+            .all_segments()
+            .get(&segment_name)
+            .unwrap()
+            .value()
+            .clone();
+
+        match segment {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                // All 3 documents should exist
+                for i in 0..3 {
+                    assert!(
+                        immutable_segment
+                            .read()
+                            .get_point_id(0, i as u128)
+                            .is_some(),
+                        "Document {i} should exist",
+                    );
+                }
+            }
+            _ => {
+                panic!("Expected FinalizedSegment");
+            }
+        }
+
+        let toc = collection.get_current_toc();
+        assert_eq!(toc.pending.len(), 0);
+        assert_eq!(toc.sequence_number, 2); // 3 operations, 0-indexed
+
+        Ok(())
     }
 }

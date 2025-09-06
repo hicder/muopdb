@@ -247,7 +247,7 @@ impl IndexServer for IndexServerImpl {
         let collection_name = req.collection_name;
         API_METRICS.num_requests_inc("insert", &collection_name);
 
-        let ids = ids_to_u128s(&req.doc_ids);
+        let doc_ids = ids_to_u128s(&req.doc_ids);
         let vectors = req.vectors;
         let user_ids = ids_to_u128s(&req.user_ids);
         let collection_opt = self
@@ -267,11 +267,20 @@ impl IndexServer for IndexServerImpl {
                     ));
                 }
 
+                let doc_ids: Arc<[u128]> = Arc::from(doc_ids);
+                let user_ids: Arc<[u128]> = Arc::from(user_ids);
+                let vectors: Arc<[f32]> = Arc::from(vectors);
+
                 let seq_no = collection
-                    .write_to_wal(&ids, &user_ids, &vectors, WalOpType::Insert)
+                    .write_to_wal(
+                        doc_ids.clone(),
+                        user_ids.clone(),
+                        vectors.clone(),
+                        WalOpType::Insert,
+                    )
                     .await
                     .unwrap_or(0);
-                let num_docs_inserted = ids.len() as u32;
+                let num_docs_inserted = doc_ids.len() as u32;
                 info!(
                     "[{collection_name}] Inserted {num_docs_inserted} vectors in WAL with seq_no {seq_no}"
                 );
@@ -284,18 +293,20 @@ impl IndexServer for IndexServerImpl {
                 }
 
                 let doc_attrs = req.attributes.as_ref().map_or_else(
-                    || vec![None; ids.len()],
+                    || vec![None; doc_ids.len()],
                     |attrs| attrs.values.iter().cloned().map(Some).collect::<Vec<_>>(),
                 );
 
-                vectors.chunks(dimensions).zip(ids).zip(doc_attrs).for_each(
-                    |((vector, id), doc_attr)| {
+                vectors
+                    .chunks(dimensions)
+                    .zip(doc_ids.iter())
+                    .zip(doc_attrs)
+                    .for_each(|((vector, &id), doc_attr)| {
                         // TODO(hicder): Handle errors
                         collection
                             .insert_for_users(&user_ids, id, vector, seq_no, doc_attr)
                             .unwrap()
-                    },
-                );
+                    });
 
                 // log the duration
                 let end = std::time::Instant::now();
@@ -333,8 +344,16 @@ impl IndexServer for IndexServerImpl {
 
         match collection_opt {
             Some(collection) => {
+                let ids: Arc<[u128]> = Arc::from(ids);
+                let user_ids: Arc<[u128]> = Arc::from(user_ids);
+
                 let seq_no = collection
-                    .write_to_wal(&ids, &user_ids, &[], WalOpType::Delete)
+                    .write_to_wal(
+                        ids.clone(),
+                        user_ids.clone(),
+                        Arc::from([]),
+                        WalOpType::Delete,
+                    )
                     .await
                     .unwrap_or(0);
                 let num_docs_removed = ids.len() as u32;
@@ -442,8 +461,17 @@ impl IndexServer for IndexServerImpl {
                     ));
                 }
 
+                let doc_ids: Arc<[u128]> = Arc::from(doc_ids);
+                let user_ids: Arc<[u128]> = Arc::from(user_ids);
+                let vectors: Arc<[f32]> = Arc::from(vectors);
+
                 let seq_no = collection
-                    .write_to_wal(&doc_ids, &user_ids, vectors, WalOpType::Insert)
+                    .write_to_wal(
+                        doc_ids.clone(),
+                        user_ids.clone(),
+                        vectors.clone(),
+                        WalOpType::Insert,
+                    )
                     .await
                     .unwrap_or(0);
                 let num_docs_inserted = doc_ids.len() as u32;
@@ -465,9 +493,9 @@ impl IndexServer for IndexServerImpl {
 
                 vectors
                     .chunks(dimensions)
-                    .zip(doc_ids)
+                    .zip(doc_ids.iter())
                     .zip(doc_attrs)
-                    .for_each(|((vector, id), doc_attr)| {
+                    .for_each(|((vector, &id), doc_attr)| {
                         // TODO(hicder): Handle errors
                         collection
                             .insert_for_users(&user_ids, id, vector, seq_no, doc_attr)

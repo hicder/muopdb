@@ -47,9 +47,6 @@ struct Args {
     #[arg(long, default_value_t = 10)]
     num_flush_workers: u32,
 
-    #[arg(long, default_value_t = 2)]
-    num_sync_wal_threads: u32,
-
     #[arg(long, default_value_t = true)]
     enable_auto_optimizing: bool,
 
@@ -69,7 +66,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Node: {}, listening on port {}", node_id, arg.port);
     info!("Number of ingestion workers: {}", arg.num_ingestion_workers);
     info!("Number of flush workers: {}", arg.num_flush_workers);
-    info!("Number of sync WAL workers: {}", arg.num_sync_wal_threads);
 
     let collection_catalog = CollectionCatalog::new();
     let collection_provider = CollectionProvider::new(collection_data_path);
@@ -159,30 +155,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         flush_worker_threads.push(collection_manager_flush_thread);
     }
 
-    let mut sync_wal_worker_threads = Vec::new();
-    for i in 0..arg.num_sync_wal_threads {
-        let collection_manager_sync_wal_clone = collection_manager.clone();
-        let collection_manager_sync_wal_thread = spawn(async move {
-            loop {
-                let synced_entries = collection_manager_sync_wal_clone
-                    .read()
-                    .await
-                    .sync_wal(i)
-                    .await
-                    .unwrap_or_else(|e| {
-                        error!("Error syncing WAL for worker {}: {}", i, e);
-                        0
-                    });
-                debug!("Synced {} WAL entries for worker {}", synced_entries, i);
-                // If there are no entries to sync, sleep for a short duration
-                if synced_entries == 0 {
-                    sleep(std::time::Duration::from_millis(100)).await;
-                }
-            }
-        });
-        sync_wal_worker_threads.push(collection_manager_sync_wal_thread);
-    }
-
     // Start the metrics server
     let http_server_addr = SocketAddr::new(addr.ip(), arg.http_port);
     info!("Starting HTTP server on {http_server_addr}");
@@ -210,7 +182,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .serve(addr)
         .await?;
 
-    // TODO(hicder): Add graceful shutdown
     info!("Received signal, shutting down");
     collection_manager_thread.await?;
     automatic_segments_cleanup_thread.await?;
@@ -218,9 +189,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         thread.await?;
     }
     for thread in flush_worker_threads {
-        thread.await?;
-    }
-    for thread in sync_wal_worker_threads {
         thread.await?;
     }
     Ok(())
