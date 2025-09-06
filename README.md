@@ -173,11 +173,10 @@ This time it should give you something else
 ### Phase 4 (Ongoing)
 - [ ] Features
   - [ ] Hybrid search
-- [ ] Database Management
+- [x] Database Management
   - [x] Optimizing deletion with bloom filter
   - [x] Automatic write batch
   - [x] Automatic segment optimizer
-  - [ ] Cloud-native MuopDB (Kafka + S3)  
 
 ### Building
 
