@@ -471,8 +471,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     &group.entries.len()
                 );
 
-                let mut results = vec![];
-                // Go through all entries in the group
+                // Go through all entries in the group and send seq_no immediately
                 for entry in group.entries {
                     let seq_no = append_wal(
                         wal,
@@ -482,9 +481,16 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                         entry.args.op_type,
                     )
                     .await?;
-                    results.push((entry.seq_tx, seq_no));
+
+                    // Send seq_no immediately - follower can return now!
+                    debug!("[WAL leader] sending seq_no {seq_no} to follower");
+                    entry
+                        .seq_tx
+                        .send(seq_no)
+                        .expect("WAL Leader: follower's receiver dropped");
                 }
-                Ok(results)
+
+                Ok(())
             };
 
             if current_group.should_close() {
@@ -497,7 +503,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 drop(coordinator);
 
                 // Write all follower entries to WAL
-                let results = write_follower_entries(current_group).await?;
+                write_follower_entries(current_group).await?;
 
                 // Write the leader's own entry
                 let leader_seq_no = append_wal(wal, doc_ids, user_ids, data, wal_op_type).await?;
@@ -505,14 +511,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 // Sync the WAL at once
                 let entries_synced = self.sync_wal()?;
                 info!("[WAL leader] Synced {entries_synced} entries to WAL");
-
-                // Send seq_no back to all followers
-                for (seq_tx, seq_no) in results {
-                    debug!("[Wal leader] sending seq_no {seq_no} to follower");
-                    seq_tx
-                        .send(seq_no)
-                        .expect("WAL Leader: follower's receiver dropped");
-                }
 
                 Ok(leader_seq_no)
             } else {
@@ -569,20 +567,14 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                 drop(coordinator);
 
                                 // Run leader job with the timed-out group
-                                let mut results = write_follower_entries(group).await?;
+                                write_follower_entries(group).await?;
+
+                                // Get the seq_no for myself
+                                let leader_seq_no = seq_rx.await.expect("Should receive my own seq_no");
 
                                 // Sync the WAL at once
                                 let entries_synced = self.sync_wal()?;
-                                info!("[WAL leader] Synced {entries_synced} entries to WAL");
-
-                                // Get the seq_no for myself
-                                let leader_seq_no = results.pop().expect("Follower's own entry should still be there").1;
-
-                                // Send seq_no back to all followers
-                                for (seq_tx, seq_no) in results {
-                                    debug!("[WAL timeout leader] sending seq_no {seq_no} to follower");
-                                    seq_tx.send(seq_no).expect("WAL Leader: follower's receiver dropped");
-                                }
+                                info!("[WAL timeout leader] Synced {entries_synced} entries to WAL");
 
                                 debug!("[WAL timeout leader] Returning my own seq_no {leader_seq_no}");
                                 Ok(leader_seq_no)
