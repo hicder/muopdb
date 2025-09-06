@@ -175,7 +175,7 @@ This time it should give you something else
   - [ ] Hybrid search
 - [x] Database Management
   - [x] Optimizing deletion with bloom filter
-  - [x] Automatic write batch
+  - [x] Optimizing WAL write with thread-safe write group
   - [x] Automatic segment optimizer
 
 ### Building
