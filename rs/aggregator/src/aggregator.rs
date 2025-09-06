@@ -97,6 +97,7 @@ impl Aggregator for AggregatorServerImpl {
                     record_metrics: req.record_metrics,
                     ef_construction,
                     user_ids: req.user_ids.clone(),
+                    where_document: None,
                 }))
                 .await
                 .map_err(|e| tonic::Status::internal(format!("Search request failed: {}", e)))?;
