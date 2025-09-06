@@ -440,13 +440,9 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
             // A closure to append to WAL and send op to channel
             #[allow(clippy::await_holding_lock)]
-            let append_wal = async |wal: &RwLock<Wal>,
-                                    doc_ids: Arc<[u128]>,
-                                    user_ids: Arc<[u128]>,
-                                    wal_op_type: WalOpType<Arc<[f32]>>|
-                   -> Result<u64> {
+            let append_wal = async |wal: &RwLock<Wal>, args: AppendArgs| -> Result<u64> {
                 // Convert Arc<[f32]> to &[f32] in the enum
-                let wal_op_type_ref = match &wal_op_type {
+                let wal_op_type_ref = match &args.op_type {
                     WalOpType::Insert(data) => WalOpType::Insert(data.as_ref()),
                     WalOpType::Delete => WalOpType::Delete,
                 };
@@ -454,40 +450,43 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 // Intentionally keep the write lock until we send the message to the channel.
                 // This ensures that message in the channel is the same order as WAL.
                 let mut wal_write = wal.write();
-                let seq_no = wal_write.append(&doc_ids, &user_ids, wal_op_type_ref)?;
+                let seq_no = wal_write.append(&args.doc_ids, &args.user_ids, wal_op_type_ref)?;
                 // Once the WAL is written, send the op to the channel
                 let op_channel_entry =
-                    OpChannelEntry::new(&doc_ids, &user_ids, seq_no, wal_op_type);
+                    OpChannelEntry::new(&args.doc_ids, &args.user_ids, seq_no, args.op_type);
                 self.sender.send(op_channel_entry).await?;
                 Ok(seq_no)
             };
 
             // A closure to run as the leader
-            let write_follower_entries = |group: WalWriteGroup| async move {
-                info!(
-                    "[WAL leader] Writing {} append entries to WAL",
-                    &group.entries.len()
-                );
+            let write_follower_entries = |group: WalWriteGroup, leader_args: Option<AppendArgs>| async move {
+                info!("Writing {} append entries to WAL", &group.entries.len());
 
-                // Go through all entries in the group and send seq_no immediately
+                // Go through all entries in the group and collect results
+                let mut results: Vec<(u64, oneshot::Sender<u64>)> = vec![];
                 for entry in group.entries {
-                    let seq_no = append_wal(
-                        wal,
-                        entry.args.doc_ids,
-                        entry.args.user_ids,
-                        entry.args.op_type,
-                    )
-                    .await?;
+                    let seq_no = append_wal(wal, entry.args).await?;
+                    results.push((seq_no, entry.seq_tx));
+                }
 
-                    // Send seq_no immediately - follower can return now!
+                let leader_seq_no = match leader_args {
+                    Some(args) => append_wal(wal, args).await?,
+                    None => 0, // dummy value, not used
+                };
+
+                // Sync the WAL at once
+                let entries_synced = self.sync_wal()?;
+                info!("Synced {entries_synced} entries to WAL");
+
+                // Now send seq_no to all followers
+                for (seq_no, seq_tx) in results {
                     debug!("[WAL leader] sending seq_no {seq_no} to follower");
-                    entry
-                        .seq_tx
+                    seq_tx
                         .send(seq_no)
                         .expect("WAL Leader: follower's receiver dropped");
                 }
 
-                Ok(())
+                Ok(leader_seq_no)
             };
 
             if current_group.should_close() {
@@ -499,15 +498,16 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 coordinator.current_group = Some(coordinator.new_wal_write_group());
                 drop(coordinator);
 
-                // Write all follower entries to WAL
-                write_follower_entries(current_group).await?;
-
-                // Write the leader's own entry
-                let leader_seq_no = append_wal(wal, doc_ids, user_ids, wal_op_type).await?;
-
-                // Sync the WAL at once
-                let entries_synced = self.sync_wal()?;
-                info!("[WAL leader] Synced {entries_synced} entries to WAL");
+                // Write all follower entries to WAL, including this leader's entry
+                let leader_seq_no = write_follower_entries(
+                    current_group,
+                    Some(AppendArgs {
+                        doc_ids,
+                        user_ids,
+                        op_type: wal_op_type,
+                    }),
+                )
+                .await?;
 
                 Ok(leader_seq_no)
             } else {
@@ -563,7 +563,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                 drop(coordinator);
 
                                 // Run leader job with the timed-out group
-                                write_follower_entries(group).await?;
+                                write_follower_entries(group, None).await?;
 
                                 // Get the seq_no for myself
                                 let leader_seq_no = seq_rx.await.expect("Should receive my own seq_no");
