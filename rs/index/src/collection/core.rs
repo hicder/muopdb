@@ -33,8 +33,7 @@ use crate::wal::wal::Wal;
 struct AppendArgs {
     doc_ids: Arc<[u128]>,
     user_ids: Arc<[u128]>,
-    data: Arc<[f32]>,
-    op_type: WalOpType,
+    op_type: WalOpType<Arc<[f32]>>,
 }
 
 /// Represents an entry for a follower task
@@ -143,7 +142,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         // Create a new segment_config with a random name
         let random_name = format!("tmp_segment_{}", rand::random::<u64>());
-        let segment_base_directory = format!("{}/{}", base_directory, random_name);
+        let segment_base_directory = format!("{base_directory}/{random_name}");
 
         let mutable_segment = RwLock::new(MutableSegment::new(
             segment_config.clone(),
@@ -151,7 +150,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         )?);
 
         let wal = if segment_config.wal_file_size > 0 {
-            let wal_directory = format!("{}/wal", base_directory);
+            let wal_directory = format!("{base_directory}/wal");
             Some(RwLock::new(Wal::open(
                 &wal_directory,
                 segment_config.wal_file_size,
@@ -195,12 +194,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         std::fs::create_dir_all(base_directory.clone())?;
 
         // Write version 0
-        let toc_path = format!("{}/version_0", base_directory);
+        let toc_path = format!("{base_directory}/version_0");
         let toc = TableOfContent::default();
         serde_json::to_writer_pretty(std::fs::File::create(toc_path)?, &toc)?;
 
         // Write the config file
-        let config_path = format!("{}/collection_config.json", base_directory);
+        let config_path = format!("{base_directory}/collection_config.json");
         serde_json::to_writer_pretty(std::fs::File::create(config_path)?, config)?;
 
         Ok(())
@@ -219,12 +218,9 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         versions_info.write().version_ref_counts.insert(version, 0);
 
         let all_segments = DashMap::new();
-        toc.toc
-            .iter()
-            .zip(segments.into_iter())
-            .for_each(|(name, segment)| {
-                all_segments.insert(name.clone(), segment);
-            });
+        toc.toc.iter().zip(segments).for_each(|(name, segment)| {
+            all_segments.insert(name.clone(), segment);
+        });
         let last_sequence_number = toc.sequence_number;
 
         let versions = DashMap::new();
@@ -250,19 +246,19 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
         // Create a new segment_config with a random name
         let random_name = format!("tmp_segment_{}", rand::random::<u64>());
-        let random_base_directory = format!("{}/{}", base_directory, random_name);
+        let random_base_directory = format!("{base_directory}/{random_name}");
         std::fs::create_dir_all(&random_base_directory)?;
         let mutable_segment = MutableSegment::new(segment_config.clone(), random_base_directory)?;
 
         let wal = if segment_config.wal_file_size > 0 {
-            let wal_directory = format!("{}/wal", base_directory);
+            let wal_directory = format!("{base_directory}/wal");
             let wal = Wal::open(
                 &wal_directory,
                 segment_config.wal_file_size,
-                last_sequence_number as i64,
+                last_sequence_number,
             )?;
             let iterators = wal.get_iterators();
-            let mut seq_no = (last_sequence_number + 1) as i64;
+            let mut seq_no = last_sequence_number + 1;
             for mut iterator in iterators {
                 if iterator.last_seq_no() < seq_no {
                     debug!(
@@ -276,13 +272,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 for op in iterator {
                     if let anyhow::Result::Ok(wal_entry) = op {
                         let entry_seq_no = wal_entry.seq_no;
-                        debug!("Processing op with seq_no: {}", entry_seq_no);
+                        debug!("Processing op with seq_no: {entry_seq_no}");
                         let wal_entry = wal_entry.decode(segment_config.num_features);
                         match wal_entry.op_type {
-                            WalOpType::Insert => {
+                            WalOpType::Insert(data) => {
                                 let doc_ids = wal_entry.doc_ids;
                                 let user_ids = wal_entry.user_ids;
-                                let data = wal_entry.data;
 
                                 let mut num_successful_inserts: i64 = 0;
                                 data.chunks(segment_config.num_features)
@@ -312,7 +307,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                             WalOpType::Delete => {
                                 let doc_ids = wal_entry.doc_ids;
                                 let user_ids = wal_entry.user_ids;
-                                assert!(wal_entry.data.is_empty());
                                 let ver = versions.get(&version).unwrap();
 
                                 let mut num_successful_deletes: i64 = 0;
@@ -406,14 +400,14 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             {
                 debug!(
                     "Flushing because of max pending ops: {}",
-                    current_seq_no as i64 - flushed_seq_no as i64
+                    current_seq_no as i64 - flushed_seq_no
                 );
                 return true;
             }
         }
 
         if self.segment_config.max_time_to_flush_ms > 0 {
-            let last_flush_time = self.last_flush_time.lock().unwrap().clone();
+            let last_flush_time = *self.last_flush_time.lock().unwrap();
             let current_time = std::time::Instant::now();
             if current_time.duration_since(last_flush_time)
                 >= std::time::Duration::from_millis(self.segment_config.max_time_to_flush_ms)
@@ -433,8 +427,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         &self,
         doc_ids: Arc<[u128]>,
         user_ids: Arc<[u128]>,
-        data: Arc<[f32]>,
-        wal_op_type: WalOpType,
+        wal_op_type: WalOpType<Arc<[f32]>>,
     ) -> Result<u64> {
         if let Some(wal) = &self.wal {
             // Lock the write coordinator and take out the current group
@@ -446,20 +439,25 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             };
 
             // A closure to append to WAL and send op to channel
+            #[allow(clippy::await_holding_lock)]
             let append_wal = async |wal: &RwLock<Wal>,
                                     doc_ids: Arc<[u128]>,
                                     user_ids: Arc<[u128]>,
-                                    data: Arc<[f32]>,
-                                    wal_op_type: WalOpType|
+                                    wal_op_type: WalOpType<Arc<[f32]>>|
                    -> Result<u64> {
+                // Convert Arc<[f32]> to &[f32] in the enum
+                let wal_op_type_ref = match &wal_op_type {
+                    WalOpType::Insert(data) => WalOpType::Insert(data.as_ref()),
+                    WalOpType::Delete => WalOpType::Delete,
+                };
                 // Write to WAL, and persist to disk.
                 // Intentionally keep the write lock until we send the message to the channel.
                 // This ensures that message in the channel is the same order as WAL.
                 let mut wal_write = wal.write();
-                let seq_no = wal_write.append(&doc_ids, &user_ids, &data, wal_op_type.clone())?;
+                let seq_no = wal_write.append(&doc_ids, &user_ids, wal_op_type_ref)?;
                 // Once the WAL is written, send the op to the channel
                 let op_channel_entry =
-                    OpChannelEntry::new(&doc_ids, &user_ids, &data, seq_no, wal_op_type);
+                    OpChannelEntry::new(&doc_ids, &user_ids, seq_no, wal_op_type);
                 self.sender.send(op_channel_entry).await?;
                 Ok(seq_no)
             };
@@ -477,7 +475,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                         wal,
                         entry.args.doc_ids,
                         entry.args.user_ids,
-                        entry.args.data,
                         entry.args.op_type,
                     )
                     .await?;
@@ -506,7 +503,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 write_follower_entries(current_group).await?;
 
                 // Write the leader's own entry
-                let leader_seq_no = append_wal(wal, doc_ids, user_ids, data, wal_op_type).await?;
+                let leader_seq_no = append_wal(wal, doc_ids, user_ids, wal_op_type).await?;
 
                 // Sync the WAL at once
                 let entries_synced = self.sync_wal()?;
@@ -529,7 +526,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     args: AppendArgs {
                         doc_ids: doc_ids.clone(),
                         user_ids: user_ids.clone(),
-                        data: data.clone(),
                         op_type: wal_op_type.clone(),
                     },
                     seq_tx,
@@ -618,7 +614,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     pub async fn process_one_op(&self) -> Result<usize> {
         if let std::result::Result::Ok(op) = self.receiver.borrow_mut().try_recv() {
             match op.op_type {
-                WalOpType::Insert => {
+                WalOpType::Insert(()) => {
                     debug!("Processing insert operation with seq_no {}", op.seq_no);
                     let doc_ids = op.doc_ids();
                     let user_ids = op.user_ids();
@@ -787,9 +783,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 *self.last_flush_time.lock().unwrap() = Instant::now();
                 Ok(name_for_new_segment)
             }
-            Err(_) => {
-                return Err(anyhow::anyhow!("Another thread is already flushing"));
-            }
+            Err(_) => Err(anyhow::anyhow!("Another thread is already flushing")),
         }
     }
 
@@ -998,12 +992,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     }
 
     pub fn get_ref_count(&self, version_number: u64) -> usize {
-        self.versions_info
+        *self
+            .versions_info
             .read()
             .version_ref_counts
             .get(&version_number)
             .unwrap_or(&0)
-            .clone()
     }
 
     /// Release the ref count for the version once the snapshot is no longer needed.
@@ -1098,8 +1092,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         // Create and copy content of the pending segment to the new segment
         std::fs::create_dir_all(new_segment_path.clone())?;
 
-        let mut options = CopyOptions::default();
-        options.content_only = true;
+        let options = CopyOptions {
+            content_only: true,
+            ..CopyOptions::default()
+        };
         fs_extra::dir::copy(
             pending_segment_path.clone(),
             new_segment_path.clone(),
@@ -1664,7 +1660,7 @@ mod tests {
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
         let segment_config = CollectionConfig::default_test_config();
         // write the collection config
-        let collection_config_path = format!("{}/collection_config.json", base_directory);
+        let collection_config_path = format!("{base_directory}/collection_config.json");
         serde_json::to_writer_pretty(
             std::fs::File::create(collection_config_path)?,
             &segment_config,
@@ -1724,49 +1720,39 @@ mod tests {
             .write_to_wal(
                 Arc::from([1u128]),
                 Arc::from([0u128]),
-                Arc::from([1.0, 2.0, 3.0, 4.0]),
-                WalOpType::Insert,
+                WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
             )
             .await?;
         collection
             .write_to_wal(
                 Arc::from([2u128]),
                 Arc::from([0u128]),
-                Arc::from([1.0, 2.0, 3.0, 4.0]),
-                WalOpType::Insert,
+                WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
             )
             .await?;
         collection
             .write_to_wal(
                 Arc::from([3u128]),
                 Arc::from([0u128]),
-                Arc::from([1.0, 2.0, 3.0, 4.0]),
-                WalOpType::Insert,
+                WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
             )
             .await?;
         collection
             .write_to_wal(
                 Arc::from([4u128]),
                 Arc::from([0u128]),
-                Arc::from([1.0, 2.0, 3.0, 4.0]),
-                WalOpType::Insert,
+                WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
             )
             .await?;
         collection
             .write_to_wal(
                 Arc::from([5u128]),
                 Arc::from([0u128]),
-                Arc::from([1.0, 2.0, 3.0, 4.0]),
-                WalOpType::Insert,
+                WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
             )
             .await?;
         collection
-            .write_to_wal(
-                Arc::from([5u128]),
-                Arc::from([0u128]),
-                Arc::from([]),
-                WalOpType::Delete,
-            )
+            .write_to_wal(Arc::from([5u128]), Arc::from([0u128]), WalOpType::Delete)
             .await?;
 
         // Process all ops
@@ -1797,7 +1783,7 @@ mod tests {
                 assert!(immutable_segment.read().get_point_id(0, 5).is_none());
             }
             _ => {
-                assert!(false);
+                panic!("Expected FinalizedSegment");
             }
         }
         let toc = collection.get_current_toc();
@@ -1828,25 +1814,18 @@ mod tests {
                 .write_to_wal(
                     Arc::from([1u128]),
                     Arc::from([0u128]),
-                    Arc::from([1.0, 2.0, 3.0, 4.0]),
-                    WalOpType::Insert,
+                    WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
                 )
                 .await?;
             collection
                 .write_to_wal(
                     Arc::from([2u128]),
                     Arc::from([0u128]),
-                    Arc::from([1.0, 2.0, 3.0, 4.0]),
-                    WalOpType::Insert,
+                    WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
                 )
                 .await?;
             collection
-                .write_to_wal(
-                    Arc::from([1u128]),
-                    Arc::from([0u128]),
-                    Arc::from([]),
-                    WalOpType::Delete,
-                )
+                .write_to_wal(Arc::from([1u128]), Arc::from([0u128]), WalOpType::Delete)
                 .await?;
 
             // Process all ops
@@ -1885,7 +1864,7 @@ mod tests {
                     assert!(immutable_segment.read().get_point_id(0, 2).is_some());
                 }
                 _ => {
-                    assert!(false);
+                    panic!("Expected FinalizedSegment");
                 }
             }
             let toc = collection.get_current_toc();
@@ -1897,49 +1876,31 @@ mod tests {
                 .write_to_wal(
                     Arc::from([2u128]),
                     Arc::from([0u128]),
-                    Arc::from([1.0, 2.0, 3.0, 4.0]),
-                    WalOpType::Insert,
+                    WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
                 )
                 .await?;
             collection
                 .write_to_wal(
                     Arc::from([3u128]),
                     Arc::from([0u128]),
-                    Arc::from([1.0, 2.0, 3.0, 4.0]),
-                    WalOpType::Insert,
+                    WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
                 )
                 .await?;
             collection
                 .write_to_wal(
                     Arc::from([4u128]),
                     Arc::from([0u128]),
-                    Arc::from([1.0, 2.0, 3.0, 4.0]),
-                    WalOpType::Insert,
+                    WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
                 )
                 .await?;
             collection
-                .write_to_wal(
-                    Arc::from([1u128]),
-                    Arc::from([0u128]),
-                    Arc::from([]),
-                    WalOpType::Delete,
-                )
+                .write_to_wal(Arc::from([1u128]), Arc::from([0u128]), WalOpType::Delete)
                 .await?;
             collection
-                .write_to_wal(
-                    Arc::from([2u128]),
-                    Arc::from([0u128]),
-                    Arc::from([]),
-                    WalOpType::Delete,
-                )
+                .write_to_wal(Arc::from([2u128]), Arc::from([0u128]), WalOpType::Delete)
                 .await?;
             collection
-                .write_to_wal(
-                    Arc::from([3u128]),
-                    Arc::from([0u128]),
-                    Arc::from([]),
-                    WalOpType::Delete,
-                )
+                .write_to_wal(Arc::from([3u128]), Arc::from([0u128]), WalOpType::Delete)
                 .await?;
         }
 
@@ -1974,7 +1935,7 @@ mod tests {
                     assert!(immutable_segment.read().get_point_id(0, 3).is_none());
                 }
                 _ => {
-                    assert!(false);
+                    panic!("Expected FinalizedSegment");
                 }
             }
 
@@ -1989,7 +1950,7 @@ mod tests {
                     assert!(immutable_segment.read().is_invalidated(0, 2)?);
                 }
                 _ => {
-                    assert!(false);
+                    panic!("Expected FinalizedSegment");
                 }
             }
             let toc = collection.get_current_toc();
@@ -2087,7 +2048,7 @@ mod tests {
                     .is_valid_doc_id(0, 4));
             }
             _ => {
-                assert!(false);
+                panic!("Expected FinalizedSegment");
             }
         }
     }
@@ -2157,8 +2118,10 @@ mod tests {
         let collection_name = "test_collection_metrics";
         let temp_dir = TempDir::new(collection_name).unwrap();
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
-        let mut segment_config = CollectionConfig::default();
-        segment_config.num_features = 16; // Set a specific feature size for precise calculations
+        let segment_config = CollectionConfig {
+            num_features: 16, // Set a specific feature size for precise calculations
+            ..CollectionConfig::default()
+        };
         let collection = Arc::new(
             Collection::<NoQuantizerL2>::new(
                 collection_name.to_string(),
@@ -2291,7 +2254,6 @@ mod tests {
                             .write_to_wal(
                                 Arc::from([doc_to_delete]),
                                 Arc::from([USER_ID]),
-                                Arc::from([]), // Empty data for delete
                                 WalOpType::Delete,
                             )
                             .await
@@ -2310,8 +2272,7 @@ mod tests {
                             .write_to_wal(
                                 Arc::from([doc_id]),
                                 Arc::from([USER_ID]),
-                                Arc::from(vector_data.as_slice()),
-                                WalOpType::Insert,
+                                WalOpType::Insert(Arc::from(vector_data.as_slice())),
                             )
                             .await
                             .unwrap();
@@ -2465,8 +2426,7 @@ mod tests {
                     .write_to_wal(
                         Arc::from([doc_id]),
                         Arc::from([USER_ID]),
-                        Arc::from(vector_data.as_slice()),
-                        WalOpType::Insert,
+                        WalOpType::Insert(Arc::from(vector_data.as_slice())),
                     )
                     .await
                     .unwrap();

@@ -8,16 +8,17 @@ pub struct WalEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WalOpType {
-    Insert,
+pub enum WalOpType<T> {
+    /// Insert operation with associated data
+    Insert(T),
+    /// Delete operation
     Delete,
 }
 
 pub struct WalEntryDecoded<'a> {
     pub doc_ids: &'a [u128],
     pub user_ids: &'a [u128],
-    pub data: &'a [f32],
-    pub op_type: WalOpType,
+    pub op_type: WalOpType<&'a [f32]>,
 }
 
 impl WalEntry {
@@ -42,7 +43,7 @@ impl WalEntry {
                 num_features * num_docs,
                 "num_vectors mismatch while decoding WalEntry data"
             );
-            WalOpType::Insert
+            WalOpType::Insert(data)
         } else {
             assert_eq!(data.len(), 0, "WalEntry data should be empty for delete op");
             WalOpType::Delete
@@ -50,7 +51,6 @@ impl WalEntry {
         WalEntryDecoded {
             doc_ids,
             user_ids,
-            data,
             op_type,
         }
     }

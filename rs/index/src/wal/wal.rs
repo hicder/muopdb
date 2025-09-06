@@ -90,8 +90,7 @@ impl Wal {
         &mut self,
         doc_ids: &[u128],
         user_ids: &[u128],
-        data: &[f32],
-        op_type: WalOpType,
+        op_type: WalOpType<&[f32]>,
     ) -> Result<u64> {
         let last_file = self.files.back().unwrap();
         if last_file.get_file_size()? >= self.max_file_size {
@@ -106,7 +105,7 @@ impl Wal {
             .files
             .back_mut()
             .unwrap()
-            .append(doc_ids, user_ids, data, op_type)
+            .append(doc_ids, user_ids, op_type)
         {
             Ok(seq_no) => {
                 self.last_flushed_seq_no = seq_no.try_into().unwrap();
@@ -261,7 +260,7 @@ mod tests {
         for i in 0..5 {
             let data = vec![i as f32; 10];
             let seq_no = wal
-                .append(&[i as u128], &[i as u128], &data, WalOpType::Insert)
+                .append(&[i as u128], &[i as u128], WalOpType::Insert(&data))
                 .unwrap();
             assert_eq!(seq_no, i as u64);
         }
@@ -275,8 +274,13 @@ mod tests {
             let decoded = entry.decode(10);
             assert_eq!(decoded.doc_ids, vec![i as u128]);
             assert_eq!(decoded.user_ids, vec![i as u128]);
-            assert_eq!(decoded.data, vec![i as f32; 10]);
-            assert_eq!(decoded.op_type, WalOpType::Insert);
+
+            match decoded.op_type {
+                WalOpType::Insert(data) => {
+                    assert_eq!(data, vec![i as f32; 10]);
+                }
+                WalOpType::Delete => panic!("Expected Insert variant"),
+            }
         }
     }
 
@@ -287,7 +291,7 @@ mod tests {
         let mut wal = Wal::open(dir.to_str().unwrap(), 1024, -1).unwrap();
         for i in 0..5 {
             let seq_no = wal
-                .append(&[i as u128], &[i as u128], &[], WalOpType::Delete)
+                .append(&[i as u128], &[i as u128], WalOpType::Delete)
                 .unwrap();
             assert_eq!(seq_no, i as u64);
         }
@@ -301,8 +305,10 @@ mod tests {
             let decoded = entry.decode(10);
             assert_eq!(decoded.doc_ids, vec![i as u128]);
             assert_eq!(decoded.user_ids, vec![i as u128]);
-            assert_eq!(decoded.data, vec![] as Vec<f32>);
-            assert_eq!(decoded.op_type, WalOpType::Delete);
+            match decoded.op_type {
+                WalOpType::Insert(_) => panic!("Expected Delete variant"),
+                WalOpType::Delete => {}
+            }
         }
     }
 

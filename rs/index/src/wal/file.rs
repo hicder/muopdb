@@ -91,9 +91,13 @@ impl WalFile {
         &mut self,
         doc_ids: &[u128],
         user_ids: &[u128],
-        data: &[f32],
-        op_type: WalOpType,
+        op_type: WalOpType<&[f32]>,
     ) -> Result<u64> {
+        let (op_type, data): (u8, &[f32]) = match op_type {
+            WalOpType::Insert(data) => (0, data),
+            WalOpType::Delete => (1, &[]),
+        };
+
         let len = (8 + 8 + doc_ids.len() * 16 + user_ids.len() * 16 + data.len() * 4 + 1) as u32;
         self.file.write_all(&len.to_le_bytes())?;
         self.file.write_all(&(doc_ids.len() as u64).to_le_bytes())?;
@@ -102,7 +106,7 @@ impl WalFile {
         self.file.write_all(transmute_slice_to_u8(doc_ids))?;
         self.file.write_all(transmute_slice_to_u8(user_ids))?;
         self.file.write_all(transmute_slice_to_u8(data))?;
-        self.file.write_all(&(op_type as u8).to_le_bytes())?;
+        self.file.write_all(&op_type.to_le_bytes())?;
         self.file.flush()?;
         // self.file.sync_data()?;
 

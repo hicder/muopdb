@@ -94,7 +94,7 @@ fn bench_wal_insertion(c: &mut Criterion) {
                             let doc_ids: Arc<[u128]> = Arc::from([doc_id]);
 
                             collection_clone
-                                .write_to_wal(doc_ids, user_ids_ref, data, WalOpType::Insert)
+                                .write_to_wal(doc_ids, user_ids_ref, WalOpType::Insert(data))
                                 .await
                                 .unwrap()
                         });
