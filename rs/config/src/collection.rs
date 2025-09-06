@@ -121,7 +121,7 @@ pub struct CollectionConfig {
 
     /// Maximum follower entries per WAL write group before closing for batch processing.
     /// Small values = lower latency, higher sync overhead. Large values = higher throughput, higher latency.
-    /// Default: 1
+    /// Default: 940
     #[serde(default = "default_wal_write_group_size")]
     pub wal_write_group_size: usize,
 
@@ -154,7 +154,7 @@ fn default_wal_file_size() -> u64 {
 }
 
 fn default_wal_write_group_size() -> usize {
-    1
+    940
 }
 
 fn default_max_pending_ops() -> u64 {
