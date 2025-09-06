@@ -175,10 +175,9 @@ This time it should give you something else
   - [ ] Hybrid search
 - [ ] Database Management
   - [x] Optimizing deletion with bloom filter
-  - [x] Automatic segment optimizer
-  - [ ] Cloud-native MuopDB (Kafka + S3)
-- [ ] Optimization
   - [x] Automatic write batch
+  - [x] Automatic segment optimizer
+  - [ ] Cloud-native MuopDB (Kafka + S3)  
 
 ### Building
 
