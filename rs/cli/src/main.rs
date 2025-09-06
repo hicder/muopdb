@@ -72,6 +72,7 @@ async fn main() -> Result<()> {
                     low_id: 0,
                     high_id: 0,
                 }],
+                where_document: None,
             });
 
             info!("Request: {:?}", request);
