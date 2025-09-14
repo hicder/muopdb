@@ -1,13 +1,13 @@
 use crate::query::iter::InvertedIndexIter;
 
 pub struct IdsIter {
-    ids: Vec<u64>,
+    ids: Vec<u128>,
     current_index: usize,
-    current_doc_id: Option<u64>,
+    current_doc_id: Option<u128>,
 }
 
 impl IdsIter {
-    pub fn new(ids: Vec<u64>) -> Self {
+    pub fn new(ids: Vec<u128>) -> Self {
         Self {
             ids,
             current_index: 0,
@@ -17,7 +17,7 @@ impl IdsIter {
 }
 
 impl InvertedIndexIter for IdsIter {
-    fn next(&mut self) -> Option<u64> {
+    fn next(&mut self) -> Option<u128> {
         if self.current_index < self.ids.len() {
             self.current_doc_id = Some(self.ids[self.current_index]);
             self.current_index += 1;
@@ -28,7 +28,7 @@ impl InvertedIndexIter for IdsIter {
         }
     }
 
-    fn skip_to(&mut self, doc_id: u64) {
+    fn skip_to(&mut self, doc_id: u128) {
         // Find the first doc_id >= target doc_id
         while self.current_index < self.ids.len() {
             let current_id = self.ids[self.current_index];
@@ -45,7 +45,7 @@ impl InvertedIndexIter for IdsIter {
         }
     }
 
-    fn doc_id(&self) -> Option<u64> {
+    fn doc_id(&self) -> Option<u128> {
         self.current_doc_id
     }
 }
@@ -131,5 +131,23 @@ mod tests {
         iter.skip_to(2);
         assert_eq!(iter.doc_id(), Some(5));
         assert_eq!(iter.next(), Some(5));
+    }
+
+    #[test]
+    fn test_ids_iter_large_values() {
+        let ids = vec![u128::MAX - 10, u128::MAX - 5, u128::MAX];
+        let mut iter = IdsIter::new(ids);
+
+        assert_eq!(iter.next(), Some(u128::MAX - 10));
+        assert_eq!(iter.doc_id(), Some(u128::MAX - 10));
+
+        assert_eq!(iter.next(), Some(u128::MAX - 5));
+        assert_eq!(iter.doc_id(), Some(u128::MAX - 5));
+
+        assert_eq!(iter.next(), Some(u128::MAX));
+        assert_eq!(iter.doc_id(), Some(u128::MAX));
+
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.doc_id(), None);
     }
 }

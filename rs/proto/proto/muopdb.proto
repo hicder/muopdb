@@ -83,6 +83,7 @@ message DocumentFilter {
     // Leaf conditions.
     ContainsFilter contains = 3;
     NotContainsFilter not_contains = 4;
+    IdsFilter ids = 5;
   }
 }
 
@@ -102,6 +103,9 @@ message NotContainsFilter {
   // The string to exclude.
   string path = 1;
   string value = 2;
+}
+message IdsFilter {
+  repeated Id ids = 1;
 }
 
 message SearchRequest {
