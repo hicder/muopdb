@@ -1,7 +1,7 @@
 use anyhow::Result;
 use proto::muopdb::{AndFilter, DocumentFilter, IdsFilter, OrFilter};
 
-use crate::query::iter::InvertedIndexIter;
+use crate::query::iter::Iter;
 use crate::query::iters::and_iter::AndIter;
 use crate::query::iters::ids_iter::IdsIter;
 use crate::query::iters::or_iter::OrIter;
@@ -16,11 +16,11 @@ impl Planner {
         Self { query }
     }
 
-    pub fn plan(&self) -> Result<Box<dyn InvertedIndexIter>> {
+    pub fn plan(&self) -> Result<Iter> {
         self.plan_filter(&self.query)
     }
 
-    fn plan_filter(&self, filter: &DocumentFilter) -> Result<Box<dyn InvertedIndexIter>> {
+    fn plan_filter(&self, filter: &DocumentFilter) -> Result<Iter> {
         use proto::muopdb::document_filter::Filter;
 
         match filter.filter.as_ref() {
@@ -41,15 +41,15 @@ impl Planner {
             }
             None => {
                 // Empty filter - return an iterator that yields no results
-                Ok(Box::new(IdsIter::new(vec![])))
+                Ok(Iter::Ids(IdsIter::new(vec![])))
             }
         }
     }
 
-    fn plan_and_filter(&self, and_filter: &AndFilter) -> Result<Box<dyn InvertedIndexIter>> {
+    fn plan_and_filter(&self, and_filter: &AndFilter) -> Result<Iter> {
         if and_filter.filters.is_empty() {
             // Empty AND filter - return an iterator that yields no results
-            return Ok(Box::new(IdsIter::new(vec![])));
+            return Ok(Iter::Ids(IdsIter::new(vec![])));
         }
 
         let mut iters = Vec::new();
@@ -57,13 +57,13 @@ impl Planner {
             iters.push(self.plan_filter(filter)?);
         }
 
-        Ok(Box::new(AndIter::new(iters)))
+        Ok(Iter::And(AndIter::new(iters)))
     }
 
-    fn plan_or_filter(&self, or_filter: &OrFilter) -> Result<Box<dyn InvertedIndexIter>> {
+    fn plan_or_filter(&self, or_filter: &OrFilter) -> Result<Iter> {
         if or_filter.filters.is_empty() {
             // Empty OR filter - return an iterator that yields no results
-            return Ok(Box::new(IdsIter::new(vec![])));
+            return Ok(Iter::Ids(IdsIter::new(vec![])));
         }
 
         let mut iters = Vec::new();
@@ -71,10 +71,10 @@ impl Planner {
             iters.push(self.plan_filter(filter)?);
         }
 
-        Ok(Box::new(OrIter::new(iters)))
+        Ok(Iter::Or(OrIter::new(iters)))
     }
 
-    fn plan_ids_filter(&self, ids_filter: &IdsFilter) -> Result<Box<dyn InvertedIndexIter>> {
+    fn plan_ids_filter(&self, ids_filter: &IdsFilter) -> Result<Iter> {
         let mut ids = Vec::new();
         for id in &ids_filter.ids {
             // Convert the 128-bit ID (split into two 64-bit parts) to a single u128
@@ -85,7 +85,7 @@ impl Planner {
         // Sort the IDs to maintain the expected order for the IdsIter
         ids.sort_unstable();
 
-        Ok(Box::new(IdsIter::new(ids)))
+        Ok(Iter::Ids(IdsIter::new(ids)))
     }
 }
 
@@ -94,6 +94,7 @@ mod tests {
     use proto::muopdb::{AndFilter, Id, IdsFilter, OrFilter};
 
     use super::*;
+    use crate::query::iter::InvertedIndexIter;
 
     #[test]
     fn test_plan_ids_filter() {

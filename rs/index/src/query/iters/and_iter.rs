@@ -1,17 +1,16 @@
-use crate::query::iter::InvertedIndexIter;
+use crate::query::iter::{InvertedIndexIter, Iter};
 
-#[allow(unused)]
-pub struct AndIter {
-    iters: Vec<Box<dyn InvertedIndexIter>>,
+pub struct AndIter<'a> {
+    pub iters: Vec<Iter<'a>>,
 }
 
-impl AndIter {
-    pub fn new(iters: Vec<Box<dyn InvertedIndexIter>>) -> Self {
+impl<'a> AndIter<'a> {
+    pub fn new(iters: Vec<Iter<'a>>) -> Self {
         Self { iters }
     }
 }
 
-impl InvertedIndexIter for AndIter {
+impl<'a> InvertedIndexIter for AndIter<'a> {
     fn next(&mut self) -> Option<u128> {
         todo!()
     }
