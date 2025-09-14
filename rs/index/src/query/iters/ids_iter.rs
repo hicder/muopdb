@@ -1,6 +1,13 @@
 use crate::query::iters::InvertedIndexIter;
 
-/// `IdsIter` is an iterator over a sorted list of document IDs.
+/// State of the iterator: NotStarted, At(doc_id), or Exhausted
+enum DocIdState {
+    NotStarted,
+    At { index: usize, doc_id: u128 },
+    Exhausted,
+}
+
+/// `IdsIter` is an iterator over a sorted list of unique document IDs.
 ///
 /// It supports sequential access and efficient skipping to a target ID.
 /// Used as a building block for query processing.
@@ -20,16 +27,14 @@ use crate::query::iters::InvertedIndexIter;
 /// This iterator is used for simple ID-based filters and as a base for more complex iterators.
 pub struct IdsIter {
     ids: Vec<u128>,
-    current_index: usize,
-    current_doc_id: Option<u128>,
+    state: DocIdState,
 }
 
 impl IdsIter {
     pub fn new(ids: Vec<u128>) -> Self {
         Self {
             ids,
-            current_index: 0,
-            current_doc_id: None,
+            state: DocIdState::NotStarted,
         }
     }
 }
@@ -49,13 +54,40 @@ impl InvertedIndexIter for IdsIter {
     /// assert_eq!(iter.next(), None);
     /// ```
     fn next(&mut self) -> Option<u128> {
-        if self.current_index < self.ids.len() {
-            self.current_doc_id = Some(self.ids[self.current_index]);
-            self.current_index += 1;
-            self.current_doc_id
-        } else {
-            self.current_doc_id = None;
-            None
+        match self.state {
+            DocIdState::NotStarted => {
+                match self.ids.first() {
+                    Some(&first_doc_id) => {
+                        self.state = DocIdState::At {
+                            index: 0,
+                            doc_id: first_doc_id,
+                        };
+                        Some(first_doc_id)
+                    }
+                    None => {
+                        // No IDs to iterate -> exhausted
+                        self.state = DocIdState::Exhausted;
+                        None
+                    }
+                }
+            }
+            DocIdState::At { index, .. } => {
+                if index + 1 < self.ids.len() {
+                    // Move to the next ID
+                    let next_index = index + 1;
+                    let doc_id = self.ids[next_index];
+                    self.state = DocIdState::At {
+                        index: next_index,
+                        doc_id,
+                    };
+                    Some(doc_id)
+                } else {
+                    // Reached the end -> exhausted
+                    self.state = DocIdState::Exhausted;
+                    None
+                }
+            }
+            DocIdState::Exhausted => None,
         }
     }
 
@@ -73,30 +105,52 @@ impl InvertedIndexIter for IdsIter {
     /// assert_eq!(iter.doc_id(), None);
     /// ```
     fn skip_to(&mut self, doc_id: u128) {
-        // Find the first doc_id >= target doc_id
-        while self.current_index < self.ids.len() {
-            let current_id = self.ids[self.current_index];
-            if current_id >= doc_id {
-                self.current_doc_id = Some(current_id);
-                break;
+        match self.state {
+            DocIdState::NotStarted => {
+                // Start from the beginning
+                for (i, &id) in self.ids.iter().enumerate() {
+                    if id >= doc_id {
+                        self.state = DocIdState::At {
+                            index: i,
+                            doc_id: id,
+                        };
+                        return;
+                    }
+                }
+                self.state = DocIdState::Exhausted;
             }
-            self.current_index += 1;
-        }
-
-        // If we've gone past all IDs, set current_doc_id to None
-        if self.current_index >= self.ids.len() {
-            self.current_doc_id = None;
+            DocIdState::At { index, .. } => {
+                // Start searching from the current index
+                for i in index..self.ids.len() {
+                    if self.ids[i] >= doc_id {
+                        self.state = DocIdState::At {
+                            index: i,
+                            doc_id: self.ids[i],
+                        };
+                        return;
+                    }
+                }
+                self.state = DocIdState::Exhausted;
+            }
+            DocIdState::Exhausted => {
+                // Already exhausted, nothing to do
+            }
         }
     }
 
+    /// Returns the current document ID, or None if the iterator is exhausted or not started.
     fn doc_id(&self) -> Option<u128> {
-        self.current_doc_id
+        match self.state {
+            DocIdState::At { doc_id, .. } => Some(doc_id),
+            _ => None,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::query::iters::IdsIter;
 
     #[test]
     fn test_ids_iter_basic() {
@@ -130,12 +184,12 @@ mod tests {
         // Skip to 5
         iter.skip_to(5);
         assert_eq!(iter.doc_id(), Some(5));
-        assert_eq!(iter.next(), Some(5));
+        assert_eq!(iter.next(), Some(7));
 
         // Skip to 8 (should land on 9)
         iter.skip_to(8);
         assert_eq!(iter.doc_id(), Some(9));
-        assert_eq!(iter.next(), Some(9));
+        assert_eq!(iter.next(), None);
 
         // Skip to 10 (should be None)
         iter.skip_to(10);
@@ -151,7 +205,7 @@ mod tests {
         // Skip to exact match
         iter.skip_to(3);
         assert_eq!(iter.doc_id(), Some(3));
-        assert_eq!(iter.next(), Some(3));
+        assert_eq!(iter.next(), Some(5));
     }
 
     #[test]
@@ -174,7 +228,7 @@ mod tests {
         // Skip to value before first ID
         iter.skip_to(2);
         assert_eq!(iter.doc_id(), Some(5));
-        assert_eq!(iter.next(), Some(5));
+        assert_eq!(iter.next(), Some(7));
     }
 
     #[test]
