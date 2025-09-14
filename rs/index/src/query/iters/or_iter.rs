@@ -1,4 +1,4 @@
-use crate::query::iter::{InvertedIndexIter, Iter};
+use crate::query::iters::{InvertedIndexIter, Iter};
 
 pub struct OrIter<'a> {
     pub iters: Vec<Iter<'a>>,

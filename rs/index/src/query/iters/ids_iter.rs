@@ -1,4 +1,4 @@
-use crate::query::iter::InvertedIndexIter;
+use crate::query::iters::InvertedIndexIter;
 
 pub struct IdsIter {
     ids: Vec<u128>,

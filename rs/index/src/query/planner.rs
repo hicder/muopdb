@@ -1,10 +1,10 @@
 use anyhow::Result;
 use proto::muopdb::{AndFilter, DocumentFilter, IdsFilter, OrFilter};
 
-use crate::query::iter::Iter;
 use crate::query::iters::and_iter::AndIter;
 use crate::query::iters::ids_iter::IdsIter;
 use crate::query::iters::or_iter::OrIter;
+use crate::query::iters::Iter;
 
 #[allow(unused)]
 pub struct Planner {
@@ -94,7 +94,7 @@ mod tests {
     use proto::muopdb::{AndFilter, Id, IdsFilter, OrFilter};
 
     use super::*;
-    use crate::query::iter::InvertedIndexIter;
+    use crate::query::iters::InvertedIndexIter;
 
     #[test]
     fn test_plan_ids_filter() {
