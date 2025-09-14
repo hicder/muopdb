@@ -446,7 +446,7 @@ impl IndexServer for IndexServerImpl {
         match collection_opt {
             Some(collection) => {
                 let dimensions = collection.dimensions();
-                let vectors = transmute_u8_to_slice(&vectors_buffer);
+                let vectors = transmute_u8_to_slice::<f32>(&vectors_buffer);
 
                 if vectors.len() % dimensions != 0 {
                     return Err(tonic::Status::new(

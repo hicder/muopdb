@@ -25,7 +25,7 @@ fn bench_wal_insertion(c: &mut Criterion) {
         num_features: 128,
         // Enable WAL for this benchmark with write grouping
         wal_file_size: 1024 * 1024, // 1MB WAL file size
-        wal_write_group_size: 970,  // Group size for batching (tuned for this benchmark)
+        wal_write_group_size: 940,  // Group size for batching
         ..CollectionConfig::default()
     };
 
@@ -69,7 +69,10 @@ fn bench_wal_insertion(c: &mut Criterion) {
 
     // Number of concurrent tasks
     const NUM_TASKS: usize = 1000;
-
+    println!(
+        "num tasks: {NUM_TASKS}, wal group size: {}",
+        segment_config.wal_write_group_size,
+    );
     // Use async runtime for proper concurrent context
     let rt = tokio::runtime::Runtime::new().unwrap();
 
