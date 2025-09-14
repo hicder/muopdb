@@ -1,5 +1,23 @@
 use crate::query::iters::InvertedIndexIter;
 
+/// `IdsIter` is an iterator over a sorted list of document IDs.
+///
+/// It supports sequential access and efficient skipping to a target ID.
+/// Used as a building block for query processing.
+///
+/// - `next()` yields the next ID in order.
+/// - `skip_to(doc_id)` advances to the first ID >= `doc_id`.
+/// - `doc_id()` returns the current ID, or None if exhausted.
+///
+/// Example:
+/// ```
+/// use index::query::iters::{ids_iter::IdsIter, InvertedIndexIter};
+/// let mut iter = IdsIter::new(vec![1, 3, 5]);
+/// assert_eq!(iter.next(), Some(1));
+/// iter.skip_to(4);
+/// assert_eq!(iter.doc_id(), Some(5));
+/// ```
+/// This iterator is used for simple ID-based filters and as a base for more complex iterators.
 pub struct IdsIter {
     ids: Vec<u128>,
     current_index: usize,
@@ -17,6 +35,19 @@ impl IdsIter {
 }
 
 impl InvertedIndexIter for IdsIter {
+    /// Advances the iterator and returns the next document ID, or None if exhausted.
+    ///
+    /// Updates the current_doc_id to the next value, or None if at the end.
+    ///
+    /// # Example
+    /// ```
+    /// use index::query::iters::{ids_iter::IdsIter, InvertedIndexIter};
+    /// let mut iter = IdsIter::new(vec![1, 3, 5]);
+    /// assert_eq!(iter.next(), Some(1));
+    /// assert_eq!(iter.next(), Some(3));
+    /// assert_eq!(iter.next(), Some(5));
+    /// assert_eq!(iter.next(), None);
+    /// ```
     fn next(&mut self) -> Option<u128> {
         if self.current_index < self.ids.len() {
             self.current_doc_id = Some(self.ids[self.current_index]);
@@ -28,6 +59,19 @@ impl InvertedIndexIter for IdsIter {
         }
     }
 
+    /// Advances the iterator to the first document ID that is greater than or equal to `doc_id`.
+    ///
+    /// Updates current_doc_id to the found value, or None if past the end.
+    ///
+    /// # Example
+    /// ```
+    /// use index::query::iters::{ids_iter::IdsIter, InvertedIndexIter};
+    /// let mut iter = IdsIter::new(vec![1, 3, 5]);
+    /// iter.skip_to(4);
+    /// assert_eq!(iter.doc_id(), Some(5));
+    /// iter.skip_to(10);
+    /// assert_eq!(iter.doc_id(), None);
+    /// ```
     fn skip_to(&mut self, doc_id: u128) {
         // Find the first doc_id >= target doc_id
         while self.current_index < self.ids.len() {
