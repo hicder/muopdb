@@ -1,6 +1,5 @@
 syntax = "proto3";
 package muopdb;
-import "google/protobuf/any.proto";
 
 enum QuantizerType {
   NO_QUANTIZER = 0;
@@ -96,11 +95,13 @@ message OrFilter {
 
 message ContainsFilter {
   // The string to match.
-  string query = 1;
+  string path = 1;
+  string value = 2;
 }
 message NotContainsFilter {
   // The string to exclude.
-  string query = 1;
+  string path = 1;
+  string value = 2;
 }
 
 message SearchRequest {
