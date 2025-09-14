@@ -17,7 +17,13 @@ pub struct OrIter<'a> {
 }
 
 impl<'a> OrIter<'a> {
-    pub fn new(iters: Vec<Iter<'a>>) -> Self {
+    pub fn new(mut iters: Vec<Iter<'a>>) -> Self {
+        // Prime all children: advance if doc_id() is None
+        for iter in &mut iters {
+            if iter.doc_id().is_none() {
+                iter.next();
+            }
+        }
         Self { iters }
     }
 }
@@ -25,19 +31,45 @@ impl<'a> OrIter<'a> {
 impl<'a> InvertedIndexIter for OrIter<'a> {
     /// Advances all child iterators and returns the next document ID present in any child (the union), or None if all are exhausted.
     fn next(&mut self) -> Option<u128> {
-        todo!()
+        let mut min_doc: Option<u128> = None;
+        // Find the minimum doc_id among all children
+        for iter in &self.iters {
+            if let Some(doc) = iter.doc_id() {
+                min_doc = Some(min_doc.map_or(doc, |m: u128| m.min(doc)));
+            }
+        }
+
+        // If no iterators had any doc_id, or there are no iterators, return None
+        // (This handles the case of an empty OrIter)
+        let min_doc = min_doc?;
+
+        // Advance all children that are at min_doc
+        for iter in &mut self.iters {
+            if iter.doc_id() == Some(min_doc) {
+                iter.next();
+            }
+        }
+        Some(min_doc)
     }
 
     /// Advances all child iterators to at least the given doc_id.
     ///
     /// After calling, all children will be positioned at or after doc_id, or exhausted.
-    fn skip_to(&mut self, _doc_id: u128) {
-        todo!()
+    fn skip_to(&mut self, doc_id: u128) {
+        for iter in &mut self.iters {
+            iter.skip_to(doc_id);
+        }
     }
 
     /// Returns the smallest current document ID among all children, or None if all are exhausted.
     fn doc_id(&self) -> Option<u128> {
-        todo!()
+        let mut min_doc: Option<u128> = None;
+        for iter in &self.iters {
+            if let Some(doc) = iter.doc_id() {
+                min_doc = Some(min_doc.map_or(doc, |m: u128| m.min(doc)));
+            }
+        }
+        min_doc
     }
 }
 

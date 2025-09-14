@@ -17,7 +17,13 @@ pub struct AndIter<'a> {
 }
 
 impl<'a> AndIter<'a> {
-    pub fn new(iters: Vec<Iter<'a>>) -> Self {
+    pub fn new(mut iters: Vec<Iter<'a>>) -> Self {
+        // Prime all children: advance if doc_id() is None
+        for iter in &mut iters {
+            if iter.doc_id().is_none() {
+                iter.next();
+            }
+        }
         Self { iters }
     }
 }
@@ -25,19 +31,60 @@ impl<'a> AndIter<'a> {
 impl<'a> InvertedIndexIter for AndIter<'a> {
     /// Advances all child iterators in lockstep and returns the next document ID present in all children (the intersection), or None if any child is exhausted.
     fn next(&mut self) -> Option<u128> {
-        todo!()
+        loop {
+            // Find the maximum doc_id among all children
+            let mut max_doc = None;
+            for iter in self.iters.iter() {
+                // Any exhausted child means the AND is exhausted -> return None
+                let doc = iter.doc_id()?;
+                max_doc = Some(max_doc.map_or(doc, |m: u128| m.max(doc)));
+            }
+
+            // If no iterators had any doc_id, or there are no iterators, return None
+            // (This handles the case of an empty AndIter)
+            let max_doc = max_doc?;
+
+            // Advance all iterators to at least max_doc
+            let mut all_equal = true;
+            for iter in self.iters.iter_mut() {
+                iter.skip_to(max_doc);
+                let after = iter.doc_id();
+                if after != Some(max_doc) {
+                    all_equal = false;
+                }
+            }
+            if all_equal {
+                for iter in self.iters.iter_mut() {
+                    iter.next();
+                }
+                return Some(max_doc);
+            }
+            // Otherwise, loop again to find the next intersection
+        }
     }
 
     /// Advances all child iterators to at least the given doc_id.
     ///
     /// After calling, all children will be positioned at or after doc_id, or exhausted.
-    fn skip_to(&mut self, _doc_id: u128) {
-        todo!()
+    fn skip_to(&mut self, doc_id: u128) {
+        for iter in &mut self.iters {
+            iter.skip_to(doc_id);
+        }
     }
 
     /// Returns the current document ID if all child iterators are positioned at the same doc_id, otherwise None.
     fn doc_id(&self) -> Option<u128> {
-        todo!()
+        // Return the current doc_id if all iterators are at the same doc_id
+        let first_doc_id = self.iters.first()?.doc_id()?;
+        if self
+            .iters
+            .iter()
+            .all(|it| it.doc_id() == Some(first_doc_id))
+        {
+            Some(first_doc_id)
+        } else {
+            None
+        }
     }
 }
 
