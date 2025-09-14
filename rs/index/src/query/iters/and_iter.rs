@@ -134,4 +134,32 @@ mod tests {
         let mut iter = AndIter::new(vec![]);
         assert_eq!(iter.next(), None);
     }
+
+    #[test]
+    fn test_and_iter_no_intersection() {
+        // No intersection
+        let a = ids(&[1, 2, 3]);
+        let b = ids(&[4, 5, 6]);
+        let mut iter = AndIter::new(vec![a, b]);
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_and_iter_superset() {
+        // One child is a superset of another
+        let a = ids(&[1, 2, 3, 4, 5]);
+        let b = ids(&[2, 4]);
+        let mut iter = AndIter::new(vec![a, b]);
+        let mut results = Vec::new();
+        while let Some(doc) = iter.next() {
+            results.push(doc);
+        }
+        assert_eq!(results, vec![2, 4]);
+    }
+
+    #[test]
+    fn test_and_iter_all_empty_children() {
+        let mut iter = AndIter::new(vec![ids(&[]), ids(&[])]);
+        assert_eq!(iter.next(), None);
+    }
 }

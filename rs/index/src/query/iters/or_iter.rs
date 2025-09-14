@@ -123,4 +123,49 @@ mod tests {
         let mut iter = OrIter::new(vec![]);
         assert_eq!(iter.next(), None);
     }
+
+    #[test]
+    fn test_or_iter_no_overlap() {
+        // Children with no overlap
+        let a = ids(&[1, 2, 3]);
+        let b = ids(&[4, 5, 6]);
+        let mut iter = OrIter::new(vec![a, b]);
+        let mut results = Vec::new();
+        while let Some(doc) = iter.next() {
+            results.push(doc);
+        }
+        assert_eq!(results, vec![1, 2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn test_or_iter_superset() {
+        // One child is a superset of another
+        let a = ids(&[1, 2, 3, 4, 5]);
+        let b = ids(&[2, 4]);
+        let mut iter = OrIter::new(vec![a, b]);
+        let mut results = Vec::new();
+        while let Some(doc) = iter.next() {
+            results.push(doc);
+        }
+        assert_eq!(results, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_or_iter_all_empty_children() {
+        let mut iter = OrIter::new(vec![ids(&[]), ids(&[])]);
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_or_iter_interleaved() {
+        // Children with interleaved values
+        let a = ids(&[1, 3, 5]);
+        let b = ids(&[2, 4, 6]);
+        let mut iter = OrIter::new(vec![a, b]);
+        let mut results = Vec::new();
+        while let Some(doc) = iter.next() {
+            results.push(doc);
+        }
+        assert_eq!(results, vec![1, 2, 3, 4, 5, 6]);
+    }
 }
