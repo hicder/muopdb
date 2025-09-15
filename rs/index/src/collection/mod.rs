@@ -68,6 +68,12 @@ impl VersionsInfo {
     }
 }
 
+impl Default for VersionsInfo {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct OpChannelEntry {
     pub doc_ids_offset: usize,
     pub doc_ids_length: usize,

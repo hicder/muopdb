@@ -524,9 +524,9 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 // Create a new entry in the current group
                 current_group.entries.push(GroupEntry {
                     args: AppendArgs {
-                        doc_ids: doc_ids.clone(),
-                        user_ids: user_ids.clone(),
-                        op_type: wal_op_type.clone(),
+                        doc_ids,
+                        user_ids,
+                        op_type: wal_op_type,
                     },
                     seq_tx,
                 });

@@ -1,6 +1,6 @@
 use compression::elias_fano::ef::EliasFanoDecodingIterator;
 
-use crate::query::iter::InvertedIndexIter;
+use crate::query::iters::InvertedIndexIter;
 
 pub struct TermIter<'a> {
     ef_iter: EliasFanoDecodingIterator<'a>,
