@@ -228,4 +228,13 @@ mod tests {
         assert_eq!(iter.next(), None);
         assert_eq!(iter.doc_id(), None);
     }
+
+    #[test]
+    fn test_ids_iter_dedup() {
+        let ids = vec![1, 1, 1, 1];
+        let mut iter = IdsIter::new(ids);
+
+        assert_eq!(iter.next(), Some(1));
+        assert_eq!(iter.next(), None);
+    }
 }

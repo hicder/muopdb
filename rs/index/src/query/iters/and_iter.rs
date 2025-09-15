@@ -8,12 +8,22 @@ use crate::query::iters::{InvertedIndexIter, Iter, IterState};
 /// - Advances all children in lockstep to find common IDs.
 ///
 /// Example:
-///   If children yield [1, 3, 5], [3, 5, 7], [3, 4, 5],
-///   then AndIter yields [3, 5].
-///
+/// ```
+/// use index::query::iters::{and_iter::AndIter, InvertedIndexIter, Iter};
+/// use index::query::iters::ids_iter::IdsIter;
+/// let a = Iter::Ids(IdsIter::new(vec![1, 3, 5]));
+/// let b = Iter::Ids(IdsIter::new(vec![3, 5, 7]));
+/// let c = Iter::Ids(IdsIter::new(vec![3, 4, 5]));
+/// let mut and_iter = AndIter::new(vec![a, b, c]);
+/// let mut results = Vec::new();
+/// while let Some(doc) = and_iter.next() {
+///     results.push(doc);
+/// }
+/// assert_eq!(results, vec![3, 5]);
+/// ```
 /// Used to answer queries like "find documents that match all these conditions".
 pub struct AndIter<'a> {
-    pub iters: Vec<Iter<'a>>,
+    iters: Vec<Iter<'a>>,
     state: IterState<u128>, // Current doc_id
 }
 
@@ -32,6 +42,8 @@ impl<'a> AndIter<'a> {
         }
     }
 
+    /// Align all children to the same doc_id, returning that doc_id if successful.
+    /// If any child is exhausted during alignment, returns None.
     fn align(&mut self) -> Option<u128> {
         loop {
             let mut max_doc = None;
@@ -70,6 +82,7 @@ impl<'a> AndIter<'a> {
 }
 
 impl<'a> InvertedIndexIter for AndIter<'a> {
+    /// Advances the iterator and returns the next document ID, or None if exhausted.
     fn next(&mut self) -> Option<u128> {
         match self.state {
             IterState::NotStarted => {
@@ -112,6 +125,8 @@ impl<'a> InvertedIndexIter for AndIter<'a> {
         }
     }
 
+    /// Advances all child iterators to at least the target document ID, setting the state to the new aligned doc ID if found, or exhausted if not.
+    /// If any child is exhausted, the AND iterator becomes exhausted.
     fn skip_to(&mut self, target: u128) {
         match self.state {
             IterState::Exhausted => {}
@@ -131,6 +146,7 @@ impl<'a> InvertedIndexIter for AndIter<'a> {
         }
     }
 
+    /// Returns the current document ID, or None if the iterator is exhausted or not started.
     fn doc_id(&self) -> Option<u128> {
         match self.state {
             IterState::At(doc) => Some(doc),
@@ -211,6 +227,22 @@ mod tests {
     #[test]
     fn test_and_iter_all_empty_children() {
         let mut iter = AndIter::new(vec![ids(&[]), ids(&[])]);
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_and_with_empty_child() {
+        // AND with one child empty: should yield nothing
+        let a = ids(&[1, 2, 3]);
+        let b = ids(&[]);
+        let mut iter = AndIter::new(vec![a, b]);
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_empty_and() {
+        // AND of empty: should yield nothing
+        let mut iter = AndIter::new(vec![]);
         assert_eq!(iter.next(), None);
     }
 }

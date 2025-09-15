@@ -159,40 +159,4 @@ mod integration_tests {
         }
         assert_eq!(results, vec![2, 3, 5, 6]);
     }
-
-    #[test]
-    fn test_empty_and() {
-        // AND of empty: should yield nothing
-        let mut iter = AndIter::new(vec![]);
-        assert_eq!(iter.next(), None);
-    }
-
-    #[test]
-    fn test_empty_or() {
-        // OR of empty: should yield nothing
-        let mut iter = OrIter::new(vec![]);
-        assert_eq!(iter.next(), None);
-    }
-
-    #[test]
-    fn test_and_with_empty_child() {
-        // AND with one child empty: should yield nothing
-        let a = ids(&[1, 2, 3]);
-        let b = ids(&[]);
-        let mut iter = AndIter::new(vec![a, b]);
-        assert_eq!(iter.next(), None);
-    }
-
-    #[test]
-    fn test_or_with_empty_child() {
-        // OR with one child empty: should yield the non-empty child
-        let a = ids(&[1, 2, 3]);
-        let b = ids(&[]);
-        let mut iter = OrIter::new(vec![a, b]);
-        let mut results = Vec::new();
-        while let Some(doc) = iter.next() {
-            results.push(doc);
-        }
-        assert_eq!(results, vec![1, 2, 3]);
-    }
 }
