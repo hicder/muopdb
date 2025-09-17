@@ -45,15 +45,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
     {
         let mut results = SearchResult::new();
         for user_id in user_ids {
-            match snapshot
+            if let Some(id_results) = snapshot
                 .search_for_user(*user_id, query.clone(), k, ef_construction, record_pages)
                 .await
             {
-                Some(id_results) => {
-                    results.id_with_scores.extend(id_results.id_with_scores);
-                    results.stats.merge(&id_results.stats);
-                }
-                None => {}
+                results.id_with_scores.extend(id_results.id_with_scores);
+                results.stats.merge(&id_results.stats);
             }
         }
 
@@ -140,7 +137,7 @@ impl SnapshotWithQuantizer {
                 Snapshot::<NoQuantizerL2>::search_for_users(
                     snapshot,
                     user_ids,
-                    query.clone(),
+                    query,
                     k,
                     ef_construction,
                     record_pages,
@@ -151,7 +148,7 @@ impl SnapshotWithQuantizer {
                 Snapshot::<ProductQuantizerL2>::search_for_users(
                     snapshot,
                     user_ids,
-                    query.clone(),
+                    query,
                     k,
                     ef_construction,
                     record_pages,

@@ -62,7 +62,7 @@ impl TermIndex {
             term_map_builder: |mmap| {
                 OnDiskOrderedMap::<VarintIntegerCodec>::new(
                     path,
-                    &mmap,
+                    mmap,
                     term_map_offset,
                     term_map_offset + term_map_len as usize,
                 )
@@ -104,14 +104,14 @@ impl TermIndex {
             let length = self.inner.borrow_mmap().len() - (offset + self.inner.borrow_pl_offset());
             return Some(OffsetLength {
                 offset: offset + self.inner.borrow_pl_offset(),
-                length: length,
+                length,
             });
         }
 
-        let offset = *self.inner.borrow_offsets_offset() as usize + term_id as usize * 8;
+        let offset = *self.inner.borrow_offsets_offset() + term_id as usize * 8;
         let offset = LittleEndian::read_u64(&self.inner.borrow_mmap()[offset..offset + 8]) as usize;
 
-        let next_offset = *self.inner.borrow_offsets_offset() as usize + (term_id + 1) as usize * 8;
+        let next_offset = *self.inner.borrow_offsets_offset() + (term_id + 1) as usize * 8;
         let next_offset =
             LittleEndian::read_u64(&self.inner.borrow_mmap()[next_offset..next_offset + 8])
                 as usize;
@@ -145,10 +145,7 @@ impl TermIndex {
         let offset = offset_len.offset;
         let length = offset_len.length;
 
-        debug!(
-            "[get_posting_list_iterator] Offset: {}, Length: {}",
-            offset, length
-        );
+        debug!("[get_posting_list_iterator] Offset: {offset}, Length: {length}");
 
         let byte_slice = &self.inner.borrow_mmap()[offset..offset + length];
         let decoder = EliasFanoDecoder::new_decoder(byte_slice)
@@ -192,7 +189,7 @@ mod tests {
         let writer = TermWriter::new(base_directory.clone());
         writer.write(&mut builder).unwrap();
 
-        let path = format!("{}/combined", base_directory);
+        let path = format!("{base_directory}/combined",);
         let file_len = std::fs::metadata(&path).unwrap().len();
         let index = TermIndex::new(path, 0, file_len as usize).unwrap();
 
@@ -214,16 +211,16 @@ mod tests {
 
         let mut it = index.get_posting_list_iterator(0).unwrap();
         assert_eq!(it.next().unwrap(), 0);
-        assert_eq!(it.next().is_none(), true);
+        assert!(it.next().is_none());
 
         let mut it = index.get_posting_list_iterator(1).unwrap();
         assert_eq!(it.next().unwrap(), 0);
         assert_eq!(it.next().unwrap(), 2);
-        assert_eq!(it.next().is_none(), true);
+        assert!(it.next().is_none());
 
         let mut it = index.get_posting_list_iterator(2).unwrap();
         assert_eq!(it.next().unwrap(), 1);
-        assert_eq!(it.next().is_none(), true);
+        assert!(it.next().is_none());
     }
 
     /// Tests the `TermIndex`'s ability to correctly handle and retrieve posting lists
@@ -245,7 +242,7 @@ mod tests {
         let mut builder = TermBuilder::new(&base_directory);
 
         // Create 20 docs, each with 5 terms. Some terms are shared.
-        let common_terms = vec!["apple", "banana", "orange", "grape", "kiwi"];
+        let common_terms = ["apple", "banana", "orange", "grape", "kiwi"];
         for doc_id in 0..20 {
             for _ in 0..5 {
                 let term_idx = doc_id % common_terms.len(); // Cycle through common terms
@@ -254,7 +251,7 @@ mod tests {
             }
             // Add a unique term for each doc to ensure some distinctness
             builder
-                .add(doc_id as u64, format!("unique_term_{}", doc_id))
+                .add(doc_id as u64, format!("unique_term_{doc_id}"))
                 .unwrap();
         }
 
@@ -262,24 +259,24 @@ mod tests {
         let writer = TermWriter::new(base_directory.clone());
         writer.write(&mut builder).unwrap();
 
-        let path = format!("{}/combined", base_directory);
+        let path = format!("{base_directory}/combined");
         let file_len = std::fs::metadata(&path).unwrap().len();
         let index = TermIndex::new(path, 0, file_len as usize).unwrap();
 
         // Verify some shared terms
         let apple_id = index.get_term_id("apple").unwrap();
-        let mut it = index.get_posting_list_iterator(apple_id).unwrap();
+        let it = index.get_posting_list_iterator(apple_id).unwrap();
         let mut apple_docs: Vec<u64> = Vec::new();
-        while let Some(doc) = it.next() {
+        for doc in it {
             apple_docs.push(doc);
         }
         // "apple" should appear in docs 0, 5, 10, 15
         assert_eq!(apple_docs, vec![0, 5, 10, 15]);
 
         let banana_id = index.get_term_id("banana").unwrap();
-        let mut it = index.get_posting_list_iterator(banana_id).unwrap();
+        let it = index.get_posting_list_iterator(banana_id).unwrap();
         let mut banana_docs: Vec<u64> = Vec::new();
-        while let Some(doc) = it.next() {
+        for doc in it {
             banana_docs.push(doc);
         }
         // "banana" should appear in docs 0, 1, 5, 6, 10, 11, 15, 16
@@ -289,13 +286,13 @@ mod tests {
         let unique_term_5_id = index.get_term_id("unique_term_5").unwrap();
         let mut it = index.get_posting_list_iterator(unique_term_5_id).unwrap();
         assert_eq!(it.next().unwrap(), 5);
-        assert_eq!(it.next().is_none(), true);
+        assert!(it.next().is_none());
 
         // Verify a term that appears in many documents
         let orange_id = index.get_term_id("orange").unwrap();
-        let mut it = index.get_posting_list_iterator(orange_id).unwrap();
+        let it = index.get_posting_list_iterator(orange_id).unwrap();
         let mut orange_docs: Vec<u64> = Vec::new();
-        while let Some(doc) = it.next() {
+        for doc in it {
             orange_docs.push(doc);
         }
         // "orange" should appear in docs 0, 1, 2, 5, 6, 7, 10, 11, 12, 15, 16, 17
@@ -304,6 +301,6 @@ mod tests {
         let unique_5 = index.get_term_id("unique_term_5").unwrap();
         let mut it = index.get_posting_list_iterator(unique_5).unwrap();
         assert_eq!(it.next().unwrap(), 5);
-        assert_eq!(it.next().is_none(), true);
+        assert!(it.next().is_none());
     }
 }

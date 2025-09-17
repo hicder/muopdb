@@ -34,15 +34,12 @@ impl TermBuilder {
         }
         #[cfg(debug_assertions)]
         {
-            log::debug!("Adding doc: {}, term: {}", doc_id, key);
+            log::debug!("Adding doc: {doc_id}, term: {key}");
         }
 
         let term_id = self.persist_and_get_term_id(key);
         self.scratch_file.write(doc_id, term_id)?;
-        self.posting_lists
-            .entry(term_id)
-            .or_insert_with(Vec::new)
-            .push(doc_id);
+        self.posting_lists.entry(term_id).or_default().push(doc_id);
         Ok(())
     }
 
