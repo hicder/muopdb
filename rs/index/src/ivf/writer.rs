@@ -250,10 +250,8 @@ where
             wrap_write(&mut metadata_writer, &num_posting_lists.to_le_bytes())?;
         for i in 0..num_posting_lists {
             let posting_list = ivf_builder.posting_lists().get(i as u32)?;
-            let mut encoder = E::new_encoder(
-                posting_list.last().unwrap_or(0) as usize,
-                posting_list.elem_count,
-            );
+            let mut encoder =
+                E::new_encoder(posting_list.last().unwrap_or(0), posting_list.elem_count);
             // Encode to get the length of the encoded data
             for val in posting_list.iter() {
                 encoder.encode_value(&val)?;

@@ -32,7 +32,7 @@ impl IvfReader {
         }
     }
 
-    pub fn read<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>>(
+    pub fn read<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder>(
         &self,
     ) -> Result<Ivf<Q, DC, D>> {
         let index_storage = Box::new(PostingListStorage::FixedLocalFile(
@@ -230,7 +230,7 @@ mod tests {
                 .posting_list_storage
                 .get_posting_list(i)
                 .expect("Failed to read vector from FixedIndexFile");
-            let decoder = EliasFanoDecoder::new_decoder(byte_slice)
+            let decoder = EliasFanoDecoder::<u64>::new_decoder(byte_slice)
                 .expect("Failed to create posting list decoder");
             for (val_ref, val_read) in ref_vector.iter().zip(decoder.get_iterator(byte_slice)) {
                 assert_eq!(val_ref, val_read);

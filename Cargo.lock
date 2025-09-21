@@ -515,6 +515,7 @@ dependencies = [
  "bitvec",
  "env_logger",
  "log",
+ "num-traits 0.2.19",
  "tempdir",
  "utils",
 ]

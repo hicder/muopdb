@@ -15,7 +15,7 @@ use crate::posting_list::storage::PostingListStorage;
 use crate::utils::{IdWithScore, IntermediateResult, PointAndDistance, SearchResult, SearchStats};
 use crate::vector::VectorStorage;
 
-pub struct Ivf<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> {
+pub struct Ivf<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> {
     // The dataset.
     pub vector_storage: Box<VectorStorage<Q::QuantizedT>>,
 
@@ -122,7 +122,7 @@ impl<Q: Quantizer> IvfType<Q> {
     }
 }
 
-impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, DC, D> {
+impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
     pub fn new(
         vector_storage: Box<VectorStorage<Q::QuantizedT>>,
         index_storage: Box<PostingListStorage>,
@@ -315,7 +315,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, 
     }
 }
 
-impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder<Item = u64>> Ivf<Q, DC, D> {
+impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
     pub async fn search(
         &self,
         query: &[f32],
