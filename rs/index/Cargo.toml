@@ -3,6 +3,9 @@ name = "index"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow = "1.0.90"
 bit-vec.workspace = true
