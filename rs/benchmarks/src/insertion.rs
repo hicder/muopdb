@@ -46,12 +46,12 @@ fn bench_insertion(c: &mut Criterion) {
                 },
                 |collection| {
                     let mut doc_id = 0;
-                    for vector in vectors.iter() {
+                    vectors.iter().for_each(|vector| {
                         collection
                             .insert_for_users(&user_ids, doc_id, vector, 0, None)
                             .unwrap();
                         doc_id += 1;
-                    }
+                    });
                     collection.flush().unwrap();
                 },
             );

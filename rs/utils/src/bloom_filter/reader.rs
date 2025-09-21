@@ -28,12 +28,7 @@ impl BloomFilterReader {
         let num_hash_functions = u64::from_le_bytes(metadata[8..16].try_into()?) as usize;
         let num_blocks = u64::from_le_bytes(metadata[16..HEADER_SIZE].try_into()?) as usize;
 
-        Ok(ImmutableBloomFilter::new(
-            path,
-            HEADER_SIZE,
-            num_blocks,
-            num_hash_functions,
-        )?)
+        ImmutableBloomFilter::new(path, HEADER_SIZE, num_blocks, num_hash_functions)
     }
 }
 

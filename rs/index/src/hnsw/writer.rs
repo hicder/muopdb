@@ -57,31 +57,31 @@ impl<Q: Quantizer> HnswWriter<Q> {
         let doc_id_mapping_path = format!("{}/doc_id_mapping", self.base_directory);
         let mut doc_id_mapping_file = File::create(doc_id_mapping_path).unwrap();
         let mut doc_id_mapping_buffer_writer = BufWriter::new(&mut doc_id_mapping_file);
-        let mut doc_id_mapping_file_len = 0 as u64;
+        let mut doc_id_mapping_file_len = 0_u64;
 
         // Edges writer
         let edges_path = format!("{}/edges", self.base_directory);
         let mut edges_file = File::create(edges_path).unwrap();
         let mut edges_buffer_writer = BufWriter::new(&mut edges_file);
-        let mut edges_file_len = 0 as u64;
+        let mut edges_file_len = 0_u64;
 
         // Points writer
         let points_path = format!("{}/points", self.base_directory);
         let mut points_file = File::create(points_path).unwrap();
         let mut points_buffer_writer = BufWriter::new(&mut points_file);
-        let mut points_file_len = 0 as u64;
+        let mut points_file_len = 0_u64;
 
         // Edge offsets writer
         let edge_offsets_path = format!("{}/edge_offsets", self.base_directory);
         let mut edge_offsets_file = File::create(edge_offsets_path).unwrap();
         let mut edge_offsets_buffer_writer = BufWriter::new(&mut edge_offsets_file);
-        let mut edge_offsets_file_len = 0 as u64;
+        let mut edge_offsets_file_len = 0_u64;
 
         // Level offsets writer
         let level_offsets_path = format!("{}/level_offsets", self.base_directory);
         let mut level_offsets_file = File::create(level_offsets_path).unwrap();
         let mut level_offsets_buffer_writer = BufWriter::new(&mut level_offsets_file);
-        let mut level_offsets_file_len = 0 as u64;
+        let mut level_offsets_file_len = 0_u64;
 
         let vectors_path = format!("{}/vector_storage", self.base_directory);
         let mut vectors_file = File::create(vectors_path).unwrap();
@@ -92,7 +92,7 @@ impl<Q: Quantizer> HnswWriter<Q> {
         let mut level_offsets = Vec::<usize>::new();
         let mut edge_offsets = Vec::<usize>::new();
 
-        let mut num_edges = 0 as usize;
+        let mut num_edges = 0_usize;
 
         // In each level, we append edges and points to file.
         // TODO(hicder): We might not need to write points for level 0...
@@ -525,8 +525,8 @@ mod tests {
         // Train a product quantizer
         let mut pq_builder = ProductQuantizerBuilder::new(pq_config, pq_builder_config);
 
-        for i in 0..1000 {
-            pq_builder.add(datapoints[i].clone());
+        for datapoint in datapoints.into_iter().take(1000) {
+            pq_builder.add(datapoint);
         }
         let pq = pq_builder.build(base_directory.clone()).unwrap();
         assert!(pq.write_to_directory(&pq_dir).is_ok());

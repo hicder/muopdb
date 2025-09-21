@@ -57,18 +57,26 @@ impl<D: DistanceCalculator> ProductQuantizerBuilder<D> {
                     idx += 1;
                 }
             }
+
+            let init_cb: &dyn Fn(&KMeansState<f32>) = &|_| {
+                debug!("Initialization completed.");
+            };
+
+            let iter_cb: &dyn Fn(&KMeansState<f32>, usize, f32) = &|s, nr, new_distsum| {
+                debug!(
+                    "Iteration {} - Error: {:.2} -> {:.2} | Improvement: {:.2}",
+                    nr,
+                    s.distsum,
+                    new_distsum,
+                    s.distsum - new_distsum
+                )
+            };
+
             let conf = KMeansConfig::build()
-                .init_done(&|_| debug!("Initialization completed."))
-                .iteration_done(&|s, nr, new_distsum| {
-                    debug!(
-                        "Iteration {} - Error: {:.2} -> {:.2} | Improvement: {:.2}",
-                        nr,
-                        s.distsum,
-                        new_distsum,
-                        s.distsum - new_distsum
-                    )
-                })
+                .init_done(init_cb)
+                .iteration_done(iter_cb)
                 .build();
+
             let kmean: KMeans<_, 8> = KMeans::new(
                 samples,
                 self.dataset.len(),
@@ -127,20 +135,15 @@ mod tests {
             pqb.add(generate_random_vector(DIMENSION));
         }
 
-        match pqb.build(
-            temp_dir
-                .path()
-                .to_str()
-                .expect("Failed to convert temporary directory path to string")
-                .to_string(),
-        ) {
-            Ok(_) => {
-                assert!(true);
-            }
-            Err(_) => {
-                assert!(false);
-            }
-        }
+        assert!(pqb
+            .build(
+                temp_dir
+                    .path()
+                    .to_str()
+                    .expect("Failed to convert temporary directory path to string")
+                    .to_string(),
+            )
+            .is_ok());
     }
 
     #[test]

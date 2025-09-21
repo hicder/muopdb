@@ -70,23 +70,29 @@ fn generate_config(args: &Args) -> IndexWriterConfig {
     )
     .to_lowercase();
 
-    let mut base_config = BaseConfig::default();
-    base_config.reindex = args.reindex;
-    base_config.dimension = 128;
-    base_config.output_path = output_path;
-    base_config.max_memory_size = 1024 * 1024 * 1024; // 1 GB
-    base_config.file_size = 1024 * 1024 * 1024; // 1 GB
-    base_config.index_type = IndexType::Spann;
+    let base_config = BaseConfig {
+        reindex: args.reindex,
+        dimension: 128,
+        output_path,
+        max_memory_size: 1024 * 1024 * 1024, // 1 GB
+        file_size: 1024 * 1024 * 1024,       // 1 GB
+        index_type: IndexType::Spann,
+        ..BaseConfig::default()
+    };
 
-    let mut quantizer_config = QuantizerConfig::default();
-    if args.quantizer_type == QuantizerTypeArgs::ProductQuantizer {
-        quantizer_config.quantizer_type = QuantizerType::ProductQuantizer;
-        quantizer_config.subvector_dimension = 8;
-        quantizer_config.num_bits = 8;
-        quantizer_config.num_training_rows = 10000;
-        quantizer_config.max_iteration = 1000;
-        quantizer_config.batch_size = 4;
-    }
+    let quantizer_config = if args.quantizer_type == QuantizerTypeArgs::ProductQuantizer {
+        QuantizerConfig {
+            quantizer_type: QuantizerType::ProductQuantizer,
+            subvector_dimension: 8,
+            num_bits: 8,
+            num_training_rows: 10000,
+            max_iteration: 1000,
+            batch_size: 4,
+            ..QuantizerConfig::default()
+        }
+    } else {
+        QuantizerConfig::default()
+    };
 
     let mut ivf_config = IvfConfig::default();
     if args.int_seq_encoding_type == IntSeqEncodingTypeArgs::EliasFano {
@@ -99,10 +105,11 @@ fn generate_config(args: &Args) -> IndexWriterConfig {
     ivf_config.batch_size = 4;
     ivf_config.max_posting_list_size = 1000;
 
-    let mut hnsw_config = HnswConfig::default();
-    hnsw_config.num_layers = 4;
-    hnsw_config.max_num_neighbors = 32;
-    hnsw_config.ef_construction = 200;
+    let hnsw_config = HnswConfig {
+        num_layers: 4,
+        max_num_neighbors: 32,
+        ef_construction: 200,
+    };
 
     match args.index_type {
         IndexTypeArgs::Hnsw => IndexWriterConfig::Hnsw(HnswConfigWithBase {
@@ -206,15 +213,17 @@ mod tests {
 
     #[test]
     fn test_config_generation() {
-        let mut args = Args::default();
-        args.index_type = IndexTypeArgs::Hnsw;
-        args.quantizer_type = QuantizerTypeArgs::NoQuantizer;
-        args.reindex = false;
+        let mut args = Args {
+            index_type: IndexTypeArgs::Hnsw,
+            quantizer_type: QuantizerTypeArgs::NoQuantizer,
+            reindex: false,
+            ..Args::default()
+        };
 
         let config = generate_config(&args);
         match config {
             IndexWriterConfig::Hnsw(config) => {
-                assert_eq!(config.base_config.reindex, false);
+                assert!(!config.base_config.reindex);
                 assert_eq!(config.base_config.dimension, 128);
                 assert_eq!(
                     config.base_config.output_path,
@@ -259,7 +268,7 @@ mod tests {
         let config = generate_config(&args);
         match config {
             IndexWriterConfig::Ivf(config) => {
-                assert_eq!(config.base_config.reindex, false);
+                assert!(!config.base_config.reindex);
                 assert_eq!(config.base_config.dimension, 128);
                 assert_eq!(
                     config.base_config.output_path,
@@ -289,7 +298,7 @@ mod tests {
         let config = generate_config(&args);
         match config {
             IndexWriterConfig::Spann(config) => {
-                assert_eq!(config.base_config.reindex, false);
+                assert!(!config.base_config.reindex);
                 assert_eq!(config.base_config.dimension, 128);
                 assert_eq!(
                     config.base_config.output_path,
@@ -321,10 +330,12 @@ mod tests {
 
     #[test]
     fn test_yaml_generation() {
-        let mut args = Args::default();
-        args.index_type = IndexTypeArgs::Hnsw;
-        args.quantizer_type = QuantizerTypeArgs::NoQuantizer;
-        args.reindex = false;
+        let args = Args {
+            index_type: IndexTypeArgs::Hnsw,
+            quantizer_type: QuantizerTypeArgs::NoQuantizer,
+            reindex: false,
+            ..Args::default()
+        };
 
         let config = generate_config(&args);
         write_config_to_yaml_file(&config, "/tmp/index_writer_config.yaml").unwrap();

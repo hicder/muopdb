@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  "rs/aggregator", 
+  "rs/aggregator",
   "rs/benchmarks",
   "rs/cli",
   "rs/compression",

@@ -24,6 +24,10 @@ impl PostingListStorage {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn get_centroid(&self, id: usize) -> Result<&[f32]> {
         match self {
             PostingListStorage::FixedLocalFile(storage) => storage.get_centroid(id),

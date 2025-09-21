@@ -96,7 +96,7 @@ impl IndexWriter {
             }
         }
 
-        std::fs::create_dir_all(&path)?;
+        std::fs::create_dir_all(path)?;
 
         info!("Start writing index");
         let hnsw_writer = HnswWriter::new(path.to_string());
@@ -225,7 +225,7 @@ impl IndexWriter {
         info!("Start building index");
         ivf_builder.build()?;
 
-        std::fs::create_dir_all(&path)?;
+        std::fs::create_dir_all(path)?;
 
         info!("Start writing index");
         let ivf_writer = IvfWriter::<_, E, D>::new(path.to_string(), quantizer);
@@ -274,7 +274,7 @@ impl IndexWriter {
 
         // Define the writer function for ProductQuantizer
         let pq_writer_fn =
-            |directory: &String, pq: &ProductQuantizer<D>| pq.write_to_directory(&directory);
+            |directory: &String, pq: &ProductQuantizer<D>| pq.write_to_directory(directory);
 
         self.write_quantizer_and_build_ivf_index::<_, E, D, _>(
             input,
@@ -303,7 +303,7 @@ impl IndexWriter {
 
         // Define the writer function for NoQuantizer
         let noq_writer_fn =
-            |directory: &String, noq: &NoQuantizer<D>| noq.write_to_directory(&directory);
+            |directory: &String, noq: &NoQuantizer<D>| noq.write_to_directory(directory);
 
         self.write_quantizer_and_build_ivf_index::<_, E, D, _>(
             input,
@@ -386,7 +386,7 @@ impl IndexWriter {
             num_features: index_writer_config.base_config.dimension,
             pq_subvector_dimension: index_writer_config.quantizer_config.subvector_dimension,
             pq_num_bits: index_writer_config.quantizer_config.num_bits as usize,
-            pq_num_training_rows: index_writer_config.quantizer_config.num_training_rows as usize,
+            pq_num_training_rows: index_writer_config.quantizer_config.num_training_rows,
             quantizer_type: index_writer_config.quantizer_config.quantizer_type.clone(),
             pq_max_iteration: index_writer_config.ivf_config.max_iteration,
             pq_batch_size: index_writer_config.ivf_config.batch_size,

@@ -72,7 +72,7 @@ impl<Q: Quantizer> IvfType<Q> {
         }
     }
 
-    pub fn get_vector_storage(&self) -> &Box<VectorStorage<Q::QuantizedT>> {
+    pub fn get_vector_storage(&self) -> &VectorStorage<Q::QuantizedT> {
         match self {
             IvfType::L2Plain(ivf) => &ivf.vector_storage,
             IvfType::L2EF(ivf) => &ivf.vector_storage,
@@ -141,7 +141,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
     }
 
     pub fn find_nearest_centroids(
-        vector: &Vec<f32>,
+        vector: &[f32],
         index_storage: &PostingListStorage,
         num_probes: usize,
     ) -> Result<Vec<usize>> {
@@ -150,7 +150,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
             let centroid = index_storage
                 .get_centroid(i as usize)
                 .with_context(|| format!("Failed to get centroid at index {}", i))?;
-            let dist = DC::calculate(&vector, &centroid);
+            let dist = DC::calculate(vector, centroid);
             distances.push((i as usize, dist));
         }
         distances.select_nth_unstable_by(num_probes - 1, |a, b| a.1.total_cmp(&b.1));
@@ -273,11 +273,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
     /// otherwise (i.e. doc_id not found or had already been invalidated)
     pub fn invalidate(&self, doc_id: u128) -> bool {
         match self.get_point_id(doc_id) {
-            Some(point_id) => self
-                .invalid_point_ids
-                .write()
-                .unwrap()
-                .insert(point_id as u32),
+            Some(point_id) => self.invalid_point_ids.write().unwrap().insert(point_id),
             None => false,
         }
     }
@@ -287,10 +283,10 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
     pub fn invalidate_batch(&self, doc_ids: &[u128]) -> Vec<u128> {
         // Collect valid point IDs and their corresponding doc_ids
         let mut valid_doc_point_pairs: Vec<(u128, u32)> = doc_ids
-            .into_iter()
+            .iter()
             .filter_map(|doc_id| {
                 self.get_point_id(*doc_id)
-                    .map(|point_id| (*doc_id, point_id as u32))
+                    .map(|point_id| (*doc_id, point_id))
             })
             .collect();
 
@@ -325,7 +321,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
     ) -> Option<SearchResult> {
         // Find the nearest centroids to the query.
         if let Ok(nearest_centroids) = Self::find_nearest_centroids(
-            &query.to_vec(),
+            query,
             &self.posting_list_storage,
             ef_construction as usize,
         ) {
@@ -339,7 +335,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
             })
         } else {
             println!("Error finding nearest centroids");
-            return None;
+            None
         }
     }
 }
@@ -362,10 +358,10 @@ mod tests {
     use crate::vector::fixed_file::FixedFileVectorStorage;
 
     fn create_fixed_file_vector_storage<T: ToBytes>(
-        file_path: &String,
-        dataset: &Vec<Vec<T>>,
+        file_path: &str,
+        dataset: &[&[T]],
     ) -> Result<()> {
-        let mut file = File::create(file_path.clone())?;
+        let mut file = File::create(file_path)?;
 
         // Write number of vectors (8 bytes)
         let num_vectors = dataset.len() as u64;
@@ -382,12 +378,12 @@ mod tests {
     }
 
     fn create_fixed_file_index_storage(
-        file_path: &String,
-        doc_id_mapping: &Vec<u128>,
-        centroids: &Vec<Vec<f32>>,
-        posting_lists: &Vec<Vec<u64>>,
+        file_path: &str,
+        doc_id_mapping: &[u128],
+        centroids: &[&[f32]],
+        posting_lists: &[&[u64]],
     ) -> Result<usize> {
-        let mut file = File::create(file_path.clone())?;
+        let mut file = File::create(file_path)?;
 
         let num_vectors = doc_id_mapping.len();
         let num_clusters = centroids.len();
@@ -463,15 +459,15 @@ mod tests {
         // Posting list offset starts at 0 (see FileBackedAppendablePostingListStorage)
         let mut pl_offset = 0;
         for posting_list in posting_lists.iter() {
-            let pl_len = posting_list.len() * size_of::<u64>();
+            let pl_len = size_of_val(*posting_list);
             assert!(file.write_all(&(pl_len as u64).to_le_bytes()).is_ok());
             assert!(file.write_all(&(pl_offset as u64).to_le_bytes()).is_ok());
             pl_offset += pl_len;
             offset += 2 * size_of::<u64>();
         }
         for posting_list in posting_lists.iter() {
-            assert!(file.write_all(transmute_slice_to_u8(&posting_list)).is_ok());
-            offset += posting_list.len() * size_of::<u64>();
+            assert!(file.write_all(transmute_slice_to_u8(posting_list)).is_ok());
+            offset += size_of_val(*posting_list);
         }
 
         file.flush()?;
@@ -488,24 +484,20 @@ mod tests {
             .expect("Failed to convert temporary directory path to string")
             .to_string();
         let file_path = format!("{}/vectors", base_dir);
-        let dataset: Vec<Vec<f32>> = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-            vec![7.0, 8.0, 9.0],
-        ];
-        assert!(create_fixed_file_vector_storage(&file_path, &dataset).is_ok());
+        let dataset: &[&[f32]] = &[&[1.0, 2.0, 3.0], &[4.0, 5.0, 6.0], &[7.0, 8.0, 9.0]];
+        assert!(create_fixed_file_vector_storage(&file_path, dataset).is_ok());
         let storage = FixedFileVectorStorage::<f32>::new(file_path, 3)
             .expect("FixedFileVectorStorage should be created");
 
         let file_path = format!("{}/index", base_dir);
-        let doc_id_mapping = vec![100u128, 101, 102];
-        let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
-        let posting_lists = vec![vec![0], vec![1, 2]];
+        let doc_id_mapping: &[u128] = &[100, 101, 102];
+        let centroids: &[&[f32]] = &[&[1.5, 2.5, 3.5], &[5.5, 6.5, 7.5]];
+        let posting_lists: &[&[u64]] = &[&[0], &[1, 2]];
         assert!(create_fixed_file_index_storage(
             &file_path,
-            &doc_id_mapping,
-            &centroids,
-            &posting_lists
+            doc_id_mapping,
+            centroids,
+            posting_lists
         )
         .is_ok());
         let index_storage = Box::new(PostingListStorage::FixedLocalFile(
@@ -547,19 +539,15 @@ mod tests {
             .expect("Failed to convert temporary directory path to string")
             .to_string();
         let file_path = format!("{}/index", base_dir);
-        let vector = vec![3.0, 4.0, 5.0];
-        let doc_id_mapping = vec![100, 101, 102];
-        let centroids = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-            vec![7.0, 8.0, 9.0],
-        ];
-        let posting_lists = vec![vec![0], vec![1], vec![2]];
+        let vector = [3.0, 4.0, 5.0];
+        let doc_id_mapping: &[u128] = &[100, 101, 102];
+        let centroids: &[&[f32]] = &[&[1.0, 2.0, 3.0], &[4.0, 5.0, 6.0], &[7.0, 8.0, 9.0]];
+        let posting_lists: &[&[u64]] = &[&[0], &[1], &[2]];
         assert!(create_fixed_file_index_storage(
             &file_path,
-            &doc_id_mapping,
-            &centroids,
-            &posting_lists
+            doc_id_mapping,
+            centroids,
+            posting_lists
         )
         .is_ok());
         let index_storage = Box::new(PostingListStorage::FixedLocalFile(
@@ -590,26 +578,26 @@ mod tests {
             .to_string();
 
         let file_path = format!("{}/vectors", base_dir);
-        let dataset: Vec<Vec<f32>> = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-            vec![7.0, 8.0, 9.0],
-            vec![2.0, 3.0, 4.0],
+        let dataset: &[&[f32]] = &[
+            &[1.0, 2.0, 3.0],
+            &[4.0, 5.0, 6.0],
+            &[7.0, 8.0, 9.0],
+            &[2.0, 3.0, 4.0],
         ];
-        assert!(create_fixed_file_vector_storage(&file_path, &dataset).is_ok());
+        assert!(create_fixed_file_vector_storage(&file_path, dataset).is_ok());
         let num_features = 3;
         let storage = FixedFileVectorStorage::<f32>::new(file_path, num_features)
             .expect("FixedFileVectorStorage should be created");
 
         let file_path = format!("{}/index", base_dir);
-        let doc_id_mapping = vec![100, 101, 102, 103];
-        let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
-        let posting_lists = vec![vec![0, 3], vec![1, 2]];
+        let doc_id_mapping: &[u128] = &[100, 101, 102, 103];
+        let centroids: &[&[f32]] = &[&[1.5, 2.5, 3.5], &[5.5, 6.5, 7.5]];
+        let posting_lists: &[&[u64]] = &[&[0u64, 3u64], &[1u64, 2u64]];
         assert!(create_fixed_file_index_storage(
             &file_path,
-            &doc_id_mapping,
-            &centroids,
-            &posting_lists
+            doc_id_mapping,
+            centroids,
+            posting_lists
         )
         .is_ok());
         let index_storage = Box::new(PostingListStorage::FixedLocalFile(
@@ -630,11 +618,11 @@ mod tests {
             quantizer,
         );
 
-        let query = vec![2.0, 3.0, 4.0];
+        let query = &[2.0, 3.0, 4.0];
         let k = 2;
 
         let results = ivf
-            .search(&query, k, num_probes, false)
+            .search(query, k, num_probes, false)
             .await
             .expect("IVF search should return a result");
 
@@ -655,11 +643,11 @@ mod tests {
             .to_string();
 
         let file_path = format!("{}/vectors", base_dir);
-        let dataset = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-            vec![7.0, 8.0, 9.0],
-            vec![2.0, 3.0, 4.0],
+        let dataset: &[&[f32]] = &[
+            &[1.0, 2.0, 3.0],
+            &[4.0, 5.0, 6.0],
+            &[7.0, 8.0, 9.0],
+            &[2.0, 3.0, 4.0],
         ];
         let num_features = 3;
         let subvector_dimension = 1;
@@ -678,7 +666,10 @@ mod tests {
             .map(|x| f32::process_vector(x, &quantizer))
             .collect();
 
-        assert!(create_fixed_file_vector_storage(&file_path, &quantized_dataset).is_ok());
+        let quantized_dataset_refs: Vec<&[u8]> =
+            quantized_dataset.iter().map(|v| v.as_slice()).collect();
+        let quantized_dataset_slice: &[&[u8]] = &quantized_dataset_refs;
+        assert!(create_fixed_file_vector_storage(&file_path, quantized_dataset_slice).is_ok());
         let storage = FixedFileVectorStorage::<u8>::new(
             file_path,
             num_features / subvector_dimension as usize,
@@ -686,14 +677,14 @@ mod tests {
         .expect("FixedFileVectorStorage should be created");
 
         let file_path = format!("{}/index", base_dir);
-        let doc_id_mapping = vec![100, 101, 102, 103];
-        let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
-        let posting_lists = vec![vec![0, 3], vec![1, 2]];
+        let doc_id_mapping: &[u128] = &[100, 101, 102, 103];
+        let centroids: &[&[f32]] = &[&[1.5, 2.5, 3.5], &[5.5, 6.5, 7.5]];
+        let posting_lists: &[&[u64]] = &[&[0u64, 3u64], &[1u64, 2u64]];
         assert!(create_fixed_file_index_storage(
             &file_path,
-            &doc_id_mapping,
-            &centroids,
-            &posting_lists
+            doc_id_mapping,
+            centroids,
+            posting_lists
         )
         .is_ok());
         let index_storage = Box::new(PostingListStorage::FixedLocalFile(
@@ -710,11 +701,11 @@ mod tests {
             quantizer,
         );
 
-        let query = vec![2.0, 3.0, 4.0];
+        let query = &[2.0, 3.0, 4.0];
         let k = 2;
 
         let results = ivf
-            .search(&query, k, num_probes, false)
+            .search(query, k, num_probes, false)
             .await
             .expect("IVF search should return a result");
 
@@ -744,21 +735,21 @@ mod tests {
             .to_string();
 
         let file_path = format!("{}/vectors", base_dir);
-        let dataset: Vec<Vec<f32>> = vec![vec![100.0, 200.0, 300.0]];
-        assert!(create_fixed_file_vector_storage(&file_path, &dataset).is_ok());
+        let dataset: &[&[f32]] = &[&[100.0, 200.0, 300.0]];
+        assert!(create_fixed_file_vector_storage(&file_path, dataset).is_ok());
         let num_features = 3;
         let storage = FixedFileVectorStorage::<f32>::new(file_path, num_features)
             .expect("FixedFileVectorStorage should be created");
 
         let file_path = format!("{}/index", base_dir);
-        let doc_id_mapping = vec![100];
-        let centroids = vec![vec![100.0, 200.0, 300.0]];
-        let posting_lists = vec![vec![0]];
+        let doc_id_mapping: &[u128] = &[100];
+        let centroids: &[&[f32]] = &[&[100.0, 200.0, 300.0]];
+        let posting_lists: &[&[u64]] = &[&[0u64]];
         assert!(create_fixed_file_index_storage(
             &file_path,
-            &doc_id_mapping,
-            &centroids,
-            &posting_lists
+            doc_id_mapping,
+            centroids,
+            posting_lists
         )
         .is_ok());
         let index_storage = Box::new(PostingListStorage::FixedLocalFile(
@@ -776,11 +767,11 @@ mod tests {
             quantizer,
         );
 
-        let query = vec![1.0, 2.0, 3.0];
+        let query = &[1.0, 2.0, 3.0];
         let k = 5; // More than available results
 
         let results = ivf
-            .search(&query, k, num_probes, false)
+            .search(query, k, num_probes, false)
             .await
             .expect("IVF search should return a result");
 
@@ -799,26 +790,26 @@ mod tests {
             .to_string();
 
         let file_path = format!("{}/vectors", base_dir);
-        let dataset: Vec<Vec<f32>> = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-            vec![7.0, 8.0, 9.0],
-            vec![2.0, 3.0, 4.0],
+        let dataset: &[&[f32]] = &[
+            &[1.0, 2.0, 3.0],
+            &[4.0, 5.0, 6.0],
+            &[7.0, 8.0, 9.0],
+            &[2.0, 3.0, 4.0],
         ];
-        assert!(create_fixed_file_vector_storage(&file_path, &dataset).is_ok());
+        assert!(create_fixed_file_vector_storage(&file_path, dataset).is_ok());
         let num_features = 3;
         let storage = FixedFileVectorStorage::<f32>::new(file_path, num_features)
             .expect("FixedFileVectorStorage should be created");
 
         let file_path = format!("{}/index", base_dir);
-        let doc_id_mapping = vec![100, 101, 102, 103];
-        let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
-        let posting_lists = vec![vec![0, 3], vec![1, 2]];
+        let doc_id_mapping: &[u128] = &[100, 101, 102, 103];
+        let centroids: &[&[f32]] = &[&[1.5, 2.5, 3.5], &[5.5, 6.5, 7.5]];
+        let posting_lists: &[&[u64]] = &[&[0u64, 3u64], &[1u64, 2u64]];
         assert!(create_fixed_file_index_storage(
             &file_path,
-            &doc_id_mapping,
-            &centroids,
-            &posting_lists
+            doc_id_mapping,
+            centroids,
+            posting_lists
         )
         .is_ok());
         let index_storage = Box::new(PostingListStorage::FixedLocalFile(
@@ -868,26 +859,26 @@ mod tests {
             .to_string();
 
         let file_path = format!("{}/vectors", base_dir);
-        let dataset: Vec<Vec<f32>> = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-            vec![7.0, 8.0, 9.0],
-            vec![2.0, 3.0, 4.0],
+        let dataset: &[&[f32]] = &[
+            &[1.0, 2.0, 3.0],
+            &[4.0, 5.0, 6.0],
+            &[7.0, 8.0, 9.0],
+            &[2.0, 3.0, 4.0],
         ];
-        assert!(create_fixed_file_vector_storage(&file_path, &dataset).is_ok());
+        assert!(create_fixed_file_vector_storage(&file_path, dataset).is_ok());
         let num_features = 3;
         let storage = FixedFileVectorStorage::<f32>::new(file_path, num_features)
             .expect("FixedFileVectorStorage should be created");
 
         let file_path = format!("{}/index", base_dir);
-        let doc_id_mapping = vec![100, 101, 102, 103];
-        let centroids = vec![vec![1.5, 2.5, 3.5], vec![5.5, 6.5, 7.5]];
-        let posting_lists = vec![vec![0, 3], vec![1, 2]];
+        let doc_id_mapping: &[u128] = &[100, 101, 102, 103];
+        let centroids: &[&[f32]] = &[&[1.5, 2.5, 3.5], &[5.5, 6.5, 7.5]];
+        let posting_lists: &[&[u64]] = &[&[0u64, 3u64], &[1u64, 2u64]];
         assert!(create_fixed_file_index_storage(
             &file_path,
-            &doc_id_mapping,
-            &centroids,
-            &posting_lists
+            doc_id_mapping,
+            centroids,
+            posting_lists
         )
         .is_ok());
         let index_storage = Box::new(PostingListStorage::FixedLocalFile(
@@ -905,11 +896,11 @@ mod tests {
             quantizer,
         );
 
-        let query = vec![2.0, 3.0, 4.0];
+        let query = &[2.0, 3.0, 4.0];
         let k = 4;
 
         // Batch invalidate doc_ids
-        let invalid_doc_ids = ivf.invalidate_batch(&vec![101, 103]);
+        let invalid_doc_ids = ivf.invalidate_batch(&[101, 103]);
 
         // Verify that the correct doc_ids were invalidated
         assert_eq!(invalid_doc_ids.len(), 2);
@@ -918,7 +909,7 @@ mod tests {
 
         // Verify that invalidated doc_ids are excluded from the search results
         let results = ivf
-            .search(&query, k, num_probes, false)
+            .search(query, k, num_probes, false)
             .await
             .expect("IVF search should return a result");
 
@@ -934,6 +925,6 @@ mod tests {
         assert_eq!(results.id_with_scores[1].doc_id, 102);
 
         // Batch invalidate doc_ids again
-        assert!(ivf.invalidate_batch(&vec![101, 103]).is_empty());
+        assert!(ivf.invalidate_batch(&[101, 103]).is_empty());
     }
 }

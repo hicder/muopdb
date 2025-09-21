@@ -42,7 +42,7 @@ impl<'a> PostingList<'a> {
     }
 
     pub fn new() -> Result<Self> {
-        Ok(PostingList::new_with_slices(Vec::new())?)
+        PostingList::new_with_slices(Vec::new())
     }
 
     pub fn iter(&'a self) -> PostingListIterator<'a> {

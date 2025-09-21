@@ -111,7 +111,7 @@ impl MultiSpannWriter {
         no_quantizer.write_to_directory(&centroid_quantizer_directory)?;
 
         // IVF quantizer
-        Self::write_common_ivf_quantizer(&ivf_directory, &multi_spann.config())?;
+        Self::write_common_ivf_quantizer(&ivf_directory, multi_spann.config())?;
 
         // Centroids index
         let mut hnsw_index_file = File::create(format!("{}/index", hnsw_directory))?;
@@ -229,7 +229,7 @@ impl MultiSpannWriter {
         // Write user index infos
         let mut hash_table = HashTableOwned::<HashConfig>::with_capacity(user_ids.len(), 90);
         for user_index_info in user_index_infos.iter() {
-            hash_table.insert(&user_index_info.user_id, &user_index_info);
+            hash_table.insert(&user_index_info.user_id, user_index_info);
         }
         let serialized = hash_table.raw_bytes();
         let user_index_info_file = format!("{}/user_index_info", base_directory);

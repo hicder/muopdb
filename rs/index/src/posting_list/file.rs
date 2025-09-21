@@ -56,6 +56,7 @@ impl BackingFiles {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(file_name)?;
 
         backing_file.set_len(backing_file_size)?;
@@ -95,11 +96,9 @@ impl BackingFiles {
             Some(mmap) => {
                 mmap[file_offset..file_offset + write_size].copy_from_slice(data);
                 self.current_overall_offset += write_size;
-                return Ok(());
+                Ok(())
             }
-            None => {
-                return Err(anyhow!("Cannot get current mmap"));
-            }
+            None => Err(anyhow!("Cannot get current mmap")),
         }
     }
 
@@ -148,7 +147,7 @@ impl BackingFiles {
         let mut total_bytes_written = 0;
         for (i, mmap) in self.mmaps.iter().enumerate() {
             let bytes_to_write = if i == file_num {
-                file_offset as usize
+                file_offset
             } else {
                 mmap.len()
             };
@@ -250,9 +249,8 @@ impl FileBackedAppendablePostingListStorage {
             self.metadata_backing_files.new_backing_file()?;
         }
         // Write the length of the posting list
-        self.metadata_backing_files.write_to_current_mmap(
-            &((posting_list.len() * size_of::<u64>()) as u64).to_le_bytes(),
-        )?;
+        self.metadata_backing_files
+            .write_to_current_mmap(&((size_of_val(posting_list)) as u64).to_le_bytes())?;
         // Write the offset to the current posting list
         self.metadata_backing_files.write_to_current_mmap(
             &self
@@ -319,9 +317,9 @@ impl<'a> FileBackedAppendablePostingListStorage {
                     self.len()
                 ));
             }
-            return Ok(PostingList::new_with_slices(vec![transmute_slice_to_u8(
+            return PostingList::new_with_slices(vec![transmute_slice_to_u8(
                 &self.resident_posting_lists[i],
-            )])?);
+            )]);
         }
 
         if i >= self.entry_count {
@@ -341,14 +339,14 @@ impl<'a> FileBackedAppendablePostingListStorage {
         let required_size = u64::from_le_bytes(metadata_slice[..u64_bytes].try_into()?) as usize;
         let pl_offset = u64::from_le_bytes(metadata_slice[u64_bytes..].try_into()?) as usize;
 
-        Ok(PostingList::new_with_slices(
+        PostingList::new_with_slices(
             self.posting_list_backing_files
                 .get_slices_at(pl_offset, required_size)?,
-        )?)
+        )
     }
 
     pub fn append(&mut self, posting_list: &[u64]) -> Result<()> {
-        let required_size = posting_list.len() * size_of::<u64>();
+        let required_size = size_of_val(posting_list);
         self.size_bytes += required_size;
         let should_flush = self.resident && self.size_bytes > self.memory_threshold;
         let flush = should_flush && !self.resident_posting_lists.is_empty();
@@ -397,6 +395,10 @@ impl<'a> FileBackedAppendablePostingListStorage {
 
     pub fn len(&self) -> usize {
         self.entry_count
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entry_count == 0
     }
 
     pub fn config(&self) -> PostingListStorageConfig {
@@ -556,8 +558,7 @@ mod tests {
         assert!(data_size > storage.backing_file_size);
 
         // Calculate how many mmaps should be used
-        let expected_mmap_count =
-            (data_size + storage.backing_file_size - 1) / storage.backing_file_size;
+        let expected_mmap_count = data_size.div_ceil(storage.backing_file_size);
         assert_eq!(
             storage.posting_list_backing_files.mmaps.len(),
             expected_mmap_count

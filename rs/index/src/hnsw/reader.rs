@@ -52,19 +52,17 @@ impl HnswReader {
             )?,
         ));
         let edges_padding = (4 - (offset % 4)) % 4;
-        let edges_offset = offset + edges_padding as usize;
+        let edges_offset = offset + edges_padding;
         let points_offset = edges_offset + header.edges_len as usize;
 
         let edge_offsets_padding = (8 - ((points_offset + header.points_len as usize) % 8)) % 8;
-        let edge_offsets_offset =
-            points_offset + header.points_len as usize + edge_offsets_padding as usize;
+        let edge_offsets_offset = points_offset + header.points_len as usize + edge_offsets_padding;
         let level_offsets_offset = edge_offsets_offset + header.edge_offsets_len as usize;
 
         let doc_id_mapping_padding =
             (16 - ((level_offsets_offset + header.level_offsets_len as usize) % 16)) % 16;
-        let doc_id_mapping_offset = level_offsets_offset
-            + header.level_offsets_len as usize
-            + doc_id_mapping_padding as usize;
+        let doc_id_mapping_offset =
+            level_offsets_offset + header.level_offsets_len as usize + doc_id_mapping_padding;
 
         Ok(Hnsw::new(
             backing_file,
@@ -161,8 +159,8 @@ mod tests {
         // Train a product quantizer
         let mut pq_builder = ProductQuantizerBuilder::new(pq_config, pq_builder_config);
 
-        for i in 0..1000 {
-            pq_builder.add(datapoints[i].clone());
+        for datapoint in datapoints.iter().take(1000) {
+            pq_builder.add(datapoint.clone());
         }
         let pq = pq_builder.build(base_directory.clone()).unwrap();
         assert!(pq.write_to_directory(&pq_dir).is_ok());
@@ -173,8 +171,8 @@ mod tests {
         let mut hnsw_builder = HnswBuilder::<ProductQuantizer<L2DistanceCalculator>>::new(
             10, 128, 20, 1024, 4096, 16, pq, vector_dir,
         );
-        for i in 0..datapoints.len() {
-            hnsw_builder.insert(i as u128, &datapoints[i]).unwrap();
+        for (i, datapoint) in datapoints.iter().enumerate() {
+            hnsw_builder.insert(i as u128, datapoint).unwrap();
         }
 
         let hnsw_dir = format!("{}/hnsw", base_directory);
@@ -207,8 +205,8 @@ mod tests {
 
         let mut hnsw_builder =
             HnswBuilder::new(10, 128, 20, 1024, 4096, 128, quantizer, vector_dir);
-        for i in 0..datapoints.len() {
-            hnsw_builder.insert(i as u128, &datapoints[i]).unwrap();
+        for (i, datapoint) in datapoints.iter().enumerate() {
+            hnsw_builder.insert(i as u128, datapoint).unwrap();
         }
 
         let hnsw_dir = format!("{}/hnsw", base_directory);

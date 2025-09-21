@@ -518,13 +518,12 @@ mod tests {
         assert_eq!(invalidation2.as_ref().unwrap().doc_id, doc_id2);
 
         // Case 2: write full buffers to multiple files
-        let mut large_invalidations = Vec::new();
-        for i in 0..2048 {
-            large_invalidations.push(InvalidatedUserDocId {
+        let large_invalidations: Vec<InvalidatedUserDocId> = (0..2048)
+            .map(|i| InvalidatedUserDocId {
                 user_id: user_id1 + i as u128,
                 doc_id: doc_id1 + i as u128,
-            });
-        }
+            })
+            .collect();
         assert!(storage.invalidate_batch(&large_invalidations).is_ok());
 
         // Verify state after case 2
@@ -543,16 +542,16 @@ mod tests {
             iter.next();
         }
 
-        for i in 0..2048 {
+        for large_invalidation in large_invalidations.iter() {
             let invalidation = iter.next();
             assert!(invalidation.is_some());
             assert_eq!(
                 invalidation.as_ref().unwrap().user_id,
-                large_invalidations[i].user_id
+                large_invalidation.user_id
             );
             assert_eq!(
                 invalidation.as_ref().unwrap().doc_id,
-                large_invalidations[i].doc_id
+                large_invalidation.doc_id
             );
         }
     }

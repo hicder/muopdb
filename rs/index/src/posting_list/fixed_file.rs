@@ -66,13 +66,13 @@ mod tests {
         let mut appendable_storage =
             FileBackedAppendablePostingListStorage::new(base_directory.clone(), 1024, 4096);
         appendable_storage
-            .append(&vec![1, 2, 3, 4])
+            .append(&[1, 2, 3, 4])
             .expect("Failed to append posting list");
         appendable_storage
-            .append(&vec![5, 6, 7, 8])
+            .append(&[5, 6, 7, 8])
             .expect("Failed to append posting list");
         appendable_storage
-            .append(&vec![9, 10, 11, 12])
+            .append(&[9, 10, 11, 12])
             .expect("Failed to append posting list");
 
         let vectors_path = format!("{}/vector_storage", base_directory);

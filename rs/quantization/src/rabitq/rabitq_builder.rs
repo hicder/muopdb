@@ -32,7 +32,7 @@ impl RabitQBuilder {
     }
 
     pub fn build(&mut self) -> Result<RabitQ> {
-        assert!(self.dataset.len() > 0, "Dataset is empty");
+        assert!(!self.dataset.is_empty(), "Dataset is empty");
 
         let dataset = self.get_dataset()?;
 
@@ -71,13 +71,13 @@ impl RabitQBuilder {
     }
 
     fn get_centroid(&self, dataset: &Array2<f32>) -> Array1<f32> {
-        return dataset.mean_axis(Axis(0)).unwrap();
+        dataset.mean_axis(Axis(0)).unwrap()
     }
 
     fn generate_orthogonal_matrix(&self, d: usize) -> Result<Array2<f32>> {
         let matrix: Array2<f32> = Array2::random((d, d), StandardNormal);
         let (q, _) = matrix.qr()?;
-        return Ok(q);
+        Ok(q)
     }
 
     fn get_quantization_codes(
@@ -102,7 +102,7 @@ impl RabitQBuilder {
     fn get_quantized_vector_dot_products(
         &self,
         normalized_dataset: &Array2<f32>,
-        quantization_codes: &Vec<BitVec>,
+        quantization_codes: &[BitVec],
         p: &Array2<f32>,
     ) -> Array1<f32> {
         debug_assert!(

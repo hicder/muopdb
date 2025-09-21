@@ -20,7 +20,7 @@ fn bench_kmeans(c: &mut Criterion) {
         dimension,
         kmeans_builder::KMeansVariant::Lloyd,
     );
-    for parallel in [false].iter() {
+    [false].iter().for_each(|parallel| {
         group.bench_with_input(
             BenchmarkId::new("kmeans", parallel),
             &parallel,
@@ -34,7 +34,7 @@ fn bench_kmeans(c: &mut Criterion) {
                 })
             },
         );
-    }
+    });
 }
 
 criterion_group!(benches, bench_kmeans);

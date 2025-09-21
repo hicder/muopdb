@@ -47,10 +47,11 @@ pub fn main() {
         println!("======= Layer: {} =======", layer);
         let predicate = |l: u8, node_id: u32| -> bool {
             if l == 0 {
-                return node_id < points_per_layer_0 as u32;
+                node_id < points_per_layer_0 as u32
+            } else {
+                node_id < points_per_layer as u32
             }
-            return node_id < points_per_layer as u32;
         };
-        hnsw.print_graph(layer as u8, predicate);
+        hnsw.print_graph(layer, predicate);
     }
 }

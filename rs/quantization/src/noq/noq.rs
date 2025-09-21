@@ -63,7 +63,7 @@ impl<D: DistanceCalculator> WritableQuantizer for NoQuantizer<D> {
             dimension: self.dimension,
         };
         std::fs::write(
-            &format!("{}/no_op_quantizer_config.yaml", base_directory),
+            format!("{}/no_op_quantizer_config.yaml", base_directory),
             serde_yaml::to_string(&config)?,
         )?;
         Ok(())
@@ -92,7 +92,7 @@ impl<D: DistanceCalculator> NoQuantizerReader<D> {
     pub fn read(&self) -> Result<NoQuantizer<D>> {
         // Deserialieze the config
         let config = serde_yaml::from_str::<NoQuantizerConfig>(&std::fs::read_to_string(
-            &format!("{}/no_op_quantizer_config.yaml", self.base_directory),
+            format!("{}/no_op_quantizer_config.yaml", self.base_directory),
         )?)?;
         Ok(NoQuantizer::new(config.dimension))
     }

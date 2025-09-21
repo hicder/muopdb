@@ -391,9 +391,9 @@ mod tests {
         let mut ef = EliasFano::<u32>::new_encoder(upper_bound, values.len());
         assert!(ef.encode_batch(&values).is_ok());
 
-        for i in 0..values.len() {
+        for (i, value) in values.iter().enumerate() {
             let decoded_value = ef.get(i).expect("Failed to decode value");
-            assert_eq!(values[i], decoded_value);
+            assert_eq!(*value, decoded_value);
         }
     }
 
@@ -404,9 +404,9 @@ mod tests {
         let mut ef = EliasFano::<u128>::new_encoder(upper_bound, values.len());
         assert!(ef.encode_batch(&values).is_ok());
 
-        for i in 0..values.len() {
+        for (i, value) in values.iter().enumerate() {
             let decoded_value = ef.get(i).expect("Failed to decode value");
-            assert_eq!(values[i], decoded_value);
+            assert_eq!(*value, decoded_value);
         }
     }
 
@@ -424,10 +424,10 @@ mod tests {
             let mut ef = EliasFano::new_encoder(upper_bound, values.len());
             assert!(ef.encode_batch(&values).is_ok());
 
-            for i in 0..values.len() {
+            (0..values.len()).for_each(|i| {
                 let decoded_value = ef.get(i).expect("Failed to decode value");
                 assert_eq!(values[i], decoded_value);
-            }
+            });
         }
 
         // Test random access on a larger set
@@ -524,10 +524,8 @@ mod tests {
 
             let decoder = EliasFanoDecoder::new_decoder(&byte_slice)
                 .expect("Failed to create posting list decoder");
-            let mut i = 0;
-            for idx in decoder.get_iterator(&byte_slice) {
+            for (i, idx) in decoder.get_iterator(&byte_slice).enumerate() {
                 assert_eq!(values[i], idx);
-                i += 1;
             }
 
             let _ = remove_dir_all(&file_path);
@@ -556,11 +554,9 @@ mod tests {
 
         let decoder =
             EliasFanoDecoder::<u32>::new_decoder(&byte_slice).expect("Failed to create decoder");
-        let mut iterator = decoder.get_iterator(&byte_slice);
-        let mut i = 0;
-        while let Some(decoded_value) = iterator.next() {
+        let iterator = decoder.get_iterator(&byte_slice);
+        for (i, decoded_value) in iterator.enumerate() {
             assert_eq!(values[i], decoded_value);
-            i += 1;
         }
 
         let _ = remove_dir_all(&file_path);
@@ -588,11 +584,9 @@ mod tests {
 
         let decoder =
             EliasFanoDecoder::<u128>::new_decoder(&byte_slice).expect("Failed to create decoder");
-        let mut iterator = decoder.get_iterator(&byte_slice);
-        let mut i = 0;
-        while let Some(decoded_value) = iterator.next() {
+        let iterator = decoder.get_iterator(&byte_slice);
+        for (i, decoded_value) in iterator.enumerate() {
             assert_eq!(values[i], decoded_value);
-            i += 1;
         }
 
         let _ = remove_dir_all(&file_path);

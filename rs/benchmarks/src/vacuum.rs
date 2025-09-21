@@ -48,12 +48,12 @@ fn vacuum(c: &mut Criterion) {
                     CollectionReader::new(collection_name.to_string(), base_directory.clone());
                 let collection = reader.read::<NoQuantizerL2>().unwrap();
                 let mut doc_id = 0;
-                for vector in vectors.iter() {
+                vectors.iter().for_each(|vector| {
                     collection
                         .insert_for_users(&user_ids, doc_id, vector, 0, None)
                         .unwrap();
                     doc_id += 1;
-                }
+                });
                 let segment_name = collection.flush().unwrap();
                 let pending_segment = collection.init_optimizing(&vec![segment_name]).unwrap();
                 for doc_id in doc_ids_to_delete.iter() {

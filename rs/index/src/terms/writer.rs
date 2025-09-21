@@ -84,7 +84,7 @@ impl TermWriter {
             let posting_list = builder.get_posting_list_by_id(term_id).unwrap();
             let mut encoder =
                 EliasFano::new_encoder(*posting_list.last().unwrap(), posting_list.len());
-            encoder.encode_batch(&posting_list).unwrap();
+            encoder.encode_batch(posting_list).unwrap();
             let len = encoder.write(&mut pl_writer)?;
             debug!(
                 "[write] Term ID: {}, Offset: {}, Length: {}",
@@ -136,22 +136,22 @@ impl TermWriter {
         append_file_to_writer(term_map_path.as_str(), &mut combined_writer)?;
         total_size += term_map_len as usize;
 
-        let padding = 8 - (total_size % 8) as usize;
+        let padding = 8 - (total_size % 8);
         if padding != 8 {
             let padding_buffer = vec![0; padding];
             total_size += wrap_write(&mut combined_writer, &padding_buffer)?;
         }
 
         append_file_to_writer(offset_path.as_str(), &mut combined_writer)?;
-        total_size += offset_len as usize;
-        let padding = 8 - (total_size % 8) as usize;
+        total_size += offset_len;
+        let padding = 8 - (total_size % 8);
         if padding != 8 {
             let padding_buffer = vec![0; padding];
             total_size += wrap_write(&mut combined_writer, &padding_buffer)?;
         }
 
         append_file_to_writer(posting_list_path.as_str(), &mut combined_writer)?;
-        total_size += last_pl_offset as usize;
+        total_size += last_pl_offset;
         combined_writer.flush()?;
 
         debug!("Total size: {}", total_size);
