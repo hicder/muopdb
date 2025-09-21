@@ -169,15 +169,20 @@ impl Wal {
 
         // Sync files that contain flushed_seq_no or have sequence numbers less than flushed_seq_no
         for file in self.files.iter() {
-            let file_start_seq_no = file.get_start_seq_no();
+            // let file_start_seq_no = file.get_start_seq_no();
             let file_last_seq_no = file.get_last_seq_no();
 
-            // Check if flushed_seq_no is within the range of the file or less than the file's range
-            if file_start_seq_no <= current_synced_seq_no
-                && file_last_seq_no >= current_synced_seq_no
-            {
-                file.sync_data()?;
-            } else if file_start_seq_no > current_synced_seq_no {
+            // // Check if flushed_seq_no is within the range of the file or less than the file's range
+            // if file_start_seq_no <= current_synced_seq_no
+            //     && file_last_seq_no >= current_synced_seq_no
+            // {
+            //     file.sync_data()?;
+            // } else if file_start_seq_no > current_synced_seq_no {
+            //     file.sync_data()?;
+            // }
+
+            // Check if file needs to be synced based on current_synced_seq_no
+            if file_last_seq_no >= current_synced_seq_no {
                 file.sync_data()?;
             }
         }
