@@ -63,7 +63,7 @@ impl TermBuilder {
         }
         self.built = true;
 
-        // Sort the posting lists
+        // Sort the posting lists so we can use Elias Fano encoding.
         for (_, posting_list) in self.posting_lists.iter_mut() {
             posting_list.sort();
             posting_list.dedup();

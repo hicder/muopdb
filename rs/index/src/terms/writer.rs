@@ -83,7 +83,7 @@ impl TermWriter {
             // elias fano encode
             let posting_list = builder.get_posting_list_by_id(term_id).unwrap();
             let mut encoder =
-                EliasFano::new_encoder(*posting_list.last().unwrap() as usize, posting_list.len());
+                EliasFano::new_encoder(*posting_list.last().unwrap(), posting_list.len());
             encoder.encode_batch(&posting_list).unwrap();
             let len = encoder.write(&mut pl_writer)?;
             debug!(
