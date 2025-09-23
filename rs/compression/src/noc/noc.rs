@@ -111,21 +111,7 @@ impl<'a, T: CompressionInt> PlainDecodingIterator<'a, T> {
         let start = index * type_size;
         let end = start + type_size;
 
-        match type_size {
-            4 => {
-                let bytes: [u8; 4] = self.encoded_data[start..end].try_into().unwrap();
-                T::from_usize(u32::from_le_bytes(bytes) as usize)
-            }
-            8 => {
-                let bytes: [u8; 8] = self.encoded_data[start..end].try_into().unwrap();
-                T::from_usize(u64::from_le_bytes(bytes) as usize)
-            }
-            16 => {
-                let bytes: [u8; 16] = self.encoded_data[start..end].try_into().unwrap();
-                T::from_usize(u128::from_le_bytes(bytes) as usize)
-            }
-            _ => T::zero(),
-        }
+        T::from_le_bytes(&self.encoded_data[start..end]).unwrap_or_else(|_| T::zero())
     }
 }
 

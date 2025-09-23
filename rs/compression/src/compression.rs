@@ -2,15 +2,16 @@ use std::fs::File;
 use std::io::BufWriter;
 
 use anyhow::Result;
+use log::warn;
 
 pub trait CompressionInt:
-    Copy                // Allows copying values instead of moving
-    + std::fmt::Debug   // For debugging and printing
-    + std::fmt::Display // For debugging and printing
-    + PartialOrd        // For checking if sequence is sorted
-    + From<u8>          // Convert from u8 literal (e.g., 0, 1)
-    + TryInto<usize>    // Convert to usize (may fail for large values)
-    + TryFrom<usize>    // Convert from usize (may fail for large values)
+    Copy                                    // Allows copying values instead of moving
+    + std::fmt::Debug                       // For debugging and printing
+    + std::fmt::Display                     // For debugging and printing
+    + PartialOrd                            // For checking if sequence is sorted
+    + From<u8>                              // Convert from u8 literal (e.g., 0, 1)
+    + TryInto<u64>                          // Convert to u64 (may fail for large values)
+    + TryFrom<u64>                          // Convert from u64 (may fail for large values)
     + std::ops::Shr<usize, Output = Self>   // (>>)
     + std::ops::Shl<usize, Output = Self>   // (<<)
     + std::ops::BitAnd<Self, Output = Self> // (&)
@@ -20,15 +21,17 @@ pub trait CompressionInt:
     + std::ops::Div<Self, Output = Self>    // (/)
     + std::ops::AddAssign<Self>             // (+=)
     + num_traits::ops::bytes::ToBytes       // to_le_bytes
-    + Default           // Default value (usually 0)
+    + Default                               // Default value (usually 0)
 {
     // Required methods
     fn zero() -> Self;
     fn one() -> Self;
     fn max_value() -> Self;
     fn bits() -> usize;
-    fn as_usize(&self) -> usize;
-    fn from_usize(n: usize) -> Self;
+    // Since Elias Fano uses BitVec<u64> under the hood, use u64 as intermediate type
+    fn as_u64(&self) -> u64;
+    fn from_u64(n: u64) -> Self;
+    fn from_le_bytes(bytes: &[u8]) -> Result<Self>;
     fn leading_zeros(&self) -> u32;
 }
 
@@ -45,11 +48,20 @@ impl CompressionInt for u32 {
     fn bits() -> usize {
         32
     }
-    fn as_usize(&self) -> usize {
-        *self as usize
+    fn as_u64(&self) -> u64 {
+        *self as u64
     }
-    fn from_usize(n: usize) -> Self {
-        n as u32
+    fn from_u64(n: u64) -> Self {
+        if n > u32::MAX as u64 {
+            warn!("u64 value {n} too large for u32, saturating at u32::MAX");
+            u32::MAX
+        } else {
+            n as u32
+        }
+    }
+    fn from_le_bytes(bytes: &[u8]) -> Result<Self> {
+        let array: [u8; 4] = bytes.try_into()?;
+        Ok(u32::from_le_bytes(array))
     }
     fn leading_zeros(&self) -> u32 {
         u32::leading_zeros(*self)
@@ -69,11 +81,15 @@ impl CompressionInt for u64 {
     fn bits() -> usize {
         64
     }
-    fn as_usize(&self) -> usize {
-        *self as usize
+    fn as_u64(&self) -> u64 {
+        *self
     }
-    fn from_usize(n: usize) -> Self {
-        n as u64
+    fn from_u64(n: u64) -> Self {
+        n
+    }
+    fn from_le_bytes(bytes: &[u8]) -> Result<Self> {
+        let array: [u8; 8] = bytes.try_into()?;
+        Ok(u64::from_le_bytes(array))
     }
     fn leading_zeros(&self) -> u32 {
         u64::leading_zeros(*self)
@@ -93,11 +109,18 @@ impl CompressionInt for u128 {
     fn bits() -> usize {
         128
     }
-    fn as_usize(&self) -> usize {
-        *self as usize
+    fn as_u64(&self) -> u64 {
+        if *self > u64::MAX as u128 {
+            warn!("u128 value {self} too large for u64, truncating");
+        }
+        *self as u64
     }
-    fn from_usize(n: usize) -> Self {
+    fn from_u64(n: u64) -> Self {
         n as u128
+    }
+    fn from_le_bytes(bytes: &[u8]) -> Result<Self> {
+        let array: [u8; 16] = bytes.try_into()?;
+        Ok(u128::from_le_bytes(array))
     }
     fn leading_zeros(&self) -> u32 {
         u128::leading_zeros(*self)

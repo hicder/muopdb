@@ -35,8 +35,8 @@ impl<T: CompressionInt> EliasFano<T> {
     pub fn new(universe: T, num_elem: usize) -> Self {
         // lower_bit_length = floor(log(universe / num_elem))
         // More efficient way to do it is with bit manipulation
-        let lower_bit_length = if universe > T::from_usize(num_elem) {
-            let ratio = universe / T::from_usize(num_elem);
+        let lower_bit_length = if universe > T::from_u64(num_elem as u64) {
+            let ratio = universe / T::from_u64(num_elem as u64);
             msb(ratio) as usize
         } else {
             0
@@ -103,9 +103,8 @@ impl<T: CompressionInt> EliasFano<T> {
             while remaining_bits > 0 {
                 let bits_to_load = std::cmp::min(remaining_bits, 64);
                 let chunk_start = low_start + offset;
-                let chunk =
-                    self.lower_bits[chunk_start..chunk_start + bits_to_load].load::<u64>() as usize;
-                low = low | (T::from_usize(chunk) << offset);
+                let chunk = self.lower_bits[chunk_start..chunk_start + bits_to_load].load::<u64>();
+                low = low | (T::from_u64(chunk) << offset);
                 offset += bits_to_load;
                 remaining_bits -= bits_to_load;
             }
@@ -150,7 +149,7 @@ impl<T: CompressionInt> IntSeqEncoder<T> for EliasFano<T> {
 
             while remaining_bits > 0 {
                 let bits_to_store = std::cmp::min(remaining_bits, 64);
-                let chunk = (low >> offset).as_usize() as u64;
+                let chunk = (low >> offset).as_u64();
                 let chunk_start = start + offset;
                 self.lower_bits[chunk_start..chunk_start + bits_to_store].store(chunk);
                 offset += bits_to_store;
@@ -166,13 +165,17 @@ impl<T: CompressionInt> IntSeqEncoder<T> for EliasFano<T> {
             return Err(anyhow!("Sequence is not sorted"));
         }
 
-        let gap = high - self.cur_high;
-        if gap > T::from_usize(usize::MAX) {
-            return Err(anyhow!("Gap too large for Elias-Fano encoding"));
+        let gap = (high - self.cur_high).as_u64();
+        if gap > usize::MAX as u64 {
+            return Err(anyhow!(
+                "Gap {} too large for Elias-Fano encoding on this platform (max: {})",
+                gap,
+                usize::MAX
+            ));
         }
 
         self.upper_bits
-            .extend_from_bitslice(&BitVec::<u8>::repeat(false, gap.as_usize()));
+            .extend_from_bitslice(&BitVec::<u8>::repeat(false, gap as usize));
         self.upper_bits.push(true);
 
         self.cur_high = high;
@@ -310,9 +313,9 @@ impl<'a, T: CompressionInt> EliasFanoDecodingIterator<'a, T> {
             while remaining_bits > 0 {
                 let bits_to_load = std::cmp::min(remaining_bits, 64);
                 let chunk_start = offset + bit_offset;
-                let chunk = self.lower_bits_slice[chunk_start..chunk_start + bits_to_load]
-                    .load::<u64>() as usize;
-                low = low | (T::from_usize(chunk) << bit_offset);
+                let chunk =
+                    self.lower_bits_slice[chunk_start..chunk_start + bits_to_load].load::<u64>();
+                low = low | (T::from_u64(chunk) << bit_offset);
                 bit_offset += bits_to_load;
                 remaining_bits -= bits_to_load;
             }
@@ -596,5 +599,182 @@ mod tests {
         }
 
         let _ = remove_dir_all(&file_path);
+    }
+
+    #[test]
+    fn test_elias_fano_u128_near_u64_max() {
+        let values = vec![
+            u64::MAX as u128 - 1,
+            u64::MAX as u128,
+            u64::MAX as u128 + 1,
+            u64::MAX as u128 * 2,
+        ];
+        let upper_bound = u64::MAX as u128 * 2 + 1000;
+        let mut ef = EliasFano::<u128>::new_encoder(upper_bound, values.len());
+        assert!(ef.encode_batch(&values).is_ok());
+
+        for (i, &expected) in values.iter().enumerate() {
+            let decoded = ef.get(i).expect("Failed to decode");
+            assert_eq!(expected, decoded, "Failed at index {}", i);
+        }
+    }
+
+    #[test]
+    fn test_elias_fano_u128_large_values() {
+        let values = vec![
+            1u128 << 65,  // Requires 2 chunks (65 bits)
+            1u128 << 95,  // Requires 2 chunks (95 bits)
+            1u128 << 127, // Requires 2 chunks (127 bits)
+            u128::MAX,    // Requires 2 chunks (128 bits)
+        ];
+        let upper_bound = u128::MAX;
+        let mut ef = EliasFano::<u128>::new_encoder(upper_bound, values.len());
+        assert!(ef.encode_batch(&values).is_ok());
+
+        for (i, &expected) in values.iter().enumerate() {
+            let decoded = ef.get(i).expect("Failed to decode");
+            assert_eq!(expected, decoded, "Failed at index {}", i);
+        }
+    }
+
+    #[test]
+    fn test_elias_fano_chunked_storage() {
+        // Test different bit lengths that require different numbers of chunks
+        let test_cases = vec![
+            (vec![100u128], 200u128, 7), // 7 bits - fits in one chunk
+            (
+                vec![100000000000000000000u128],
+                200000000000000000000u128,
+                67,
+            ), // 65 bits - requires two chunks
+            (vec![u128::MAX], u128::MAX, 127), // 127 bits - requires two chunks
+        ];
+
+        for (values, upper_bound, expected_bit_length) in test_cases {
+            let mut ef = EliasFano::<u128>::new_encoder(upper_bound, values.len());
+            assert!(ef.encode_batch(&values).is_ok());
+
+            assert_eq!(
+                ef.lower_bit_length, expected_bit_length,
+                "Wrong bit length for upper_bound {}",
+                upper_bound
+            );
+
+            for (i, &expected) in values.iter().enumerate() {
+                let decoded = ef.get(i).expect("Failed to decode");
+                assert_eq!(
+                    expected, decoded,
+                    "Failed for upper_bound {} at index {}",
+                    upper_bound, i
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_elias_fano_u128_gap_calculation() {
+        let values = vec![
+            1000u128,
+            10000000000000000000u128, // Large gap
+            u128::MAX - 1000,
+            u128::MAX,
+        ];
+        let upper_bound = u128::MAX;
+        let mut ef = EliasFano::<u128>::new_encoder(upper_bound, values.len());
+
+        assert!(ef.encode_batch(&values).is_ok());
+
+        for (i, &expected) in values.iter().enumerate() {
+            let decoded = ef.get(i).expect("Failed to decode");
+            assert_eq!(expected, decoded);
+        }
+    }
+
+    #[test]
+    fn test_elias_fano_u128_usize_safety() {
+        let large_value = u64::MAX as u128 + 1000; // Too large for usize on 32-bit
+
+        let values = vec![large_value];
+        let upper_bound = large_value + 1000;
+        let mut ef = EliasFano::<u128>::new_encoder(upper_bound, values.len());
+
+        assert!(ef.encode_batch(&values).is_ok());
+
+        let decoded = ef.get(0).expect("Failed to decode");
+        assert_eq!(large_value, decoded);
+    }
+
+    #[test]
+    fn test_elias_fano_u128_round_trip() {
+        let values = vec![
+            1u128,
+            1000u128,
+            u64::MAX as u128,
+            u64::MAX as u128 + 1000,
+            1u128 << 100,
+            u128::MAX - 1,
+            u128::MAX,
+        ];
+        let upper_bound = u128::MAX;
+
+        // Encode
+        let mut encoder = EliasFano::<u128>::new_encoder(upper_bound, values.len());
+        assert!(encoder.encode_batch(&values).is_ok());
+
+        // Write to temporary file
+        let temp_dir = TempDir::new("test_elias_fano_u128_round_trip")
+            .expect("Failed to create temporary directory");
+        let file_path = temp_dir.path().join("test_file");
+        let mut file = File::create(&file_path).expect("Failed to create test file");
+        let mut writer = BufWriter::new(&mut file);
+        assert!(encoder.write(&mut writer).is_ok());
+        drop(writer);
+
+        // Read back
+        let mut file = File::open(&file_path).expect("Failed to open file for reading");
+        let mut byte_data = Vec::new();
+        file.read_to_end(&mut byte_data)
+            .expect("Failed to read file");
+
+        // Decode
+        let decoder =
+            EliasFanoDecoder::<u128>::new_decoder(&byte_data).expect("Failed to create decoder");
+        let mut iterator = decoder.get_iterator(&byte_data);
+
+        for (i, expected) in values.iter().enumerate() {
+            let decoded = iterator
+                .next()
+                .expect(&format!("Missing value at index {}", i));
+            assert_eq!(*expected, decoded, "Mismatch at index {}", i);
+        }
+
+        assert!(iterator.next().is_none(), "Extra values in iterator");
+    }
+
+    #[test]
+    fn test_elias_fano_u128_value_too_large() {
+        let values = vec![1000u128];
+        let upper_bound = 500u128; // Too small
+        let mut ef = EliasFano::<u128>::new_encoder(upper_bound, values.len());
+
+        let result = ef.encode_batch(&values);
+        assert!(result.is_err(), "Should have failed with value > universe");
+    }
+
+    #[test]
+    fn test_elias_fano_u128_large_sequence() {
+        let n = 1000;
+        let values: Vec<u128> = (0..n).map(|i| (i as u128) * 10000000000000000000).collect();
+        let upper_bound = values.last().unwrap() + 1000;
+
+        let mut ef = EliasFano::<u128>::new_encoder(upper_bound, values.len());
+        let encode_result = ef.encode_batch(&values);
+        assert!(encode_result.is_ok(), "Encoding failed for large sequence");
+
+        // Verify all values can be decoded
+        for (i, &expected) in values.iter().enumerate() {
+            let decoded = ef.get(i).expect(&format!("Failed to decode index {}", i));
+            assert_eq!(expected, decoded, "Mismatch at index {}", i);
+        }
     }
 }
