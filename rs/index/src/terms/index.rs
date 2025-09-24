@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};
 use compression::compression::IntSeqDecoder;
@@ -154,6 +156,58 @@ impl TermIndex {
     }
 }
 
+pub struct MultiTermIndex {
+    /// Map of user ID to their [`TermIndex`]
+    term_indexes: HashMap<u128, TermIndex>,
+}
+
+impl MultiTermIndex {
+    pub fn new(base_dir: &str) -> Result<Self> {
+        let mut term_indexes = HashMap::new();
+
+        for entry in std::fs::read_dir(base_dir)? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                if let Some(user_str) = entry.file_name().to_str() {
+                    if let Ok(user_id) = user_str.parse::<u128>() {
+                        let user_dir = entry.path();
+                        let index_file_path = user_dir.join("combined");
+                        if !index_file_path.exists() {
+                            log::warn!(
+                                "Index file does not exist for user {}: {:?}",
+                                user_id,
+                                index_file_path
+                            );
+                            continue;
+                        }
+                        let term_index = TermIndex::new(
+                            index_file_path
+                                .to_str()
+                                .expect("index_file_path must be valid UTF-8 string")
+                                .to_string(),
+                            0,
+                            std::fs::metadata(&index_file_path)?.len() as usize,
+                        )?;
+                        term_indexes.insert(user_id, term_index);
+                    }
+                }
+            }
+        }
+
+        Ok(Self { term_indexes })
+    }
+
+    pub fn get_term_index_for_user(&self, user_id: u128) -> Option<&TermIndex> {
+        self.term_indexes.get(&user_id)
+    }
+
+    /// Retrieves the term ID for a given user and term string.
+    pub fn get_term_id_for_user(&self, user_id: u128, term: &str) -> Option<u64> {
+        let term_index = self.term_indexes.get(&user_id)?;
+        term_index.get_term_id(term)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use tempdir::TempDir;
@@ -177,19 +231,22 @@ mod tests {
     #[test]
     fn test_term_index() {
         let temp_dir = TempDir::new("test_term_index").unwrap();
-        let base_directory = temp_dir.path().to_str().unwrap().to_string();
-
-        let mut builder = TermBuilder::new(&base_directory);
+        let base_directory = temp_dir.path();
+        let base_dir_str = base_directory
+            .to_str()
+            .expect("Base directory should be valid UTF-8")
+            .to_string();
+        let mut builder = TermBuilder::new(base_directory.join("scratch.tmp").as_path()).unwrap();
         builder.add(0, "a".to_string()).unwrap();
         builder.add(0, "c".to_string()).unwrap();
         builder.add(1, "b".to_string()).unwrap();
         builder.add(2, "c".to_string()).unwrap();
 
         builder.build().unwrap();
-        let writer = TermWriter::new(base_directory.clone());
+        let writer = TermWriter::new(base_dir_str.clone());
         writer.write(&mut builder).unwrap();
 
-        let path = format!("{base_directory}/combined",);
+        let path = format!("{base_dir_str}/combined",);
         let file_len = std::fs::metadata(&path).unwrap().len();
         let index = TermIndex::new(path, 0, file_len as usize).unwrap();
 
@@ -237,9 +294,10 @@ mod tests {
     #[test]
     fn test_term_index_with_shared_terms() {
         let temp_dir = TempDir::new("test_term_index_shared").unwrap();
-        let base_directory = temp_dir.path().to_str().unwrap().to_string();
+        let base_directory = temp_dir.path();
+        let base_dir_str = base_directory.to_str().unwrap().to_string();
 
-        let mut builder = TermBuilder::new(&base_directory);
+        let mut builder = TermBuilder::new(base_directory.join("scratch.tmp").as_path()).unwrap();
 
         // Create 20 docs, each with 5 terms. Some terms are shared.
         let common_terms = ["apple", "banana", "orange", "grape", "kiwi"];
@@ -247,19 +305,19 @@ mod tests {
             for _ in 0..5 {
                 let term_idx = doc_id % common_terms.len(); // Cycle through common terms
                 let term = common_terms[term_idx].to_string();
-                builder.add(doc_id as u64, term).unwrap();
+                builder.add(doc_id as u32, term).unwrap();
             }
             // Add a unique term for each doc to ensure some distinctness
             builder
-                .add(doc_id as u64, format!("unique_term_{doc_id}"))
+                .add(doc_id as u32, format!("unique_term_{doc_id}"))
                 .unwrap();
         }
 
         builder.build().unwrap();
-        let writer = TermWriter::new(base_directory.clone());
+        let writer = TermWriter::new(base_dir_str.clone());
         writer.write(&mut builder).unwrap();
 
-        let path = format!("{base_directory}/combined");
+        let path = format!("{base_dir_str}/combined");
         let file_len = std::fs::metadata(&path).unwrap().len();
         let index = TermIndex::new(path, 0, file_len as usize).unwrap();
 

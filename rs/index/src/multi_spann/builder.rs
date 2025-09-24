@@ -44,7 +44,7 @@ impl MultiSpannBuilder {
     /// * `user_id` - The ID of the user.
     /// * `doc_id` - The ID of the document.
     /// * `data` - The data to insert.
-    pub fn insert(&self, user_id: u128, doc_id: u128, data: &[f32]) -> Result<()> {
+    pub fn insert(&self, user_id: u128, doc_id: u128, data: &[f32]) -> Result<u32> {
         let spann_builder = self.inner_builders.entry(user_id).or_insert_with(|| {
             let user_directory = format!("{}/{}", self.base_directory, user_id);
             RwLock::new(
@@ -55,9 +55,9 @@ impl MultiSpannBuilder {
                 .unwrap(),
             )
         });
-        spann_builder.write().add(doc_id, data)?;
+        let point_id = spann_builder.write().add(doc_id, data)?;
         self.doc_id_counts.fetch_add(1, Ordering::Relaxed);
-        Ok(())
+        Ok(point_id)
     }
 
     /// Invalidates a document ID for a given user.
