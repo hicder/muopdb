@@ -4,16 +4,26 @@ use crate::query::iters::{InvertedIndexIter, Iter, IterState};
 ///
 /// It yields every document ID that appears in any child iterator, without duplicates, in sorted order.
 ///
-/// - If a child iterator is exhausted, it is ignored for the rest of the iteration.
 /// - At each step, finds the smallest current doc_id among all children, yields it, and advances all children at that doc_id.
+/// - If all children are exhausted, the OR iterator is exhausted.
 ///
 /// Example:
-///   If children yield [1, 3, 5], [3, 5, 7], [2, 3, 5],
-///   then OrIter yields [1, 2, 3, 5, 7].
-///
+/// ```
+/// use index::query::iters::{or_iter::OrIter, InvertedIndexIter, Iter};
+/// use index::query::iters::ids_iter::IdsIter;
+/// let a = Iter::Ids(IdsIter::new(vec![1, 3, 5]));
+/// let b = Iter::Ids(IdsIter::new(vec![3, 5, 7]));
+/// let c = Iter::Ids(IdsIter::new(vec![2, 3, 5]));
+/// let mut or_iter = OrIter::new(vec![a, b, c]);
+/// let mut results = Vec::new();
+/// while let Some(doc) = or_iter.next() {
+///     results.push(doc);
+/// }
+/// assert_eq!(results, vec![1, 2, 3, 5, 7]);
+/// ```
 /// Used to answer queries like "find documents that match any of these conditions".
 pub struct OrIter<'a> {
-    pub iters: Vec<Iter<'a>>,
+    iters: Vec<Iter<'a>>,
     state: IterState<u128>, // Current doc_id
 }
 
@@ -48,6 +58,7 @@ impl<'a> OrIter<'a> {
 }
 
 impl<'a> InvertedIndexIter for OrIter<'a> {
+    /// Advances the iterator and returns the next document ID, or None if exhausted.
     fn next(&mut self) -> Option<u128> {
         match self.state {
             IterState::NotStarted => {
@@ -76,6 +87,8 @@ impl<'a> InvertedIndexIter for OrIter<'a> {
         }
     }
 
+    /// Advances all child iterators to at least the target document ID, setting the state to the new minimum doc ID found.
+    /// If all children are exhausted, the OR iterator becomes exhausted.
     fn skip_to(&mut self, target: u128) {
         if matches!(self.state, IterState::Exhausted) {
             return;
@@ -91,6 +104,7 @@ impl<'a> InvertedIndexIter for OrIter<'a> {
         }
     }
 
+    /// Returns the current document ID, or None if the iterator is exhausted or not started.
     fn doc_id(&self) -> Option<u128> {
         match self.state {
             IterState::At(doc) => Some(doc),
@@ -193,5 +207,25 @@ mod tests {
             results.push(doc);
         }
         assert_eq!(results, vec![1, 2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn test_or_with_empty_child() {
+        // OR with one child empty: should yield the non-empty child
+        let a = ids(&[1, 2, 3]);
+        let b = ids(&[]);
+        let mut iter = OrIter::new(vec![a, b]);
+        let mut results = Vec::new();
+        while let Some(doc) = iter.next() {
+            results.push(doc);
+        }
+        assert_eq!(results, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_empty_or() {
+        // OR of empty: should yield nothing
+        let mut iter = OrIter::new(vec![]);
+        assert_eq!(iter.next(), None);
     }
 }

@@ -61,6 +61,7 @@ pub struct HnswBuilder<Q: Quantizer> {
 
 // TODO(hicder): support bare vector in addition to quantized one.
 impl<Q: Quantizer> HnswBuilder<Q> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         max_neighbors: usize,
         max_layers: u8,
@@ -126,17 +127,13 @@ impl<Q: Quantizer> HnswBuilder<Q> {
         loop {
             let layer = &mut layers[current_top_layer as usize];
             hnsw.visit(current_top_layer, |from: u32, to: u32| {
-                let from_v = hnsw.vector_storage.get_no_context(from as u32).unwrap();
-                let to_v = hnsw.vector_storage.get_no_context(to as u32).unwrap();
+                let from_v = hnsw.vector_storage.get_no_context(from).unwrap();
+                let to_v = hnsw.vector_storage.get_no_context(to).unwrap();
                 let distance = Q::QuantizedT::distance(from_v, to_v, &hnsw.quantizer);
-                layer
-                    .edges
-                    .entry(from)
-                    .or_insert_with(|| vec![])
-                    .push(PointAndDistance {
-                        point_id: to,
-                        distance: NotNan::new(distance).unwrap(),
-                    });
+                layer.edges.entry(from).or_default().push(PointAndDistance {
+                    point_id: to,
+                    distance: NotNan::new(distance).unwrap(),
+                });
                 true
             });
 
@@ -156,34 +153,34 @@ impl<Q: Quantizer> HnswBuilder<Q> {
 
         Self {
             vectors: vector_storage,
-            max_neighbors: max_neighbors,
+            max_neighbors,
             max_layer: num_layers as u8,
-            layers: layers,
+            layers,
             current_top_layer: num_layers as u8 - 1,
             quantizer: hnsw.quantizer,
             ef_contruction: 100,
             entry_point: all_entry_points,
-            doc_id_mapping: doc_id_mapping,
+            doc_id_mapping,
         }
     }
 
     fn generate_id(&mut self, doc_id: u128) -> u32 {
         let generated_id = self.doc_id_mapping.len() as u32;
         self.doc_id_mapping.push(doc_id);
-        return generated_id;
+        generated_id
     }
 
     pub fn reindex_layer(
         &mut self,
         layer: u8,
-        assigned_ids: &mut Vec<i32>,
+        assigned_ids: &mut [i32],
         current_id: &mut i32,
         vector_length: usize,
     ) -> Result<()> {
         debug!("Reindex layer {}", layer);
         let graph = &mut self.layers[layer as usize];
         let mut queue: VecDeque<u32> = VecDeque::with_capacity(vector_length);
-        let mut points: Vec<u32> = graph.edges.keys().map(|x| *x).collect();
+        let mut points: Vec<u32> = graph.edges.keys().copied().collect();
         points.sort();
         let mut visited: BitVec = BitVec::from_elem(vector_length, false);
 
@@ -211,7 +208,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
                         {
                             continue;
                         }
-                        queue.push_back(edge.point_id as u32);
+                        queue.push_back(edge.point_id);
                         if assigned_ids[edge.point_id as usize] < 0 {
                             assigned_ids[edge.point_id as usize] = *current_id;
                             *current_id += 1;
@@ -281,13 +278,13 @@ impl<Q: Quantizer> HnswBuilder<Q> {
             vector_storage_config.file_size,
             vector_storage_config.num_features,
         );
-        for i in 0..reverse_assigned_ids.len() {
+        (0..reverse_assigned_ids.len()).for_each(|i| {
             let mapped_id = reverse_assigned_ids[i];
             let vector = self.vectors.get_no_context(mapped_id as u32).unwrap();
             new_vector_storage
                 .append(vector)
                 .unwrap_or_else(|_| panic!("append failed"));
-        }
+        });
 
         self.vectors = new_vector_storage;
         Ok(())
@@ -320,7 +317,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
             for l in ((layer + 1)..=self.current_top_layer).rev() {
                 let nearest_elements =
                     self.search_layer(&mut context, &quantized_query, entry_point, 1, l);
-                entry_point = nearest_elements[0].point_id as u32;
+                entry_point = nearest_elements[0].point_id;
             }
         } else if layer > self.current_top_layer {
             // Initialize the layers
@@ -339,31 +336,30 @@ impl<Q: Quantizer> HnswBuilder<Q> {
                 self.ef_contruction,
                 l,
             );
-            let neighbors =
-                self.select_neighbors_heuristic(&nearest_elements, self.max_neighbors as usize);
+            let neighbors = self.select_neighbors_heuristic(&nearest_elements, self.max_neighbors);
             for e in &neighbors {
                 self.layers[l as usize]
                     .edges
                     .entry(e.point_id)
-                    .or_insert_with(|| vec![])
+                    .or_default()
                     .push(PointAndDistance {
                         point_id,
-                        distance: e.distance.clone(),
+                        distance: e.distance,
                     });
                 self.layers[l as usize]
                     .edges
                     .entry(point_id)
-                    .or_insert_with(|| vec![])
+                    .or_default()
                     .push(e.clone());
             }
 
             for e in &neighbors {
                 let e_edges = &self.layers[l as usize].edges[&e.point_id];
                 let num_edges = e_edges.len();
-                if num_edges > self.max_neighbors as usize {
+                if num_edges > self.max_neighbors {
                     // Trim the edges
                     let new_edges_for_e =
-                        self.select_neighbors_heuristic(&e_edges, self.max_neighbors);
+                        self.select_neighbors_heuristic(e_edges, self.max_neighbors);
                     self.layers[l as usize]
                         .edges
                         .insert(e.point_id, new_edges_for_e);
@@ -434,7 +430,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
             let e_id = e.point_id;
             let mut good = true;
             for x_id in return_list.iter() {
-                let distance_x_e = self.distance_two_points(e_id, (*x_id).point_id);
+                let distance_x_e = self.distance_two_points(e_id, x_id.point_id);
                 if distance_x_e < distance_e_q {
                     good = false;
                     break;
@@ -478,7 +474,7 @@ impl<Q: Quantizer> HnswBuilder<Q> {
 
             // Check that if a point is in this layer, it is in lower layers as well
             for (point_id, _) in layer.edges.iter() {
-                let mut layer_to_check = current_layer as i32 - 1;
+                let mut layer_to_check = current_layer - 1;
                 while layer_to_check >= 0 {
                     let layer_to_check_edges = &self.layers[layer_to_check as usize].edges;
                     if !layer_to_check_edges.contains_key(point_id) {
@@ -517,7 +513,7 @@ impl<Q: Quantizer> GraphTraversal<Q> for HnswBuilder<Q> {
 
     fn print_graph(&self, _layer: u8, _predicate: impl Fn(u8, u32) -> bool) {
         // TODO
-        return;
+        todo!()
     }
 }
 
@@ -565,7 +561,7 @@ mod tests {
                 ],
             ),
         ]);
-        let expected_mapping = vec![0, 2, 1];
+        let expected_mapping = [0, 2, 1];
         let layer = Layer { edges };
 
         let mut codebook = vec![];
@@ -583,9 +579,9 @@ mod tests {
         let vector_dir = format!("{}/vectors", base_directory);
         fs::create_dir_all(vector_dir.clone()).unwrap();
         let mut vectors = FileBackedAppendableVectorStorage::<u8>::new(vector_dir, 1024, 4096, 5);
-        vectors.append(&vec![0, 0, 0, 0, 0]).unwrap();
-        vectors.append(&vec![1, 1, 1, 1, 1]).unwrap();
-        vectors.append(&vec![2, 2, 2, 2, 2]).unwrap();
+        vectors.append(&[0, 0, 0, 0, 0]).unwrap();
+        vectors.append(&[1, 1, 1, 1, 1]).unwrap();
+        vectors.append(&[2, 2, 2, 2, 2]).unwrap();
 
         let mut builder = HnswBuilder {
             vectors,
@@ -607,7 +603,7 @@ mod tests {
         };
         builder.reindex(base_directory.clone()).unwrap();
 
-        for i in 0..3 {
+        (0..3).for_each(|i| {
             assert!(
                 *builder
                     .doc_id_mapping
@@ -622,7 +618,7 @@ mod tests {
                     .unwrap()
                     <= 102
             );
-        }
+        });
         assert_eq!(builder.entry_point, vec![0, 2]);
         assert_eq!(
             builder.layers[0].edges.get(&0).unwrap(),
@@ -674,11 +670,11 @@ mod tests {
         let og_layer = Layer { edges };
         let mut layer = og_layer.clone();
         // Similar mapping do not change
-        layer.reindex(&vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
+        layer.reindex(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
         assert_eq!(layer, og_layer);
 
         // Reverse mapping
-        layer.reindex(&vec![9, 8, 7, 6, 5, 4, 3, 2, 1, 0]).unwrap();
+        layer.reindex(&[9, 8, 7, 6, 5, 4, 3, 2, 1, 0]).unwrap();
         for i in 0..10 {
             let expected_edges = vec![
                 PointAndDistance {

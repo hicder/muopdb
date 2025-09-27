@@ -82,7 +82,7 @@ pub trait GraphTraversal<Q: Quantizer> {
 
         while !candidates.is_empty() {
             let point_and_distance = candidates.pop().unwrap();
-            let point_id = point_and_distance.point_id as u32;
+            let point_id = point_and_distance.point_id;
             let distance: f32 = -*point_and_distance.distance;
 
             let mut furthest_element_from_working_list = working_list.peek().unwrap();

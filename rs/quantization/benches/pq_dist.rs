@@ -42,11 +42,11 @@ fn bench_pq_distance(c: &mut Criterion) {
                 for implementation in L2DistanceCalculatorImpl::iter() {
                     group.bench_with_input(
                         BenchmarkId::new(
-                            &format!(
+                            format!(
                                 "pq_distance_{}_{}_{}",
                                 *dimension, *subvector_dimension, *num_bits
                             ),
-                            &format!("{:?}", &implementation),
+                            format!("{:?}", &implementation),
                         ),
                         &implementation,
                         |bencher, _| {

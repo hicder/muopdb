@@ -70,6 +70,32 @@ impl UserIndexInfo {
     }
 }
 
+pub struct HashConfig {}
+impl Config for HashConfig {
+    type Key = u128;
+    type Value = UserIndexInfo;
+    type EncodedKey = [u8; 16];
+    type EncodedValue = [u8; 112];
+    type H = FxHashFn;
+
+    #[inline]
+    fn encode_key(k: &Self::Key) -> Self::EncodedKey {
+        k.to_le_bytes()
+    }
+    #[inline]
+    fn encode_value(v: &Self::Value) -> Self::EncodedValue {
+        v.to_le_bytes()
+    }
+    #[inline]
+    fn decode_key(k: &Self::EncodedKey) -> Self::Key {
+        u128::from_le_bytes(*k)
+    }
+    #[inline]
+    fn decode_value(v: &Self::EncodedValue) -> Self::Value {
+        UserIndexInfo::from_le_bytes(v)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,31 +167,5 @@ mod tests {
             original_info.ivf_pq_codebook_len,
             deserialized_info.ivf_pq_codebook_len
         );
-    }
-}
-
-pub struct HashConfig {}
-impl Config for HashConfig {
-    type Key = u128;
-    type Value = UserIndexInfo;
-    type EncodedKey = [u8; 16];
-    type EncodedValue = [u8; 112];
-    type H = FxHashFn;
-
-    #[inline]
-    fn encode_key(k: &Self::Key) -> Self::EncodedKey {
-        k.to_le_bytes()
-    }
-    #[inline]
-    fn encode_value(v: &Self::Value) -> Self::EncodedValue {
-        v.to_le_bytes()
-    }
-    #[inline]
-    fn decode_key(k: &Self::EncodedKey) -> Self::Key {
-        u128::from_le_bytes(*k)
-    }
-    #[inline]
-    fn decode_value(v: &Self::EncodedValue) -> Self::Value {
-        UserIndexInfo::from_le_bytes(v)
     }
 }

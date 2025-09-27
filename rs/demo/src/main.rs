@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
 
         let mut vectors = Vec::with_capacity(batch.len() * 768);
         for row in batch.rows() {
-            vectors.extend(row.iter().map(|&v| v as f32));
+            vectors.extend(row.iter().copied());
         }
 
         // Generate IDs

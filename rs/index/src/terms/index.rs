@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};
 use compression::compression::IntSeqDecoder;
@@ -62,7 +64,7 @@ impl TermIndex {
             term_map_builder: |mmap| {
                 OnDiskOrderedMap::<VarintIntegerCodec>::new(
                     path,
-                    &mmap,
+                    mmap,
                     term_map_offset,
                     term_map_offset + term_map_len as usize,
                 )
@@ -104,14 +106,14 @@ impl TermIndex {
             let length = self.inner.borrow_mmap().len() - (offset + self.inner.borrow_pl_offset());
             return Some(OffsetLength {
                 offset: offset + self.inner.borrow_pl_offset(),
-                length: length,
+                length,
             });
         }
 
-        let offset = *self.inner.borrow_offsets_offset() as usize + term_id as usize * 8;
+        let offset = *self.inner.borrow_offsets_offset() + term_id as usize * 8;
         let offset = LittleEndian::read_u64(&self.inner.borrow_mmap()[offset..offset + 8]) as usize;
 
-        let next_offset = *self.inner.borrow_offsets_offset() as usize + (term_id + 1) as usize * 8;
+        let next_offset = *self.inner.borrow_offsets_offset() + (term_id + 1) as usize * 8;
         let next_offset =
             LittleEndian::read_u64(&self.inner.borrow_mmap()[next_offset..next_offset + 8])
                 as usize;
@@ -145,15 +147,64 @@ impl TermIndex {
         let offset = offset_len.offset;
         let length = offset_len.length;
 
-        debug!(
-            "[get_posting_list_iterator] Offset: {}, Length: {}",
-            offset, length
-        );
+        debug!("[get_posting_list_iterator] Offset: {offset}, Length: {length}");
 
         let byte_slice = &self.inner.borrow_mmap()[offset..offset + length];
         let decoder = EliasFanoDecoder::new_decoder(byte_slice)
             .expect("Failed to create posting list decoder");
         Ok(decoder.get_iterator(byte_slice))
+    }
+}
+
+pub struct MultiTermIndex {
+    /// Map of user ID to their [`TermIndex`]
+    term_indexes: HashMap<u128, TermIndex>,
+}
+
+impl MultiTermIndex {
+    pub fn new(base_dir: &str) -> Result<Self> {
+        let mut term_indexes = HashMap::new();
+
+        for entry in std::fs::read_dir(base_dir)? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                if let Some(user_str) = entry.file_name().to_str() {
+                    if let Ok(user_id) = user_str.parse::<u128>() {
+                        let user_dir = entry.path();
+                        let index_file_path = user_dir.join("combined");
+                        if !index_file_path.exists() {
+                            log::warn!(
+                                "Index file does not exist for user {}: {:?}",
+                                user_id,
+                                index_file_path
+                            );
+                            continue;
+                        }
+                        let term_index = TermIndex::new(
+                            index_file_path
+                                .to_str()
+                                .expect("index_file_path must be valid UTF-8 string")
+                                .to_string(),
+                            0,
+                            std::fs::metadata(&index_file_path)?.len() as usize,
+                        )?;
+                        term_indexes.insert(user_id, term_index);
+                    }
+                }
+            }
+        }
+
+        Ok(Self { term_indexes })
+    }
+
+    pub fn get_term_index_for_user(&self, user_id: u128) -> Option<&TermIndex> {
+        self.term_indexes.get(&user_id)
+    }
+
+    /// Retrieves the term ID for a given user and term string.
+    pub fn get_term_id_for_user(&self, user_id: u128, term: &str) -> Option<u64> {
+        let term_index = self.term_indexes.get(&user_id)?;
+        term_index.get_term_id(term)
     }
 }
 
@@ -180,19 +231,22 @@ mod tests {
     #[test]
     fn test_term_index() {
         let temp_dir = TempDir::new("test_term_index").unwrap();
-        let base_directory = temp_dir.path().to_str().unwrap().to_string();
-
-        let mut builder = TermBuilder::new(&base_directory);
+        let base_directory = temp_dir.path();
+        let base_dir_str = base_directory
+            .to_str()
+            .expect("Base directory should be valid UTF-8")
+            .to_string();
+        let mut builder = TermBuilder::new(base_directory.join("scratch.tmp").as_path()).unwrap();
         builder.add(0, "a".to_string()).unwrap();
         builder.add(0, "c".to_string()).unwrap();
         builder.add(1, "b".to_string()).unwrap();
         builder.add(2, "c".to_string()).unwrap();
 
         builder.build().unwrap();
-        let writer = TermWriter::new(base_directory.clone());
+        let writer = TermWriter::new(base_dir_str.clone());
         writer.write(&mut builder).unwrap();
 
-        let path = format!("{}/combined", base_directory);
+        let path = format!("{base_dir_str}/combined",);
         let file_len = std::fs::metadata(&path).unwrap().len();
         let index = TermIndex::new(path, 0, file_len as usize).unwrap();
 
@@ -214,16 +268,16 @@ mod tests {
 
         let mut it = index.get_posting_list_iterator(0).unwrap();
         assert_eq!(it.next().unwrap(), 0);
-        assert_eq!(it.next().is_none(), true);
+        assert!(it.next().is_none());
 
         let mut it = index.get_posting_list_iterator(1).unwrap();
         assert_eq!(it.next().unwrap(), 0);
         assert_eq!(it.next().unwrap(), 2);
-        assert_eq!(it.next().is_none(), true);
+        assert!(it.next().is_none());
 
         let mut it = index.get_posting_list_iterator(2).unwrap();
         assert_eq!(it.next().unwrap(), 1);
-        assert_eq!(it.next().is_none(), true);
+        assert!(it.next().is_none());
     }
 
     /// Tests the `TermIndex`'s ability to correctly handle and retrieve posting lists
@@ -240,46 +294,47 @@ mod tests {
     #[test]
     fn test_term_index_with_shared_terms() {
         let temp_dir = TempDir::new("test_term_index_shared").unwrap();
-        let base_directory = temp_dir.path().to_str().unwrap().to_string();
+        let base_directory = temp_dir.path();
+        let base_dir_str = base_directory.to_str().unwrap().to_string();
 
-        let mut builder = TermBuilder::new(&base_directory);
+        let mut builder = TermBuilder::new(base_directory.join("scratch.tmp").as_path()).unwrap();
 
         // Create 20 docs, each with 5 terms. Some terms are shared.
-        let common_terms = vec!["apple", "banana", "orange", "grape", "kiwi"];
+        let common_terms = ["apple", "banana", "orange", "grape", "kiwi"];
         for doc_id in 0..20 {
             for _ in 0..5 {
                 let term_idx = doc_id % common_terms.len(); // Cycle through common terms
                 let term = common_terms[term_idx].to_string();
-                builder.add(doc_id as u64, term).unwrap();
+                builder.add(doc_id as u32, term).unwrap();
             }
             // Add a unique term for each doc to ensure some distinctness
             builder
-                .add(doc_id as u64, format!("unique_term_{}", doc_id))
+                .add(doc_id as u32, format!("unique_term_{doc_id}"))
                 .unwrap();
         }
 
         builder.build().unwrap();
-        let writer = TermWriter::new(base_directory.clone());
+        let writer = TermWriter::new(base_dir_str.clone());
         writer.write(&mut builder).unwrap();
 
-        let path = format!("{}/combined", base_directory);
+        let path = format!("{base_dir_str}/combined");
         let file_len = std::fs::metadata(&path).unwrap().len();
         let index = TermIndex::new(path, 0, file_len as usize).unwrap();
 
         // Verify some shared terms
         let apple_id = index.get_term_id("apple").unwrap();
-        let mut it = index.get_posting_list_iterator(apple_id).unwrap();
+        let it = index.get_posting_list_iterator(apple_id).unwrap();
         let mut apple_docs: Vec<u64> = Vec::new();
-        while let Some(doc) = it.next() {
+        for doc in it {
             apple_docs.push(doc);
         }
         // "apple" should appear in docs 0, 5, 10, 15
         assert_eq!(apple_docs, vec![0, 5, 10, 15]);
 
         let banana_id = index.get_term_id("banana").unwrap();
-        let mut it = index.get_posting_list_iterator(banana_id).unwrap();
+        let it = index.get_posting_list_iterator(banana_id).unwrap();
         let mut banana_docs: Vec<u64> = Vec::new();
-        while let Some(doc) = it.next() {
+        for doc in it {
             banana_docs.push(doc);
         }
         // "banana" should appear in docs 0, 1, 5, 6, 10, 11, 15, 16
@@ -289,13 +344,13 @@ mod tests {
         let unique_term_5_id = index.get_term_id("unique_term_5").unwrap();
         let mut it = index.get_posting_list_iterator(unique_term_5_id).unwrap();
         assert_eq!(it.next().unwrap(), 5);
-        assert_eq!(it.next().is_none(), true);
+        assert!(it.next().is_none());
 
         // Verify a term that appears in many documents
         let orange_id = index.get_term_id("orange").unwrap();
-        let mut it = index.get_posting_list_iterator(orange_id).unwrap();
+        let it = index.get_posting_list_iterator(orange_id).unwrap();
         let mut orange_docs: Vec<u64> = Vec::new();
-        while let Some(doc) = it.next() {
+        for doc in it {
             orange_docs.push(doc);
         }
         // "orange" should appear in docs 0, 1, 2, 5, 6, 7, 10, 11, 12, 15, 16, 17
@@ -304,6 +359,6 @@ mod tests {
         let unique_5 = index.get_term_id("unique_term_5").unwrap();
         let mut it = index.get_posting_list_iterator(unique_5).unwrap();
         assert_eq!(it.next().unwrap(), 5);
-        assert_eq!(it.next().is_none(), true);
+        assert!(it.next().is_none());
     }
 }

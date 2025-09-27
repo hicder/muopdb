@@ -12,6 +12,12 @@ pub struct NoopOptimizer<Q: Quantizer + Clone + Send + Sync> {
 
 /// This optimizer does nothing. It just copies the original segment to a new segment.
 /// Useful for testing the optimizer framework.
+impl<Q: Quantizer + Clone + Send + Sync> Default for NoopOptimizer<Q> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<Q: Quantizer + Clone + Send + Sync> NoopOptimizer<Q> {
     pub fn new() -> Self {
         Self {
@@ -35,8 +41,10 @@ impl<Q: Quantizer + Clone + Send + Sync> SegmentOptimizer<Q> for NoopOptimizer<Q
             std::fs::create_dir_all(pending_segment_path.clone()).unwrap_or_default();
 
             // Copy the inner segment's contents to the new data directory
-            let mut options = CopyOptions::default();
-            options.content_only = true; // This ensures we copy only the contents, not the directory itself
+            let options = CopyOptions {
+                content_only: true, // This ensures we copy only the contents, not the directory itself
+                ..CopyOptions::default()
+            };
             fs_extra::dir::copy(inner_segment_path, pending_segment_path, &options)?;
         }
         Ok(())

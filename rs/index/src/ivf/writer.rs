@@ -175,20 +175,16 @@ where
         for i in 0..raw_vectors.num_vectors() {
             // get raw vector and write to final file
             let raw_vector = raw_vectors.get(i as u32, &mut search_context)?;
-            for j in 0..raw_vector.len() {
-                raw_bytes_written += wrap_write(
-                    &mut raw_vectors_writer,
-                    raw_vector[j].to_le_bytes().as_ref(),
-                )?;
+            for num in raw_vector.iter() {
+                raw_bytes_written +=
+                    wrap_write(&mut raw_vectors_writer, num.to_le_bytes().as_ref())?;
             }
 
             // quantize and write to final file
             let quantized_vector = Q::QuantizedT::process_vector(raw_vector, &self.quantizer);
-            for j in 0..quantized_vector.len() {
-                quantized_bytes_written += wrap_write(
-                    &mut quantized_vectors_writer,
-                    quantized_vector[j].to_le_bytes().as_ref(),
-                )?;
+            for num in quantized_vector.iter() {
+                quantized_bytes_written +=
+                    wrap_write(&mut quantized_vectors_writer, num.to_le_bytes().as_ref())?;
             }
         }
 
@@ -476,7 +472,7 @@ mod tests {
         let mut writer = BufWriter::new(&mut file);
 
         // Write some initial data
-        let initial_size = writer.write(&[1, 2, 3]).unwrap() as usize;
+        let initial_size = writer.write(&[1, 2, 3]).unwrap();
 
         // Pad to 8-byte alignment
         let padding_written = write_pad(initial_size, &mut writer, 8).unwrap();
@@ -537,10 +533,10 @@ mod tests {
         .expect("Failed to create builder");
 
         ivf_builder
-            .add_vector(0, &vec![1.0, 2.0, 3.0])
+            .add_vector(0, &[1.0, 2.0, 3.0])
             .expect("Vector should be added");
         ivf_builder
-            .add_vector(1, &vec![4.0, 5.0, 6.0])
+            .add_vector(1, &[4.0, 5.0, 6.0])
             .expect("Vector should be added");
 
         // Act
@@ -578,15 +574,19 @@ mod tests {
         assert_eq!(num_vectors_written, num_vectors);
 
         // Check each quantized vector
-        let expected_quantized_vectors = vec![vec![0u8, 0u8, 0u8], vec![1u8, 1u8, 1u8]];
+        let expected_quantized_vectors = [[0u8, 0u8, 0u8], [1u8, 1u8, 1u8]];
 
-        for i in 0..num_vectors_written {
+        for (i, expected_quantized_vector) in expected_quantized_vectors
+            .iter()
+            .enumerate()
+            .take(num_vectors_written)
+        {
             let start = data_start + i * expected_quantized_vector_length;
             let end = start + expected_quantized_vector_length;
             let quantized_vector = &buffer[start..end];
 
             assert_eq!(
-                quantized_vector, &expected_quantized_vectors[i],
+                quantized_vector, expected_quantized_vector,
                 "Quantized vector {} does not match expected",
                 i
             );
@@ -619,12 +619,16 @@ mod tests {
         assert_eq!(num_vectors_written, num_vectors);
 
         // Check each raw vector
-        let expected_raw_vectors = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
+        let expected_raw_vectors = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
 
-        for i in 0..num_vectors_written {
+        for (i, expected_raw_vector) in expected_raw_vectors
+            .iter()
+            .enumerate()
+            .take(num_vectors_written)
+        {
             let vector_start = data_start + i * expected_raw_vector_length;
 
-            for j in 0..num_features {
+            for (j, expected_value) in expected_raw_vector.iter().enumerate().take(num_features) {
                 let value_start = vector_start + j * bytes_per_float;
                 let value_end = value_start + bytes_per_float;
                 let value_bytes = &buffer[value_start..value_end];
@@ -638,7 +642,7 @@ mod tests {
                 ]);
 
                 assert!(
-                    (value - expected_raw_vectors[i][j]).abs() < f32::EPSILON,
+                    (value - expected_value).abs() < f32::EPSILON,
                     "Raw vector {}, feature {} does not match expected: got {}, expected {}",
                     i,
                     j,
@@ -683,7 +687,7 @@ mod tests {
         .expect("Failed to create builder");
 
         ivf_builder
-            .add_posting_list(&vec![5, 8, 8, 15, 32])
+            .add_posting_list(&[5, 8, 8, 15, 32])
             .expect("Posting list should be added");
 
         let bytes_written = ivf_writer
@@ -714,7 +718,7 @@ mod tests {
         );
 
         // Check metadata file
-        let expected_metadata = vec![
+        let expected_metadata = [
             1, 0, 0, 0, 0, 0, 0, 0, // num_posting_lists
             48, 0, 0, 0, 0, 0, 0, 0, // posting_list0_len: 6 * u64:
             // num_elem + lower_bit_length + lower_bits size
@@ -725,7 +729,7 @@ mod tests {
         assert_eq!(metadata_content.len(), 8 * 3);
 
         // Check posting list file
-        let expected_posting_lists = vec![
+        let expected_posting_lists = [
             5, 0, 0, 0, 0, 0, 0, 0, // num_elem
             2, 0, 0, 0, 0, 0, 0, 0, // lower_bit_length
             1, 0, 0, 0, 0, 0, 0, 0, // number of u64 for encoding lower_bits

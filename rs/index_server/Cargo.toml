@@ -3,6 +3,9 @@ name = "index_server"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow.workspace = true
 clap = { version = "4.1.4", features = ["derive"] }

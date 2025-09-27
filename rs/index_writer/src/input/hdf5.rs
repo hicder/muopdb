@@ -140,7 +140,7 @@ mod tests {
         assert_eq!(result.centroids.len(), 1280);
 
         // Check the the cluster sizes are equal
-        let mut cluster_sizes = vec![0; 10];
+        let mut cluster_sizes = [0; 10];
         for assignment in &result.assignments {
             cluster_sizes[*assignment] += 1;
         }
@@ -150,11 +150,11 @@ mod tests {
             let point = &flattened_dataset[i * 128..(i + 1) * 128];
             let centroid_id = result.assignments[i];
             let centroid = &result.centroids[centroid_id * 128..(centroid_id + 1) * 128];
-            let dist = L2DistanceCalculator::calculate(&point, &centroid);
+            let dist = L2DistanceCalculator::calculate(point, centroid);
 
             for j in 0..10 {
                 let dist_to_centroid = L2DistanceCalculator::calculate(
-                    &point,
+                    point,
                     &result.centroids[j * 128..(j + 1) * 128],
                 );
                 if dist_to_centroid < dist {

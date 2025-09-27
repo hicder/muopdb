@@ -4,16 +4,35 @@ use proto::muopdb::{AndFilter, DocumentFilter, IdsFilter, OrFilter};
 use crate::query::iters::and_iter::AndIter;
 use crate::query::iters::ids_iter::IdsIter;
 use crate::query::iters::or_iter::OrIter;
+use crate::query::iters::term_iter::TermIter;
 use crate::query::iters::Iter;
+use crate::terms::index::TermIndex;
 
 #[allow(unused)]
 pub struct Planner {
+    user_id: u128,
     query: DocumentFilter,
+    term_index: TermIndex,
 }
 
 impl Planner {
-    pub fn new(query: DocumentFilter) -> Self {
-        Self { query }
+    pub fn new(user_id: u128, query: DocumentFilter, term_directory: &str) -> Result<Self> {
+        let index_file_path = format!("{}/user_{}/combined", term_directory, user_id);
+        if !std::path::Path::new(&index_file_path).exists() {
+            return Err(anyhow::anyhow!(
+                "Term index file does not exist for user {}: {}",
+                user_id,
+                index_file_path
+            ));
+        }
+
+        let read_len = std::fs::metadata(&index_file_path)?.len() as usize;
+        let term_index = TermIndex::new(index_file_path, 0, read_len)?;
+        Ok(Self {
+            user_id,
+            query,
+            term_index,
+        })
     }
 
     pub fn plan(&self) -> Result<Iter> {
@@ -27,13 +46,18 @@ impl Planner {
             Some(Filter::And(and_filter)) => self.plan_and_filter(and_filter),
             Some(Filter::Or(or_filter)) => self.plan_or_filter(or_filter),
             Some(Filter::Ids(ids_filter)) => self.plan_ids_filter(ids_filter),
-            Some(Filter::Contains(_contains_filter)) => {
-                // TODO: Implement ContainsFilter handling
-                // This would require access to the terms index to:
-                // 1. Look up the term ID for the given path and value
-                // 2. Get the posting list iterator for that term
-                // 3. Create a TermIter from the posting list
-                todo!("ContainsFilter not yet implemented")
+            Some(Filter::Contains(contains_filter)) => {
+                let term = format!("{}:{}", contains_filter.path, contains_filter.value);
+                if let Some(term_id) = self.term_index.get_term_id(&term) {
+                    let posting_list = self.term_index.get_posting_list_iterator(term_id)?;
+                    // TODO(hung): This posting list contains point IDs for the term.
+                    // We need to find a way to convert these point IDs to document IDs.
+                    // For now, we return the posting list directly.
+                    Ok(Iter::Term(TermIter::new(posting_list)))
+                } else {
+                    // Term not found - return an iterator that yields no results
+                    Ok(Iter::Ids(IdsIter::new(vec![])))
+                }
             }
             Some(Filter::NotContains(_not_contains_filter)) => {
                 // Skip NotContains filter for now as requested
@@ -88,16 +112,43 @@ impl Planner {
         Ok(Iter::Ids(IdsIter::new(ids)))
     }
 }
-
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use proto::muopdb::{AndFilter, Id, IdsFilter, OrFilter};
 
     use super::*;
     use crate::query::iters::InvertedIndexIter;
+    use crate::terms::builder::MultiTermBuilder;
+    use crate::terms::writer::MultiTermWriter;
+
+    fn create_test_term_index(temp_dir: &tempdir::TempDir) -> (String, u128) {
+        let base_dir = temp_dir.path().to_str().unwrap();
+        let user_id = 12345u128;
+        let term_dir = format!("{}/terms", base_dir);
+
+        // Create directories
+        fs::create_dir_all(&term_dir).unwrap();
+
+        let mut multi_builder =
+            MultiTermBuilder::new(temp_dir.path().to_str().unwrap().to_string());
+        multi_builder
+            .add(user_id, 1, "test:term".to_string())
+            .unwrap();
+        multi_builder.build().unwrap();
+
+        let multi_writer = MultiTermWriter::new(term_dir.clone());
+        multi_writer.write(&mut multi_builder).unwrap();
+        assert!(fs::metadata(format!("{}/user_{}/combined", term_dir, user_id)).is_ok());
+        (term_dir, user_id)
+    }
 
     #[test]
     fn test_plan_ids_filter() {
+        let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
+        let (term_dir, user_id) = create_test_term_index(&temp_dir);
+
         let ids_filter = IdsFilter {
             ids: vec![
                 Id {
@@ -119,7 +170,7 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::Ids(ids_filter)),
         };
 
-        let planner = Planner::new(document_filter);
+        let planner = Planner::new(user_id, document_filter, &term_dir).unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());
@@ -134,6 +185,9 @@ mod tests {
 
     #[test]
     fn test_plan_and_filter() {
+        let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
+        let (term_dir, user_id) = create_test_term_index(&temp_dir);
+
         let ids_filter1 = IdsFilter {
             ids: vec![Id {
                 low_id: 1,
@@ -163,7 +217,7 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::And(and_filter)),
         };
 
-        let planner = Planner::new(document_filter);
+        let planner = Planner::new(user_id, document_filter, &term_dir).unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());
@@ -173,6 +227,9 @@ mod tests {
 
     #[test]
     fn test_plan_or_filter() {
+        let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
+        let (term_dir, user_id) = create_test_term_index(&temp_dir);
+
         let ids_filter1 = IdsFilter {
             ids: vec![Id {
                 low_id: 1,
@@ -202,7 +259,7 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::Or(or_filter)),
         };
 
-        let planner = Planner::new(document_filter);
+        let planner = Planner::new(user_id, document_filter, &term_dir).unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());
@@ -212,9 +269,12 @@ mod tests {
 
     #[test]
     fn test_plan_empty_filter() {
+        let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
+        let (term_dir, user_id) = create_test_term_index(&temp_dir);
+
         let document_filter = DocumentFilter { filter: None };
 
-        let planner = Planner::new(document_filter);
+        let planner = Planner::new(user_id, document_filter, &term_dir).unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());

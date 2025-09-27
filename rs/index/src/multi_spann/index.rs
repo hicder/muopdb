@@ -37,7 +37,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         let user_index_infos = HashTableOwned::from_raw_bytes(&user_index_info_mmap).unwrap();
 
         // Read invalidated ids
-        let invalidated_ids_directory = format!("{}/invalidated_ids_storage", base_directory);
+        let invalidated_ids_directory = format!("{base_directory}/invalidated_ids_storage");
 
         // Initialize InvalidatedIdsStorage
         let invalidated_ids_storage = InvalidatedIdsStorage::read(&invalidated_ids_directory)?;
@@ -402,7 +402,7 @@ mod tests {
         let num_vectors = 1000;
         let num_features = 4;
 
-        let invalidated_ids_dir = format!("{}/invalidated_ids_storage", base_directory);
+        let invalidated_ids_dir = format!("{base_directory}/invalidated_ids_storage");
         assert!(fs::create_dir(&invalidated_ids_dir).is_ok());
 
         let mut storage = InvalidatedIdsStorage::new(&invalidated_ids_dir, 1024);

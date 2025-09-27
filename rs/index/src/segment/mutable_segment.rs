@@ -9,14 +9,14 @@ use proto::muopdb::DocumentAttribute;
 
 use crate::multi_spann::builder::MultiSpannBuilder;
 use crate::multi_spann::writer::MultiSpannWriter;
-use crate::terms::builder::TermBuilder;
-use crate::terms::writer::TermWriter;
+use crate::terms::builder::MultiTermBuilder;
+use crate::terms::writer::MultiTermWriter;
 use crate::tokenizer::tokenizer::{TokenStream, Tokenizer};
 use crate::tokenizer::white_space_tokenizer::WhiteSpaceTokenizer;
 
 pub struct MutableSegment {
     multi_spann_builder: MultiSpannBuilder,
-    term_builder: Mutex<TermBuilder>,
+    term_builder: Mutex<MultiTermBuilder>,
 
     // Prevent a mutable segment from being modified after it is built.
     finalized: bool,
@@ -32,7 +32,7 @@ impl MutableSegment {
 
         Ok(Self {
             multi_spann_builder: MultiSpannBuilder::new(config, base_directory)?,
-            term_builder: Mutex::new(TermBuilder::new(&term_directory)),
+            term_builder: Mutex::new(MultiTermBuilder::new(term_directory)),
             finalized: false,
             last_sequence_number: AtomicU64::new(0),
             num_docs: AtomicU64::new(0),
@@ -64,13 +64,12 @@ impl MutableSegment {
             return Err(anyhow::anyhow!("Cannot insert into a finalized segment"));
         }
 
-        self.multi_spann_builder.insert(user_id, doc_id, data)?;
+        let point_id = self.multi_spann_builder.insert(user_id, doc_id, data)?;
 
         // Process document attributes if present
         if let Some(attributes) = document_attribute {
             let tokenizer = WhiteSpaceTokenizer {};
             let mut term_builder = self.term_builder.lock().unwrap();
-            let doc_id_u64 = doc_id as u64;
 
             for (attr_name, attr_value) in attributes.value {
                 match attr_value.value {
@@ -81,13 +80,13 @@ impl MutableSegment {
                         // Process each token and insert with the term builder
                         while let Some(token) = token_stream.next() {
                             let term = format!("{}:{}", attr_name, token.text);
-                            term_builder.add(doc_id_u64, term)?;
+                            term_builder.add(user_id, point_id, term)?;
                         }
                     }
                     Some(proto::muopdb::attribute_value::Value::KeywordValue(keyword)) => {
                         // For keyword attributes, insert the whole keyword as a single term
                         let term = format!("{}:{}", attr_name, keyword);
-                        term_builder.add(doc_id_u64, term)?;
+                        term_builder.add(user_id, point_id, term)?;
                     }
                     _ => {
                         // Other attribute types (int, float, bool) are not tokenized
@@ -130,7 +129,7 @@ impl MutableSegment {
         // Write the term builder using term writer
         let term_directory = format!("{}/terms", segment_directory);
         std::fs::create_dir_all(&term_directory)?;
-        let term_writer = TermWriter::new(term_directory);
+        let term_writer = MultiTermWriter::new(term_directory);
         term_writer.write(&mut self.term_builder.lock().unwrap())?;
 
         let multi_spann_writer = MultiSpannWriter::new(segment_directory);
@@ -227,7 +226,7 @@ mod tests {
 
         // Check that term files are created
         let segment_dir = format!("{}/{}", base_dir, segment_name);
-        let terms_dir = format!("{}/terms", segment_dir);
+        let terms_dir = format!("{}/terms/user_0", segment_dir);
 
         // Verify the terms directory exists
         assert!(

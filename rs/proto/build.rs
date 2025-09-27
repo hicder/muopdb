@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile_protos(&[aggregator_proto_file], &["proto"])?;
 
     let output = Command::new("cargo")
-        .args(&["fmt"])
+        .args(["fmt"])
         .output()
         .expect("Failed to execute cargo fmt");
 

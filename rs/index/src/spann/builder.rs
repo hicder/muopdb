@@ -174,8 +174,7 @@ impl SpannBuilder {
         })
     }
 
-    #[allow(unused_variables)]
-    pub fn add(&mut self, doc_id: u128, data: &[f32]) -> Result<()> {
+    pub fn add(&mut self, doc_id: u128, data: &[f32]) -> Result<u32> {
         self.ivf_builder.add_vector(doc_id, data)
     }
 

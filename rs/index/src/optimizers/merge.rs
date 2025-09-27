@@ -11,6 +11,12 @@ pub struct MergeOptimizer<Q: Quantizer + Clone> {
     _marker: std::marker::PhantomData<Q>,
 }
 
+impl<Q: Quantizer + Clone + Send + Sync> Default for MergeOptimizer<Q> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<Q: Quantizer + Clone + Send + Sync> MergeOptimizer<Q> {
     pub fn new() -> Self {
         Self {

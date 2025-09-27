@@ -66,12 +66,8 @@ impl ProductQuantizerReader {
         let config: ProductQuantizerConfig = serde_yaml::from_slice(&config_buffer)?;
 
         match config.validate() {
-            Ok(_) => {
-                return ProductQuantizer::load(config, &self.base_directory);
-            }
-            Err(e) => {
-                return Err(e);
-            }
+            Ok(_) => ProductQuantizer::load(config, &self.base_directory),
+            Err(e) => Err(e),
         }
     }
 }
@@ -107,7 +103,7 @@ impl<D: DistanceCalculator> ProductQuantizer<D> {
         let num_centroids = (1 << config.num_bits) as usize;
         let num_subvector = config.dimension / config.subvector_dimension;
 
-        let mut offset = 0 as usize;
+        let mut offset = 0;
         let mut codebook = vec![];
         codebook.reserve_exact(num_subvector * num_centroids);
 
@@ -157,17 +153,17 @@ impl<D: DistanceCalculator> Quantizer for ProductQuantizer<D> {
         let subvector_size_in_codebook = self.subvector_dimension * num_centroids;
 
         value
-            .chunks_exact(self.subvector_dimension as usize)
+            .chunks_exact(self.subvector_dimension)
             .enumerate()
             .for_each(|(subvector_idx, subvector)| {
                 let subvector_offset = subvector_idx * subvector_size_in_codebook;
-                let mut min_centroid_id = 0 as usize;
-                let mut min_distance = std::f32::MAX;
+                let mut min_centroid_id = 0;
+                let mut min_distance = f32::MAX;
 
                 for i in 0..num_centroids {
                     let offset = subvector_offset + i * self.subvector_dimension;
                     let centroid = &self.codebook[offset..offset + self.subvector_dimension];
-                    let distance = L2DistanceCalculator::calculate_squared(&subvector, &centroid);
+                    let distance = L2DistanceCalculator::calculate_squared(subvector, centroid);
                     if distance < min_distance {
                         min_distance = distance;
                         min_centroid_id = i;
@@ -187,7 +183,7 @@ impl<D: DistanceCalculator> Quantizer for ProductQuantizer<D> {
         let mut result = Vec::<f32>::with_capacity(self.dimension);
         let num_centroids = 1 << self.num_bits;
         quantized_vector
-            .into_iter()
+            .iter()
             .enumerate()
             .for_each(|(idx, quantized_value)| {
                 let offset = idx * self.subvector_dimension * num_centroids;
@@ -258,7 +254,7 @@ impl<D: DistanceCalculator> Quantizer for ProductQuantizer<D> {
                             a_vec = a_vec.chunks_exact(4).remainder();
                             b_vec = b_vec.chunks_exact(4).remainder()
                         }
-                        if a_vec.len() > 0 {
+                        if !a_vec.is_empty() {
                             sum_1 = D::accumulate_scalar(a_vec, b_vec);
                         }
                     });
@@ -296,7 +292,7 @@ impl<D: DistanceCalculator> WritableQuantizer for ProductQuantizer<D> {
         }
 
         // Write the codebook to a file
-        let codebook_path = Path::new(&base_directory).join(&CODEBOOK_NAME);
+        let codebook_path = Path::new(&base_directory).join(CODEBOOK_NAME);
         if codebook_path.exists() {
             // Delete the file if exists
             std::fs::remove_file(codebook_path)?;
@@ -304,7 +300,7 @@ impl<D: DistanceCalculator> WritableQuantizer for ProductQuantizer<D> {
 
         // Write codebook
         let codebook_buffer = self.codebook_to_buffer();
-        let mut codebook_file = File::create(Path::new(&base_directory).join(&CODEBOOK_NAME))?;
+        let mut codebook_file = File::create(Path::new(&base_directory).join(CODEBOOK_NAME))?;
         codebook_file.write_all(&codebook_buffer)?;
 
         // Write config
@@ -313,6 +309,8 @@ impl<D: DistanceCalculator> WritableQuantizer for ProductQuantizer<D> {
         Ok(())
     }
 }
+
+pub type ProductQuantizerL2 = ProductQuantizer<L2DistanceCalculator>;
 
 #[cfg(test)]
 mod tests {
@@ -370,5 +368,3 @@ mod tests {
         assert_eq!(new_pq.num_bits, 1);
     }
 }
-
-pub type ProductQuantizerL2 = ProductQuantizer<L2DistanceCalculator>;

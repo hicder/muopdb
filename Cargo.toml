@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  "rs/aggregator", 
+  "rs/aggregator",
   "rs/benchmarks",
   "rs/cli",
   "rs/compression",
@@ -18,6 +18,9 @@ resolver = "2"
 
 [profile.release]
 strip = true
+
+[workspace.lints.clippy]
+uninlined_format_args = "allow"
 
 [workspace.dependencies]
 aggregator = { path = './rs/aggregator' }

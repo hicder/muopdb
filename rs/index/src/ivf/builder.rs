@@ -208,10 +208,9 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
     }
 
     /// Add a new vector to the dataset for training
-    pub fn add_vector(&mut self, doc_id: u128, data: &[f32]) -> Result<()> {
+    pub fn add_vector(&mut self, doc_id: u128, data: &[f32]) -> Result<u32> {
         self.vectors.append(data)?;
-        self.generate_id(doc_id)?;
-        Ok(())
+        self.generate_id(doc_id)
     }
 
     /// Add a new centroid

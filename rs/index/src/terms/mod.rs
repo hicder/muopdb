@@ -1,4 +1,4 @@
 pub mod builder;
 pub mod index;
-pub mod scratch;
+mod scratch;
 pub mod writer;
