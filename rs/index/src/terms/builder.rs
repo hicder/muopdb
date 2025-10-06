@@ -111,6 +111,10 @@ impl MultiTermBuilder {
         self.inner_builders.iter_mut()
     }
 
+    pub fn builders_iter(&self) -> impl Iterator<Item = (&u128, &TermBuilder)> {
+        self.inner_builders.iter()
+    }
+
     pub fn add(&mut self, user_id: u128, point_id: u32, key: String) -> Result<()> {
         let builder = match self.inner_builders.entry(user_id) {
             // Use existing builder
@@ -136,6 +140,10 @@ impl MultiTermBuilder {
         }
         self.is_built = true;
         Ok(())
+    }
+
+    pub fn is_built(&self) -> bool {
+        self.is_built
     }
 }
 
