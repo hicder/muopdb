@@ -226,7 +226,7 @@ mod tests {
 
         // Check that term files are created
         let segment_dir = format!("{}/{}", base_dir, segment_name);
-        let terms_dir = format!("{}/terms/user_0", segment_dir);
+        let terms_dir = format!("{}/terms", segment_dir);
 
         // Verify the terms directory exists
         assert!(
@@ -239,27 +239,6 @@ mod tests {
         assert!(
             std::path::Path::new(&combined_file_path).exists(),
             "Combined terms file should exist"
-        );
-
-        // Verify the term_map file exists (temporary file used during building)
-        let term_map_path = format!("{}/term_map", terms_dir);
-        assert!(
-            std::path::Path::new(&term_map_path).exists(),
-            "Term map file should exist"
-        );
-
-        // Verify the posting_lists file exists (temporary file used during building)
-        let posting_lists_path = format!("{}/posting_lists", terms_dir);
-        assert!(
-            std::path::Path::new(&posting_lists_path).exists(),
-            "Posting lists file should exist"
-        );
-
-        // Verify the offsets file exists (temporary file used during building)
-        let offsets_path = format!("{}/offsets", terms_dir);
-        assert!(
-            std::path::Path::new(&offsets_path).exists(),
-            "Offsets file should exist"
         );
     }
 }

@@ -6,7 +6,7 @@ use crate::query::iters::ids_iter::IdsIter;
 use crate::query::iters::or_iter::OrIter;
 use crate::query::iters::term_iter::TermIter;
 use crate::query::iters::Iter;
-use crate::terms::index::TermIndex;
+use crate::terms::index::{MultiTermIndex, TermIndex};
 
 #[allow(unused)]
 pub struct Planner {
@@ -17,17 +17,8 @@ pub struct Planner {
 
 impl Planner {
     pub fn new(user_id: u128, query: DocumentFilter, term_directory: &str) -> Result<Self> {
-        let index_file_path = format!("{}/user_{}/combined", term_directory, user_id);
-        if !std::path::Path::new(&index_file_path).exists() {
-            return Err(anyhow::anyhow!(
-                "Term index file does not exist for user {}: {}",
-                user_id,
-                index_file_path
-            ));
-        }
-
-        let read_len = std::fs::metadata(&index_file_path)?.len() as usize;
-        let term_index = TermIndex::new(index_file_path, 0, read_len)?;
+        let mut multi_term_index = MultiTermIndex::new(term_directory.to_string())?;
+        let term_index = multi_term_index.take_index_for_user(user_id)?;
         Ok(Self {
             user_id,
             query,
@@ -140,7 +131,6 @@ mod tests {
 
         let multi_writer = MultiTermWriter::new(term_dir.clone());
         multi_writer.write(&mut multi_builder).unwrap();
-        assert!(fs::metadata(format!("{}/user_{}/combined", term_dir, user_id)).is_ok());
         (term_dir, user_id)
     }
 

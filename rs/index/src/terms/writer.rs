@@ -6,10 +6,12 @@ use anyhow::{anyhow, Result};
 use compression::compression::IntSeqEncoder;
 use compression::elias_fano::ef::EliasFano;
 use log::debug;
-use utils::io::{append_file_to_writer, wrap_write};
+use odht::HashTableOwned;
+use utils::io::{append_file_to_writer, wrap_write, write_pad};
 use utils::on_disk_ordered_map::encoder::{IntegerCodec, VarintIntegerCodec};
 
 use crate::terms::builder::{MultiTermBuilder, TermBuilder};
+use crate::terms::term_index_info::{TermIndexInfo, TermIndexInfoHashTableConfig};
 
 pub struct TermWriter {
     base_dir: String,
@@ -157,16 +159,17 @@ impl TermWriter {
 
         debug!("Total size: {}", total_size);
 
-        // Remove term_map, offsets, posting lists files
-        // std::fs::remove_file(term_map_path.as_str())?;
-        // std::fs::remove_file(offset_path.as_str())?;
-        // std::fs::remove_file(posting_list_path.as_str())?;
+        // Remove term_map, offsets, posting lists files (okay to ignore errors)
+        std::fs::remove_file(term_map_path.as_str()).ok();
+        std::fs::remove_file(offset_path.as_str()).ok();
+        std::fs::remove_file(posting_list_path.as_str()).ok();
 
         Ok(())
     }
 }
 
 pub struct MultiTermWriter {
+    /// Base directory to write all user term indexes
     base_dir: String,
 }
 
@@ -175,32 +178,95 @@ impl MultiTermWriter {
         Self { base_dir }
     }
 
-    pub fn write(&self, multi_builder: &mut MultiTermBuilder) -> Result<()> {
-        for (user_id, builder) in multi_builder.builders_iter_mut() {
-            let user_dir = Path::new(&self.base_dir).join(format!("user_{}", user_id));
-            std::fs::create_dir_all(&user_dir)?;
-
-            let writer = TermWriter::new(
-                user_dir
-                    .to_str()
-                    .expect("user_dir should be valid UTF-8")
-                    .to_string(),
-            );
-            writer.write(builder)?;
+    /// Combine all user term index files into one aligned global file
+    /// and write the user term index info file.
+    pub fn write(&self, builder: &mut MultiTermBuilder) -> Result<()> {
+        if !builder.is_built() {
+            return Err(anyhow!("MultiTermBuilder is not built"));
         }
+
+        // Write each user's term index
+        for (user_id, user_builder) in builder.builders_iter_mut() {
+            let user_dir = format!("{}/{}", self.base_dir, user_id);
+            std::fs::create_dir_all(&user_dir)?;
+            let term_writer = TermWriter::new(user_dir);
+            term_writer.write(user_builder)?;
+        }
+
+        // Prepare output paths
+        let combined_file_path = format!("{}/combined", self.base_dir);
+        let user_index_info_file_path = format!("{}/user_term_index_info", self.base_dir);
+        std::fs::create_dir_all(&self.base_dir)?;
+
+        // Initialize writer and offset tracking
+        let mut combined_file = File::create(&combined_file_path)?;
+        let mut combined_file_writer = BufWriter::new(&mut combined_file);
+        let mut total_written: usize = 0;
+        let mut user_index_table = HashTableOwned::<TermIndexInfoHashTableConfig>::default();
+
+        // Sort users for deterministic layout
+        let mut user_ids: Vec<u128> = builder.builders_iter().map(|(uid, _)| *uid).collect();
+        user_ids.sort();
+
+        for user_id in user_ids {
+            let user_dir = format!("{}/{}", self.base_dir, user_id);
+            let user_file_path = format!("{}/combined", user_dir);
+
+            // Ensure per-user combined file exists
+            if !Path::new(&user_file_path).exists() {
+                return Err(anyhow!(
+                    "User {} combined file does not exist at {}",
+                    user_id,
+                    user_file_path
+                ));
+            }
+
+            // Align to 8-byte boundary before writing this user’s data
+            let padded = write_pad(total_written, &mut combined_file_writer, 8)?;
+            total_written += padded;
+
+            // Record offset
+            let offset = total_written;
+
+            // Append user’s combined term index file
+            let length = append_file_to_writer(&user_file_path, &mut combined_file_writer)?;
+            total_written += length;
+
+            // Record metadata into hash table
+            user_index_table.insert(
+                &user_id,
+                &TermIndexInfo {
+                    offset: offset as u64,
+                    length: length as u64,
+                },
+            );
+
+            // Clean up per-user directory (ignore errors)
+            std::fs::remove_dir_all(&user_dir).ok();
+        }
+
+        combined_file_writer.flush()?;
+
+        // Write user index info to disk
+        std::fs::write(&user_index_info_file_path, user_index_table.raw_bytes())?;
+
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::fs::File;
+    use std::path::Path;
+
+    use tempdir::TempDir;
 
     use super::*;
+    use crate::terms::index::MultiTermIndex;
 
     #[test]
     fn test_term_writer() {
-        let tmp_dir = tempdir::TempDir::new("test_term_writer").unwrap();
+        let tmp_dir = TempDir::new("test_term_writer").unwrap();
         let base_directory = tmp_dir.path();
 
         let mut builder = TermBuilder::new(base_directory.join("scratch.tmp").as_path()).unwrap();
@@ -222,252 +288,137 @@ mod tests {
     }
 
     #[test]
-    fn test_multi_term_writer() {
-        let tmp_dir = tempdir::TempDir::new("test_multi_term_writer").unwrap();
-        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
+    fn test_multi_term_writer_basic_roundtrip() {
+        let tmp_dir = TempDir::new("test_multi_term_writer_roundtrip").unwrap();
+        let base_dir = tmp_dir.path().to_str().unwrap().to_string();
 
-        let mut multi_builder = MultiTermBuilder::new(base_directory.clone());
+        // Create multi-user builder
+        let mut multi_builder = MultiTermBuilder::new(base_dir.clone());
+        let user1 = 101u128;
+        let user2 = 202u128;
 
-        // Add terms for multiple users
-        let user1 = 123u128;
-        let user2 = 456u128;
-        let user3 = 789u128;
+        // Each user will have simple deterministic data
+        // User 1: 2 terms
+        multi_builder.add(user1, 0, "a".to_string()).unwrap();
+        multi_builder.add(user1, 1, "b".to_string()).unwrap();
 
-        // User 1: Add some terms
-        multi_builder
-            .add(user1, 0, "apple:red".to_string())
-            .unwrap();
-        multi_builder
-            .add(user1, 1, "banana:yellow".to_string())
-            .unwrap();
-        multi_builder
-            .add(user1, 2, "apple:green".to_string())
-            .unwrap();
+        // User 2: 1 term
+        multi_builder.add(user2, 0, "x".to_string()).unwrap();
 
-        // User 2: Add different terms
-        multi_builder
-            .add(user2, 0, "car:toyota".to_string())
-            .unwrap();
-        multi_builder
-            .add(user2, 1, "car:honda".to_string())
-            .unwrap();
-        multi_builder
-            .add(user2, 2, "bike:yamaha".to_string())
-            .unwrap();
-        multi_builder
-            .add(user2, 3, "car:toyota".to_string())
-            .unwrap(); // Duplicate term
-
-        // User 3: Add minimal terms
-        multi_builder
-            .add(user3, 0, "test:value".to_string())
-            .unwrap();
-
-        // Build all user builders
+        // Build and write
         multi_builder.build().unwrap();
+        let writer = MultiTermWriter::new(base_dir.clone());
+        writer.write(&mut multi_builder).unwrap();
 
-        // Write using MultiTermWriter
-        let multi_writer = MultiTermWriter::new(base_directory.clone());
-        multi_writer.write(&mut multi_builder).unwrap();
+        // === File existence checks ===
+        let combined_path = format!("{}/combined", base_dir);
+        let combined_len = File::open(&combined_path)
+            .unwrap()
+            .metadata()
+            .unwrap()
+            .len();
+        assert!(combined_len > 0, "combined file should not be empty");
 
-        // Verify user directories were created
-        let user1_dir = format!("{}/user_{}", base_directory, user1);
-        let user2_dir = format!("{}/user_{}", base_directory, user2);
-        let user3_dir = format!("{}/user_{}", base_directory, user3);
+        let info_path = format!("{}/user_term_index_info", base_dir);
+        assert!(
+            Path::new(&info_path).exists(),
+            "user_term_index_info must exist"
+        );
 
-        assert!(fs::metadata(&user1_dir).unwrap().is_dir());
-        assert!(fs::metadata(&user2_dir).unwrap().is_dir());
-        assert!(fs::metadata(&user3_dir).unwrap().is_dir());
+        // === Load MultiTermIndex ===
+        let mut multi_index = MultiTermIndex::new(base_dir.clone()).unwrap();
 
-        // Verify combined files exist for each user
-        let user1_combined = format!("{}/combined", user1_dir);
-        let user2_combined = format!("{}/combined", user2_dir);
-        let user3_combined = format!("{}/combined", user3_dir);
+        // Verify we can read terms for each user
+        let term_id_a = multi_index.get_term_id_for_user(user1, "a").unwrap();
+        let term_id_b = multi_index.get_term_id_for_user(user1, "b").unwrap();
+        assert_ne!(term_id_a, term_id_b, "term IDs should differ");
 
-        assert!(fs::metadata(&user1_combined).unwrap().is_file());
-        assert!(fs::metadata(&user2_combined).unwrap().is_file());
-        assert!(fs::metadata(&user3_combined).unwrap().is_file());
+        assert!(multi_index.get_term_id_for_user(user2, "x").is_ok());
 
-        // Verify file sizes are reasonable (not empty)
-        assert!(fs::metadata(&user1_combined).unwrap().len() > 0);
-        assert!(fs::metadata(&user2_combined).unwrap().len() > 0);
-        assert!(fs::metadata(&user3_combined).unwrap().len() > 0);
+        // === Validate offsets and lengths ===
+        let user1_info = multi_index
+            .term_index_info()
+            .hash_table
+            .get(&user1)
+            .unwrap();
+        let user2_info = multi_index
+            .term_index_info()
+            .hash_table
+            .get(&user2)
+            .unwrap();
 
-        // User 2 should have larger file (more terms)
-        let user1_size = fs::metadata(&user1_combined).unwrap().len();
-        let user2_size = fs::metadata(&user2_combined).unwrap().len();
-        let user3_size = fs::metadata(&user3_combined).unwrap().len();
+        assert!(user1_info.length > 0);
+        assert!(user2_info.length > 0);
 
-        assert!(user2_size >= user1_size); // User 2 has same or more terms
-        assert!(user1_size > user3_size); // User 1 has more terms than user 3
+        // User1 should start at offset 0
+        assert_eq!(user1_info.offset, 0);
+
+        // Offset for user2 must be 8-byte aligned
+        assert_eq!(
+            user2_info.offset % 8,
+            0,
+            "user2 offset must be 8-byte aligned"
+        );
+
+        // User2 should come immediately after user1 data (plus possible padding)
+        let padding = (8 - (user1_info.length % 8)) % 8;
+        assert_eq!(
+            user2_info.offset,
+            user1_info.length + padding,
+            "user2 offset must match user1 length + padding"
+        );
+
+        // Combined file length consistency check
+        let expected_total = user2_info.offset + user2_info.length;
+        assert_eq!(
+            combined_len, expected_total,
+            "Combined file size should match sum of user sections"
+        );
     }
 
     #[test]
     fn test_multi_term_writer_empty_builder() {
-        let tmp_dir = tempdir::TempDir::new("test_multi_term_writer_empty").unwrap();
-        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
+        let tmp_dir = TempDir::new("test_multi_term_writer_empty").unwrap();
+        let base_dir = tmp_dir.path().to_str().unwrap().to_string();
 
-        let mut multi_builder = MultiTermBuilder::new(base_directory.clone());
-
-        // Build without adding any terms
+        let mut multi_builder = MultiTermBuilder::new(base_dir.clone());
         multi_builder.build().unwrap();
 
-        // Write using MultiTermWriter
-        let multi_writer = MultiTermWriter::new(base_directory.clone());
-        multi_writer.write(&mut multi_builder).unwrap();
+        let writer = MultiTermWriter::new(base_dir.clone());
+        writer.write(&mut multi_builder).unwrap();
 
-        // Should not create any user directories
-        let entries = fs::read_dir(&base_directory).unwrap();
-        let user_dirs: Vec<_> = entries
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with("user_") {
-                    Some(name)
-                } else {
-                    None
-                }
-            })
-            .collect();
+        // Combined file should exist but be empty
+        let combined_path = format!("{}/combined", base_dir);
+        let combined_len = File::open(&combined_path)
+            .unwrap()
+            .metadata()
+            .unwrap()
+            .len();
+        assert_eq!(combined_len, 0);
 
-        assert!(
-            user_dirs.is_empty(),
-            "Should not create user directories for empty builder"
-        );
+        // user_term_index_info should exist but be empty
+        let user_index_info_path = format!("{}/user_term_index_info", base_dir);
+        let info_bytes = std::fs::read(&user_index_info_path).unwrap();
+        let hash_table =
+            HashTableOwned::<TermIndexInfoHashTableConfig>::from_raw_bytes(&info_bytes)
+                .expect("valid hash table");
+        assert_eq!(hash_table.len(), 0);
     }
 
     #[test]
-    fn test_multi_term_writer_single_user() {
-        let tmp_dir = tempdir::TempDir::new("test_multi_term_writer_single").unwrap();
-        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
+    fn test_multi_term_writer_error_on_unbuilt() {
+        let tmp_dir = TempDir::new("test_multi_term_writer_error").unwrap();
+        let base_dir = tmp_dir.path().to_str().unwrap().to_string();
 
-        let mut multi_builder = MultiTermBuilder::new(base_directory.clone());
-
-        let user_id = 42u128;
+        let mut multi_builder = MultiTermBuilder::new(base_dir.clone());
         multi_builder
-            .add(user_id, 0, "single:term".to_string())
-            .unwrap();
-        multi_builder
-            .add(user_id, 1, "another:term".to_string())
+            .add(1u128, 0, "term:fail".to_string())
             .unwrap();
 
-        multi_builder.build().unwrap();
+        let writer = MultiTermWriter::new(base_dir.clone());
+        let result = writer.write(&mut multi_builder);
 
-        let multi_writer = MultiTermWriter::new(base_directory.clone());
-        multi_writer.write(&mut multi_builder).unwrap();
-
-        // Should create exactly one user directory
-        let user_dir = format!("{}/user_{}", base_directory, user_id);
-        assert!(fs::metadata(&user_dir).unwrap().is_dir());
-
-        // Combined file should exist
-        let combined_path = format!("{}/combined", user_dir);
-        assert!(fs::metadata(&combined_path).unwrap().is_file());
-        assert!(fs::metadata(&combined_path).unwrap().len() > 0);
-    }
-
-    #[test]
-    fn test_multi_term_writer_directory_creation() {
-        let tmp_dir = tempdir::TempDir::new("test_multi_term_writer_dirs").unwrap();
-        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
-
-        // Use nested directory structure
-        let nested_base = format!("{}/nested/path", base_directory);
-        fs::create_dir_all(&nested_base).unwrap();
-        let mut multi_builder = MultiTermBuilder::new(nested_base.clone());
-
-        let user_id = 999u128;
-        multi_builder
-            .add(user_id, 0, "nested:test".to_string())
-            .unwrap();
-        multi_builder.build().unwrap();
-
-        let multi_writer = MultiTermWriter::new(nested_base.clone());
-        multi_writer.write(&mut multi_builder).unwrap();
-
-        // Should create nested directory structure
-        let user_dir = format!("{}/user_{}", nested_base, user_id);
-        assert!(fs::metadata(&user_dir).unwrap().is_dir());
-
-        let combined_path = format!("{}/combined", user_dir);
-        assert!(fs::metadata(&combined_path).unwrap().is_file());
-    }
-
-    #[test]
-    fn test_multi_term_writer_error_propagation() {
-        let tmp_dir = tempdir::TempDir::new("test_multi_term_writer_error").unwrap();
-        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
-
-        let mut multi_builder = MultiTermBuilder::new(base_directory.clone());
-
-        let user_id = 555u128;
-        multi_builder
-            .add(user_id, 0, "error:test".to_string())
-            .unwrap();
-
-        // Don't build - should cause error when writing
-        let multi_writer = MultiTermWriter::new(base_directory.clone());
-        let result = multi_writer.write(&mut multi_builder);
-
-        // Should return error because builder wasn't built
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not built"));
-    }
-
-    #[test]
-    fn test_multi_term_writer_user_isolation() {
-        let tmp_dir = tempdir::TempDir::new("test_multi_term_writer_isolation").unwrap();
-        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
-
-        let mut multi_builder = MultiTermBuilder::new(base_directory.clone());
-
-        let user1 = 111u128;
-        let user2 = 222u128;
-
-        // Both users add the same term - should be isolated
-        multi_builder
-            .add(user1, 0, "shared:term".to_string())
-            .unwrap();
-        multi_builder
-            .add(user1, 1, "user1:unique".to_string())
-            .unwrap();
-
-        multi_builder
-            .add(user2, 0, "shared:term".to_string())
-            .unwrap(); // Same term name
-        multi_builder
-            .add(user2, 1, "user2:unique".to_string())
-            .unwrap();
-
-        multi_builder.build().unwrap();
-
-        let multi_writer = MultiTermWriter::new(base_directory.clone());
-        multi_writer.write(&mut multi_builder).unwrap();
-
-        // Both user directories should exist
-        let user1_dir = format!("{}/user_{}", base_directory, user1);
-        let user2_dir = format!("{}/user_{}", base_directory, user2);
-
-        assert!(fs::metadata(&user1_dir).unwrap().is_dir());
-        assert!(fs::metadata(&user2_dir).unwrap().is_dir());
-
-        // Both should have their own combined files
-        let user1_combined = format!("{}/combined", user1_dir);
-        let user2_combined = format!("{}/combined", user2_dir);
-
-        assert!(fs::metadata(&user1_combined).unwrap().is_file());
-        assert!(fs::metadata(&user2_combined).unwrap().is_file());
-
-        // Files should be roughly similar size (both have 2 terms)
-        let user1_size = fs::metadata(&user1_combined).unwrap().len();
-        let user2_size = fs::metadata(&user2_combined).unwrap().len();
-
-        // Size difference should be 0
-        assert!(
-            user1_size == user2_size,
-            "User file sizes too different: {} vs {}",
-            user1_size,
-            user2_size
-        );
     }
 }
