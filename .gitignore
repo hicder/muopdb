@@ -12,3 +12,4 @@ perf.data*
 rs/proto/src/muopdb.rs
 .zed/
 .aider*
+.claude

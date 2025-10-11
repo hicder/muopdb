@@ -1,10 +1,12 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use proto::muopdb::{AndFilter, DocumentFilter, IdsFilter, OrFilter};
 
 use crate::query::iters::and_iter::AndIter;
 use crate::query::iters::ids_iter::IdsIter;
 use crate::query::iters::or_iter::OrIter;
-use crate::query::iters::term_iter::TermIter;
+use crate::query::iters::term_iter::ArcTermIter;
 use crate::query::iters::Iter;
 use crate::terms::index::{MultiTermIndex, TermIndex};
 
@@ -12,13 +14,16 @@ use crate::terms::index::{MultiTermIndex, TermIndex};
 pub struct Planner {
     user_id: u128,
     query: DocumentFilter,
-    term_index: TermIndex,
+    term_index: Arc<TermIndex>,
 }
 
 impl Planner {
-    pub fn new(user_id: u128, query: DocumentFilter, term_directory: &str) -> Result<Self> {
-        let mut multi_term_index = MultiTermIndex::new(term_directory.to_string())?;
-        let term_index = multi_term_index.take_index_for_user(user_id)?;
+    pub fn new(
+        user_id: u128,
+        query: DocumentFilter,
+        multi_term_index: Arc<MultiTermIndex>,
+    ) -> Result<Self> {
+        let term_index = multi_term_index.get_or_create_index(user_id)?;
         Ok(Self {
             user_id,
             query,
@@ -40,11 +45,11 @@ impl Planner {
             Some(Filter::Contains(contains_filter)) => {
                 let term = format!("{}:{}", contains_filter.path, contains_filter.value);
                 if let Some(term_id) = self.term_index.get_term_id(&term) {
-                    let posting_list = self.term_index.get_posting_list_iterator(term_id)?;
+                    let arc_term_iter = ArcTermIter::new(self.term_index.clone(), term_id)?;
                     // TODO(hung): This posting list contains point IDs for the term.
                     // We need to find a way to convert these point IDs to document IDs.
                     // For now, we return the posting list directly.
-                    Ok(Iter::Term(TermIter::new(posting_list)))
+                    Ok(Iter::ArcTerm(arc_term_iter))
                 } else {
                     // Term not found - return an iterator that yields no results
                     Ok(Iter::Ids(IdsIter::new(vec![])))
@@ -114,7 +119,7 @@ mod tests {
     use crate::terms::builder::MultiTermBuilder;
     use crate::terms::writer::MultiTermWriter;
 
-    fn create_test_term_index(temp_dir: &tempdir::TempDir) -> (String, u128) {
+    fn create_test_term_index(temp_dir: &tempdir::TempDir) -> (Arc<MultiTermIndex>, u128) {
         let base_dir = temp_dir.path().to_str().unwrap();
         let user_id = 12345u128;
         let term_dir = format!("{}/terms", base_dir);
@@ -131,13 +136,15 @@ mod tests {
 
         let multi_writer = MultiTermWriter::new(term_dir.clone());
         multi_writer.write(&mut multi_builder).unwrap();
-        (term_dir, user_id)
+
+        let multi_term_index = MultiTermIndex::new(term_dir).unwrap();
+        (Arc::new(multi_term_index), user_id)
     }
 
     #[test]
     fn test_plan_ids_filter() {
         let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
-        let (term_dir, user_id) = create_test_term_index(&temp_dir);
+        let (multi_term_index, user_id) = create_test_term_index(&temp_dir);
 
         let ids_filter = IdsFilter {
             ids: vec![
@@ -160,7 +167,7 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::Ids(ids_filter)),
         };
 
-        let planner = Planner::new(user_id, document_filter, &term_dir).unwrap();
+        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());
@@ -176,7 +183,7 @@ mod tests {
     #[test]
     fn test_plan_and_filter() {
         let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
-        let (term_dir, user_id) = create_test_term_index(&temp_dir);
+        let (multi_term_index, user_id) = create_test_term_index(&temp_dir);
 
         let ids_filter1 = IdsFilter {
             ids: vec![Id {
@@ -207,7 +214,7 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::And(and_filter)),
         };
 
-        let planner = Planner::new(user_id, document_filter, &term_dir).unwrap();
+        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());
@@ -218,7 +225,7 @@ mod tests {
     #[test]
     fn test_plan_or_filter() {
         let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
-        let (term_dir, user_id) = create_test_term_index(&temp_dir);
+        let (multi_term_index, user_id) = create_test_term_index(&temp_dir);
 
         let ids_filter1 = IdsFilter {
             ids: vec![Id {
@@ -249,7 +256,7 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::Or(or_filter)),
         };
 
-        let planner = Planner::new(user_id, document_filter, &term_dir).unwrap();
+        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());
@@ -260,11 +267,11 @@ mod tests {
     #[test]
     fn test_plan_empty_filter() {
         let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
-        let (term_dir, user_id) = create_test_term_index(&temp_dir);
+        let (multi_term_index, user_id) = create_test_term_index(&temp_dir);
 
         let document_filter = DocumentFilter { filter: None };
 
-        let planner = Planner::new(user_id, document_filter, &term_dir).unwrap();
+        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());

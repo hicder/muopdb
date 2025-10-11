@@ -326,7 +326,7 @@ mod tests {
         );
 
         // === Load MultiTermIndex ===
-        let mut multi_index = MultiTermIndex::new(base_dir.clone()).unwrap();
+        let multi_index = MultiTermIndex::new(base_dir.clone()).unwrap();
 
         // Verify we can read terms for each user
         let term_id_a = multi_index.get_term_id_for_user(user1, "a").unwrap();
