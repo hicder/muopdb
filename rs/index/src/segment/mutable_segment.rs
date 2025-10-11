@@ -1,5 +1,4 @@
 use std::sync::atomic::AtomicU64;
-use std::sync::Mutex;
 use std::time::Instant;
 
 use anyhow::{Ok, Result};
@@ -16,7 +15,7 @@ use crate::tokenizer::white_space_tokenizer::WhiteSpaceTokenizer;
 
 pub struct MutableSegment {
     multi_spann_builder: MultiSpannBuilder,
-    term_builder: Mutex<MultiTermBuilder>,
+    term_builder: MultiTermBuilder,
 
     // Prevent a mutable segment from being modified after it is built.
     finalized: bool,
@@ -32,7 +31,7 @@ impl MutableSegment {
 
         Ok(Self {
             multi_spann_builder: MultiSpannBuilder::new(config, base_directory)?,
-            term_builder: Mutex::new(MultiTermBuilder::new(term_directory)),
+            term_builder: MultiTermBuilder::new(term_directory),
             finalized: false,
             last_sequence_number: AtomicU64::new(0),
             num_docs: AtomicU64::new(0),
@@ -69,7 +68,6 @@ impl MutableSegment {
         // Process document attributes if present
         if let Some(attributes) = document_attribute {
             let tokenizer = WhiteSpaceTokenizer {};
-            let mut term_builder = self.term_builder.lock().unwrap();
 
             for (attr_name, attr_value) in attributes.value {
                 match attr_value.value {
@@ -80,13 +78,13 @@ impl MutableSegment {
                         // Process each token and insert with the term builder
                         while let Some(token) = token_stream.next() {
                             let term = format!("{}:{}", attr_name, token.text);
-                            term_builder.add(user_id, point_id, term)?;
+                            self.term_builder.add(user_id, point_id, term)?;
                         }
                     }
                     Some(proto::muopdb::attribute_value::Value::KeywordValue(keyword)) => {
                         // For keyword attributes, insert the whole keyword as a single term
                         let term = format!("{}:{}", attr_name, keyword);
-                        term_builder.add(user_id, point_id, term)?;
+                        self.term_builder.add(user_id, point_id, term)?;
                     }
                     _ => {
                         // Other attribute types (int, float, bool) are not tokenized
@@ -124,13 +122,13 @@ impl MutableSegment {
         self.multi_spann_builder.build()?;
 
         // Build the term builder
-        self.term_builder.lock().unwrap().build()?;
+        self.term_builder.build()?;
 
         // Write the term builder using term writer
         let term_directory = format!("{}/terms", segment_directory);
         std::fs::create_dir_all(&term_directory)?;
         let term_writer = MultiTermWriter::new(term_directory);
-        term_writer.write(&mut self.term_builder.lock().unwrap())?;
+        term_writer.write(&self.term_builder)?;
 
         let multi_spann_writer = MultiSpannWriter::new(segment_directory);
         multi_spann_writer.write(&mut self.multi_spann_builder)?;
