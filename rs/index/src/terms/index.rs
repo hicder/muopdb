@@ -141,12 +141,17 @@ impl TermIndex {
     ///
     /// A `Result` containing an `EliasFanoDecodingIterator` on success, or an `anyhow::Error`
     /// if the `term_id` is out of bounds or if there's an issue creating the decoder.
-    pub fn get_posting_list_iterator(&self, term_id: u64) -> Result<EliasFanoDecodingIterator> {
+    pub fn get_posting_list_iterator(
+        &self,
+        term_id: u64,
+    ) -> Result<EliasFanoDecodingIterator<u32>> {
         let offset_len = self.get_term_offset_len(term_id);
-        if offset_len.is_none() {
-            return Err(anyhow!("Term ID {} is out of bound", term_id));
-        }
-        let offset_len = offset_len.unwrap();
+        let offset_len = match offset_len {
+            Some(ol) => ol,
+            None => {
+                return Err(anyhow!("Term ID {} is out of bound", term_id));
+            }
+        };
         let offset = offset_len.offset;
         let length = offset_len.length;
 
@@ -156,6 +161,17 @@ impl TermIndex {
         let decoder = EliasFanoDecoder::new_decoder(byte_slice)
             .expect("Failed to create posting list decoder");
         Ok(decoder.get_iterator(byte_slice))
+    }
+
+    /// Get posting list iterator that doesn't borrow from self
+    /// Returns a boxed iterator that owns the data
+    pub fn get_posting_list_iterator_owned(
+        &self,
+        term_id: u64,
+    ) -> Result<Box<dyn Iterator<Item = u32> + Send + Sync>> {
+        let ef_iter = self.get_posting_list_iterator(term_id)?;
+        let results: Vec<u32> = ef_iter.collect();
+        Ok(Box::new(results.into_iter()))
     }
 }
 
@@ -234,19 +250,6 @@ impl MultiTermIndex {
     #[cfg(test)]
     pub fn term_index_info(&self) -> &TermIndexInfoHashTable {
         &self.user_index_info
-    }
-}
-
-impl TermIndex {
-    /// Get posting list iterator that doesn't borrow from self
-    /// Returns a boxed iterator that owns the data
-    pub fn get_posting_list_iterator_owned(
-        &self,
-        term_id: u64,
-    ) -> Result<Box<dyn Iterator<Item = u64> + Send + Sync>> {
-        let ef_iter = self.get_posting_list_iterator(term_id)?;
-        let results: Vec<u64> = ef_iter.collect();
-        Ok(Box::new(results.into_iter()))
     }
 }
 
@@ -371,7 +374,7 @@ mod tests {
         // Verify some shared terms
         let apple_id = index.get_term_id("apple").unwrap();
         let it = index.get_posting_list_iterator(apple_id).unwrap();
-        let mut apple_docs: Vec<u64> = Vec::new();
+        let mut apple_docs: Vec<u32> = Vec::new();
         for doc in it {
             apple_docs.push(doc);
         }
@@ -380,7 +383,7 @@ mod tests {
 
         let banana_id = index.get_term_id("banana").unwrap();
         let it = index.get_posting_list_iterator(banana_id).unwrap();
-        let mut banana_docs: Vec<u64> = Vec::new();
+        let mut banana_docs: Vec<u32> = Vec::new();
         for doc in it {
             banana_docs.push(doc);
         }
@@ -395,7 +398,7 @@ mod tests {
         // Verify a term that appears in many documents
         let orange_id = index.get_term_id("orange").unwrap();
         let it = index.get_posting_list_iterator(orange_id).unwrap();
-        let mut orange_docs: Vec<u64> = Vec::new();
+        let mut orange_docs: Vec<u32> = Vec::new();
         for doc in it {
             orange_docs.push(doc);
         }

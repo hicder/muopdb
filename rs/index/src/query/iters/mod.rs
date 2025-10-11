@@ -6,7 +6,7 @@ pub mod term_iter;
 use and_iter::AndIter;
 use ids_iter::IdsIter;
 use or_iter::OrIter;
-use term_iter::{ArcTermIter, TermIter};
+use term_iter::TermIter;
 
 /// State of the iterator: NotStarted, At(data), or Exhausted
 /// Used internally by various iterators to track their position.
@@ -19,22 +19,20 @@ enum IterState<T> {
 }
 
 /// A unified enum to represent all types of iterators that implement InvertedIndexIter trait.
-pub enum Iter<'a> {
-    And(AndIter<'a>),
-    Or(OrIter<'a>),
+pub enum Iter {
+    And(AndIter),
+    Or(OrIter),
     Ids(IdsIter),
-    Term(TermIter<'a>),
-    ArcTerm(ArcTermIter),
+    Term(TermIter),
 }
 
-impl<'a> InvertedIndexIter for Iter<'a> {
+impl InvertedIndexIter for Iter {
     fn next(&mut self) -> Option<u128> {
         match self {
             Iter::And(iter) => iter.next(),
             Iter::Or(iter) => iter.next(),
             Iter::Ids(iter) => iter.next(),
             Iter::Term(iter) => iter.next(),
-            Iter::ArcTerm(iter) => iter.next(),
         }
     }
 
@@ -44,7 +42,6 @@ impl<'a> InvertedIndexIter for Iter<'a> {
             Iter::Or(iter) => iter.skip_to(doc_id),
             Iter::Ids(iter) => iter.skip_to(doc_id),
             Iter::Term(iter) => iter.skip_to(doc_id),
-            Iter::ArcTerm(iter) => iter.skip_to(doc_id),
         }
     }
 
@@ -54,7 +51,6 @@ impl<'a> InvertedIndexIter for Iter<'a> {
             Iter::Or(iter) => iter.doc_id(),
             Iter::Ids(iter) => iter.doc_id(),
             Iter::Term(iter) => iter.doc_id(),
-            Iter::ArcTerm(iter) => iter.doc_id(),
         }
     }
 }
