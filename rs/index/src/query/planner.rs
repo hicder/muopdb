@@ -127,15 +127,14 @@ mod tests {
         // Create directories
         fs::create_dir_all(&term_dir).unwrap();
 
-        let mut multi_builder =
-            MultiTermBuilder::new(temp_dir.path().to_str().unwrap().to_string());
+        let multi_builder = MultiTermBuilder::new(temp_dir.path().to_str().unwrap().to_string());
         multi_builder
             .add(user_id, 1, "test:term".to_string())
             .unwrap();
         multi_builder.build().unwrap();
 
         let multi_writer = MultiTermWriter::new(term_dir.clone());
-        multi_writer.write(&mut multi_builder).unwrap();
+        multi_writer.write(&multi_builder).unwrap();
 
         let multi_term_index = MultiTermIndex::new(term_dir).unwrap();
         (Arc::new(multi_term_index), user_id)

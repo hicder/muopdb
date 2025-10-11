@@ -180,18 +180,18 @@ impl MultiTermWriter {
 
     /// Combine all user term index files into one aligned global file
     /// and write the user term index info file.
-    pub fn write(&self, builder: &mut MultiTermBuilder) -> Result<()> {
+    pub fn write(&self, builder: &MultiTermBuilder) -> Result<()> {
         if !builder.is_built() {
             return Err(anyhow!("MultiTermBuilder is not built"));
         }
 
         // Write each user's term index
-        for (user_id, user_builder) in builder.builders_iter_mut() {
+        builder.for_each_builder_mut(|user_id, user_builder| {
             let user_dir = format!("{}/{}", self.base_dir, user_id);
-            std::fs::create_dir_all(&user_dir)?;
+            std::fs::create_dir_all(&user_dir).unwrap();
             let term_writer = TermWriter::new(user_dir);
-            term_writer.write(user_builder)?;
-        }
+            term_writer.write(user_builder).unwrap();
+        });
 
         // Prepare output paths
         let combined_file_path = format!("{}/combined", self.base_dir);
@@ -205,7 +205,7 @@ impl MultiTermWriter {
         let mut user_index_table = HashTableOwned::<TermIndexInfoHashTableConfig>::default();
 
         // Sort users for deterministic layout
-        let mut user_ids: Vec<u128> = builder.builders_iter().map(|(uid, _)| *uid).collect();
+        let mut user_ids = builder.get_user_ids();
         user_ids.sort();
 
         for user_id in user_ids {
@@ -293,7 +293,7 @@ mod tests {
         let base_dir = tmp_dir.path().to_str().unwrap().to_string();
 
         // Create multi-user builder
-        let mut multi_builder = MultiTermBuilder::new(base_dir.clone());
+        let multi_builder = MultiTermBuilder::new(base_dir.clone());
         let user1 = 101u128;
         let user2 = 202u128;
 
@@ -308,7 +308,7 @@ mod tests {
         // Build and write
         multi_builder.build().unwrap();
         let writer = MultiTermWriter::new(base_dir.clone());
-        writer.write(&mut multi_builder).unwrap();
+        writer.write(&multi_builder).unwrap();
 
         // === File existence checks ===
         let combined_path = format!("{}/combined", base_dir);
@@ -381,11 +381,11 @@ mod tests {
         let tmp_dir = TempDir::new("test_multi_term_writer_empty").unwrap();
         let base_dir = tmp_dir.path().to_str().unwrap().to_string();
 
-        let mut multi_builder = MultiTermBuilder::new(base_dir.clone());
+        let multi_builder = MultiTermBuilder::new(base_dir.clone());
         multi_builder.build().unwrap();
 
         let writer = MultiTermWriter::new(base_dir.clone());
-        writer.write(&mut multi_builder).unwrap();
+        writer.write(&multi_builder).unwrap();
 
         // Combined file should exist but be empty
         let combined_path = format!("{}/combined", base_dir);
@@ -410,13 +410,13 @@ mod tests {
         let tmp_dir = TempDir::new("test_multi_term_writer_error").unwrap();
         let base_dir = tmp_dir.path().to_str().unwrap().to_string();
 
-        let mut multi_builder = MultiTermBuilder::new(base_dir.clone());
+        let multi_builder = MultiTermBuilder::new(base_dir.clone());
         multi_builder
             .add(1u128, 0, "term:fail".to_string())
             .unwrap();
 
         let writer = MultiTermWriter::new(base_dir.clone());
-        let result = writer.write(&mut multi_builder);
+        let result = writer.write(&multi_builder);
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not built"));
