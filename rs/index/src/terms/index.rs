@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};
 use compression::compression::IntSeqDecoder;
 use compression::elias_fano::ef::{EliasFanoDecoder, EliasFanoDecodingIterator};
+use dashmap::DashMap;
 use log::debug;
 use ouroboros::self_referencing;
 use utils::on_disk_ordered_map::encoder::VarintIntegerCodec;
@@ -160,7 +161,7 @@ impl TermIndex {
 
 pub struct MultiTermIndex {
     /// Map of user ID to their [`TermIndex`]
-    term_indexes: HashMap<u128, TermIndex>,
+    term_indexes: DashMap<u128, Arc<TermIndex>>,
     /// Hash table holding offsets and lengths for all users
     user_index_info: TermIndexInfoHashTable,
     /// Base directory for the term indexes
@@ -176,40 +177,43 @@ impl MultiTermIndex {
 
         Ok(Self {
             base_directory,
-            term_indexes: HashMap::new(),
+            term_indexes: DashMap::new(),
             user_index_info,
         })
     }
 
     /// Lazily load or return cached TermIndex for a user
     /// Errors: if user not found or TermIndex creation fails
-    pub fn get_or_create_index(&mut self, user_id: u128) -> Result<&TermIndex> {
-        match self.term_indexes.entry(user_id) {
-            std::collections::hash_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                let index_info = self
-                    .user_index_info
-                    .hash_table
-                    .get(&user_id)
-                    .ok_or_else(|| anyhow!("User not found"))?;
-
-                let combined_path = format!("{}/combined", self.base_directory);
-                let term_index = TermIndex::new(
-                    combined_path,
-                    index_info.offset as usize,
-                    index_info.length as usize,
-                )
-                .map_err(|e| anyhow!("Failed to create TermIndex: {e}"))?;
-
-                Ok(entry.insert(term_index))
-            }
+    pub fn get_or_create_index(&self, user_id: u128) -> Result<Arc<TermIndex>> {
+        // Try to get from cache first
+        if let Some(term_index) = self.term_indexes.get(&user_id) {
+            return Ok(term_index.clone());
         }
+
+        // Not in cache, create new one
+        let index_info = self
+            .user_index_info
+            .hash_table
+            .get(&user_id)
+            .ok_or_else(|| anyhow!("User not found"))?;
+
+        let combined_path = format!("{}/combined", self.base_directory);
+        let term_index = TermIndex::new(
+            combined_path,
+            index_info.offset as usize,
+            index_info.length as usize,
+        )
+        .map_err(|e| anyhow!("Failed to create TermIndex: {e}"))?;
+
+        let term_index_arc = Arc::new(term_index);
+        self.term_indexes.insert(user_id, term_index_arc.clone());
+        Ok(term_index_arc)
     }
 
     /// Retrieve the term ID for a given user and term string
     /// Will create/load the TermIndex for the user if not already cached
     /// Errors: if user or term not found or TermIndex creation fails
-    pub fn get_term_id_for_user(&mut self, user_id: u128, term: &str) -> Result<u64> {
+    pub fn get_term_id_for_user(&self, user_id: u128, term: &str) -> Result<u64> {
         let term_index = self.get_or_create_index(user_id)?;
         term_index
             .get_term_id(term)
@@ -219,10 +223,11 @@ impl MultiTermIndex {
     /// Remove and return the TermIndex for a given user
     /// Will create/load the TermIndex for the user if not already cached
     /// Errors: if user not found or TermIndex creation fails
-    pub fn take_index_for_user(&mut self, user_id: u128) -> Result<TermIndex> {
+    pub fn take_index_for_user(&self, user_id: u128) -> Result<Arc<TermIndex>> {
         self.get_or_create_index(user_id)?;
         self.term_indexes
             .remove(&user_id)
+            .map(|(_, term_index)| term_index)
             .ok_or_else(|| anyhow!("User not found"))
     }
 
@@ -230,17 +235,18 @@ impl MultiTermIndex {
     pub fn term_index_info(&self) -> &TermIndexInfoHashTable {
         &self.user_index_info
     }
+}
 
-    /// Get posting list iterator for a given user and term ID
-    /// Will create/load the TermIndex for the user if not already cached
-    /// Errors: if user or term ID not found or TermIndex creation fails
-    pub fn get_posting_list_iterator(
-        &mut self,
-        user_id: u128,
+impl TermIndex {
+    /// Get posting list iterator that doesn't borrow from self
+    /// Returns a boxed iterator that owns the data
+    pub fn get_posting_list_iterator_owned(
+        &self,
         term_id: u64,
-    ) -> Result<EliasFanoDecodingIterator> {
-        let term_index = self.get_or_create_index(user_id)?;
-        term_index.get_posting_list_iterator(term_id)
+    ) -> Result<Box<dyn Iterator<Item = u64> + Send + Sync>> {
+        let ef_iter = self.get_posting_list_iterator(term_id)?;
+        let results: Vec<u64> = ef_iter.collect();
+        Ok(Box::new(results.into_iter()))
     }
 }
 
@@ -248,6 +254,7 @@ impl MultiTermIndex {
 mod tests {
     use std::fs;
     use std::path::Path;
+    use std::sync::Arc;
 
     use tempdir::TempDir;
 
@@ -450,7 +457,7 @@ mod tests {
         let tmp = TempDir::new("multi_term_index_roundtrip").unwrap();
         let base_dir = tmp.path().to_str().unwrap().to_string();
 
-        let (users, mut index) = build_and_write_index(&base_dir);
+        let (users, index) = build_and_write_index(&base_dir);
         let user1 = users[0];
         let user2 = users[1];
 
@@ -478,15 +485,17 @@ mod tests {
         );
 
         // Check that we can open posting list iterator and it matches builder data
-        let pl_apple: Vec<_> = index
-            .get_posting_list_iterator(user1, id_apple_red)
+        let term_index_apple = index.get_or_create_index(user1).unwrap();
+        let pl_apple: Vec<_> = term_index_apple
+            .get_posting_list_iterator(id_apple_red)
             .unwrap()
             .collect();
         assert_eq!(pl_apple, vec![10]);
 
         let term_id = index.get_term_id_for_user(user2, "bike:yamaha").unwrap();
-        let pl_bike: Vec<_> = index
-            .get_posting_list_iterator(user2, term_id)
+        let term_index_bike = index.get_or_create_index(user2).unwrap();
+        let pl_bike: Vec<_> = term_index_bike
+            .get_posting_list_iterator(term_id)
             .unwrap()
             .collect();
         assert_eq!(pl_bike, vec![33]);
@@ -511,7 +520,7 @@ mod tests {
         let index_info_path = format!("{}/user_term_index_info", base_dir);
         assert!(Path::new(&index_info_path).exists());
 
-        let mut index = MultiTermIndex::new(base_dir.clone()).unwrap();
+        let index = MultiTermIndex::new(base_dir.clone()).unwrap();
         // The hash table should be empty
         assert_eq!(index.term_index_info().hash_table.len(), 0);
         // Attempting to get a user should fail
@@ -555,13 +564,13 @@ mod tests {
         let tmp = TempDir::new("multi_term_index_lazy_cache").unwrap();
         let base_dir = tmp.path().to_str().unwrap().to_string();
 
-        let (users, mut index) = build_and_write_index(&base_dir);
+        let (users, index) = build_and_write_index(&base_dir);
         let user1 = users[0];
 
         // First call should load
-        let first = index.get_or_create_index(user1).unwrap() as *const _;
+        let first = Arc::as_ptr(&index.get_or_create_index(user1).unwrap());
         // Second call should reuse
-        let second = index.get_or_create_index(user1).unwrap() as *const _;
+        let second = Arc::as_ptr(&index.get_or_create_index(user1).unwrap());
         assert_eq!(first, second, "Should return cached TermIndex reference");
 
         // Should fail for unknown user
