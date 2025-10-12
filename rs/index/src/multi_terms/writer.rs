@@ -1,5 +1,6 @@
+use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
@@ -13,17 +14,89 @@ use crate::terms::writer::TermWriter;
 pub struct MultiTermWriter {
     /// Base directory to write all user term indexes
     base_dir: String,
+
+    /// Segment directory
+    segment_dir: Option<String>,
 }
 
 impl MultiTermWriter {
     pub fn new(base_dir: String) -> Self {
-        Self { base_dir }
+        Self {
+            base_dir,
+            segment_dir: None,
+        }
+    }
+
+    pub fn new_with_segment_dir(segment_dir: String) -> Self {
+        let base_dir = format!("{}/terms", segment_dir);
+        Self {
+            base_dir,
+            segment_dir: Some(segment_dir),
+        }
     }
 
     /// Combine all user term index files into one aligned global file
     /// and write the user term index info file.
     pub fn write(&self, builder: &MultiTermBuilder) -> Result<()> {
-        self.write_with_reindex(builder, None)
+        if self.segment_dir.is_none() {
+            self.write_with_reindex(builder, None)
+        } else {
+            let mappings = self.read_reassigned_mappings()?;
+            self.write_with_reindex(builder, Some(&mappings))
+        }
+    }
+
+    fn read_reassigned_mappings(&self) -> Result<HashMap<u128, Vec<i32>>> {
+        // Scan all files in segment_dir with prefix "reassigned_mappings.". The suffix will be user_id
+        let mut mappings = HashMap::new();
+
+        // Check if segment_dir exists
+        let segment_dir = self
+            .segment_dir
+            .as_ref()
+            .ok_or_else(|| anyhow!("segment_dir is not set"))?;
+
+        let mut files = std::fs::read_dir(segment_dir)
+            .map_err(|e| anyhow!("Failed to read segment directory '{}': {}", segment_dir, e))?;
+
+        while let Some(file_result) = files.next() {
+            let file = file_result.map_err(|e| anyhow!("Failed to read directory entry: {}", e))?;
+
+            let file_name = file
+                .file_name()
+                .into_string()
+                .map_err(|_| anyhow!("Invalid file name (not valid UTF-8)"))?;
+
+            if file_name.starts_with("reassigned_mappings.") {
+                let user_id_str = file_name
+                    .split('.')
+                    .last()
+                    .ok_or_else(|| anyhow!("Invalid file name format: {}", file_name))?;
+
+                let user_id = user_id_str.parse::<u128>().map_err(|e| {
+                    anyhow!(
+                        "Failed to parse user ID from file name '{}': {}",
+                        file_name,
+                        e
+                    )
+                })?;
+
+                let mut file = File::open(file.path())
+                    .map_err(|e| anyhow!("Failed to open file '{}': {}", file_name, e))?;
+
+                let mut user_mappings = Vec::new();
+
+                // Read every 4 bytes, and parse as little endian
+                let mut buffer = [0; 4];
+                while file.read_exact(&mut buffer).is_ok() {
+                    let idx = u32::from_le_bytes(buffer);
+                    user_mappings.push(idx as i32);
+                }
+
+                mappings.insert(user_id, user_mappings);
+            }
+        }
+        Ok(mappings)
     }
 
     /// Combine all user term index files into one aligned global file
@@ -391,5 +464,106 @@ mod tests {
             .collect();
         // Points should remain 0,1
         assert_eq!(term_pl, vec![0, 1]);
+    }
+
+    #[test]
+    fn test_multi_term_writer_with_reassigned_mappings() {
+        let tmp_dir = TempDir::new("test_multi_term_writer_reassigned").unwrap();
+        let segment_dir = tmp_dir.path().to_str().unwrap().to_string();
+
+        // Create multi-user builder
+        let multi_builder = MultiTermBuilder::new();
+        let user1 = 101u128;
+        let user2 = 202u128;
+
+        // User 1: 3 terms with point IDs 0, 1, 2
+        multi_builder.add(user1, 0, "apple".to_string()).unwrap();
+        multi_builder.add(user1, 1, "banana".to_string()).unwrap();
+        multi_builder.add(user1, 2, "cherry".to_string()).unwrap();
+
+        // User 2: 2 terms with point IDs 0, 1
+        multi_builder.add(user2, 0, "dog".to_string()).unwrap();
+        multi_builder.add(user2, 1, "elephant".to_string()).unwrap();
+
+        // Build and write
+        multi_builder.build().unwrap();
+
+        // Create reassigned mappings files for each user
+        // User 1: Original 0,1,2 -> New 2,0,1 (reorder)
+        // User 2: Original 0,1 -> New 1,0 (swap)
+
+        // User 1 mappings file
+        let user1_mappings_file = format!("{}/reassigned_mappings.{}", segment_dir, user1);
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        let mut user1_file = File::create(user1_mappings_file).unwrap();
+        user1_file.write_all(&2u32.to_le_bytes()).unwrap();
+        user1_file.write_all(&0u32.to_le_bytes()).unwrap();
+        user1_file.write_all(&1u32.to_le_bytes()).unwrap();
+
+        // User 2 mappings file
+        let user2_mappings_file = format!("{}/reassigned_mappings.{}", segment_dir, user2);
+        let mut user2_file = File::create(user2_mappings_file).unwrap();
+        user2_file.write_all(&1u32.to_le_bytes()).unwrap();
+        user2_file.write_all(&0u32.to_le_bytes()).unwrap();
+
+        // Create writer with segment_dir (will read reassigned mappings)
+        let writer = MultiTermWriter::new_with_segment_dir(segment_dir.clone());
+        writer.write(&multi_builder).unwrap();
+
+        // Load MultiTermIndex and verify remapping worked
+        let base_dir = format!("{}/terms", segment_dir);
+        let multi_index = MultiTermIndex::new(base_dir.clone()).unwrap();
+
+        // Verify User 1's terms are remapped according to reassigned mappings
+        let apple_id = multi_index.get_term_id_for_user(user1, "apple").unwrap();
+        let apple_pl: Vec<u32> = multi_index
+            .get_or_create_index(user1)
+            .unwrap()
+            .get_posting_list_iterator(apple_id)
+            .unwrap()
+            .collect();
+        // Original point 0 should now be 2 (and sorted)
+        assert_eq!(apple_pl, vec![2]);
+
+        let banana_id = multi_index.get_term_id_for_user(user1, "banana").unwrap();
+        let banana_pl: Vec<u32> = multi_index
+            .get_or_create_index(user1)
+            .unwrap()
+            .get_posting_list_iterator(banana_id)
+            .unwrap()
+            .collect();
+        // Original point 1 should now be 0 (and sorted)
+        assert_eq!(banana_pl, vec![0]);
+
+        let cherry_id = multi_index.get_term_id_for_user(user1, "cherry").unwrap();
+        let cherry_pl: Vec<u32> = multi_index
+            .get_or_create_index(user1)
+            .unwrap()
+            .get_posting_list_iterator(cherry_id)
+            .unwrap()
+            .collect();
+        // Original point 2 should now be 1 (and sorted)
+        assert_eq!(cherry_pl, vec![1]);
+
+        // Verify User 2's terms are remapped according to reassigned mappings
+        let dog_id = multi_index.get_term_id_for_user(user2, "dog").unwrap();
+        let dog_pl: Vec<u32> = multi_index
+            .get_or_create_index(user2)
+            .unwrap()
+            .get_posting_list_iterator(dog_id)
+            .unwrap()
+            .collect();
+        // Original point 0 should now be 1 (and sorted)
+        assert_eq!(dog_pl, vec![1]);
+
+        let elephant_id = multi_index.get_term_id_for_user(user2, "elephant").unwrap();
+        let elephant_pl: Vec<u32> = multi_index
+            .get_or_create_index(user2)
+            .unwrap()
+            .get_posting_list_iterator(elephant_id)
+            .unwrap()
+            .collect();
+        // Original point 1 should now be 0 (and sorted)
+        assert_eq!(elephant_pl, vec![0]);
     }
 }

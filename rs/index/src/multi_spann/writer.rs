@@ -239,6 +239,16 @@ impl MultiSpannWriter {
         for user_id in user_ids.iter() {
             let user_id_base_directory = format!("{}/{}", base_directory, *user_id);
 
+            if multi_spann.config().reindex {
+                // Move the reassigned mapping file to top level
+                let reassigned_mappings_path =
+                    format!("{}/ivf/reassigned_mappings", user_id_base_directory);
+                let new_reassigned_mappings_path =
+                    format!("{}/reassigned_mappings.{}", base_directory, user_id);
+                std::fs::rename(reassigned_mappings_path, new_reassigned_mappings_path)
+                    .unwrap_or_default();
+            }
+
             // It's ok to fail for some reason
             std::fs::remove_dir_all(user_id_base_directory).unwrap_or_default();
         }

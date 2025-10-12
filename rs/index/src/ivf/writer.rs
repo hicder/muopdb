@@ -49,6 +49,18 @@ where
             ivf_builder
                 .reindex()
                 .context("failed to reindex during write")?;
+
+            // Write the reasigned mappings to base_directory/reassigned_mappings
+            let reassigned_mappings_path = format!("{}/reassigned_mappings", self.base_directory);
+            let reassigned_mappings = ivf_builder
+                .reassigned_mappings()
+                .context("Failed to get reassigned mappings")?;
+            let mut reassigned_mappings_file = File::create(reassigned_mappings_path)?;
+
+            // Write each number as 4 byte integer consecutively
+            for mapping in reassigned_mappings.iter() {
+                wrap_write(&mut reassigned_mappings_file, &mapping.to_le_bytes())?;
+            }
             debug!("Finish reindexing");
         }
 
