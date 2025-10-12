@@ -176,7 +176,7 @@ mod tests {
         point_ids: &[u32],
     ) -> MultiTermIndex {
         // Create a MultiTermIndex with some test data
-        let multi_builder = MultiTermBuilder::new(base_directory.clone());
+        let multi_builder = MultiTermBuilder::new();
         // Insert terms for the user with the provided point IDs
         point_ids.iter().for_each(|&pid| {
             multi_builder

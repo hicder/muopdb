@@ -269,7 +269,7 @@ mod tests {
         let tmp_dir = TempDir::new("test_term_writer").unwrap();
         let base_directory = tmp_dir.path();
 
-        let mut builder = TermBuilder::new(base_directory.join("scratch.tmp").as_path()).unwrap();
+        let mut builder = TermBuilder::new().unwrap();
         for i in 0..10 {
             builder.add(i, format!("key{}", i % 3)).unwrap();
         }
@@ -293,7 +293,7 @@ mod tests {
         let base_dir = tmp_dir.path().to_str().unwrap().to_string();
 
         // Create multi-user builder
-        let multi_builder = MultiTermBuilder::new(base_dir.clone());
+        let multi_builder = MultiTermBuilder::new();
         let user1 = 101u128;
         let user2 = 202u128;
 
@@ -381,7 +381,7 @@ mod tests {
         let tmp_dir = TempDir::new("test_multi_term_writer_empty").unwrap();
         let base_dir = tmp_dir.path().to_str().unwrap().to_string();
 
-        let multi_builder = MultiTermBuilder::new(base_dir.clone());
+        let multi_builder = MultiTermBuilder::new();
         multi_builder.build().unwrap();
 
         let writer = MultiTermWriter::new(base_dir.clone());
@@ -410,7 +410,7 @@ mod tests {
         let tmp_dir = TempDir::new("test_multi_term_writer_error").unwrap();
         let base_dir = tmp_dir.path().to_str().unwrap().to_string();
 
-        let multi_builder = MultiTermBuilder::new(base_dir.clone());
+        let multi_builder = MultiTermBuilder::new();
         multi_builder
             .add(1u128, 0, "term:fail".to_string())
             .unwrap();
