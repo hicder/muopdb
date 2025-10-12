@@ -1,4 +1,3 @@
 pub mod builder;
 pub mod index;
-pub mod term_index_info;
 pub mod writer;

@@ -8,8 +8,8 @@ use proto::muopdb::DocumentAttribute;
 
 use crate::multi_spann::builder::MultiSpannBuilder;
 use crate::multi_spann::writer::MultiSpannWriter;
-use crate::terms::builder::MultiTermBuilder;
-use crate::terms::writer::MultiTermWriter;
+use crate::multi_terms::builder::MultiTermBuilder;
+use crate::multi_terms::writer::MultiTermWriter;
 use crate::tokenizer::tokenizer::{TokenStream, Tokenizer};
 use crate::tokenizer::white_space_tokenizer::WhiteSpaceTokenizer;
 
