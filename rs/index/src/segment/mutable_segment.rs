@@ -31,7 +31,7 @@ impl MutableSegment {
 
         Ok(Self {
             multi_spann_builder: MultiSpannBuilder::new(config, base_directory)?,
-            term_builder: MultiTermBuilder::new(term_directory),
+            term_builder: MultiTermBuilder::new(),
             finalized: false,
             last_sequence_number: AtomicU64::new(0),
             num_docs: AtomicU64::new(0),

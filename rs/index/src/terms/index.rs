@@ -286,7 +286,7 @@ mod tests {
             .to_str()
             .expect("Base directory should be valid UTF-8")
             .to_string();
-        let mut builder = TermBuilder::new(base_directory.join("scratch.tmp").as_path()).unwrap();
+        let mut builder = TermBuilder::new().unwrap();
         builder.add(0, "a".to_string()).unwrap();
         builder.add(0, "c".to_string()).unwrap();
         builder.add(1, "b".to_string()).unwrap();
@@ -347,7 +347,7 @@ mod tests {
         let base_directory = temp_dir.path();
         let base_dir_str = base_directory.to_str().unwrap().to_string();
 
-        let mut builder = TermBuilder::new(base_directory.join("scratch.tmp").as_path()).unwrap();
+        let mut builder = TermBuilder::new().unwrap();
 
         // Create 20 docs, each with 5 terms. Some terms are shared.
         let common_terms = ["apple", "banana", "orange", "grape", "kiwi"];
@@ -415,7 +415,7 @@ mod tests {
     }
 
     fn build_and_write_index(base_dir: &str) -> (Vec<u128>, MultiTermIndex) {
-        let mut multi_builder = MultiTermBuilder::new(base_dir.to_string());
+        let mut multi_builder = MultiTermBuilder::new();
         let user1 = 1001u128;
         let user2 = 2002u128;
         let user3 = 3003u128;
@@ -509,7 +509,7 @@ mod tests {
         let tmp = TempDir::new("multi_term_index_empty").unwrap();
         let base_dir = tmp.path().to_str().unwrap().to_string();
 
-        let mut builder = MultiTermBuilder::new(base_dir.clone());
+        let mut builder = MultiTermBuilder::new();
         builder.build().unwrap();
 
         let writer = MultiTermWriter::new(base_dir.clone());

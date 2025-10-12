@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
 
@@ -7,14 +6,11 @@ use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use utils::on_disk_ordered_map::builder::OnDiskOrderedMapBuilder;
 
-use super::scratch::Scratch;
-
 /// Single user term builder.
 pub struct TermBuilder {
     /// Map from term string to term ID.
     pub term_map: OnDiskOrderedMapBuilder,
     next_term_id: u64,
-    scratch_file: Scratch,
     /// In-memory posting lists for each term ID. Each posting list is a list of point ID (u32).
     posting_lists: HashMap<u64, Vec<u32>>,
 
@@ -22,11 +18,10 @@ pub struct TermBuilder {
 }
 
 impl TermBuilder {
-    pub fn new(scratch_file_path: &Path) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         Ok(Self {
             term_map: OnDiskOrderedMapBuilder::new(),
             next_term_id: 0,
-            scratch_file: Scratch::new(scratch_file_path)?,
             posting_lists: HashMap::new(),
             built: false,
         })
@@ -38,7 +33,6 @@ impl TermBuilder {
         }
 
         let term_id = self.persist_and_get_term_id(key);
-        self.scratch_file.write(point_id, term_id)?;
         self.posting_lists
             .entry(term_id)
             .or_default()
@@ -95,17 +89,14 @@ impl TermBuilder {
 pub struct MultiTermBuilder {
     /// Map from user ID to its corresponding TermBuilder.
     inner_builders: DashMap<u128, RwLock<TermBuilder>>,
-    /// Base directory for the term builders' scratch files.
-    base_directory: String,
     /// Whether the builders have been built.
     is_built: AtomicBool,
 }
 
 impl MultiTermBuilder {
-    pub fn new(base_directory: String) -> Self {
+    pub fn new() -> Self {
         Self {
             inner_builders: DashMap::new(),
-            base_directory,
             is_built: AtomicBool::new(false),
         }
     }
@@ -137,9 +128,7 @@ impl MultiTermBuilder {
         }
 
         // Create a new builder if it doesn't exist
-        let scratch_file_path =
-            Path::new(&self.base_directory).join(format!("scratch_user_{}.tmp", user_id));
-        let new_builder = TermBuilder::new(&scratch_file_path)?;
+        let new_builder = TermBuilder::new()?;
 
         // Insert new builder - need to handle potential race condition
         let builder_guard = self
@@ -191,16 +180,11 @@ impl MultiTermBuilder {
 
 #[cfg(test)]
 mod tests {
-    use tempdir::TempDir;
-
     use super::*;
 
     #[test]
     fn test_term_builder() {
-        let tmp_dir = TempDir::new("test_term_builder").unwrap();
-        let scratch_file_path = tmp_dir.path().join("scratch.tmp");
-
-        let mut builder = TermBuilder::new(scratch_file_path.as_path()).unwrap();
+        let mut builder = TermBuilder::new().unwrap();
         builder.add(0, "a".to_string()).unwrap();
         builder.add(0, "c".to_string()).unwrap();
         builder.add(1, "b".to_string()).unwrap();
@@ -213,10 +197,7 @@ mod tests {
 
     #[test]
     fn test_multi_term_builder() {
-        let tmp_dir = TempDir::new("test_multi_term_builder").unwrap();
-        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
-
-        let multi_builder = MultiTermBuilder::new(base_directory);
+        let multi_builder = MultiTermBuilder::new();
 
         // Add terms for different users
         let user1 = 123u128;
@@ -264,10 +245,7 @@ mod tests {
 
     #[test]
     fn test_multi_term_builder_error_handling() {
-        let tmp_dir = TempDir::new("test_multi_term_builder_error").unwrap();
-        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
-
-        let multi_builder = MultiTermBuilder::new(base_directory);
+        let multi_builder = MultiTermBuilder::new();
 
         // Add some terms
         multi_builder.add(123u128, 0, "test".to_string()).unwrap();
@@ -288,10 +266,7 @@ mod tests {
 
     #[test]
     fn test_multi_term_builder_empty() {
-        let tmp_dir = TempDir::new("test_multi_term_builder_empty").unwrap();
-        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
-
-        let multi_builder = MultiTermBuilder::new(base_directory);
+        let multi_builder = MultiTermBuilder::new();
 
         // Build without adding any terms
         multi_builder.build().unwrap();
