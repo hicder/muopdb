@@ -23,6 +23,21 @@ impl MultiTermWriter {
     /// Combine all user term index files into one aligned global file
     /// and write the user term index info file.
     pub fn write(&self, builder: &MultiTermBuilder) -> Result<()> {
+        self.write_with_reindex(builder, None)
+    }
+
+    /// Combine all user term index files into one aligned global file
+    /// and write the user term index info file, with optional ID remapping for reindexing.
+    ///
+    /// # Arguments
+    /// * `builder` - A built MultiTermBuilder
+    /// * `id_mappings` - Optional mapping from user IDs to their respective ID mappings.
+    ///                   If None, no remapping is applied.
+    pub fn write_with_reindex(
+        &self,
+        builder: &MultiTermBuilder,
+        id_mappings: Option<&std::collections::HashMap<u128, Vec<i32>>>,
+    ) -> Result<()> {
         if !builder.is_built() {
             return Err(anyhow!("MultiTermBuilder is not built"));
         }
@@ -32,7 +47,16 @@ impl MultiTermWriter {
             let user_dir = format!("{}/{}", self.base_dir, user_id);
             std::fs::create_dir_all(&user_dir).unwrap();
             let term_writer = TermWriter::new(user_dir);
-            term_writer.write(user_builder).unwrap();
+
+            // Get the ID mapping for this user if provided
+            let id_mapping = id_mappings
+                .and_then(|mappings| mappings.get(&user_id))
+                .map(|mapping| mapping.as_slice());
+
+            // Write with or without reindexing
+            term_writer
+                .write_with_reindex(user_builder, id_mapping)
+                .unwrap();
         });
 
         // Prepare output paths
@@ -239,5 +263,133 @@ mod tests {
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not built"));
+    }
+
+    #[test]
+    fn test_multi_term_writer_with_reindex() {
+        let tmp_dir = TempDir::new("test_multi_term_writer_reindex").unwrap();
+        let base_dir = tmp_dir.path().to_str().unwrap().to_string();
+
+        // Create multi-user builder
+        let multi_builder = MultiTermBuilder::new();
+        let user1 = 101u128;
+        let user2 = 202u128;
+
+        // User 1: 3 terms with point IDs 0, 1, 2
+        multi_builder.add(user1, 0, "apple".to_string()).unwrap();
+        multi_builder.add(user1, 1, "apple".to_string()).unwrap();
+        multi_builder.add(user1, 2, "banana".to_string()).unwrap();
+
+        // User 2: 2 terms with point IDs 0, 1
+        multi_builder.add(user2, 0, "car".to_string()).unwrap();
+        multi_builder.add(user2, 1, "car".to_string()).unwrap();
+
+        // Build and write
+        multi_builder.build().unwrap();
+
+        // Create ID mappings for each user
+        // User 1: Original 0,1,2 -> New 1,0,2 (reorder)
+        // User 2: Original 0,1 -> New 0,1 (no change)
+        let mut id_mappings = std::collections::HashMap::new();
+        id_mappings.insert(user1, vec![1, 0, 2]);
+        id_mappings.insert(user2, vec![0, 1]);
+
+        let writer = MultiTermWriter::new(base_dir.clone());
+        writer
+            .write_with_reindex(&multi_builder, Some(&id_mappings))
+            .unwrap();
+
+        // Load MultiTermIndex and verify remapping worked
+        let multi_index = MultiTermIndex::new(base_dir.clone()).unwrap();
+
+        // Verify User 1's terms are remapped
+        let apple_id = multi_index.get_term_id_for_user(user1, "apple").unwrap();
+        let apple_pl: Vec<u32> = multi_index
+            .get_or_create_index(user1)
+            .unwrap()
+            .get_posting_list_iterator(apple_id)
+            .unwrap()
+            .collect();
+        // Original points 0,1 should now be 1,0 (and sorted)
+        assert_eq!(apple_pl, vec![0, 1]);
+
+        let banana_id = multi_index.get_term_id_for_user(user1, "banana").unwrap();
+        let banana_pl: Vec<u32> = multi_index
+            .get_or_create_index(user1)
+            .unwrap()
+            .get_posting_list_iterator(banana_id)
+            .unwrap()
+            .collect();
+        // Original point 2 should still be 2
+        assert_eq!(banana_pl, vec![2]);
+
+        // Verify User 2's terms are unchanged
+        let car_id = multi_index.get_term_id_for_user(user2, "car").unwrap();
+        let car_pl: Vec<u32> = multi_index
+            .get_or_create_index(user2)
+            .unwrap()
+            .get_posting_list_iterator(car_id)
+            .unwrap()
+            .collect();
+        // Points should remain 0,1
+        assert_eq!(car_pl, vec![0, 1]);
+    }
+
+    #[test]
+    fn test_multi_term_writer_with_partial_reindex() {
+        let tmp_dir = TempDir::new("test_multi_term_writer_partial_reindex").unwrap();
+        let base_dir = tmp_dir.path().to_str().unwrap().to_string();
+
+        // Create multi-user builder
+        let multi_builder = MultiTermBuilder::new();
+        let user1 = 101u128;
+        let user2 = 202u128;
+
+        // User 1: 3 terms with point IDs 0, 1, 2
+        multi_builder.add(user1, 0, "term".to_string()).unwrap();
+        multi_builder.add(user1, 1, "term".to_string()).unwrap();
+        multi_builder.add(user1, 2, "term".to_string()).unwrap();
+
+        // User 2: 2 terms with point IDs 0, 1
+        multi_builder.add(user2, 0, "term".to_string()).unwrap();
+        multi_builder.add(user2, 1, "term".to_string()).unwrap();
+
+        // Build and write
+        multi_builder.build().unwrap();
+
+        // Create ID mapping only for User 1 (User 2 gets no remapping)
+        // User 1: Original 0,1,2 -> New 0,2,1 (skip and reorder)
+        let mut id_mappings = std::collections::HashMap::new();
+        id_mappings.insert(user1, vec![0, 2, 1]);
+
+        let writer = MultiTermWriter::new(base_dir.clone());
+        writer
+            .write_with_reindex(&multi_builder, Some(&id_mappings))
+            .unwrap();
+
+        // Load MultiTermIndex and verify partial remapping worked
+        let multi_index = MultiTermIndex::new(base_dir.clone()).unwrap();
+
+        // Verify User 1's terms are remapped
+        let term_id = multi_index.get_term_id_for_user(user1, "term").unwrap();
+        let term_pl: Vec<u32> = multi_index
+            .get_or_create_index(user1)
+            .unwrap()
+            .get_posting_list_iterator(term_id)
+            .unwrap()
+            .collect();
+        // Original points 0,1,2 should now be 0,2,1 (and sorted)
+        assert_eq!(term_pl, vec![0, 1, 2]);
+
+        // Verify User 2's terms are unchanged
+        let term_id = multi_index.get_term_id_for_user(user2, "term").unwrap();
+        let term_pl: Vec<u32> = multi_index
+            .get_or_create_index(user2)
+            .unwrap()
+            .get_posting_list_iterator(term_id)
+            .unwrap()
+            .collect();
+        // Points should remain 0,1
+        assert_eq!(term_pl, vec![0, 1]);
     }
 }
