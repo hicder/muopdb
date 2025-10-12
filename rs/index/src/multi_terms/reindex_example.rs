@@ -53,7 +53,7 @@ pub fn example_multiterm_reindex() -> Result<(), Box<dyn std::error::Error>> {
     // Verify User 1's terms were remapped correctly
     println!("User 1 terms after reindex:");
 
-    // "apple" should now contain points [2, 4] (original points 1, 2)
+    // "apple" should now contain points [2, 4] (original points 0, 2)
     // These will be sorted to [2, 4]
     let apple_id = index.get_term_id_for_user(user1, "apple")?;
     let apple_pl: Vec<u32> = index
@@ -63,7 +63,7 @@ pub fn example_multiterm_reindex() -> Result<(), Box<dyn std::error::Error>> {
     println!("  apple: {:?}", apple_pl);
     assert_eq!(apple_pl, vec![2, 4]);
 
-    // "banana" should now contain points [0, 3] (original points 0, 4)
+    // "banana" should now contain points [0, 3] (original points 1, 4)
     // These will be sorted to [0, 3]
     let banana_id = index.get_term_id_for_user(user1, "banana")?;
     let banana_pl: Vec<u32> = index
