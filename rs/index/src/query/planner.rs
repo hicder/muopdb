@@ -5,13 +5,14 @@ use proto::muopdb::{AndFilter, DocumentFilter, IdsFilter, OrFilter};
 use quantization::quantization::Quantizer;
 
 use crate::multi_spann::index::MultiSpannIndex;
+use crate::multi_terms::index::MultiTermIndex;
 use crate::query::iters::and_iter::AndIter;
 use crate::query::iters::ids_iter::IdsIter;
 use crate::query::iters::or_iter::OrIter;
 use crate::query::iters::term_iter::TermIter;
 use crate::query::iters::Iter;
 use crate::spann::index::Spann;
-use crate::terms::index::{MultiTermIndex, TermIndex};
+use crate::terms::index::TermIndex;
 
 #[allow(unused)]
 pub struct Planner<Q: Quantizer> {
@@ -131,9 +132,9 @@ mod tests {
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::reader::MultiSpannReader;
     use crate::multi_spann::writer::MultiSpannWriter;
+    use crate::multi_terms::builder::MultiTermBuilder;
+    use crate::multi_terms::writer::MultiTermWriter;
     use crate::query::iters::InvertedIndexIter;
-    use crate::terms::builder::MultiTermBuilder;
-    use crate::terms::writer::MultiTermWriter;
 
     fn create_test_spann_index(
         base_directory: String,
