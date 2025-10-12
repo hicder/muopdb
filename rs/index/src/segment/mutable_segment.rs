@@ -129,10 +129,31 @@ impl MutableSegment {
 
         // Build terms
         self.multi_term_builder.build()?;
-        let multi_term_writer = MultiTermWriter::new(term_directory);
+        let multi_term_writer = MultiTermWriter::new_with_segment_dir(segment_directory.clone());
         multi_term_writer.write(&self.multi_term_builder)?;
 
+        // Remove all reassigned_mappings file.
+        self.remove_reassigned_mappings(&segment_directory)?;
+
         self.finalized = true;
+        Ok(())
+    }
+
+    pub fn remove_reassigned_mappings(&self, base_directory: &str) -> Result<()> {
+        let reassigned_mappings_files = std::fs::read_dir(base_directory)
+            .expect("Failed to read directory")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .unwrap()
+                    .starts_with("reassigned_mappings.")
+            })
+            .collect::<Vec<_>>();
+        for file in reassigned_mappings_files {
+            std::fs::remove_file(file.path()).expect("Failed to remove file");
+        }
         Ok(())
     }
 
@@ -238,5 +259,181 @@ mod tests {
             std::path::Path::new(&combined_file_path).exists(),
             "Combined terms file should exist"
         );
+    }
+
+    #[tokio::test]
+    async fn test_mutable_segment_build_with_terms_and_reindex() {
+        let tmp_dir = tempdir::TempDir::new("mutable_segment_reindex_test").unwrap();
+        let base_dir = tmp_dir.path().to_str().unwrap().to_string();
+
+        // Create a config with reindex enabled
+        let mut segment_config = CollectionConfig::default_test_config();
+        segment_config.reindex = true;
+
+        let base_dir_for_segment = base_dir.clone();
+        let mut mutable_segment = MutableSegment::new(segment_config.clone(), base_dir_for_segment)
+            .expect("Failed to create mutable segment");
+
+        // Insert multiple documents with text attributes for multiple users
+        // User 1 documents
+        let mut attributes1 = std::collections::HashMap::new();
+        attributes1.insert(
+            "title".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::TextValue(
+                    "apple banana cherry".to_string(),
+                )),
+            },
+        );
+        attributes1.insert(
+            "category".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "fruit".to_string(),
+                )),
+            },
+        );
+        let doc_attr1 = proto::muopdb::DocumentAttribute { value: attributes1 };
+
+        let mut attributes2 = std::collections::HashMap::new();
+        attributes2.insert(
+            "title".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::TextValue(
+                    "banana orange".to_string(),
+                )),
+            },
+        );
+        attributes2.insert(
+            "category".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "citrus".to_string(),
+                )),
+            },
+        );
+        let doc_attr2 = proto::muopdb::DocumentAttribute { value: attributes2 };
+
+        // User 2 documents
+        let mut attributes3 = std::collections::HashMap::new();
+        attributes3.insert(
+            "title".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::TextValue(
+                    "dog cat mouse".to_string(),
+                )),
+            },
+        );
+        attributes3.insert(
+            "category".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "animal".to_string(),
+                )),
+            },
+        );
+        let doc_attr3 = proto::muopdb::DocumentAttribute { value: attributes3 };
+
+        // Insert documents with attributes
+        assert!(mutable_segment
+            .insert_for_user(1, 1, &[1.0, 2.0, 3.0, 4.0], 0, Some(doc_attr1))
+            .is_ok());
+        assert!(mutable_segment
+            .insert_for_user(1, 2, &[5.0, 6.0, 7.0, 8.0], 1, Some(doc_attr2))
+            .is_ok());
+        assert!(mutable_segment
+            .insert_for_user(2, 1, &[9.0, 10.0, 11.0, 12.0], 0, Some(doc_attr3))
+            .is_ok());
+
+        // Build the segment with reindex enabled
+        let segment_name = "test_segment_reindex";
+        assert!(mutable_segment
+            .build(base_dir.clone(), segment_name.to_string())
+            .is_ok());
+
+        // Check that term files are created
+        let segment_dir = format!("{}/{}", base_dir, segment_name);
+        let terms_dir = format!("{}/terms", segment_dir);
+
+        // Verify the terms directory exists
+        assert!(
+            std::path::Path::new(&terms_dir).exists(),
+            "Terms directory should exist"
+        );
+
+        // Verify the combined file exists (this is where TermWriter writes the term data)
+        let combined_file_path = format!("{}/combined", terms_dir);
+        assert!(
+            std::path::Path::new(&combined_file_path).exists(),
+            "Combined terms file should exist"
+        );
+
+        // Since reindex is enabled, the MultiSpannWriter should have created reassigned mappings
+        // that the MultiTermWriter reads and applies to the term indices
+
+        // Load the multi-term index and verify terms are correctly indexed
+        let multi_term_index = crate::multi_terms::index::MultiTermIndex::new(terms_dir.clone())
+            .expect("Failed to load multi-term index");
+
+        // Verify User 1's terms are accessible
+        // Check for tokenized terms from text attributes
+        assert!(multi_term_index
+            .get_term_id_for_user(1, "title:apple")
+            .is_ok());
+        assert!(multi_term_index
+            .get_term_id_for_user(1, "title:banana")
+            .is_ok());
+        assert!(multi_term_index
+            .get_term_id_for_user(1, "title:cherry")
+            .is_ok());
+        assert!(multi_term_index
+            .get_term_id_for_user(1, "title:orange")
+            .is_ok());
+        // Check for keyword terms
+        assert!(multi_term_index
+            .get_term_id_for_user(1, "category:fruit")
+            .is_ok());
+        assert!(multi_term_index
+            .get_term_id_for_user(1, "category:citrus")
+            .is_ok());
+
+        // Verify User 2's terms are accessible
+        assert!(multi_term_index
+            .get_term_id_for_user(2, "title:dog")
+            .is_ok());
+        assert!(multi_term_index
+            .get_term_id_for_user(2, "title:cat")
+            .is_ok());
+        assert!(multi_term_index
+            .get_term_id_for_user(2, "title:mouse")
+            .is_ok());
+        assert!(multi_term_index
+            .get_term_id_for_user(2, "category:animal")
+            .is_ok());
+
+        // Verify posting lists contain the expected document IDs
+        // For User 1, "title:banana" should appear in both documents (doc 1 and 2)
+        let banana_id = multi_term_index
+            .get_term_id_for_user(1, "title:banana")
+            .unwrap();
+        let banana_pl: Vec<u32> = multi_term_index
+            .get_or_create_index(1)
+            .unwrap()
+            .get_posting_list_iterator(banana_id)
+            .unwrap()
+            .collect();
+        assert_eq!(banana_pl.len(), 2, "Banana should appear in 2 documents");
+
+        // For User 2, "title:dog" should appear in one document
+        let dog_id = multi_term_index
+            .get_term_id_for_user(2, "title:dog")
+            .unwrap();
+        let dog_pl: Vec<u32> = multi_term_index
+            .get_or_create_index(2)
+            .unwrap()
+            .get_posting_list_iterator(dog_id)
+            .unwrap()
+            .collect();
+        assert_eq!(dog_pl.len(), 1, "Dog should appear in 1 document");
     }
 }

@@ -44,6 +44,7 @@ pub struct IvfBuilder<D: DistanceCalculator + CalculateSquared + Send + Sync> {
     posting_lists: FileBackedAppendablePostingListStorage,
     doc_id_mapping: Vec<u128>,
     valid_point_id_mapping: HashMap<u128, u32>,
+    reassigned_mappings: Option<Vec<u32>>,
     _marker: PhantomData<D>,
 }
 
@@ -179,6 +180,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             posting_lists,
             doc_id_mapping: Vec::new(),
             valid_point_id_mapping: HashMap::new(),
+            reassigned_mappings: None,
             _marker: PhantomData,
         })
     }
@@ -677,8 +679,13 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         Ok(assigned_ids)
     }
 
+    pub fn reassigned_mappings(&self) -> Option<&Vec<u32>> {
+        self.reassigned_mappings.as_ref()
+    }
+
     pub fn reindex(&mut self) -> Result<()> {
         let assigned_ids = self.get_reassigned_ids()?;
+        self.reassigned_mappings = Some(assigned_ids.iter().map(|x| *x as u32).collect());
 
         // Update posting lists with reassigned IDs
         let new_posting_lists_path = format!(
