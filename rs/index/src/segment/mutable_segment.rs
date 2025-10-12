@@ -15,7 +15,7 @@ use crate::tokenizer::white_space_tokenizer::WhiteSpaceTokenizer;
 
 pub struct MutableSegment {
     multi_spann_builder: MultiSpannBuilder,
-    term_builder: MultiTermBuilder,
+    multi_term_builder: MultiTermBuilder,
 
     // Prevent a mutable segment from being modified after it is built.
     finalized: bool,
@@ -31,7 +31,7 @@ impl MutableSegment {
 
         Ok(Self {
             multi_spann_builder: MultiSpannBuilder::new(config, base_directory)?,
-            term_builder: MultiTermBuilder::new(),
+            multi_term_builder: MultiTermBuilder::new(),
             finalized: false,
             last_sequence_number: AtomicU64::new(0),
             num_docs: AtomicU64::new(0),
@@ -78,13 +78,13 @@ impl MutableSegment {
                         // Process each token and insert with the term builder
                         while let Some(token) = token_stream.next() {
                             let term = format!("{}:{}", attr_name, token.text);
-                            self.term_builder.add(user_id, point_id, term)?;
+                            self.multi_term_builder.add(user_id, point_id, term)?;
                         }
                     }
                     Some(proto::muopdb::attribute_value::Value::KeywordValue(keyword)) => {
                         // For keyword attributes, insert the whole keyword as a single term
                         let term = format!("{}:{}", attr_name, keyword);
-                        self.term_builder.add(user_id, point_id, term)?;
+                        self.multi_term_builder.add(user_id, point_id, term)?;
                     }
                     _ => {
                         // Other attribute types (int, float, bool) are not tokenized
@@ -116,22 +116,22 @@ impl MutableSegment {
             return Err(anyhow::anyhow!("Cannot build a finalized segment"));
         }
 
+        // Create necessary directories
         let segment_directory = format!("{base_directory}/{name}");
         std::fs::create_dir_all(&segment_directory)?;
-
-        self.multi_spann_builder.build()?;
-
-        // Build the term builder
-        self.term_builder.build()?;
-
-        // Write the term builder using term writer
         let term_directory = format!("{}/terms", segment_directory);
         std::fs::create_dir_all(&term_directory)?;
-        let term_writer = MultiTermWriter::new(term_directory);
-        term_writer.write(&self.term_builder)?;
 
-        let multi_spann_writer = MultiSpannWriter::new(segment_directory);
+        // Build SPANN
+        self.multi_spann_builder.build()?;
+        let multi_spann_writer = MultiSpannWriter::new(segment_directory.clone());
         multi_spann_writer.write(&mut self.multi_spann_builder)?;
+
+        // Build terms
+        self.multi_term_builder.build()?;
+        let multi_term_writer = MultiTermWriter::new(term_directory);
+        multi_term_writer.write(&self.multi_term_builder)?;
+
         self.finalized = true;
         Ok(())
     }
