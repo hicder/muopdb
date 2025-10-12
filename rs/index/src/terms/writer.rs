@@ -53,6 +53,20 @@ impl TermWriter {
     /// # Returns
     /// `Result<()>` indicating success or an error if the `TermBuilder` is not built or an I/O error occurs.
     pub fn write(&self, builder: &mut TermBuilder) -> Result<()> {
+        self.write_with_reindex(builder, None)
+    }
+
+    /// Write the term index with optional ID remapping for reindexing.
+    ///
+    /// # Arguments
+    /// * `builder` - A mutable reference to a built TermBuilder
+    /// * `id_mapping` - Optional mapping from original point IDs to new point IDs.
+    ///                  If None, no remapping is applied.
+    pub fn write_with_reindex(
+        &self,
+        builder: &mut TermBuilder,
+        id_mapping: Option<&[i32]>,
+    ) -> Result<()> {
         if !builder.is_built() {
             return Err(anyhow!("TermBuilder is not built"));
         }
@@ -80,15 +94,52 @@ impl TermWriter {
         let mut offsets = Vec::with_capacity(num_terms as usize);
         let mut last_pl_offset = 0;
         for term_id in 0..num_terms {
-            // elias fano encode
+            // Get the original posting list
             let posting_list = builder.get_posting_list_by_id(term_id).unwrap();
-            let mut encoder =
-                EliasFano::new_encoder(*posting_list.last().unwrap(), posting_list.len());
-            encoder.encode_batch(posting_list).unwrap();
+
+            // Apply ID mapping if provided
+            let mut remapped_posting_list = if let Some(mapping) = id_mapping {
+                // Apply the mapping to each point ID in the posting list
+                let mut remapped = Vec::with_capacity(posting_list.len());
+                for &point_id in posting_list {
+                    if point_id as usize >= mapping.len() {
+                        return Err(anyhow!(
+                            "Point ID {} is out of bounds for id_mapping",
+                            point_id
+                        ));
+                    }
+                    let new_id = mapping[point_id as usize];
+                    if new_id == -1 {
+                        // Skip invalidated points
+                        continue;
+                    }
+                    remapped.push(new_id as u32);
+                }
+                remapped
+            } else {
+                posting_list.to_vec()
+            };
+
+            // Skip empty posting lists after remapping
+            if remapped_posting_list.is_empty() {
+                offsets.push(last_pl_offset);
+                continue;
+            }
+
+            // Sort and dedup the remapped posting list
+            remapped_posting_list.sort();
+            remapped_posting_list.dedup();
+
+            // elias fano encode
+            let mut encoder = EliasFano::new_encoder(
+                *remapped_posting_list.last().unwrap(),
+                remapped_posting_list.len(),
+            );
+            encoder.encode_batch(&remapped_posting_list).unwrap();
             let len = encoder.write(&mut pl_writer)?;
             debug!(
-                "[write] Term ID: {}, Offset: {}, Length: {}",
-                term_id, last_pl_offset, len
+                "[write_with_reindex] Term ID: {}, Offset: {}, Length: {}, Original size: {}, Remapped size: {}",
+                term_id, last_pl_offset, len, posting_list.len(), remapped_posting_list.len()
             );
             offsets.push(last_pl_offset);
             last_pl_offset += len;
@@ -172,6 +223,7 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
+    use crate::terms::index::TermIndex;
 
     #[test]
     fn test_term_writer() {
@@ -194,5 +246,85 @@ mod tests {
         let combined_file = File::open(combined_path.as_str()).unwrap();
         let combined_file_len = combined_file.metadata().unwrap().len();
         assert_eq!(combined_file_len, 216);
+    }
+
+    #[test]
+    fn test_term_writer_with_reindex() {
+        let tmp_dir = TempDir::new("test_term_writer_reindex").unwrap();
+        let base_directory = tmp_dir.path();
+        let base_dir_str = base_directory.to_str().unwrap().to_string();
+
+        let mut builder = TermBuilder::new().unwrap();
+
+        // Add terms with point IDs 0, 1, 2, 3, 4
+        builder.add(0, "term1".to_string()).unwrap();
+        builder.add(1, "term1".to_string()).unwrap();
+        builder.add(2, "term1".to_string()).unwrap();
+        builder.add(3, "term2".to_string()).unwrap();
+        builder.add(4, "term2".to_string()).unwrap();
+
+        builder.build().unwrap();
+
+        // Create an ID mapping that reorders and skips some points
+        // Original: 0, 1, 2, 3, 4
+        // New:      2, 0, -, 1, 3  (point 2 is invalidated/skipped)
+        let id_mapping = vec![2, 0, -1, 1, 3];
+
+        let writer = TermWriter::new(base_dir_str.clone());
+        writer
+            .write_with_reindex(&mut builder, Some(&id_mapping))
+            .unwrap();
+
+        // Read back and verify the remapping worked
+        let path = format!("{base_dir_str}/combined");
+        let file_len = std::fs::metadata(&path).unwrap().len();
+        let index = TermIndex::new(path, 0, file_len as usize).unwrap();
+
+        // Check term1's posting list should now contain [0, 2] (original points 1 and 3)
+        let term1_id = index.get_term_id("term1").unwrap();
+        let pl1: Vec<u32> = index.get_posting_list_iterator(term1_id).unwrap().collect();
+        assert_eq!(pl1, vec![0, 2]);
+
+        // Check term2's posting list should now contain [1, 3] (original points 0 and 4)
+        let term2_id = index.get_term_id("term2").unwrap();
+        let pl2: Vec<u32> = index.get_posting_list_iterator(term2_id).unwrap().collect();
+        assert_eq!(pl2, vec![1, 3]);
+    }
+
+    #[test]
+    fn test_term_writer_with_empty_reindex() {
+        let tmp_dir = TempDir::new("test_term_writer_empty_reindex").unwrap();
+        let base_directory = tmp_dir.path();
+        let base_dir_str = base_directory.to_str().unwrap().to_string();
+
+        let mut builder = TermBuilder::new().unwrap();
+
+        // Add two terms with point IDs
+        builder.add(0, "term1".to_string()).unwrap();
+        builder.add(1, "term1".to_string()).unwrap();
+        builder.add(2, "term2".to_string()).unwrap();
+
+        builder.build().unwrap();
+
+        // Create an ID mapping that invalidates all points for term1 but keeps term2
+        let id_mapping = vec![-1, -1, 0];
+
+        let writer = TermWriter::new(base_dir_str.clone());
+        writer
+            .write_with_reindex(&mut builder, Some(&id_mapping))
+            .unwrap();
+
+        // Read back and verify the posting list is empty after remapping
+        let path = format!("{base_dir_str}/combined");
+        let file_len = std::fs::metadata(&path).unwrap().len();
+        let index = TermIndex::new(path, 0, file_len as usize).unwrap();
+
+        // term1 should still exist but have an empty posting list (we can't read it though)
+        assert!(index.get_term_id("term1").is_some());
+
+        // term2 should have point ID 0 (original point 2)
+        let term2_id = index.get_term_id("term2").unwrap();
+        let pl2: Vec<u32> = index.get_posting_list_iterator(term2_id).unwrap().collect();
+        assert_eq!(pl2, vec![0]);
     }
 }
