@@ -2,32 +2,39 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use proto::muopdb::{AndFilter, DocumentFilter, IdsFilter, OrFilter};
+use quantization::quantization::Quantizer;
 
+use crate::multi_spann::index::MultiSpannIndex;
 use crate::query::iters::and_iter::AndIter;
 use crate::query::iters::ids_iter::IdsIter;
 use crate::query::iters::or_iter::OrIter;
-use crate::query::iters::term_iter::ArcTermIter;
+use crate::query::iters::term_iter::TermIter;
 use crate::query::iters::Iter;
+use crate::spann::index::Spann;
 use crate::terms::index::{MultiTermIndex, TermIndex};
 
 #[allow(unused)]
-pub struct Planner {
+pub struct Planner<Q: Quantizer> {
     user_id: u128,
     query: DocumentFilter,
     term_index: Arc<TermIndex>,
+    spann_index: Arc<Spann<Q>>,
 }
 
-impl Planner {
+impl<Q: Quantizer> Planner<Q> {
     pub fn new(
         user_id: u128,
         query: DocumentFilter,
         multi_term_index: Arc<MultiTermIndex>,
+        multi_spann_index: Arc<MultiSpannIndex<Q>>,
     ) -> Result<Self> {
         let term_index = multi_term_index.get_or_create_index(user_id)?;
+        let spann_index = multi_spann_index.get_or_create_index(user_id)?;
         Ok(Self {
             user_id,
             query,
             term_index,
+            spann_index,
         })
     }
 
@@ -45,11 +52,11 @@ impl Planner {
             Some(Filter::Contains(contains_filter)) => {
                 let term = format!("{}:{}", contains_filter.path, contains_filter.value);
                 if let Some(term_id) = self.term_index.get_term_id(&term) {
-                    let arc_term_iter = ArcTermIter::new(self.term_index.clone(), term_id)?;
-                    // TODO(hung): This posting list contains point IDs for the term.
-                    // We need to find a way to convert these point IDs to document IDs.
-                    // For now, we return the posting list directly.
-                    Ok(Iter::ArcTerm(arc_term_iter))
+                    Ok(Iter::Term(TermIter::new(
+                        &self.term_index,
+                        &self.spann_index,
+                        term_id,
+                    )?))
                 } else {
                     // Term not found - return an iterator that yields no results
                     Ok(Iter::Ids(IdsIter::new(vec![])))
@@ -108,42 +115,111 @@ impl Planner {
         Ok(Iter::Ids(IdsIter::new(ids)))
     }
 }
+
 #[cfg(test)]
 mod tests {
     use std::fs;
 
+    use config::collection::CollectionConfig;
+    use config::enums::IntSeqEncodingType;
     use proto::muopdb::{AndFilter, Id, IdsFilter, OrFilter};
+    use quantization::noq::noq::NoQuantizer;
+    use utils::distance::l2::L2DistanceCalculator;
+    use utils::test_utils::generate_random_vector;
 
     use super::*;
+    use crate::multi_spann::builder::MultiSpannBuilder;
+    use crate::multi_spann::reader::MultiSpannReader;
+    use crate::multi_spann::writer::MultiSpannWriter;
     use crate::query::iters::InvertedIndexIter;
     use crate::terms::builder::MultiTermBuilder;
     use crate::terms::writer::MultiTermWriter;
 
-    fn create_test_term_index(temp_dir: &tempdir::TempDir) -> (Arc<MultiTermIndex>, u128) {
-        let base_dir = temp_dir.path().to_str().unwrap();
-        let user_id = 12345u128;
-        let term_dir = format!("{}/terms", base_dir);
+    fn create_test_spann_index(
+        base_directory: String,
+        user_id: u128,
+        doc_ids: &[u128],
+    ) -> (MultiSpannIndex<NoQuantizer<L2DistanceCalculator>>, Vec<u32>) {
+        let num_features = 4;
+        let collection_config = CollectionConfig {
+            num_features,
+            ..CollectionConfig::default_test_config()
+        };
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(collection_config, base_directory.clone()).unwrap();
 
-        // Create directories
-        fs::create_dir_all(&term_dir).unwrap();
+        let point_ids = doc_ids
+            .iter()
+            .map(|&doc_id| {
+                multi_spann_builder
+                    .insert(user_id, doc_id, &generate_random_vector(num_features))
+                    .unwrap()
+            })
+            .collect::<Vec<u32>>();
+        multi_spann_builder.build().unwrap();
 
-        let multi_builder = MultiTermBuilder::new(temp_dir.path().to_str().unwrap().to_string());
-        multi_builder
-            .add(user_id, 1, "test:term".to_string())
-            .unwrap();
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        multi_spann_writer.write(&mut multi_spann_builder).unwrap();
+
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        (
+            multi_spann_reader
+                .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding, 4)
+                .unwrap(),
+            point_ids,
+        )
+    }
+
+    fn create_test_term_index(
+        base_directory: String,
+        user_id: u128,
+        point_ids: &[u32],
+    ) -> MultiTermIndex {
+        // Create a MultiTermIndex with some test data
+        let multi_builder = MultiTermBuilder::new(base_directory.clone());
+        // Insert terms for the user with the provided point IDs
+        point_ids.iter().for_each(|&pid| {
+            multi_builder
+                .add(user_id, pid, format!("field:term{}", pid))
+                .unwrap();
+        });
         multi_builder.build().unwrap();
 
-        let multi_writer = MultiTermWriter::new(term_dir.clone());
+        let multi_writer = MultiTermWriter::new(base_directory.clone());
         multi_writer.write(&multi_builder).unwrap();
 
-        let multi_term_index = MultiTermIndex::new(term_dir).unwrap();
-        (Arc::new(multi_term_index), user_id)
+        MultiTermIndex::new(base_directory).unwrap()
+    }
+
+    fn create_test_indexes(
+        temp_dir: &tempdir::TempDir,
+    ) -> (
+        Arc<MultiTermIndex>,
+        Arc<MultiSpannIndex<NoQuantizer<L2DistanceCalculator>>>,
+        u128,
+    ) {
+        let base_dir = temp_dir.path().to_str().unwrap();
+        let term_dir = format!("{}/terms", base_dir);
+
+        // Create term directory
+        fs::create_dir_all(&term_dir).unwrap();
+
+        let user_id = 12345u128;
+        let doc_ids = [1u128, 2, 3, 4, 5];
+        let (multi_spann_index, point_ids) =
+            create_test_spann_index(base_dir.to_string(), user_id, &doc_ids);
+        let multi_term_index = create_test_term_index(term_dir, user_id, &point_ids);
+        (
+            Arc::new(multi_term_index),
+            Arc::new(multi_spann_index),
+            user_id,
+        )
     }
 
     #[test]
     fn test_plan_ids_filter() {
         let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
-        let (multi_term_index, user_id) = create_test_term_index(&temp_dir);
+        let (multi_term_index, multi_spann_index, user_id) = create_test_indexes(&temp_dir);
 
         let ids_filter = IdsFilter {
             ids: vec![
@@ -166,7 +242,13 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::Ids(ids_filter)),
         };
 
-        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+        let planner = Planner::new(
+            user_id,
+            document_filter,
+            multi_term_index,
+            multi_spann_index,
+        )
+        .unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());
@@ -182,7 +264,7 @@ mod tests {
     #[test]
     fn test_plan_and_filter() {
         let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
-        let (multi_term_index, user_id) = create_test_term_index(&temp_dir);
+        let (multi_term_index, multi_spann_index, user_id) = create_test_indexes(&temp_dir);
 
         let ids_filter1 = IdsFilter {
             ids: vec![Id {
@@ -213,18 +295,24 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::And(and_filter)),
         };
 
-        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+        let planner = Planner::new(
+            user_id,
+            document_filter,
+            multi_term_index,
+            multi_spann_index,
+        )
+        .unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());
-        // The AndIter should be created successfully (even though its methods are todo!())
+        // The AndIter should be created successfully
         let _iter = result.unwrap();
     }
 
     #[test]
     fn test_plan_or_filter() {
         let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
-        let (multi_term_index, user_id) = create_test_term_index(&temp_dir);
+        let (multi_term_index, multi_spann_index, user_id) = create_test_indexes(&temp_dir);
 
         let ids_filter1 = IdsFilter {
             ids: vec![Id {
@@ -255,7 +343,13 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::Or(or_filter)),
         };
 
-        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+        let planner = Planner::new(
+            user_id,
+            document_filter,
+            multi_term_index,
+            multi_spann_index,
+        )
+        .unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());
@@ -266,11 +360,17 @@ mod tests {
     #[test]
     fn test_plan_empty_filter() {
         let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
-        let (multi_term_index, user_id) = create_test_term_index(&temp_dir);
+        let (multi_term_index, multi_spann_index, user_id) = create_test_indexes(&temp_dir);
 
         let document_filter = DocumentFilter { filter: None };
 
-        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+        let planner = Planner::new(
+            user_id,
+            document_filter,
+            multi_term_index,
+            multi_spann_index,
+        )
+        .unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());

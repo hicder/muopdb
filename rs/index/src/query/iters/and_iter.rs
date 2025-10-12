@@ -22,13 +22,13 @@ use crate::query::iters::{InvertedIndexIter, Iter, IterState};
 /// assert_eq!(results, vec![3, 5]);
 /// ```
 /// Used to answer queries like "find documents that match all these conditions".
-pub struct AndIter<'a> {
-    iters: Vec<Iter<'a>>,
+pub struct AndIter {
+    iters: Vec<Iter>,
     state: IterState<u128>, // Current doc_id
 }
 
-impl<'a> AndIter<'a> {
-    pub fn new(iters: Vec<Iter<'a>>) -> Self {
+impl AndIter {
+    pub fn new(iters: Vec<Iter>) -> Self {
         if iters.is_empty() {
             // Set to exhausted immediately if no children
             return Self {
@@ -81,7 +81,7 @@ impl<'a> AndIter<'a> {
     }
 }
 
-impl<'a> InvertedIndexIter for AndIter<'a> {
+impl InvertedIndexIter for AndIter {
     /// Advances the iterator and returns the next document ID, or None if exhausted.
     fn next(&mut self) -> Option<u128> {
         match self.state {

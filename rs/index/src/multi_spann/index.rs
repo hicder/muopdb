@@ -75,7 +75,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         user_ids
     }
 
-    fn get_or_create_index(&self, user_id: u128) -> Result<Arc<Spann<Q>>> {
+    pub fn get_or_create_index(&self, user_id: u128) -> Result<Arc<Spann<Q>>> {
         if let Some(index) = self.user_to_spann.get(&user_id) {
             return Ok(index.clone());
         }
