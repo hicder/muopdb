@@ -1,13 +1,13 @@
 use crate::query::iters::{InvertedIndexIter, IterState};
 
-/// `IdsIter` is an iterator over a sorted list of unique document IDs.
+/// `IdsIter` is an iterator over a sorted list of unique point IDs.
 ///
 /// It supports sequential access and efficient skipping to a target ID.
 /// Used as a building block for query processing.
 ///
 /// - `next()` yields the next ID in order.
-/// - `skip_to(doc_id)` advances to the first ID >= `doc_id`.
-/// - `doc_id()` returns the current ID, or None if exhausted.
+/// - `skip_to(point_id)` advances to the first ID >= `point_id`.
+/// - `point_id()` returns the current ID, or None if exhausted.
 ///
 /// Example:
 /// ```
@@ -15,17 +15,17 @@ use crate::query::iters::{InvertedIndexIter, IterState};
 /// let mut iter = IdsIter::new(vec![1, 3, 5]);
 /// assert_eq!(iter.next(), Some(1));
 /// iter.skip_to(4);
-/// assert_eq!(iter.doc_id(), Some(5));
+/// assert_eq!(iter.point_id(), Some(5));
 /// ```
 /// This iterator is used for simple ID-based filters and as a base for more complex iterators.
 #[derive(Debug, Clone)]
 pub struct IdsIter {
-    ids: Vec<u128>,
+    ids: Vec<u32>,
     state: IterState<usize>, // Tracks the current index in ids
 }
 
 impl IdsIter {
-    pub fn new(mut ids: Vec<u128>) -> Self {
+    pub fn new(mut ids: Vec<u32>) -> Self {
         // Ensure the IDs are sorted and unique
         ids.sort_unstable();
         ids.dedup();
@@ -37,9 +37,9 @@ impl IdsIter {
 }
 
 impl InvertedIndexIter for IdsIter {
-    /// Advances the iterator and returns the next document ID, or None if exhausted.
+    /// Advances the iterator and returns the next point ID, or None if exhausted.
     ///
-    /// Updates the current_doc_id to the next value, or None if at the end.
+    /// Updates the current_point_id to the next value, or None if at the end.
     ///
     /// # Example
     /// ```
@@ -50,13 +50,13 @@ impl InvertedIndexIter for IdsIter {
     /// assert_eq!(iter.next(), Some(5));
     /// assert_eq!(iter.next(), None);
     /// ```
-    fn next(&mut self) -> Option<u128> {
+    fn next(&mut self) -> Option<u32> {
         match self.state {
             IterState::NotStarted => {
                 match self.ids.first() {
-                    Some(&first_doc_id) => {
+                    Some(&first_point_id) => {
                         self.state = IterState::At(0);
-                        Some(first_doc_id)
+                        Some(first_point_id)
                     }
                     None => {
                         // No IDs to iterate -> exhausted
@@ -69,9 +69,9 @@ impl InvertedIndexIter for IdsIter {
                 if index + 1 < self.ids.len() {
                     // Move to the next ID
                     let next_index = index + 1;
-                    let doc_id = self.ids[next_index];
+                    let point_id = self.ids[next_index];
                     self.state = IterState::At(next_index);
-                    Some(doc_id)
+                    Some(point_id)
                 } else {
                     // Reached the end -> exhausted
                     self.state = IterState::Exhausted;
@@ -82,27 +82,27 @@ impl InvertedIndexIter for IdsIter {
         }
     }
 
-    /// Advances the iterator to the first document ID that is greater than or equal to `doc_id`.
+    /// Advances the iterator to the first point ID that is greater than or equal to `point_id`.
     ///
-    /// Updates current_doc_id to the found value, or None if past the end.
+    /// Updates current_point_id to the found value, or None if past the end.
     ///
     /// # Example
     /// ```
     /// use index::query::iters::{ids_iter::IdsIter, InvertedIndexIter};
     /// let mut iter = IdsIter::new(vec![1, 3, 5]);
     /// iter.skip_to(4);
-    /// assert_eq!(iter.doc_id(), Some(5));
+    /// assert_eq!(iter.point_id(), Some(5));
     /// iter.skip_to(10);
-    /// assert_eq!(iter.doc_id(), None);
+    /// assert_eq!(iter.point_id(), None);
     /// ```
-    fn skip_to(&mut self, doc_id: u128) {
+    fn skip_to(&mut self, point_id: u32) {
         let start = match self.state {
             IterState::NotStarted => 0,
             IterState::At(index) => index,
             IterState::Exhausted => return,
         };
 
-        match self.ids[start..].binary_search(&doc_id) {
+        match self.ids[start..].binary_search(&point_id) {
             Ok(i) => {
                 let idx = start + i;
                 self.state = IterState::At(idx);
@@ -118,8 +118,8 @@ impl InvertedIndexIter for IdsIter {
         }
     }
 
-    /// Returns the current document ID, or None if the iterator is exhausted or not started.
-    fn doc_id(&self) -> Option<u128> {
+    /// Returns the current point ID, or None if the iterator is exhausted or not started.
+    fn point_id(&self) -> Option<u32> {
         match self.state {
             IterState::At(index) => Some(self.ids[index]),
             _ => None,
@@ -138,22 +138,22 @@ mod tests {
         let mut iter = IdsIter::new(ids);
 
         assert_eq!(iter.next(), Some(1));
-        assert_eq!(iter.doc_id(), Some(1));
+        assert_eq!(iter.point_id(), Some(1));
 
         assert_eq!(iter.next(), Some(3));
-        assert_eq!(iter.doc_id(), Some(3));
+        assert_eq!(iter.point_id(), Some(3));
 
         assert_eq!(iter.next(), Some(5));
-        assert_eq!(iter.doc_id(), Some(5));
+        assert_eq!(iter.point_id(), Some(5));
 
         assert_eq!(iter.next(), Some(7));
-        assert_eq!(iter.doc_id(), Some(7));
+        assert_eq!(iter.point_id(), Some(7));
 
         assert_eq!(iter.next(), Some(9));
-        assert_eq!(iter.doc_id(), Some(9));
+        assert_eq!(iter.point_id(), Some(9));
 
         assert_eq!(iter.next(), None);
-        assert_eq!(iter.doc_id(), None);
+        assert_eq!(iter.point_id(), None);
     }
 
     #[test]
@@ -163,17 +163,17 @@ mod tests {
 
         // Skip to 5
         iter.skip_to(5);
-        assert_eq!(iter.doc_id(), Some(5));
+        assert_eq!(iter.point_id(), Some(5));
         assert_eq!(iter.next(), Some(7));
 
         // Skip to 8 (should land on 9)
         iter.skip_to(8);
-        assert_eq!(iter.doc_id(), Some(9));
+        assert_eq!(iter.point_id(), Some(9));
         assert_eq!(iter.next(), None);
 
         // Skip to 10 (should be None)
         iter.skip_to(10);
-        assert_eq!(iter.doc_id(), None);
+        assert_eq!(iter.point_id(), None);
         assert_eq!(iter.next(), None);
     }
 
@@ -184,7 +184,7 @@ mod tests {
 
         // Skip to exact match
         iter.skip_to(3);
-        assert_eq!(iter.doc_id(), Some(3));
+        assert_eq!(iter.point_id(), Some(3));
         assert_eq!(iter.next(), Some(5));
     }
 
@@ -194,10 +194,10 @@ mod tests {
         let mut iter = IdsIter::new(ids);
 
         assert_eq!(iter.next(), None);
-        assert_eq!(iter.doc_id(), None);
+        assert_eq!(iter.point_id(), None);
 
         iter.skip_to(5);
-        assert_eq!(iter.doc_id(), None);
+        assert_eq!(iter.point_id(), None);
     }
 
     #[test]
@@ -207,26 +207,26 @@ mod tests {
 
         // Skip to value before first ID
         iter.skip_to(2);
-        assert_eq!(iter.doc_id(), Some(5));
+        assert_eq!(iter.point_id(), Some(5));
         assert_eq!(iter.next(), Some(7));
     }
 
     #[test]
     fn test_ids_iter_large_values() {
-        let ids = vec![u128::MAX - 10, u128::MAX - 5, u128::MAX];
+        let ids = vec![u32::MAX - 10, u32::MAX - 5, u32::MAX];
         let mut iter = IdsIter::new(ids);
 
-        assert_eq!(iter.next(), Some(u128::MAX - 10));
-        assert_eq!(iter.doc_id(), Some(u128::MAX - 10));
+        assert_eq!(iter.next(), Some(u32::MAX - 10));
+        assert_eq!(iter.point_id(), Some(u32::MAX - 10));
 
-        assert_eq!(iter.next(), Some(u128::MAX - 5));
-        assert_eq!(iter.doc_id(), Some(u128::MAX - 5));
+        assert_eq!(iter.next(), Some(u32::MAX - 5));
+        assert_eq!(iter.point_id(), Some(u32::MAX - 5));
 
-        assert_eq!(iter.next(), Some(u128::MAX));
-        assert_eq!(iter.doc_id(), Some(u128::MAX));
+        assert_eq!(iter.next(), Some(u32::MAX));
+        assert_eq!(iter.point_id(), Some(u32::MAX));
 
         assert_eq!(iter.next(), None);
-        assert_eq!(iter.doc_id(), None);
+        assert_eq!(iter.point_id(), None);
     }
 
     #[test]
