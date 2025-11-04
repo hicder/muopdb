@@ -2,7 +2,7 @@ use crate::query::iters::{InvertedIndexIter, Iter, IterState};
 
 /// `AndIter` yields the intersection of all its child iterators.
 ///
-/// It only yields document IDs that are present in **every** child iterator.
+/// It only yields point IDs that are present in **every** child iterator.
 ///
 /// - If any child iterator is exhausted, the AND iterator is exhausted.
 /// - Advances all children in lockstep to find common IDs.
@@ -16,15 +16,15 @@ use crate::query::iters::{InvertedIndexIter, Iter, IterState};
 /// let c = Iter::Ids(IdsIter::new(vec![3, 4, 5]));
 /// let mut and_iter = AndIter::new(vec![a, b, c]);
 /// let mut results = Vec::new();
-/// while let Some(doc) = and_iter.next() {
-///     results.push(doc);
+/// while let Some(point) = and_iter.next() {
+///     results.push(point);
 /// }
 /// assert_eq!(results, vec![3, 5]);
 /// ```
 /// Used to answer queries like "find documents that match all these conditions".
 pub struct AndIter {
     iters: Vec<Iter>,
-    state: IterState<u128>, // Current doc_id
+    state: IterState<u32>, // Current point_id
 }
 
 impl AndIter {
@@ -42,30 +42,30 @@ impl AndIter {
         }
     }
 
-    /// Align all children to the same doc_id, returning that doc_id if successful.
+    /// Align all children to the same point_id, returning that point_id if successful.
     /// If any child is exhausted during alignment, returns None.
-    fn align(&mut self) -> Option<u128> {
+    fn align(&mut self) -> Option<u32> {
         loop {
-            let mut max_doc = None;
+            let mut max_point = None;
 
-            // Gather doc_ids, fail fast if any exhausted
+            // Gather point_ids, fail fast if any exhausted
             for child in self.iters.iter() {
-                match child.doc_id() {
-                    Some(doc) => {
-                        max_doc = Some(max_doc.map_or(doc, |m: u128| m.max(doc)));
+                match child.point_id() {
+                    Some(point) => {
+                        max_point = Some(max_point.map_or(point, |m: u32| m.max(point)));
                     }
                     None => return None, // uninitialized or exhausted -> no intersection
                 }
             }
 
-            let target = max_doc?;
+            let target = max_point?;
 
             // Try to align all children to `target`
             let mut all_equal = true;
             for child in self.iters.iter_mut() {
                 child.skip_to(target);
-                match child.doc_id() {
-                    Some(doc) if doc == target => {}
+                match child.point_id() {
+                    Some(point) if point == target => {}
                     Some(_) => {
                         all_equal = false;
                     }
@@ -82,8 +82,8 @@ impl AndIter {
 }
 
 impl InvertedIndexIter for AndIter {
-    /// Advances the iterator and returns the next document ID, or None if exhausted.
-    fn next(&mut self) -> Option<u128> {
+    /// Advances the iterator and returns the next point ID, or None if exhausted.
+    fn next(&mut self) -> Option<u32> {
         match self.state {
             IterState::NotStarted => {
                 // Initialize children
@@ -94,9 +94,9 @@ impl InvertedIndexIter for AndIter {
                     }
                 }
                 match self.align() {
-                    Some(doc) => {
-                        self.state = IterState::At(doc);
-                        Some(doc)
+                    Some(point) => {
+                        self.state = IterState::At(point);
+                        Some(point)
                     }
                     None => {
                         self.state = IterState::Exhausted;
@@ -111,9 +111,9 @@ impl InvertedIndexIter for AndIter {
                     return None;
                 }
                 match self.align() {
-                    Some(doc) => {
-                        self.state = IterState::At(doc);
-                        Some(doc)
+                    Some(point) => {
+                        self.state = IterState::At(point);
+                        Some(point)
                     }
                     None => {
                         self.state = IterState::Exhausted;
@@ -125,31 +125,31 @@ impl InvertedIndexIter for AndIter {
         }
     }
 
-    /// Advances all child iterators to at least the target document ID, setting the state to the new aligned doc ID if found, or exhausted if not.
+    /// Advances all child iterators to at least the target point ID, setting the state to the new aligned point ID if found, or exhausted if not.
     /// If any child is exhausted, the AND iterator becomes exhausted.
-    fn skip_to(&mut self, target: u128) {
+    fn skip_to(&mut self, target: u32) {
         match self.state {
             IterState::Exhausted => {}
             _ => {
                 for child in self.iters.iter_mut() {
                     child.skip_to(target);
-                    if child.doc_id().is_none() {
+                    if child.point_id().is_none() {
                         self.state = IterState::Exhausted;
                         return;
                     }
                 }
                 match self.align() {
-                    Some(doc) => self.state = IterState::At(doc),
+                    Some(point) => self.state = IterState::At(point),
                     None => self.state = IterState::Exhausted,
                 }
             }
         }
     }
 
-    /// Returns the current document ID, or None if the iterator is exhausted or not started.
-    fn doc_id(&self) -> Option<u128> {
+    /// Returns the current point ID, or None if the iterator is exhausted or not started.
+    fn point_id(&self) -> Option<u32> {
         match self.state {
-            IterState::At(doc) => Some(doc),
+            IterState::At(point) => Some(point),
             _ => None,
         }
     }
@@ -159,7 +159,7 @@ impl InvertedIndexIter for AndIter {
 mod tests {
     use super::*;
 
-    fn ids(ids: &[u128]) -> Iter {
+    fn ids(ids: &[u32]) -> Iter {
         Iter::Ids(crate::query::iters::ids_iter::IdsIter::new(ids.to_vec()))
     }
 
@@ -171,8 +171,8 @@ mod tests {
         let c = ids(&[2, 3, 5, 7, 9]);
         let mut iter = AndIter::new(vec![a, b, c]);
         let mut results = Vec::new();
-        while let Some(doc) = iter.next() {
-            results.push(doc);
+        while let Some(point) = iter.next() {
+            results.push(point);
         }
         assert_eq!(results, vec![3, 5, 7]);
     }
@@ -218,8 +218,8 @@ mod tests {
         let b = ids(&[2, 4]);
         let mut iter = AndIter::new(vec![a, b]);
         let mut results = Vec::new();
-        while let Some(doc) = iter.next() {
-            results.push(doc);
+        while let Some(point) = iter.next() {
+            results.push(point);
         }
         assert_eq!(results, vec![2, 4]);
     }

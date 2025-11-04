@@ -27,7 +27,7 @@ pub enum Iter {
 }
 
 impl InvertedIndexIter for Iter {
-    fn next(&mut self) -> Option<u128> {
+    fn next(&mut self) -> Option<u32> {
         match self {
             Iter::And(iter) => iter.next(),
             Iter::Or(iter) => iter.next(),
@@ -36,31 +36,31 @@ impl InvertedIndexIter for Iter {
         }
     }
 
-    fn skip_to(&mut self, doc_id: u128) {
+    fn skip_to(&mut self, point_id: u32) {
         match self {
-            Iter::And(iter) => iter.skip_to(doc_id),
-            Iter::Or(iter) => iter.skip_to(doc_id),
-            Iter::Ids(iter) => iter.skip_to(doc_id),
-            Iter::Term(iter) => iter.skip_to(doc_id),
+            Iter::And(iter) => iter.skip_to(point_id),
+            Iter::Or(iter) => iter.skip_to(point_id),
+            Iter::Ids(iter) => iter.skip_to(point_id),
+            Iter::Term(iter) => iter.skip_to(point_id),
         }
     }
 
-    fn doc_id(&self) -> Option<u128> {
+    fn point_id(&self) -> Option<u32> {
         match self {
-            Iter::And(iter) => iter.doc_id(),
-            Iter::Or(iter) => iter.doc_id(),
-            Iter::Ids(iter) => iter.doc_id(),
-            Iter::Term(iter) => iter.doc_id(),
+            Iter::And(iter) => iter.point_id(),
+            Iter::Or(iter) => iter.point_id(),
+            Iter::Ids(iter) => iter.point_id(),
+            Iter::Term(iter) => iter.point_id(),
         }
     }
 }
 
 pub trait InvertedIndexIter {
-    fn next(&mut self) -> Option<u128>;
+    fn next(&mut self) -> Option<u32>;
 
-    fn skip_to(&mut self, doc_id: u128);
+    fn skip_to(&mut self, point_id: u32);
 
-    fn doc_id(&self) -> Option<u128>;
+    fn point_id(&self) -> Option<u32>;
 }
 
 #[cfg(test)]
@@ -70,7 +70,7 @@ mod integration_tests {
     use crate::query::iters::ids_iter::IdsIter;
     use crate::query::iters::or_iter::OrIter;
 
-    fn ids(ids: &[u128]) -> Iter {
+    fn ids(ids: &[u32]) -> Iter {
         Iter::Ids(IdsIter::new(ids.to_vec()))
     }
 
@@ -85,8 +85,8 @@ mod integration_tests {
         let and = Iter::And(AndIter::new(vec![a, b]));
         let mut iter = OrIter::new(vec![and, c]);
         let mut results = Vec::new();
-        while let Some(doc) = iter.next() {
-            results.push(doc);
+        while let Some(point) = iter.next() {
+            results.push(point);
         }
         assert_eq!(results, vec![3, 4, 5, 6, 7, 8]);
     }
@@ -103,8 +103,8 @@ mod integration_tests {
         let and = AndIter::new(vec![or, c]);
         let mut iter = and;
         let mut results = Vec::new();
-        while let Some(doc) = iter.next() {
-            results.push(doc);
+        while let Some(point) = iter.next() {
+            results.push(point);
         }
         assert_eq!(results, vec![4, 5, 6, 7]);
     }
@@ -119,8 +119,8 @@ mod integration_tests {
         let right = Iter::Or(OrIter::new(vec![ids(&[2, 3, 5]), ids(&[3, 5, 6])]));
         let mut iter = AndIter::new(vec![left, right]);
         let mut results = Vec::new();
-        while let Some(doc) = iter.next() {
-            results.push(doc);
+        while let Some(point) = iter.next() {
+            results.push(point);
         }
         assert_eq!(results, vec![2, 3]);
     }
@@ -135,8 +135,8 @@ mod integration_tests {
         let right = Iter::And(AndIter::new(vec![ids(&[2, 3, 5]), ids(&[3, 5, 6])]));
         let mut iter = OrIter::new(vec![left, right]);
         let mut results = Vec::new();
-        while let Some(doc) = iter.next() {
-            results.push(doc);
+        while let Some(point) = iter.next() {
+            results.push(point);
         }
         assert_eq!(results, vec![2, 3, 5]);
     }
@@ -154,8 +154,8 @@ mod integration_tests {
         let right_or = Iter::Or(OrIter::new(vec![ids(&[2, 3, 5]), ids(&[3, 5, 6])]));
         let mut iter = AndIter::new(vec![left_or, right_or]);
         let mut results = Vec::new();
-        while let Some(doc) = iter.next() {
-            results.push(doc);
+        while let Some(point) = iter.next() {
+            results.push(point);
         }
         assert_eq!(results, vec![2, 3, 5, 6]);
     }

@@ -105,7 +105,7 @@ message NotContainsFilter {
   string value = 2;
 }
 message IdsFilter {
-  repeated Id ids = 1;
+  repeated uint32 ids = 1;
 }
 
 message SearchRequest {
