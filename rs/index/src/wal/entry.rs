@@ -22,7 +22,7 @@ pub struct WalEntryDecoded<'a> {
 }
 
 impl WalEntry {
-    pub fn decode(&self, num_features: usize) -> WalEntryDecoded {
+    pub fn decode(&self, num_features: usize) -> WalEntryDecoded<'_> {
         let length = self.buffer.len() - 1;
         let mut offset = 0;
         let num_docs =

@@ -513,7 +513,7 @@ mod tests {
             self.current_index = index;
         }
 
-        fn next(&mut self) -> Row {
+        fn next(&mut self) -> Row<'_> {
             let row = Row {
                 id: self.current_index as u64,
                 data: &self.data[self.current_index],
