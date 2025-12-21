@@ -22,7 +22,7 @@ use parking_lot::Mutex;
 ///
 /// # Architecture
 ///
-/// ```
+/// ```text
 /// ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 /// │  Tokio Task     │────▶│  Submission      │────▶│  io_uring       │
 /// │  (submit_read)  │     │  Thread          │     │  (kernel)       │
