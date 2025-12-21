@@ -129,9 +129,6 @@ impl BlockCache {
             None
         };
 
-        #[cfg(not(target_os = "linux"))]
-        let engine = None;
-
         Self {
             config: config.clone(),
             file_descriptor_cache: DashMap::new(),

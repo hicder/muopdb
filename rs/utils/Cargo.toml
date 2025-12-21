@@ -28,12 +28,14 @@ uuid.workspace = true
 xxhash-rust.workspace = true
 dashmap.workspace = true
 futures.workspace = true
-io-uring.workspace = true
 moka.workspace = true
 nix.workspace = true
-tokio-uring.workspace = true
 crossbeam.workspace = true
 parking_lot = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+io-uring = "0.6"
+tokio-uring = "0.5"
 
 [[bench]]
 name = "l2"
