@@ -9,6 +9,12 @@ use async_trait::async_trait;
 
 pub mod standard_file;
 
+#[cfg(target_os = "linux")]
+pub mod uring_engine;
+
+#[cfg(target_os = "linux")]
+pub mod uring_file;
+
 #[async_trait]
 /// Trait for asynchronous file reading operations.
 ///

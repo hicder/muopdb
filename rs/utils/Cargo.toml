@@ -1,7 +1,7 @@
 [package]
 name = "utils"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [lints]
 workspace = true
@@ -27,7 +27,13 @@ tempdir.workspace = true
 uuid.workspace = true
 xxhash-rust.workspace = true
 dashmap.workspace = true
-moka = { workspace = true, features = ["future"] }
+futures.workspace = true
+io-uring.workspace = true
+moka.workspace = true
+nix.workspace = true
+tokio-uring.workspace = true
+crossbeam.workspace = true
+parking_lot = { workspace = true }
 
 [[bench]]
 name = "l2"
