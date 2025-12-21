@@ -1,5 +1,4 @@
 use std::hash::Hash;
-use std::io::SeekFrom;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -8,10 +7,14 @@ use anyhow::{anyhow, bail, Result};
 use dashmap::DashMap;
 use moka::future::Cache;
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
+use crate::file_io::standard_file::StandardFile;
+use crate::file_io::FileIO;
+
+/// A unique identifier for an opened file in the block cache.
 pub type FileId = u64;
 
+/// Configuration for the block cache.
 #[derive(Clone, Debug)]
 pub struct BlockCacheConfig {
     pub max_open_files: u64,
@@ -30,6 +33,13 @@ impl Default for BlockCacheConfig {
 }
 
 impl BlockCacheConfig {
+    /// Creates a new BlockCacheConfig with the specified parameters.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_open_files` - Maximum number of files that can be open simultaneously.
+    /// * `block_cache_capacity_bytes` - Maximum memory capacity for cached blocks in bytes.
+    /// * `block_size` - Size of each block in bytes. Must be greater than 0.
     pub fn new(max_open_files: u64, block_cache_capacity_bytes: u64, block_size: usize) -> Self {
         if block_size == 0 {
             panic!("block_size must be greater than 0");
@@ -42,11 +52,13 @@ impl BlockCacheConfig {
     }
 }
 
+/// A wrapper around an opened file handle.
 #[derive(Clone)]
 struct FileEntry {
-    file: Arc<File>,
+    file: Arc<dyn FileIO + Send + Sync>,
 }
 
+/// A key representing a specific block in a file, used for caching.
 #[derive(Clone, Hash, Eq, PartialEq)]
 struct BlockKey {
     file_id: FileId,
@@ -62,6 +74,22 @@ impl BlockKey {
     }
 }
 
+/// A block-based file cache that provides caching of file blocks in memory.
+///
+/// The cache maintains two layers:
+/// 1. A file descriptor cache using DashMap for concurrent access
+/// 2. A block cache using Moka for cached block data
+///
+/// # Example
+///
+/// ```ignore
+/// let config = BlockCacheConfig::default();
+/// let mut cache = BlockCache::new(config);
+///
+/// let file_id = cache.open_file("path/to/file").await?;
+/// let data = cache.read(file_id, 0, 4096).await?;
+/// cache.close_file(file_id);
+/// ```
 pub struct BlockCache {
     config: BlockCacheConfig,
     file_descriptor_cache: DashMap<FileId, FileEntry>,
@@ -70,6 +98,15 @@ pub struct BlockCache {
 }
 
 impl BlockCache {
+    /// Creates a new BlockCache with the given configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - The block cache configuration.
+    ///
+    /// # Returns
+    ///
+    /// A new BlockCache instance.
     pub fn new(config: BlockCacheConfig) -> Self {
         Self {
             config: config.clone(),
@@ -82,6 +119,17 @@ impl BlockCache {
         }
     }
 
+    /// Opens a file and returns a unique file identifier.
+    ///
+    /// The file is opened asynchronously and added to the file descriptor cache.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the file to open.
+    ///
+    /// # Returns
+    ///
+    /// A Result containing the file ID, or an error if the file cannot be opened.
     pub async fn open_file(&mut self, path: &str) -> Result<FileId> {
         let file_id = self.file_id_generator.fetch_add(1, Ordering::SeqCst);
         let path_buf = PathBuf::from(path);
@@ -93,17 +141,38 @@ impl BlockCache {
         self.file_descriptor_cache.insert(
             file_id,
             FileEntry {
-                file: Arc::new(file),
+                file: Arc::new(StandardFile::new(file)),
             },
         );
 
         Ok(file_id)
     }
 
+    /// Closes a file and removes it from the file descriptor cache.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_id` - The file identifier returned from `open_file`.
     pub fn close_file(&mut self, file_id: FileId) {
         self.file_descriptor_cache.remove(&file_id);
     }
 
+    /// Reads data from a file at the specified offset and length.
+    ///
+    /// The read is performed block-wise. If the requested data spans multiple blocks,
+    /// all relevant blocks are read and cached. The method handles unaligned offsets
+    /// by reading entire blocks and extracting the requested portion.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_id` - The file identifier returned from `open_file`.
+    /// * `offset` - The byte offset within the file to start reading from.
+    /// * `length` - The number of bytes to read.
+    ///
+    /// # Returns
+    ///
+    /// A Result containing the read data as a vector of bytes, or an error if the
+    /// read fails (e.g., invalid file ID, offset beyond file size, zero length).
     pub async fn read(&mut self, file_id: FileId, offset: u64, length: u64) -> Result<Vec<u8>> {
         if length == 0 {
             bail!("length must be greater than 0");
@@ -119,8 +188,8 @@ impl BlockCache {
             }
         };
 
-        let file = file_entry.file.clone();
-        let file_metadata = file
+        let file_metadata = file_entry
+            .file
             .metadata()
             .await
             .map_err(|e| anyhow!("Failed to get file metadata: {}", e))?;
@@ -171,30 +240,25 @@ impl BlockCache {
     }
 
     async fn read_block_from_disk(
-        file: &Arc<File>,
+        file: &Arc<dyn FileIO + Send + Sync>,
         offset: u64,
         block_size: usize,
     ) -> Result<Vec<u8>> {
-        let mut file_guard = file.try_clone().await?;
-        file_guard
-            .seek(SeekFrom::Start(offset))
-            .await
-            .map_err(|e| anyhow!("Failed to seek to block offset {}: {}", offset, e))?;
-
-        let mut buf = vec![0u8; block_size];
-        let bytes_read = file_guard
-            .read(&mut buf)
-            .await
-            .map_err(|e| anyhow!("Failed to read block at {}: {}", offset, e))?;
-
-        buf.truncate(bytes_read);
-        Ok(buf)
+        file.read(offset, block_size as u64).await
     }
 
+    /// Returns the number of currently open files in the cache.
     pub fn get_file_count(&self) -> usize {
         self.file_descriptor_cache.len()
     }
 
+    /// Returns the total number of blocks currently cached.
+    ///
+    /// This method runs any pending tasks in the cache first to get an accurate count.
+    ///
+    /// # Returns
+    ///
+    /// The total size (weighted) of all cached blocks.
     pub async fn get_block_count(&self) -> u64 {
         self.block_cache.run_pending_tasks().await;
         self.block_cache.weighted_size()

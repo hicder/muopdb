@@ -6,6 +6,7 @@ use std::simd::{LaneCount, Simd, SupportedLaneCount};
 pub mod block_cache;
 pub mod bloom_filter;
 pub mod distance;
+pub mod file_io;
 pub mod io;
 pub mod kmeans_builder;
 pub mod mem;
