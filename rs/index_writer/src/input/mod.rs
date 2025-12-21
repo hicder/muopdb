@@ -10,7 +10,7 @@ pub trait Input {
     fn has_next(&self) -> bool;
 
     // Return the next row of data
-    fn next(&mut self) -> Row;
+    fn next(&mut self) -> Row<'_>;
 
     // Reset the state of the input to the beginning
     // This is helpful when we want to do multiple passes over the same input

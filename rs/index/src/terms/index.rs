@@ -139,7 +139,7 @@ impl TermIndex {
     pub fn get_posting_list_iterator(
         &self,
         term_id: u64,
-    ) -> Result<EliasFanoDecodingIterator<u32>> {
+    ) -> Result<EliasFanoDecodingIterator<'_, u32>> {
         let offset_len = self.get_term_offset_len(term_id);
         let offset_len = match offset_len {
             Some(ol) => ol,

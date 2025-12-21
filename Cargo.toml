@@ -28,6 +28,7 @@ anyhow = "1.0.90"
 approx = "0.5"
 atomic_refcell = "0.1.13"
 bit-vec = "0.8.0"
+bitvec = "1.0"
 byteorder = "1.5.0"
 clap = { version = "4.1.4", features = ["derive"] }
 compression = { path = './rs/compression' }
@@ -46,6 +47,7 @@ lock_api = "0.4.12"
 log = "0.4.22"
 memmap2 = "0.9.5"
 metrics = { path = './rs/metrics' }
+moka = { version = "0.12", features = ["future"] }
 ndarray = "0.16.1"
 ndarray-linalg = { version = "0.17.0", features = ["openblas-system"] }
 ndarray-rand = "0.15.0"
