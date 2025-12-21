@@ -30,4 +30,7 @@ pub trait FileIO {
     /// # Returns
     /// Metadata information about the file (size, modification time, etc.).
     async fn metadata(&self) -> Result<Metadata>;
+
+    /// Returns the length of the file in bytes.
+    async fn file_length(&self) -> Result<u64>;
 }

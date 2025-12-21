@@ -141,7 +141,7 @@ impl BlockCache {
         self.file_descriptor_cache.insert(
             file_id,
             FileEntry {
-                file: Arc::new(StandardFile::new(file)),
+                file: Arc::new(StandardFile::new(file).await),
             },
         );
 
@@ -188,13 +188,7 @@ impl BlockCache {
             }
         };
 
-        let file_metadata = file_entry
-            .file
-            .metadata()
-            .await
-            .map_err(|e| anyhow!("Failed to get file metadata: {}", e))?;
-        let file_size = file_metadata.len();
-
+        let file_size = file_entry.file.file_length().await?;
         if offset >= file_size {
             bail!("offset {} is beyond file size {}", offset, file_size);
         }

@@ -13,7 +13,6 @@ bitvec.workspace = true
 criterion.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util"] }
 env_logger.workspace = true
-hdf5.workspace = true
 integer-encoding.workspace = true
 kmeans.workspace = true
 log.workspace = true
