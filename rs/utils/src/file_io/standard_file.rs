@@ -18,6 +18,8 @@ use crate::file_io::FileIO;
 pub struct StandardFile {
     /// The underlying tokio file with read lock protection.
     file: RwLock<File>,
+    /// Length of the file in bytes.
+    file_length: u64,
 }
 
 impl StandardFile {
@@ -28,9 +30,11 @@ impl StandardFile {
     ///
     /// # Returns
     /// A new `StandardFile` instance wrapped in an `RwLock`.
-    pub fn new(file: File) -> Self {
+    pub async fn new(file: File) -> Self {
+        let metadata = file.metadata().await.unwrap();
         Self {
             file: RwLock::new(file),
+            file_length: metadata.len(),
         }
     }
 }
@@ -64,5 +68,10 @@ impl FileIO for StandardFile {
     async fn metadata(&self) -> Result<Metadata> {
         let file = self.file.read().await;
         Ok(file.metadata().await?)
+    }
+
+    /// Returns the length of the file in bytes.
+    async fn file_length(&self) -> Result<u64> {
+        Ok(self.file_length)
     }
 }

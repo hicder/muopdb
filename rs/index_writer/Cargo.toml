@@ -21,7 +21,6 @@ compression.workspace = true
 config.workspace = true
 env_logger.workspace = true
 log.workspace = true
-hdf5.workspace = true
 index.workspace = true
 ndarray.workspace = true
 quantization.workspace = true

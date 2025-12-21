@@ -8,7 +8,6 @@ workspace = true
 
 [dependencies]
 tonic.workspace = true
-hdf5.workspace = true
 log.workspace = true
 env_logger.workspace = true
 anyhow.workspace = true
