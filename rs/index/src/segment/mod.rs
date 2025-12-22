@@ -11,6 +11,8 @@ use parking_lot::RwLock;
 use pending_segment::PendingSegment;
 use quantization::quantization::Quantizer;
 
+use crate::multi_terms::index::MultiTermIndex;
+use crate::query::planner::Planner;
 use crate::spann::iter::SpannIter;
 use crate::utils::SearchResult;
 
@@ -107,18 +109,28 @@ impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
             BoxedImmutableSegment::MockedNoQuantizationSegment(_mocked_segment) => false,
         }
     }
+
+    pub fn get_multi_term_index(&self) -> Option<Arc<MultiTermIndex>> {
+        match self {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                immutable_segment.read().get_multi_term_index()
+            }
+            _ => None,
+        }
+    }
 }
 
 #[allow(clippy::await_holding_lock)]
 impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
-    pub fn search_with_id(
+    pub fn search_with_id<'a>(
         s: BoxedImmutableSegment<Q>,
         id: u128,
         query: Vec<f32>,
         k: usize,
         ef_construction: u32,
         record_pages: bool,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<SearchResult>> + Send>>
+        planner: Option<Arc<Planner>>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<SearchResult>> + Send + 'a>>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
     {
@@ -127,7 +139,14 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
                 BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                     immutable_segment
                         .read()
-                        .search_for_user(id, query.clone(), k, ef_construction, record_pages)
+                        .search_for_user(
+                            id,
+                            query.clone(),
+                            k,
+                            ef_construction,
+                            record_pages,
+                            planner,
+                        )
                         .await
                 }
                 BoxedImmutableSegment::PendingSegment(pending_segment) => {

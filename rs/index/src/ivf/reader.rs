@@ -345,11 +345,11 @@ mod tests {
         for _ in 0..1000 {
             let query = generate_random_vector(num_features);
             let results_ref = index_ref
-                .search(&query, k, num_probes, false)
+                .search(&query, k, num_probes, false, None)
                 .await
                 .expect("IVF search ref should return a result");
             let results = index
-                .search(&query, k, num_probes, false)
+                .search(&query, k, num_probes, false, None)
                 .await
                 .expect("IVF search should return a result");
             assert_eq!(results_ref.id_with_scores, results.id_with_scores);

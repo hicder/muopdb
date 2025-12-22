@@ -68,14 +68,14 @@ mod tests {
             .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding, 4)?;
 
         let result = multi_spann_index
-            .search_for_user(0, vec![1.0, 2.0, 3.0, 4.0], 3, 100, false)
+            .search_for_user(0, vec![1.0, 2.0, 3.0, 4.0], 3, 100, false, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
         assert_eq!(result.id_with_scores[0].doc_id, 1);
 
         let result = multi_spann_index
-            .search_for_user(1, vec![1.0, 2.0, 3.0, 4.0], 3, 100, false)
+            .search_for_user(1, vec![1.0, 2.0, 3.0, 4.0], 3, 100, false, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
@@ -110,14 +110,14 @@ mod tests {
             .read::<ProductQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding, 4)?;
 
         let result = multi_spann_index
-            .search_for_user(0, vec![1.0, 2.0, 3.0, 4.0], 3, 100, false)
+            .search_for_user(0, vec![1.0, 2.0, 3.0, 4.0], 3, 100, false, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
         assert_eq!(result.id_with_scores[0].doc_id, 1);
 
         let result = multi_spann_index
-            .search_for_user(1, vec![1.0, 2.0, 3.0, 4.0], 3, 100, false)
+            .search_for_user(1, vec![1.0, 2.0, 3.0, 4.0], 3, 100, false, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);

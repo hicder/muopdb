@@ -11,6 +11,7 @@ use quantization::quantization::Quantizer;
 
 use super::user_index_info::HashConfig;
 use crate::ivf::files::invalidated_ids::{InvalidatedIdsStorage, InvalidatedUserDocId};
+use crate::query::planner::Planner;
 use crate::spann::index::Spann;
 use crate::spann::iter::SpannIter;
 use crate::spann::reader::SpannReader;
@@ -183,9 +184,14 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         k: usize,
         ef_construction: u32,
         record_pages: bool,
+        planner: Option<Arc<Planner>>,
     ) -> Option<SearchResult> {
         match self.get_or_create_index(user_id) {
-            Ok(index) => index.search(query, k, ef_construction, record_pages).await,
+            Ok(index) => {
+                index
+                    .search(query, k, ef_construction, record_pages, planner)
+                    .await
+            }
             Err(_) => None,
         }
     }
@@ -214,9 +220,11 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
 mod tests {
     use std::collections::HashMap;
     use std::fs;
+    use std::sync::Arc;
 
     use config::collection::CollectionConfig;
     use config::enums::IntSeqEncodingType;
+    use proto::muopdb::{ContainsFilter, DocumentFilter};
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
 
@@ -224,6 +232,10 @@ mod tests {
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::reader::MultiSpannReader;
     use crate::multi_spann::writer::MultiSpannWriter;
+    use crate::multi_terms::builder::MultiTermBuilder;
+    use crate::multi_terms::index::MultiTermIndex;
+    use crate::multi_terms::writer::MultiTermWriter;
+    use crate::query::planner::Planner;
 
     #[tokio::test]
     async fn test_multi_spann_search() {
@@ -271,7 +283,7 @@ mod tests {
         let num_probes = 2;
 
         let results = multi_spann_index
-            .search_for_user(0, query, k, num_probes, false)
+            .search_for_user(0, query, k, num_probes, false, None)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -379,7 +391,7 @@ mod tests {
             .expect("Failed to query invalidation"));
 
         let results = multi_spann_index
-            .search_for_user(0, query, k, num_probes, false)
+            .search_for_user(0, query, k, num_probes, false, None)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -453,7 +465,7 @@ mod tests {
         let num_probes = 2;
 
         let results = multi_spann_index
-            .search_for_user(0, query, k, num_probes, false)
+            .search_for_user(0, query, k, num_probes, false, None)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -638,5 +650,179 @@ mod tests {
             user_id: 0,
             doc_id: 2_u128
         }));
+    }
+
+    #[tokio::test]
+    async fn test_multi_spann_search_with_where_document() {
+        let temp_dir = tempdir::TempDir::new("multi_spann_search_with_where_document_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let term_dir = format!("{}/terms", base_directory);
+        std::fs::create_dir_all(&term_dir).unwrap();
+
+        let num_features = 4;
+        let num_vectors = 10usize;
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        // spann_builder_config.reindex = false;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        let point_ids = (0..num_vectors)
+            .map(|i| {
+                multi_spann_builder
+                    .insert(0, i as u128, &[i as f32, i as f32, i as f32, i as f32])
+                    .unwrap()
+            })
+            .collect::<Vec<u32>>();
+
+        let multi_builder = MultiTermBuilder::new();
+        for (i, &point_id) in point_ids.iter().enumerate() {
+            if i % 2 == 0 {
+                multi_builder
+                    .add(0, point_id, format!("field:even"))
+                    .unwrap();
+            } else {
+                multi_builder
+                    .add(0, point_id, format!("field:odd"))
+                    .unwrap();
+            }
+        }
+
+        assert!(multi_spann_builder.build().is_ok());
+        assert!(multi_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let multi_term_writer = MultiTermWriter::new_with_segment_dir(base_directory.clone());
+        multi_term_writer.write(&multi_builder).unwrap();
+
+        let multi_term_index = MultiTermIndex::new(term_dir.clone()).unwrap();
+
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::PlainEncoding,
+                num_features,
+            )
+            .expect("Failed to read Multi-SPANN index");
+
+        let query = vec![4.4, 4.4, 4.4, 4.4];
+        let k = 10;
+        let num_probes = 5;
+
+        let contains_filter = ContainsFilter {
+            path: "field".to_string(),
+            value: "even".to_string(),
+        };
+        let document_filter = DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                contains_filter,
+            )),
+        };
+
+        let planner =
+            Arc::new(Planner::new(0, document_filter, Arc::new(multi_term_index)).unwrap());
+
+        let results = multi_spann_index
+            .search_for_user(0, query, k, num_probes, false, Some(planner))
+            .await
+            .expect("Failed to search with Multi-SPANN index");
+
+        for result in &results.id_with_scores {
+            assert_eq!(
+                result.doc_id % 2,
+                0,
+                "Expected even doc_id, got {}",
+                result.doc_id
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_multi_spann_search_with_empty_where_document_filter() {
+        let temp_dir = tempdir::TempDir::new("multi_spann_search_with_empty_where_document_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_features = 4;
+        let num_vectors = 10usize;
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        let mut point_ids = Vec::new();
+        for i in 0..num_vectors {
+            let point_id = multi_spann_builder
+                .insert(0, i as u128, &[i as f32, i as f32, i as f32, i as f32])
+                .unwrap();
+            point_ids.push(point_id);
+        }
+        assert!(multi_spann_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let term_dir = format!("{}/terms", base_directory);
+        std::fs::create_dir_all(&term_dir).unwrap();
+
+        let multi_builder = MultiTermBuilder::new();
+        for (i, &point_id) in point_ids.iter().enumerate() {
+            multi_builder
+                .add(0, point_id, format!("field:term{}", i))
+                .unwrap();
+        }
+        multi_builder.build().unwrap();
+
+        let multi_term_writer = MultiTermWriter::new_with_segment_dir(base_directory.clone());
+        multi_term_writer.write(&multi_builder).unwrap();
+
+        let multi_term_index = MultiTermIndex::new(term_dir).unwrap();
+
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::PlainEncoding,
+                num_features,
+            )
+            .expect("Failed to read Multi-SPANN index");
+
+        let query = vec![2.4, 2.4, 2.4, 2.4];
+        let k = 10;
+        let num_probes = 2;
+
+        let contains_filter = ContainsFilter {
+            path: "field".to_string(),
+            value: "nonexistent".to_string(),
+        };
+        let document_filter = DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                contains_filter,
+            )),
+        };
+
+        let planner =
+            Arc::new(Planner::new(0, document_filter, Arc::new(multi_term_index)).unwrap());
+
+        let results = multi_spann_index
+            .search_for_user(0, query, k, num_probes, false, Some(planner))
+            .await
+            .expect("Failed to search with Multi-SPANN index");
+
+        assert_eq!(results.id_with_scores.len(), 0);
     }
 }

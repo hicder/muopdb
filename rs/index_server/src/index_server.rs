@@ -169,6 +169,7 @@ impl IndexServer for IndexServerImpl {
         let record_metrics = req.record_metrics;
         let ef_construction = req.ef_construction;
         let user_ids = ids_to_u128s(&req.user_ids);
+        let where_document = req.where_document;
 
         let collection_opt = self
             .collection_manager
@@ -176,6 +177,11 @@ impl IndexServer for IndexServerImpl {
             .await
             .get_collection(&collection_name)
             .await;
+        let filter = if let Some(filter) = where_document {
+            Some(Arc::new(filter))
+        } else {
+            None
+        };
         if let Some(collection) = collection_opt {
             if let Ok(snapshot) = collection.get_snapshot() {
                 let result = SnapshotWithQuantizer::search_for_users(
@@ -185,6 +191,7 @@ impl IndexServer for IndexServerImpl {
                     k as usize,
                     ef_construction,
                     record_metrics,
+                    filter,
                 )
                 .await;
 

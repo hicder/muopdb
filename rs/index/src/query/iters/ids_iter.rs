@@ -26,13 +26,16 @@ pub struct IdsIter {
 
 impl IdsIter {
     pub fn new(mut ids: Vec<u32>) -> Self {
-        // Ensure the IDs are sorted and unique
         ids.sort_unstable();
         ids.dedup();
         Self {
             ids,
             state: IterState::NotStarted,
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ids.is_empty()
     }
 }
 

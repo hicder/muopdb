@@ -547,11 +547,15 @@ mod tests {
 
 #[cfg(target_os = "linux")]
 mod tests_io_uring {
+    #[allow(unused_imports)]
     use std::fs::File;
+    #[allow(unused_imports)]
     use std::io::Write;
 
+    #[allow(unused_imports)]
     use tempdir::TempDir;
 
+    #[allow(unused_imports)]
     use crate::block_cache::{BlockCache, BlockCacheConfig};
 
     #[tokio::test]

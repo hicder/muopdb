@@ -36,6 +36,24 @@ impl Planner {
         self.plan_filter(&self.query)
     }
 
+    pub fn plan_with_ids(&self, extra_ids: &[u32]) -> Result<Iter> {
+        let doc_filter_iter = self.plan_filter(&self.query)?;
+
+        if extra_ids.is_empty() {
+            return Ok(doc_filter_iter);
+        }
+
+        let mut ids = extra_ids.to_vec();
+        ids.sort_unstable();
+        ids.dedup();
+
+        let extra_ids_iter = Iter::Ids(IdsIter::new(ids));
+        Ok(Iter::And(AndIter::new(vec![
+            doc_filter_iter,
+            extra_ids_iter,
+        ])))
+    }
+
     fn plan_filter(&self, filter: &DocumentFilter) -> Result<Iter> {
         use proto::muopdb::document_filter::Filter;
 
@@ -278,6 +296,99 @@ mod tests {
         let mut iter = result.unwrap();
 
         // Should return no results
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_plan_with_ids_and_document_filter() {
+        let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
+        let (multi_term_index, user_id) = create_test_indexes(&temp_dir);
+
+        let ids_filter = IdsFilter { ids: vec![1, 2, 3] };
+        let document_filter = DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Ids(ids_filter)),
+        };
+
+        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+
+        // Extra IDs that partially overlap with DocumentFilter
+        let extra_ids = vec![2, 3, 4, 5];
+        let result = planner.plan_with_ids(&extra_ids);
+
+        assert!(result.is_ok());
+        let mut iter = result.unwrap();
+
+        // Should only return IDs present in BOTH: [2, 3]
+        assert_eq!(iter.next(), Some(2));
+        assert_eq!(iter.next(), Some(3));
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_plan_with_ids_empty_document_filter() {
+        let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
+        let (multi_term_index, user_id) = create_test_indexes(&temp_dir);
+
+        // Empty DocumentFilter
+        let document_filter = DocumentFilter { filter: None };
+
+        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+        let extra_ids = vec![1, 2, 3];
+        let result = planner.plan_with_ids(&extra_ids);
+
+        assert!(result.is_ok());
+        let mut iter = result.unwrap();
+
+        // Empty DocumentFilter should yield no results
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_plan_with_ids_empty_extra_ids() {
+        let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
+        let (multi_term_index, user_id) = create_test_indexes(&temp_dir);
+
+        let ids_filter = IdsFilter { ids: vec![1, 3, 5] };
+        let document_filter = DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Ids(ids_filter)),
+        };
+
+        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+
+        // Empty extra_ids should passthrough DocumentFilter results
+        let extra_ids: Vec<u32> = vec![];
+        let result = planner.plan_with_ids(&extra_ids);
+
+        assert!(result.is_ok());
+        let mut iter = result.unwrap();
+
+        // Should return DocumentFilter results unchanged
+        assert_eq!(iter.next(), Some(1));
+        assert_eq!(iter.next(), Some(3));
+        assert_eq!(iter.next(), Some(5));
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_plan_with_ids_no_overlap() {
+        let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
+        let (multi_term_index, user_id) = create_test_indexes(&temp_dir);
+
+        let ids_filter = IdsFilter { ids: vec![1, 2, 3] };
+        let document_filter = DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Ids(ids_filter)),
+        };
+
+        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+
+        // Extra IDs with no overlap
+        let extra_ids = vec![10, 11, 12];
+        let result = planner.plan_with_ids(&extra_ids);
+
+        assert!(result.is_ok());
+        let mut iter = result.unwrap();
+
+        // No overlap means no results
         assert_eq!(iter.next(), None);
     }
 }

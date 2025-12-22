@@ -759,7 +759,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     self.segment_config.num_features,
                 )?;
                 let segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
-                    ImmutableSegment::new(index, name_for_new_segment.clone()),
+                    ImmutableSegment::new(index, name_for_new_segment.clone(), None),
                 )));
 
                 // Must grab the write lock to prevent further invalidations when applying pending deletions
@@ -1108,7 +1108,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             self.segment_config.num_features,
         )?;
         let new_segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
-            ImmutableSegment::new(index, random_name.clone()),
+            ImmutableSegment::new(index, random_name.clone(), None),
         )));
         self.replace_segment(
             new_segment,
@@ -1549,10 +1549,17 @@ mod tests {
         let segment_name = snapshot.segments[0].name();
         assert_eq!(segment_name, pending_segment);
 
-        let result =
-            Snapshot::search_for_users(snapshot, &[0], vec![1.0, 2.0, 3.0, 4.0], 10, 10, false)
-                .await
-                .unwrap();
+        let result = Snapshot::search_for_users(
+            snapshot,
+            &[0],
+            vec![1.0, 2.0, 3.0, 4.0],
+            10,
+            10,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
         assert_eq!(result.id_with_scores[0].doc_id, 1);
 
@@ -1634,6 +1641,7 @@ mod tests {
                     10,
                     10,
                     false,
+                    None,
                 )
                 .await
                 .unwrap();

@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::sync::Arc;
 
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
@@ -7,6 +8,7 @@ use utils::distance::l2::L2DistanceCalculator;
 
 use crate::hnsw::index::Hnsw;
 use crate::ivf::index::IvfType;
+use crate::query::planner::Planner;
 use crate::utils::SearchResult;
 
 pub struct Spann<Q: Quantizer> {
@@ -81,8 +83,8 @@ impl<Q: Quantizer> Spann<Q> {
         k: usize,
         ef_construction: u32,
         record_pages: bool,
+        planner: Option<Arc<Planner>>,
     ) -> Option<SearchResult> {
-        // TODO(hicder): Fully implement SPANN, which includes adjusting number of centroids
         let nearest_centroids = self
             .centroids
             .ann_search(&query, k, ef_construction, record_pages)
@@ -93,7 +95,6 @@ impl<Q: Quantizer> Spann<Q> {
             return None;
         }
 
-        // Get the nearest centroid, and only search those that are within 10% of the distance of the nearest centroid
         let nearest_distance = nearest_centroid_ids
             .iter()
             .map(|pad| pad.score)
@@ -115,7 +116,7 @@ impl<Q: Quantizer> Spann<Q> {
 
         let mut results = self
             .posting_lists
-            .search_with_centroids_and_remap(&query, nearest_centroid_ids, k, record_pages)
+            .search_with_centroids_and_remap(&query, nearest_centroid_ids, k, record_pages, planner)
             .await;
         results.stats.merge(&centroid_search_stats);
         Some(results)
@@ -196,7 +197,7 @@ mod tests {
         let num_probes = 2;
 
         let results = spann
-            .search(query, k, num_probes, false)
+            .search(query, k, num_probes, false, None)
             .await
             .expect("IVF search should return a result");
 
@@ -271,7 +272,7 @@ mod tests {
         assert!(spann.is_invalidated(4));
 
         let results = spann
-            .search(query, k, num_probes, false)
+            .search(query, k, num_probes, false, None)
             .await
             .expect("IVF search should return a result");
 
@@ -343,7 +344,7 @@ mod tests {
         let num_probes = 2;
 
         let results = spann
-            .search(query, k, num_probes, false)
+            .search(query, k, num_probes, false, None)
             .await
             .expect("IVF search should return a result");
 
