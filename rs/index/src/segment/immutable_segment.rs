@@ -19,8 +19,16 @@ pub struct ImmutableSegment<Q: Quantizer> {
 
 impl<Q: Quantizer> ImmutableSegment<Q> {
     pub fn new(index: MultiSpannIndex<Q>, name: String, terms_dir: Option<String>) -> Self {
-        let multi_term_index =
-            terms_dir.and_then(|dir| MultiTermIndex::new(dir).ok().map(Arc::new));
+        let multi_term_index = terms_dir.and_then(|dir| {
+            let result = MultiTermIndex::new(dir.clone());
+            match result {
+                Ok(mi) => Some(Arc::new(mi)),
+                Err(e) => {
+                    eprintln!("Failed to load MultiTermIndex from dir = {}: {}", dir, e);
+                    None
+                }
+            }
+        });
         Self {
             index,
             name,

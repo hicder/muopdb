@@ -208,15 +208,14 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
                     .iter()
                     .map(|pd| pd.point_id)
                     .collect::<Vec<u32>>();
-                let mut filtered_point_ids = Vec::new();
+                let mut filtered_point_ids = HashSet::new();
                 if let Ok(mut iter) = planner.plan_with_ids(&all_ids) {
                     while let Some(id) = iter.next() {
-                        filtered_point_ids.push(id);
+                        filtered_point_ids.insert(id);
                     }
                 }
 
                 // filter results by planner
-                // TODO: results.point_and_distances are sorted in the same order as the ids
                 results
                     .point_and_distances
                     .retain(|pd| filtered_point_ids.contains(&pd.point_id));
