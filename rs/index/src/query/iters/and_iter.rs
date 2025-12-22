@@ -63,13 +63,18 @@ impl<'a> AndIter<'a> {
             // Try to align all children to `target`
             let mut all_equal = true;
             for child in self.iters.iter_mut() {
+                if child.point_id() == Some(target) {
+                    continue;
+                }
                 child.skip_to(target);
                 match child.point_id() {
                     Some(point) if point == target => {}
                     Some(_) => {
                         all_equal = false;
                     }
-                    None => return None, // child exhausted
+                    None => {
+                        return None;
+                    }
                 }
             }
 

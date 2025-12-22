@@ -354,13 +354,7 @@ impl<'a, T: CompressionInt> EliasFanoDecodingIterator<'a, T> {
     /// Get the current value without advancing the iterator
     /// Returns None if iterator is exhausted
     pub fn current(&mut self) -> Option<T> {
-        if self.cur_elem_index >= self.num_elem {
-            return None;
-        }
-
-        let current_high = self.cumulative_gap_sum;
-        let current_low = self.get_current_lower_part();
-        Some((current_high << self.lower_bit_length) | current_low)
+        self.get_value_at_index(self.cur_elem_index)
     }
 
     /// Get value at specific index without changing iterator state
@@ -498,8 +492,6 @@ impl<'a, T: CompressionInt> Iterator for EliasFanoDecodingIterator<'a, T> {
             {
                 self.cur_upper_bit_index += 1;
             }
-            // Move to the next element index
-            self.cur_elem_index += 1;
         }
         // Always consume the flag on a call to next()
         self.post_skip = false;
