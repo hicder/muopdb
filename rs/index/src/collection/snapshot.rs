@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
+use proto::muopdb::DocumentFilter;
 use quantization::noq::noq::NoQuantizerL2;
 use quantization::pq::pq::ProductQuantizerL2;
 use quantization::quantization::Quantizer;
 
 use super::core::Collection;
+use crate::query::planner::Planner;
 use crate::segment::BoxedImmutableSegment;
 use crate::utils::SearchResult;
 
@@ -39,6 +41,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
         k: usize,
         ef_construction: u32,
         record_pages: bool,
+        filter: Option<Arc<DocumentFilter>>,
     ) -> Option<SearchResult>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
@@ -46,7 +49,14 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
         let mut results = SearchResult::new();
         for user_id in user_ids {
             if let Some(id_results) = snapshot
-                .search_for_user(*user_id, query.clone(), k, ef_construction, record_pages)
+                .search_for_user(
+                    *user_id,
+                    query.clone(),
+                    k,
+                    ef_construction,
+                    record_pages,
+                    filter.clone(),
+                )
                 .await
             {
                 results.id_with_scores.extend(id_results.id_with_scores);
@@ -70,15 +80,26 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
         k: usize,
         ef_construction: u32,
         record_pages: bool,
+        filter: Option<Arc<DocumentFilter>>,
     ) -> Option<SearchResult>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
     {
-        // Query each index, then take the top k results
-        // TODO(hicder): Handle case where docs are deleted in later segments
-
         let mut scored_results = SearchResult::new();
         for segment in &self.segments {
+            let multi_term_index = segment.get_multi_term_index();
+            let planner = if let Some(multi_term_index) = multi_term_index {
+                if let Some(filter) = &filter {
+                    Some(Arc::new(
+                        Planner::new(user_id, filter.as_ref().clone(), multi_term_index.clone())
+                            .unwrap(),
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             let s = segment.clone();
             let q = query.clone();
             if let Some(results) = BoxedImmutableSegment::search_with_id(
@@ -88,6 +109,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
                 k,
                 ef_construction,
                 record_pages,
+                planner,
             )
             .await
             {
@@ -96,7 +118,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
             }
         }
 
-        // Sort and take the top k results
         scored_results.id_with_scores.sort();
         scored_results.id_with_scores.truncate(k);
 
@@ -131,6 +152,7 @@ impl SnapshotWithQuantizer {
         k: usize,
         ef_construction: u32,
         record_pages: bool,
+        filter: Option<Arc<DocumentFilter>>,
     ) -> Option<SearchResult> {
         match snapshot {
             Self::SnapshotNoQuantizer(snapshot) => {
@@ -141,6 +163,7 @@ impl SnapshotWithQuantizer {
                     k,
                     ef_construction,
                     record_pages,
+                    filter,
                 )
                 .await
             }
@@ -152,6 +175,7 @@ impl SnapshotWithQuantizer {
                     k,
                     ef_construction,
                     record_pages,
+                    filter,
                 )
                 .await
             }

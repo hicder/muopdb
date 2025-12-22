@@ -1,8 +1,12 @@
+use std::sync::Arc;
+
 use anyhow::{anyhow, Result};
 use quantization::quantization::Quantizer;
 
 use super::Segment;
 use crate::multi_spann::index::MultiSpannIndex;
+use crate::multi_terms::index::MultiTermIndex;
+use crate::query::planner::Planner;
 use crate::spann::iter::SpannIter;
 use crate::utils::SearchResult;
 
@@ -10,11 +14,18 @@ use crate::utils::SearchResult;
 pub struct ImmutableSegment<Q: Quantizer> {
     index: MultiSpannIndex<Q>,
     name: String,
+    multi_term_index: Option<Arc<MultiTermIndex>>,
 }
 
 impl<Q: Quantizer> ImmutableSegment<Q> {
-    pub fn new(index: MultiSpannIndex<Q>, name: String) -> Self {
-        Self { index, name }
+    pub fn new(index: MultiSpannIndex<Q>, name: String, terms_dir: Option<String>) -> Self {
+        let multi_term_index =
+            terms_dir.and_then(|dir| MultiTermIndex::new(dir).ok().map(Arc::new));
+        Self {
+            index,
+            name,
+            multi_term_index,
+        }
     }
 
     pub fn user_ids(&self) -> Vec<u128> {
@@ -51,6 +62,10 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
             false
         }
     }
+
+    pub fn get_multi_term_index(&self) -> Option<Arc<MultiTermIndex>> {
+        self.multi_term_index.clone()
+    }
 }
 
 /// This is the implementation of Segment for ImmutableSegment.
@@ -84,9 +99,10 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
         k: usize,
         ef_construction: u32,
         record_pages: bool,
+        planner: Option<Arc<Planner>>,
     ) -> Option<SearchResult> {
         self.index
-            .search_for_user(user_id, query, k, ef_construction, record_pages)
+            .search_for_user(user_id, query, k, ef_construction, record_pages, planner)
             .await
     }
 }
@@ -149,14 +165,14 @@ mod tests {
 
         let name_for_new_segment = format!("segment_{}", rand::random::<u64>());
         let immutable_segment =
-            ImmutableSegment::new(multi_spann_index, name_for_new_segment.clone());
+            ImmutableSegment::new(multi_spann_index, name_for_new_segment.clone(), None);
 
         let query = vec![1.4, 2.4, 3.4, 4.4];
         let k = 3;
         let num_probes = 2;
 
         let results = immutable_segment
-            .search_for_user(0, query.clone(), k, num_probes, false)
+            .search_for_user(0, query.clone(), k, num_probes, false, None)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -214,7 +230,7 @@ mod tests {
 
         let name_for_new_segment = format!("segment_{}", rand::random::<u64>());
         let immutable_segment =
-            ImmutableSegment::new(multi_spann_index, name_for_new_segment.clone());
+            ImmutableSegment::new(multi_spann_index, name_for_new_segment.clone(), None);
 
         let query = vec![1.4, 2.4, 3.4, 4.4];
         let k = 3;
@@ -225,7 +241,7 @@ mod tests {
             .expect("Failed to invalidate"));
 
         let results = immutable_segment
-            .search_for_user(0, query.clone(), k, num_probes, false)
+            .search_for_user(0, query.clone(), k, num_probes, false, None)
             .await
             .expect("Failed to search with Multi-SPANN index");
 

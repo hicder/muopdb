@@ -43,13 +43,20 @@ impl CollectionReader {
             }
 
             let spann_path = format!("{}/{}", self.path, name);
-            let spann_reader = MultiSpannReader::new(spann_path);
+            let spann_reader = MultiSpannReader::new(spann_path.clone());
             let index = spann_reader.read::<Q>(
                 collection_config.posting_list_encoding_type.clone(),
                 collection_config.num_features,
             )?;
+
+            // If terms exists, we read it
+            let term_path = if std::fs::exists(format!("{}/terms", spann_path.clone())).unwrap() {
+                Some(format!("{}/terms", spann_path))
+            } else {
+                None
+            };
             segments.push(BoxedImmutableSegment::FinalizedSegment(Arc::new(
-                RwLock::new(ImmutableSegment::new(index, name.clone())),
+                RwLock::new(ImmutableSegment::new(index, name.clone(), term_path)),
             )));
         }
 

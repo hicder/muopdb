@@ -300,6 +300,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
                     k + invalidated_ids.len(),
                     ef_construction,
                     record_pages,
+                    None,
                 )
                 .await;
                 if let Some(mut result) = segment_result {
@@ -318,7 +319,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
             match &*index {
                 Some(index) => {
                     index
-                        .search_for_user(id, query.clone(), k, ef_construction, record_pages)
+                        .search_for_user(id, query.clone(), k, ef_construction, record_pages, None)
                         .await
                 }
                 None => unreachable!("Index should not be None if use_internal_index is set"),
@@ -383,10 +384,13 @@ mod tests {
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
         let segment1 = read_segment(segment1_dir.clone())?;
-        let segment1 =
-            BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(Arc::new(
-                RwLock::new(ImmutableSegment::new(segment1, "segment_1".to_string())),
-            ));
+        let segment1 = BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(
+            Arc::new(RwLock::new(ImmutableSegment::new(
+                segment1,
+                "segment_1".to_string(),
+                None,
+            ))),
+        );
 
         let random_name = format!(
             "pending_segment_{}",
@@ -423,10 +427,13 @@ mod tests {
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
         let segment1 = read_segment(segment1_dir.clone())?;
-        let segment1 =
-            BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(Arc::new(
-                RwLock::new(ImmutableSegment::new(segment1, "segment_1".to_string())),
-            ));
+        let segment1 = BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(
+            Arc::new(RwLock::new(ImmutableSegment::new(
+                segment1,
+                "segment_1".to_string(),
+                None,
+            ))),
+        );
 
         let random_name = format!(
             "pending_segment_{}",
@@ -465,10 +472,13 @@ mod tests {
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
         let segment1 = read_segment(segment1_dir.clone())?;
-        let segment1 =
-            BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(Arc::new(
-                RwLock::new(ImmutableSegment::new(segment1, "segment_1".to_string())),
-            ));
+        let segment1 = BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(
+            Arc::new(RwLock::new(ImmutableSegment::new(
+                segment1,
+                "segment_1".to_string(),
+                None,
+            ))),
+        );
 
         let random_name = format!(
             "pending_segment_{}",

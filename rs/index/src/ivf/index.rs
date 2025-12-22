@@ -1,6 +1,6 @@
 use std::collections::{BinaryHeap, HashSet};
 use std::marker::PhantomData;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use anyhow::{Context, Result};
 use compression::compression::IntSeqDecoder;
@@ -12,6 +12,8 @@ use utils::distance::l2::L2DistanceCalculator;
 use utils::DistanceCalculator;
 
 use crate::posting_list::storage::PostingListStorage;
+use crate::query::iters::InvertedIndexIter;
+use crate::query::planner::Planner;
 use crate::utils::{IdWithScore, IntermediateResult, PointAndDistance, SearchResult, SearchStats};
 use crate::vector::VectorStorage;
 
@@ -50,15 +52,28 @@ impl<Q: Quantizer> IvfType<Q> {
         nearest_centroid_ids: Vec<usize>,
         k: usize,
         record_pages: bool,
+        planner: Option<Arc<Planner>>,
     ) -> SearchResult {
         match self {
             IvfType::L2Plain(ivf) => {
-                ivf.search_with_centroids_and_remap(query, nearest_centroid_ids, k, record_pages)
-                    .await
+                ivf.search_with_centroids_and_remap(
+                    query,
+                    nearest_centroid_ids,
+                    k,
+                    record_pages,
+                    planner,
+                )
+                .await
             }
             IvfType::L2EF(ivf) => {
-                ivf.search_with_centroids_and_remap(query, nearest_centroid_ids, k, record_pages)
-                    .await
+                ivf.search_with_centroids_and_remap(
+                    query,
+                    nearest_centroid_ids,
+                    k,
+                    record_pages,
+                    planner,
+                )
+                .await
             }
         }
     }
@@ -165,6 +180,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
         centroid: usize,
         query: &[f32],
         record_pages: bool,
+        planner: Option<Arc<Planner>>,
     ) -> IntermediateResult {
         if let Ok(byte_slice) = self.posting_list_storage.get_posting_list(centroid) {
             let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
@@ -182,6 +198,30 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
                 )
                 .await
                 .unwrap();
+
+            // sort by ids first
+            results.point_and_distances.sort_by_key(|pd| pd.point_id);
+
+            if let Some(planner) = planner {
+                let all_ids = results
+                    .point_and_distances
+                    .iter()
+                    .map(|pd| pd.point_id)
+                    .collect::<Vec<u32>>();
+                let mut filtered_point_ids = Vec::new();
+                if let Ok(mut iter) = planner.plan_with_ids(&all_ids) {
+                    while let Some(id) = iter.next() {
+                        filtered_point_ids.push(id);
+                    }
+                }
+
+                // filter results by planner
+                // TODO: results.point_and_distances are sorted in the same order as the ids
+                results
+                    .point_and_distances
+                    .retain(|pd| filtered_point_ids.contains(&pd.point_id));
+            }
+
             results
                 .point_and_distances
                 .sort_by(|a, b| a.distance.total_cmp(&b.distance));
@@ -200,11 +240,14 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
         nearest_centroid_ids: Vec<usize>,
         k: usize,
         record_pages: bool,
+        planner: Option<Arc<Planner>>,
     ) -> IntermediateResult {
         let mut heap = BinaryHeap::with_capacity(k);
         let mut final_stats = SearchStats::new();
         for &centroid in &nearest_centroid_ids {
-            let results = self.scan_posting_list(centroid, query, record_pages).await;
+            let results = self
+                .scan_posting_list(centroid, query, record_pages, planner.clone())
+                .await;
             for id_with_score in results.point_and_distances {
                 if heap.len() < k {
                     heap.push(id_with_score);
@@ -258,9 +301,10 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
         nearest_centroid_ids: Vec<usize>,
         k: usize,
         record_pages: bool,
+        planner: Option<Arc<Planner>>,
     ) -> SearchResult {
         let results = self
-            .search_with_centroids(query, nearest_centroid_ids, k, record_pages)
+            .search_with_centroids(query, nearest_centroid_ids, k, record_pages, planner)
             .await;
         let doc_ids = self.map_point_id_to_doc_id(&results.point_and_distances);
         SearchResult {
@@ -318,6 +362,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
         k: usize,
         ef_construction: u32, // Number of probed centroids
         record_pages: bool,
+        planner: Option<Arc<Planner>>,
     ) -> Option<SearchResult> {
         // Find the nearest centroids to the query.
         if let Ok(nearest_centroids) = Self::find_nearest_centroids(
@@ -327,7 +372,7 @@ impl<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> Ivf<Q, DC, D> {
         ) {
             // Search in the posting lists of the nearest centroids.
             let results = self
-                .search_with_centroids(query, nearest_centroids, k, record_pages)
+                .search_with_centroids(query, nearest_centroids, k, record_pages, planner)
                 .await;
             Some(SearchResult {
                 id_with_scores: self.map_point_id_to_doc_id(&results.point_and_distances),
@@ -622,7 +667,7 @@ mod tests {
         let k = 2;
 
         let results = ivf
-            .search(query, k, num_probes, false)
+            .search(query, k, num_probes, false, None)
             .await
             .expect("IVF search should return a result");
 
@@ -705,7 +750,7 @@ mod tests {
         let k = 2;
 
         let results = ivf
-            .search(query, k, num_probes, false)
+            .search(query, k, num_probes, false, None)
             .await
             .expect("IVF search should return a result");
 
@@ -771,7 +816,7 @@ mod tests {
         let k = 5; // More than available results
 
         let results = ivf
-            .search(query, k, num_probes, false)
+            .search(query, k, num_probes, false, None)
             .await
             .expect("IVF search should return a result");
 
@@ -837,7 +882,7 @@ mod tests {
         assert!(ivf.is_invalidated(103));
 
         let results = ivf
-            .search(&query, k, num_probes, false)
+            .search(&query, k, num_probes, false, None)
             .await
             .expect("IVF search should return a result");
 
@@ -909,7 +954,7 @@ mod tests {
 
         // Verify that invalidated doc_ids are excluded from the search results
         let results = ivf
-            .search(query, k, num_probes, false)
+            .search(query, k, num_probes, false, None)
             .await
             .expect("IVF search should return a result");
 
