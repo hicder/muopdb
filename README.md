@@ -186,14 +186,14 @@ This time it should give you something else
   - Libraries
 ```bash
 # MacOS (using Homebrew)
-brew install hdf5 protobuf openblas
+brew install protobuf openblas
 
 # Linux (Arch-based)
 # On Arch Linux (and its derivatives, such as EndeavourOS, CachyOS):
-sudo pacman -Syu hdf5 protobuf openblas
+sudo pacman -Syu protobuf openblas
 
 # Linux (Debian-based)
-sudo apt-get install libhdf5-dev libprotobuf-dev libopenblas-dev
+sudo apt-get install libprotobuf-dev libopenblas-dev
 ```
 
 - Build from Source:
