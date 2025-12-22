@@ -22,13 +22,13 @@ use crate::query::iters::{InvertedIndexIter, Iter, IterState};
 /// assert_eq!(results, vec![3, 5]);
 /// ```
 /// Used to answer queries like "find documents that match all these conditions".
-pub struct AndIter {
-    iters: Vec<Iter>,
-    state: IterState<u32>, // Current point_id
+pub struct AndIter<'a> {
+    iters: Vec<Iter<'a>>,
+    state: IterState<u32>,
 }
 
-impl AndIter {
-    pub fn new(iters: Vec<Iter>) -> Self {
+impl<'a> AndIter<'a> {
+    pub fn new(iters: Vec<Iter<'a>>) -> Self {
         if iters.is_empty() {
             // Set to exhausted immediately if no children
             return Self {
@@ -49,7 +49,7 @@ impl AndIter {
             let mut max_point = None;
 
             // Gather point_ids, fail fast if any exhausted
-            for child in self.iters.iter() {
+            for child in self.iters.iter_mut() {
                 match child.point_id() {
                     Some(point) => {
                         max_point = Some(max_point.map_or(point, |m: u32| m.max(point)));
@@ -81,7 +81,7 @@ impl AndIter {
     }
 }
 
-impl InvertedIndexIter for AndIter {
+impl<'a> InvertedIndexIter for AndIter<'a> {
     /// Advances the iterator and returns the next point ID, or None if exhausted.
     fn next(&mut self) -> Option<u32> {
         match self.state {
@@ -147,7 +147,7 @@ impl InvertedIndexIter for AndIter {
     }
 
     /// Returns the current point ID, or None if the iterator is exhausted or not started.
-    fn point_id(&self) -> Option<u32> {
+    fn point_id(&mut self) -> Option<u32> {
         match self.state {
             IterState::At(point) => Some(point),
             _ => None,
@@ -159,7 +159,7 @@ impl InvertedIndexIter for AndIter {
 mod tests {
     use super::*;
 
-    fn ids(ids: &[u32]) -> Iter {
+    fn ids(ids: &[u32]) -> Iter<'_> {
         Iter::Ids(crate::query::iters::ids_iter::IdsIter::new(ids.to_vec()))
     }
 

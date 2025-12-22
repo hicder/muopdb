@@ -19,14 +19,14 @@ enum IterState<T> {
 }
 
 /// A unified enum to represent all types of iterators that implement InvertedIndexIter trait.
-pub enum Iter {
-    And(AndIter),
-    Or(OrIter),
+pub enum Iter<'a> {
+    And(AndIter<'a>),
+    Or(OrIter<'a>),
     Ids(IdsIter),
-    Term(TermIter),
+    Term(TermIter<'a>),
 }
 
-impl InvertedIndexIter for Iter {
+impl<'a> InvertedIndexIter for Iter<'a> {
     fn next(&mut self) -> Option<u32> {
         match self {
             Iter::And(iter) => iter.next(),
@@ -45,7 +45,7 @@ impl InvertedIndexIter for Iter {
         }
     }
 
-    fn point_id(&self) -> Option<u32> {
+    fn point_id(&mut self) -> Option<u32> {
         match self {
             Iter::And(iter) => iter.point_id(),
             Iter::Or(iter) => iter.point_id(),
@@ -60,7 +60,7 @@ pub trait InvertedIndexIter {
 
     fn skip_to(&mut self, point_id: u32);
 
-    fn point_id(&self) -> Option<u32>;
+    fn point_id(&mut self) -> Option<u32>;
 }
 
 #[cfg(test)]
@@ -70,7 +70,7 @@ mod integration_tests {
     use crate::query::iters::ids_iter::IdsIter;
     use crate::query::iters::or_iter::OrIter;
 
-    fn ids(ids: &[u32]) -> Iter {
+    fn ids(ids: &[u32]) -> Iter<'_> {
         Iter::Ids(IdsIter::new(ids.to_vec()))
     }
 

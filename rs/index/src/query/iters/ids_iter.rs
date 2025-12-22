@@ -122,7 +122,7 @@ impl InvertedIndexIter for IdsIter {
     }
 
     /// Returns the current point ID, or None if the iterator is exhausted or not started.
-    fn point_id(&self) -> Option<u32> {
+    fn point_id(&mut self) -> Option<u32> {
         match self.state {
             IterState::At(index) => Some(self.ids[index]),
             _ => None,
