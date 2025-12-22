@@ -1,78 +1,62 @@
 use anyhow::Result;
+use compression::elias_fano::ef::EliasFanoDecodingIterator;
 
 use crate::query::iters::{InvertedIndexIter, IterState};
 use crate::terms::index::TermIndex;
 
-pub struct TermIter {
-    point_ids: Vec<u32>,
-    state: IterState<usize>,
+pub struct TermIter<'a> {
+    iter: EliasFanoDecodingIterator<'a, u32>,
+    state: IterState<u32>,
 }
 
-impl TermIter {
-    pub fn new(term_index: &TermIndex, term_id: u64) -> Result<Self> {
-        let point_ids_iter = term_index.get_posting_list_iterator(term_id)?;
-
+impl<'a> TermIter<'a> {
+    pub fn new(term_index: &'a TermIndex, term_id: u64) -> Result<Self> {
+        let iter = term_index.get_posting_list_iterator(term_id)?;
         Ok(Self {
-            point_ids: point_ids_iter.collect(),
+            iter,
             state: IterState::NotStarted,
         })
     }
 }
 
-impl InvertedIndexIter for TermIter {
+impl<'a> InvertedIndexIter for TermIter<'a> {
     fn next(&mut self) -> Option<u32> {
         match self.state {
-            IterState::NotStarted => match self.point_ids.first() {
-                Some(&point_id) => {
-                    self.state = IterState::At(0);
-                    Some(point_id)
-                }
-                None => {
-                    self.state = IterState::Exhausted;
-                    None
-                }
-            },
-            IterState::At(index) => {
-                if index + 1 < self.point_ids.len() {
-                    let next_index = index + 1;
-                    let point_id = self.point_ids[next_index];
-                    self.state = IterState::At(next_index);
-                    Some(point_id)
+            IterState::NotStarted => {
+                let point = self.iter.current();
+                self.state = if point.is_some() {
+                    IterState::At(point.unwrap())
                 } else {
-                    self.state = IterState::Exhausted;
-                    None
-                }
+                    IterState::Exhausted
+                };
+                point
+            }
+            IterState::At(_) => {
+                let point = self.iter.next();
+                self.state = if point.is_some() {
+                    IterState::At(point.unwrap())
+                } else {
+                    IterState::Exhausted
+                };
+                point
             }
             IterState::Exhausted => None,
         }
     }
 
     fn skip_to(&mut self, point_id: u32) {
-        let start = match self.state {
-            IterState::NotStarted => 0,
-            IterState::At(index) => index,
-            IterState::Exhausted => return,
+        self.iter.skip_to(point_id);
+        let point = self.iter.current();
+        self.state = if point.is_some() {
+            IterState::At(point.unwrap())
+        } else {
+            IterState::Exhausted
         };
-
-        match self.point_ids[start..].binary_search(&point_id) {
-            Ok(i) => {
-                let idx = start + i;
-                self.state = IterState::At(idx);
-            }
-            Err(i) => {
-                let idx = start + i;
-                if idx < self.point_ids.len() {
-                    self.state = IterState::At(idx);
-                } else {
-                    self.state = IterState::Exhausted;
-                }
-            }
-        }
     }
 
-    fn point_id(&self) -> Option<u32> {
+    fn point_id(&mut self) -> Option<u32> {
         match self.state {
-            IterState::At(index) => Some(self.point_ids[index]),
+            IterState::At(point) => Some(point),
             _ => None,
         }
     }

@@ -32,11 +32,11 @@ impl Planner {
         })
     }
 
-    pub fn plan(&self) -> Result<Iter> {
+    pub fn plan(&self) -> Result<Iter<'_>> {
         self.plan_filter(&self.query)
     }
 
-    pub fn plan_with_ids(&self, extra_ids: &[u32]) -> Result<Iter> {
+    pub fn plan_with_ids(&self, extra_ids: &[u32]) -> Result<Iter<'_>> {
         let doc_filter_iter = self.plan_filter(&self.query)?;
 
         if extra_ids.is_empty() {
@@ -54,7 +54,7 @@ impl Planner {
         ])))
     }
 
-    fn plan_filter(&self, filter: &DocumentFilter) -> Result<Iter> {
+    fn plan_filter(&self, filter: &DocumentFilter) -> Result<Iter<'_>> {
         use proto::muopdb::document_filter::Filter;
 
         match filter.filter.as_ref() {
@@ -81,7 +81,7 @@ impl Planner {
         }
     }
 
-    fn plan_and_filter(&self, and_filter: &AndFilter) -> Result<Iter> {
+    fn plan_and_filter(&self, and_filter: &AndFilter) -> Result<Iter<'_>> {
         if and_filter.filters.is_empty() {
             // Empty AND filter - return an iterator that yields no results
             return Ok(Iter::Ids(IdsIter::new(vec![])));
@@ -95,7 +95,7 @@ impl Planner {
         Ok(Iter::And(AndIter::new(iters)))
     }
 
-    fn plan_or_filter(&self, or_filter: &OrFilter) -> Result<Iter> {
+    fn plan_or_filter(&self, or_filter: &OrFilter) -> Result<Iter<'_>> {
         if or_filter.filters.is_empty() {
             // Empty OR filter - return an iterator that yields no results
             return Ok(Iter::Ids(IdsIter::new(vec![])));
@@ -109,7 +109,7 @@ impl Planner {
         Ok(Iter::Or(OrIter::new(iters)))
     }
 
-    fn plan_ids_filter(&self, ids_filter: &IdsFilter) -> Result<Iter> {
+    fn plan_ids_filter(&self, ids_filter: &IdsFilter) -> Result<Iter<'_>> {
         let mut ids = Vec::new();
         for id in &ids_filter.ids {
             ids.push(*id);

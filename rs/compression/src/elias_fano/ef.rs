@@ -1095,4 +1095,37 @@ mod tests {
 
         let _ = remove_dir_all(&file_path);
     }
+
+    #[test]
+    fn test_single_element_next_current() {
+        let values = vec![42u64];
+        let upper_bound = 100u64;
+
+        let mut ef = EliasFano::new_encoder(upper_bound, values.len());
+        assert!(ef.encode_batch(&values).is_ok());
+
+        let temp_dir =
+            TempDir::new("test_skip_to_basic").expect("Failed to create temporary directory");
+        let file_path = temp_dir.path().join("test_file");
+        let mut file = File::create(&file_path).expect("Failed to create test file");
+        let mut writer = BufWriter::new(&mut file);
+
+        // Call the write method
+        assert!(ef.write(&mut writer).is_ok());
+
+        drop(writer);
+
+        // Read the file contents into a byte vector
+        let mut file = File::open(&file_path).expect("Failed to open file for read");
+        let mut byte_slice = Vec::new();
+        assert!(file.read_to_end(&mut byte_slice).is_ok());
+
+        let decoder = EliasFanoDecoder::<u64>::new_decoder(&byte_slice)
+            .expect("Failed to create posting list decoder");
+        let mut iter = decoder.get_iterator(&byte_slice);
+
+        assert_eq!(iter.next(), Some(42));
+        assert_eq!(iter.current(), None);
+        assert_eq!(iter.next(), None);
+    }
 }

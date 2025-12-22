@@ -22,13 +22,13 @@ use crate::query::iters::{InvertedIndexIter, Iter, IterState};
 /// assert_eq!(results, vec![1, 2, 3, 5, 7]);
 /// ```
 /// Used to answer queries like "find documents that match any of these conditions".
-pub struct OrIter {
-    iters: Vec<Iter>,
-    state: IterState<u32>, // Current point_id
+pub struct OrIter<'a> {
+    iters: Vec<Iter<'a>>,
+    state: IterState<u32>,
 }
 
-impl OrIter {
-    pub fn new(iters: Vec<Iter>) -> Self {
+impl<'a> OrIter<'a> {
+    pub fn new(iters: Vec<Iter<'a>>) -> Self {
         if iters.is_empty() {
             // Set to exhausted immediately if no children
             return Self {
@@ -43,8 +43,8 @@ impl OrIter {
     }
 
     /// Find the smallest point_id across all children, or None if all exhausted.
-    fn min_point(&self) -> Option<u32> {
-        self.iters.iter().filter_map(|c| c.point_id()).min()
+    fn min_point(&mut self) -> Option<u32> {
+        self.iters.iter_mut().filter_map(|c| c.point_id()).min()
     }
 
     /// Advance children that are exactly at `point`, so they will compete for the next min.
@@ -57,7 +57,7 @@ impl OrIter {
     }
 }
 
-impl InvertedIndexIter for OrIter {
+impl<'a> InvertedIndexIter for OrIter<'a> {
     /// Advances the iterator and returns the next point ID, or None if exhausted.
     fn next(&mut self) -> Option<u32> {
         match self.state {
@@ -105,7 +105,7 @@ impl InvertedIndexIter for OrIter {
     }
 
     /// Returns the current point ID, or None if the iterator is exhausted or not started.
-    fn point_id(&self) -> Option<u32> {
+    fn point_id(&mut self) -> Option<u32> {
         match self.state {
             IterState::At(point) => Some(point),
             _ => None,
@@ -117,7 +117,7 @@ impl InvertedIndexIter for OrIter {
 mod tests {
     use super::*;
 
-    fn ids(ids: &[u32]) -> Iter {
+    fn ids(ids: &[u32]) -> Iter<'_> {
         Iter::Ids(crate::query::iters::ids_iter::IdsIter::new(ids.to_vec()))
     }
 
