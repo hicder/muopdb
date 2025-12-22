@@ -171,8 +171,8 @@ This time it should give you something else
   - [x] Segments merger
   - [x] Segments vacuum
 ### Phase 4 (Ongoing)
-- [ ] Features
-  - [ ] Hybrid search
+- [x] Features
+  - [x] Hybrid search
 - [x] Database Management
   - [x] Optimizing deletion with bloom filter
   - [x] Optimizing WAL write with thread-safe write group
