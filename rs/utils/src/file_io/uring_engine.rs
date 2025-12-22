@@ -1,11 +1,11 @@
 use std::os::fd::RawFd;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
-use crossbeam::channel::{bounded, Receiver, RecvTimeoutError, Sender};
 use dashmap::DashMap;
 use parking_lot::Mutex;
 
@@ -13,9 +13,9 @@ use parking_lot::Mutex;
 ///
 /// This engine provides efficient file reading by leveraging Linux's io_uring
 /// interface, which enables asynchronous operations without traditional
-/// thread-per-request overhead. It uses a two-thread architecture:
-/// - A submission thread that enqueues read requests to the io_uring queue
-/// - A completion thread that processes finished operations and returns results
+/// thread-per-request overhead. It uses a single completion thread to poll
+/// for finished operations while submissions happen synchronously from the
+/// calling async task.
 ///
 /// The engine is designed for high-throughput scenarios where many concurrent
 /// file reads are needed, such as database systems reading from disk.
@@ -24,8 +24,8 @@ use parking_lot::Mutex;
 ///
 /// ```text
 /// ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-/// │  Tokio Task     │────▶│  Submission      │────▶│  io_uring       │
-/// │  (submit_read)  │     │  Thread          │     │  (kernel)       │
+/// │  Tokio Task     │────▶│  submit_read     │────▶│  io_uring       │
+/// │  (async read)   │     │  (inline submit) │     │  (kernel)       │
 /// └─────────────────┘     └──────────────────┘     └─────────────────┘
 ///                                                         │
 ///                                                         ▼
@@ -51,8 +51,9 @@ use parking_lot::Mutex;
 /// let data = handle.submit_read(fd, 0, 1024, vec![0; 1024]).await?;
 /// ```
 pub struct UringEngine {
-    submission_tx: Sender<ReadRequest>,
     next_id: Arc<AtomicU64>,
+    uring: Arc<Mutex<io_uring::IoUring>>,
+    inflight: Arc<DashMap<u64, InFlightEntry>>,
 }
 
 /// A cloneable handle for submitting read requests to the UringEngine.
@@ -73,21 +74,14 @@ pub struct UringEngine {
 /// concurrent access.
 #[derive(Clone)]
 pub struct UringEngineHandle {
-    submission_tx: Sender<ReadRequest>,
     next_id: Arc<AtomicU64>,
-}
-
-struct ReadRequest {
-    id: u64,
-    fd: RawFd,
-    offset: u64,
-    response_tx: tokio::sync::oneshot::Sender<Result<Vec<u8>>>,
-    buffer: Vec<u8>,
+    uring: Arc<Mutex<io_uring::IoUring>>,
+    inflight: Arc<DashMap<u64, InFlightEntry>>,
 }
 
 struct InFlightEntry {
     response_tx: tokio::sync::oneshot::Sender<Result<Vec<u8>>>,
-    buffer: Vec<u8>,
+    buffer: Pin<Box<Vec<u8>>>,
 }
 
 impl UringEngine {
@@ -97,9 +91,9 @@ impl UringEngine {
     /// the io_uring instance can handle. A higher value allows more
     /// concurrent operations but consumes more kernel memory.
     ///
-    /// This function spawns two background threads:
-    /// - A submission thread for enqueuing read operations
-    /// - A completion thread for processing results
+    /// This function spawns a single background completion thread that polls
+    /// for finished I/O operations. Read submissions happen synchronously
+    /// from the calling async task.
     ///
     /// # Arguments
     ///
@@ -122,94 +116,34 @@ impl UringEngine {
                 .unwrap(),
         ));
 
-        let (submission_tx, submission_rx) = bounded(1024);
-
-        let in_flight: DashMap<u64, InFlightEntry> = DashMap::new();
-        let in_flight = Arc::new(in_flight);
+        let inflight: DashMap<u64, InFlightEntry> = DashMap::new();
+        let inflight = Arc::new(inflight);
         let next_id = Arc::new(AtomicU64::new(0));
 
         let uring_clone = uring.clone();
-        let in_flight_clone = in_flight.clone();
+        let inflight_clone = inflight.clone();
 
         thread::spawn(move || {
-            Self::submission_thread_loop(uring_clone, submission_rx, in_flight_clone);
-        });
-
-        let uring_clone = uring.clone();
-        let in_flight_clone = in_flight.clone();
-
-        thread::spawn(move || {
-            Self::completion_thread_loop(uring_clone, in_flight_clone);
+            Self::completion_thread_loop(uring_clone, inflight_clone);
         });
 
         UringEngine {
-            submission_tx,
             next_id,
-        }
-    }
-
-    fn submission_thread_loop(
-        uring: Arc<Mutex<io_uring::IoUring>>,
-        submission_rx: Receiver<ReadRequest>,
-        in_flight: Arc<DashMap<u64, InFlightEntry>>,
-    ) {
-        loop {
-            match submission_rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(request) => {
-                    let ReadRequest {
-                        id,
-                        fd,
-                        offset,
-                        response_tx,
-                        mut buffer,
-                    } = request;
-
-                    let sqe = io_uring::opcode::Read::new(
-                        io_uring::types::Fd(fd),
-                        buffer.as_mut_ptr(),
-                        buffer.len() as u32,
-                    )
-                    .offset(offset)
-                    .build()
-                    .user_data(id);
-
-                    let mut uring_guard = uring.lock();
-                    unsafe {
-                        uring_guard.submission().push(&sqe).unwrap();
-                    }
-
-                    in_flight.insert(
-                        id,
-                        InFlightEntry {
-                            response_tx,
-                            buffer,
-                        },
-                    );
-
-                    if let Err(e) = uring_guard.submit() {
-                        log::error!("io_uring submit error: {}", e);
-                    }
-                }
-                Err(RecvTimeoutError::Timeout) => {
-                    continue;
-                }
-                Err(RecvTimeoutError::Disconnected) => {
-                    break;
-                }
-            }
+            uring,
+            inflight,
         }
     }
 
     fn completion_thread_loop(
         uring: Arc<Mutex<io_uring::IoUring>>,
-        in_flight: Arc<DashMap<u64, InFlightEntry>>,
+        inflight: Arc<DashMap<u64, InFlightEntry>>,
     ) {
         loop {
             let mut uring_guard = uring.lock();
             uring_guard.submit().ok();
             let mut has_completions = false;
             while let Some(cqe) = uring_guard.completion().next() {
-                Self::process_cqe(cqe, &in_flight);
+                Self::process_cqe(cqe, &inflight);
                 has_completions = true;
             }
 
@@ -220,10 +154,10 @@ impl UringEngine {
         }
     }
 
-    fn process_cqe(cqe: io_uring::cqueue::Entry, in_flight: &DashMap<u64, InFlightEntry>) {
+    fn process_cqe(cqe: io_uring::cqueue::Entry, inflight: &DashMap<u64, InFlightEntry>) {
         let id = cqe.user_data();
 
-        let entry = in_flight.remove(&id);
+        let entry = inflight.remove(&id);
         if entry.is_none() {
             log::warn!("Received completion for unknown request id: {}", id);
             return;
@@ -233,7 +167,7 @@ impl UringEngine {
             _key,
             InFlightEntry {
                 response_tx,
-                mut buffer,
+                buffer,
             },
         ) = entry.unwrap();
 
@@ -245,6 +179,8 @@ impl UringEngine {
             ))
         } else {
             let bytes_read = cqe.result() as usize;
+            let boxed_buffer = Pin::into_inner(buffer);
+            let mut buffer = *boxed_buffer;
             buffer.truncate(bytes_read);
             Ok(buffer)
         };
@@ -273,8 +209,9 @@ impl UringEngine {
     /// ```
     pub fn handle(&self) -> UringEngineHandle {
         UringEngineHandle {
-            submission_tx: self.submission_tx.clone(),
             next_id: self.next_id.clone(),
+            uring: self.uring.clone(),
+            inflight: self.inflight.clone(),
         }
     }
 }
@@ -330,18 +267,35 @@ impl UringEngineHandle {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
-        let request = ReadRequest {
-            id,
-            fd,
-            offset,
-            response_tx,
-            buffer,
-        };
+        // Pin the buffer to ensure it doesn't move
+        let mut pinned_buffer = Box::pin(buffer);
+        let sqe = io_uring::opcode::Read::new(
+            io_uring::types::Fd(fd),
+            pinned_buffer.as_mut().get_mut().as_mut_ptr(),
+            length as u32,
+        )
+        .offset(offset)
+        .build()
+        .user_data(id);
 
-        self.submission_tx
-            .send(request)
-            .map_err(|e| anyhow!("Failed to send read request to engine: {}", e))?;
+        {
+            let mut uring_guard = self.uring.lock();
+            unsafe {
+                uring_guard.submission().push(&sqe).unwrap();
+            }
 
+            self.inflight.insert(
+                id,
+                InFlightEntry {
+                    response_tx,
+                    buffer: pinned_buffer,
+                },
+            );
+
+            if let Err(e) = uring_guard.submit() {
+                log::error!("io_uring submit error: {}", e);
+            }
+        }
         response_rx
             .await
             .map_err(|e| anyhow!("Failed to receive read result: {}", e))?
