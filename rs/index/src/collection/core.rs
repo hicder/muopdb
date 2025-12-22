@@ -758,8 +758,14 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                     self.segment_config.posting_list_encoding_type.clone(),
                     self.segment_config.num_features,
                 )?;
+                let terms_path = format!(
+                    "{}/{}/terms",
+                    self.base_directory,
+                    name_for_new_segment.clone()
+                );
+                std::fs::create_dir_all(&terms_path).ok();
                 let segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
-                    ImmutableSegment::new(index, name_for_new_segment.clone(), None),
+                    ImmutableSegment::new(index, name_for_new_segment.clone(), Some(terms_path)),
                 )));
 
                 // Must grab the write lock to prevent further invalidations when applying pending deletions
@@ -1334,6 +1340,7 @@ mod tests {
     use std::sync::Arc;
 
     use anyhow::{Ok, Result};
+    use config::attribute_schema::{AttributeSchema, AttributeType};
     use config::collection::CollectionConfig;
     use metrics::INTERNAL_METRICS;
     use parking_lot::RwLock;
@@ -1797,6 +1804,221 @@ mod tests {
         let toc = collection.get_current_toc();
         assert_eq!(toc.pending.len(), 0);
         assert_eq!(toc.sequence_number, 5);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_collection_hybrid_search() -> Result<()> {
+        use std::collections::HashMap;
+
+        let collection_name = "test_collection_hybrid_search";
+        let temp_dir = TempDir::new(collection_name)?;
+        let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
+
+        let mut segment_config = CollectionConfig::default_test_config();
+        segment_config.num_features = 4;
+
+        let mut schema_map = HashMap::new();
+        schema_map.insert("title".to_string(), AttributeType::Text);
+        schema_map.insert("category".to_string(), AttributeType::Keyword);
+        segment_config.attribute_schema = Some(AttributeSchema::new(schema_map));
+
+        let collection = Arc::new(
+            Collection::<NoQuantizerL2>::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                segment_config,
+            )
+            .unwrap(),
+        );
+
+        let mut attributes1 = HashMap::new();
+        attributes1.insert(
+            "title".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::TextValue(
+                    "apple banana cherry".to_string(),
+                )),
+            },
+        );
+        attributes1.insert(
+            "category".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "fruit".to_string(),
+                )),
+            },
+        );
+        let doc_attr1 = proto::muopdb::DocumentAttribute { value: attributes1 };
+
+        let mut attributes2 = HashMap::new();
+        attributes2.insert(
+            "title".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::TextValue(
+                    "banana orange".to_string(),
+                )),
+            },
+        );
+        attributes2.insert(
+            "category".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "citrus".to_string(),
+                )),
+            },
+        );
+        let doc_attr2 = proto::muopdb::DocumentAttribute { value: attributes2 };
+
+        let mut attributes3 = HashMap::new();
+        attributes3.insert(
+            "title".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::TextValue(
+                    "dog cat mouse".to_string(),
+                )),
+            },
+        );
+        attributes3.insert(
+            "category".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "animal".to_string(),
+                )),
+            },
+        );
+        let doc_attr3 = proto::muopdb::DocumentAttribute { value: attributes3 };
+
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0, Some(doc_attr1))?;
+        collection.insert_for_users(&[0], 2, &[5.0, 6.0, 7.0, 8.0], 1, Some(doc_attr2))?;
+        collection.insert_for_users(&[0], 3, &[9.0, 10.0, 11.0, 12.0], 2, Some(doc_attr3))?;
+
+        collection.flush()?;
+
+        let snapshot = collection.clone().get_snapshot()?;
+        let snapshot = Arc::new(snapshot);
+
+        let query = vec![5.0, 6.0, 7.0, 8.0];
+        let k = 10;
+        let ef_construction = 10;
+        let record_pages = false;
+
+        let result = Snapshot::search_for_users(
+            snapshot.clone(),
+            &[0],
+            query.clone(),
+            k,
+            ef_construction,
+            record_pages,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.id_with_scores.len(), 3);
+
+        let contains_filter = proto::muopdb::ContainsFilter {
+            path: "title".to_string(),
+            value: "apple".to_string(),
+        };
+        let document_filter = proto::muopdb::DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                contains_filter,
+            )),
+        };
+
+        let result = Snapshot::search_for_users(
+            snapshot.clone(),
+            &[0],
+            query.clone(),
+            k,
+            ef_construction,
+            record_pages,
+            Some(Arc::new(document_filter)),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result.id_with_scores.len(),
+            1,
+            "Expected only doc 1 to have 'apple' in title, got {:?}",
+            result
+                .id_with_scores
+                .iter()
+                .map(|r| r.doc_id)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(result.id_with_scores[0].doc_id, 1);
+
+        let contains_filter = proto::muopdb::ContainsFilter {
+            path: "title".to_string(),
+            value: "orange".to_string(),
+        };
+        let document_filter = proto::muopdb::DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                contains_filter,
+            )),
+        };
+
+        let result = Snapshot::search_for_users(
+            snapshot.clone(),
+            &[0],
+            query.clone(),
+            k,
+            ef_construction,
+            record_pages,
+            Some(Arc::new(document_filter)),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result.id_with_scores.len(),
+            1,
+            "Expected only doc 2 to have 'orange' in title, got {:?}",
+            result
+                .id_with_scores
+                .iter()
+                .map(|r| r.doc_id)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(result.id_with_scores[0].doc_id, 2);
+
+        let contains_filter = proto::muopdb::ContainsFilter {
+            path: "title".to_string(),
+            value: "dog".to_string(),
+        };
+        let document_filter = proto::muopdb::DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                contains_filter,
+            )),
+        };
+
+        let result = Snapshot::search_for_users(
+            snapshot,
+            &[0],
+            query.clone(),
+            k,
+            ef_construction,
+            record_pages,
+            Some(Arc::new(document_filter)),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result.id_with_scores.len(),
+            1,
+            "Expected only doc 3 to have 'dog' in title, got {:?}",
+            result
+                .id_with_scores
+                .iter()
+                .map(|r| r.doc_id)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(result.id_with_scores[0].doc_id, 3);
 
         Ok(())
     }
