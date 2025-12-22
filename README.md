@@ -170,7 +170,7 @@ This time it should give you something else
   - [x] Write-ahead-log
   - [x] Segments merger
   - [x] Segments vacuum
-### Phase 4 (Ongoing)
+### Phase 4 (Done)
 - [x] Features
   - [x] Hybrid search
 - [x] Database Management
