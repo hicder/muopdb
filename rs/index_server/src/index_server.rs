@@ -9,9 +9,9 @@ use log::info;
 use metrics::API_METRICS;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
-    CreateCollectionRequest, CreateCollectionResponse, FlushRequest, FlushResponse, Id,
-    InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse, RemoveRequest,
-    RemoveResponse, SearchRequest, SearchResponse,
+    CreateCollectionRequest, CreateCollectionResponse, DocumentAttribute, FlushRequest,
+    FlushResponse, Id, InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse,
+    RemoveRequest, RemoveResponse, SearchRequest, SearchResponse,
 };
 use tokio::sync::RwLock;
 use utils::mem::{bytes_to_u128s, ids_to_u128s, transmute_u8_to_slice};
@@ -278,11 +278,17 @@ impl IndexServer for IndexServerImpl {
                 let user_ids: Arc<[u128]> = Arc::from(user_ids);
                 let vectors: Arc<[f32]> = Arc::from(vectors);
 
+                let doc_attrs: Option<Arc<[Option<DocumentAttribute>]>> =
+                    req.attributes.as_ref().map(|attrs| {
+                        Arc::from(attrs.values.iter().cloned().map(Some).collect::<Vec<_>>())
+                    });
+
                 let seq_no = collection
                     .write_to_wal(
                         doc_ids.clone(),
                         user_ids.clone(),
                         WalOpType::Insert(vectors.clone()),
+                        doc_attrs,
                     )
                     .await
                     .unwrap_or(0);
@@ -354,7 +360,7 @@ impl IndexServer for IndexServerImpl {
                 let user_ids: Arc<[u128]> = Arc::from(user_ids);
 
                 let seq_no = collection
-                    .write_to_wal(ids.clone(), user_ids.clone(), WalOpType::Delete)
+                    .write_to_wal(ids.clone(), user_ids.clone(), WalOpType::Delete, None)
                     .await
                     .unwrap_or(0);
                 let num_docs_removed = ids.len() as u32;
@@ -466,11 +472,17 @@ impl IndexServer for IndexServerImpl {
                 let user_ids: Arc<[u128]> = Arc::from(user_ids);
                 let vectors: Arc<[f32]> = Arc::from(vectors);
 
+                let doc_attrs: Option<Arc<[Option<DocumentAttribute>]>> =
+                    req.attributes.as_ref().map(|attrs| {
+                        Arc::from(attrs.values.iter().cloned().map(Some).collect::<Vec<_>>())
+                    });
+
                 let seq_no = collection
                     .write_to_wal(
                         doc_ids.clone(),
                         user_ids.clone(),
                         WalOpType::Insert(vectors.clone()),
+                        doc_attrs,
                     )
                     .await
                     .unwrap_or(0);

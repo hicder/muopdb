@@ -34,6 +34,7 @@ struct AppendArgs {
     doc_ids: Arc<[u128]>,
     user_ids: Arc<[u128]>,
     op_type: WalOpType<Arc<[f32]>>,
+    document_attribute: Option<Arc<Vec<DocumentAttribute>>>,
 }
 
 /// Represents an entry for a follower task
@@ -279,10 +280,14 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                 let doc_ids = wal_entry.doc_ids;
                                 let user_ids = wal_entry.user_ids;
 
+                                // Should be safe to unwrap since we only insert
+                                let attributes = wal_entry.attributes.unwrap();
+
                                 let mut num_successful_inserts: i64 = 0;
                                 data.chunks(segment_config.num_features)
                                     .zip(doc_ids)
-                                    .for_each(|(vector, doc_id)| {
+                                    .zip(attributes.iter())
+                                    .for_each(|((vector, doc_id), attr)| {
                                         for user_id in user_ids {
                                             mutable_segment
                                                 .insert_for_user(
@@ -290,7 +295,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                                                     *doc_id,
                                                     vector,
                                                     entry_seq_no,
-                                                    None,
+                                                    attr.clone(),
                                                 )
                                                 .unwrap();
 
@@ -428,6 +433,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         doc_ids: Arc<[u128]>,
         user_ids: Arc<[u128]>,
         wal_op_type: WalOpType<Arc<[f32]>>,
+        document_attributes: Option<Arc<Vec<DocumentAttribute>>>,
     ) -> Result<u64> {
         if let Some(wal) = &self.wal {
             // Lock the write coordinator and take out the current group
@@ -450,10 +456,35 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                 // Intentionally keep the write lock until we send the message to the channel.
                 // This ensures that message in the channel is the same order as WAL.
                 let mut wal_write = wal.write();
-                let seq_no = wal_write.append(&args.doc_ids, &args.user_ids, wal_op_type_ref)?;
+                let attr_ref = args.document_attribute;
+                let seq_no = wal_write.append(
+                    &args.doc_ids,
+                    &args.user_ids,
+                    wal_op_type_ref,
+                    attr_ref.clone(),
+                )?;
+
                 // Once the WAL is written, send the op to the channel
-                let op_channel_entry =
-                    OpChannelEntry::new(&args.doc_ids, &args.user_ids, seq_no, args.op_type);
+                let attributes = if let Some(attr_ref) = attr_ref.clone() {
+                    let mut attributes = vec![];
+                    for attr in attr_ref.iter() {
+                        attributes.push(attr.clone());
+                    }
+                    attributes
+                } else {
+                    let mut attributes = vec![];
+                    for _ in 0..args.doc_ids.len() {
+                        attributes.push(DocumentAttribute::default());
+                    }
+                    attributes
+                };
+                let op_channel_entry = OpChannelEntry::new(
+                    &args.doc_ids,
+                    &args.user_ids,
+                    seq_no,
+                    args.op_type,
+                    attributes,
+                );
                 self.sender.send(op_channel_entry).await?;
                 Ok(seq_no)
             };
@@ -505,6 +536,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                         doc_ids,
                         user_ids,
                         op_type: wal_op_type,
+                        document_attribute: document_attributes,
                     }),
                 )
                 .await?;
@@ -527,6 +559,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
                         doc_ids,
                         user_ids,
                         op_type: wal_op_type,
+                        document_attribute: document_attributes,
                     },
                     seq_tx,
                 });
@@ -615,19 +648,27 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         if let std::result::Result::Ok(op) = self.receiver.borrow_mut().try_recv() {
             match op.op_type {
                 WalOpType::Insert(()) => {
-                    debug!("Processing insert operation with seq_no {}", op.seq_no);
+                    info!("Processing insert operation with seq_no {}", op.seq_no);
                     let doc_ids = op.doc_ids();
                     let user_ids = op.user_ids();
                     let data = op.data();
+                    let attributes = op.attributes();
                     data.chunks(self.segment_config.num_features)
                         .zip(doc_ids)
-                        .for_each(|(vector, doc_id)| {
-                            self.insert_for_users(user_ids, *doc_id, vector, op.seq_no, None)
-                                .unwrap();
+                        .zip(attributes)
+                        .for_each(|((vector, doc_id), attr)| {
+                            self.insert_for_users(
+                                user_ids,
+                                *doc_id,
+                                vector,
+                                op.seq_no,
+                                attr.clone(),
+                            )
+                            .unwrap();
                         });
                 }
                 WalOpType::Delete => {
-                    debug!("Processing delete operation with seq_no {}", op.seq_no);
+                    info!("Processing delete operation with seq_no {}", op.seq_no);
                     let doc_ids = op.doc_ids();
                     let user_ids = op.user_ids();
                     assert!(op.data().is_empty());
@@ -664,7 +705,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         doc_id: u128,
         data: &[f32],
         sequence_number: u64,
-        document_attribute: Option<DocumentAttribute>,
+        document_attribute: DocumentAttribute,
     ) -> Result<()> {
         for user_id in user_ids {
             self.mutable_segments
@@ -1344,6 +1385,7 @@ mod tests {
     use config::collection::CollectionConfig;
     use metrics::INTERNAL_METRICS;
     use parking_lot::RwLock;
+    use proto::muopdb::DocumentAttribute;
     use quantization::noq::noq::NoQuantizerL2;
     use rand::Rng;
     use tempdir::TempDir;
@@ -1541,7 +1583,13 @@ mod tests {
         );
 
         // Add a document and flush
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0, None)?;
+        collection.insert_for_users(
+            &[0],
+            1,
+            &[1.0, 2.0, 3.0, 4.0],
+            0,
+            DocumentAttribute::default(),
+        )?;
         collection.flush()?;
 
         let segment_names = collection.get_all_segment_names();
@@ -1599,7 +1647,13 @@ mod tests {
             .unwrap(),
         );
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0, None)?;
+        collection.insert_for_users(
+            &[0],
+            1,
+            &[1.0, 2.0, 3.0, 4.0],
+            0,
+            DocumentAttribute::default(),
+        )?;
         collection.flush()?;
 
         // A thread to optimize the segment
@@ -1691,7 +1745,13 @@ mod tests {
                 .unwrap(),
             );
 
-            collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0, None)?;
+            collection.insert_for_users(
+                &[0],
+                1,
+                &[1.0, 2.0, 3.0, 4.0],
+                0,
+                DocumentAttribute::default(),
+            )?;
             collection.flush()?;
 
             let segment_names = collection.get_all_segment_names();
@@ -1736,6 +1796,7 @@ mod tests {
                 Arc::from([1u128]),
                 Arc::from([0u128]),
                 WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
+                None,
             )
             .await?;
         collection
@@ -1743,6 +1804,7 @@ mod tests {
                 Arc::from([2u128]),
                 Arc::from([0u128]),
                 WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
+                None,
             )
             .await?;
         collection
@@ -1750,6 +1812,7 @@ mod tests {
                 Arc::from([3u128]),
                 Arc::from([0u128]),
                 WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
+                None,
             )
             .await?;
         collection
@@ -1757,6 +1820,7 @@ mod tests {
                 Arc::from([4u128]),
                 Arc::from([0u128]),
                 WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
+                None,
             )
             .await?;
         collection
@@ -1764,19 +1828,28 @@ mod tests {
                 Arc::from([5u128]),
                 Arc::from([0u128]),
                 WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
+                None,
             )
             .await?;
         collection
-            .write_to_wal(Arc::from([5u128]), Arc::from([0u128]), WalOpType::Delete)
+            .write_to_wal(
+                Arc::from([5u128]),
+                Arc::from([0u128]),
+                WalOpType::Delete,
+                None,
+            )
             .await?;
 
         // Process all ops
+        let mut ops_processed = 0;
         loop {
             let op = collection.process_one_op().await?;
             if op == 0 {
                 break;
             }
+            ops_processed += 1;
         }
+        eprintln!("Processed {} ops", ops_processed);
         collection.flush()?;
         let segment_names = collection.get_all_segment_names();
         assert_eq!(segment_names.len(), 1);
@@ -1890,9 +1963,9 @@ mod tests {
         );
         let doc_attr3 = proto::muopdb::DocumentAttribute { value: attributes3 };
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0, Some(doc_attr1))?;
-        collection.insert_for_users(&[0], 2, &[5.0, 6.0, 7.0, 8.0], 1, Some(doc_attr2))?;
-        collection.insert_for_users(&[0], 3, &[9.0, 10.0, 11.0, 12.0], 2, Some(doc_attr3))?;
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0, doc_attr1)?;
+        collection.insert_for_users(&[0], 2, &[5.0, 6.0, 7.0, 8.0], 1, doc_attr2)?;
+        collection.insert_for_users(&[0], 3, &[9.0, 10.0, 11.0, 12.0], 2, doc_attr3)?;
 
         collection.flush()?;
 
@@ -2045,6 +2118,7 @@ mod tests {
                     Arc::from([1u128]),
                     Arc::from([0u128]),
                     WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
+                    None,
                 )
                 .await?;
             collection
@@ -2052,10 +2126,16 @@ mod tests {
                     Arc::from([2u128]),
                     Arc::from([0u128]),
                     WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
+                    None,
                 )
                 .await?;
             collection
-                .write_to_wal(Arc::from([1u128]), Arc::from([0u128]), WalOpType::Delete)
+                .write_to_wal(
+                    Arc::from([1u128]),
+                    Arc::from([0u128]),
+                    WalOpType::Delete,
+                    None,
+                )
                 .await?;
 
             // Process all ops
@@ -2107,6 +2187,7 @@ mod tests {
                     Arc::from([2u128]),
                     Arc::from([0u128]),
                     WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
+                    None,
                 )
                 .await?;
             collection
@@ -2114,6 +2195,7 @@ mod tests {
                     Arc::from([3u128]),
                     Arc::from([0u128]),
                     WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
+                    None,
                 )
                 .await?;
             collection
@@ -2121,16 +2203,32 @@ mod tests {
                     Arc::from([4u128]),
                     Arc::from([0u128]),
                     WalOpType::Insert(Arc::from([1.0, 2.0, 3.0, 4.0])),
+                    None,
                 )
                 .await?;
             collection
-                .write_to_wal(Arc::from([1u128]), Arc::from([0u128]), WalOpType::Delete)
+                .write_to_wal(
+                    Arc::from([1u128]),
+                    Arc::from([0u128]),
+                    WalOpType::Delete,
+                    None,
+                )
                 .await?;
             collection
-                .write_to_wal(Arc::from([2u128]), Arc::from([0u128]), WalOpType::Delete)
+                .write_to_wal(
+                    Arc::from([2u128]),
+                    Arc::from([0u128]),
+                    WalOpType::Delete,
+                    None,
+                )
                 .await?;
             collection
-                .write_to_wal(Arc::from([3u128]), Arc::from([0u128]), WalOpType::Delete)
+                .write_to_wal(
+                    Arc::from([3u128]),
+                    Arc::from([0u128]),
+                    WalOpType::Delete,
+                    None,
+                )
                 .await?;
         }
 
@@ -2207,28 +2305,70 @@ mod tests {
         );
 
         assert!(collection
-            .insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0, None)
+            .insert_for_users(
+                &[0],
+                1,
+                &[1.0, 2.0, 3.0, 4.0],
+                0,
+                DocumentAttribute::default()
+            )
             .is_ok());
         assert!(collection
-            .insert_for_users(&[0], 2, &[2.0, 2.0, 3.0, 4.0], 1, None)
+            .insert_for_users(
+                &[0],
+                2,
+                &[2.0, 2.0, 3.0, 4.0],
+                1,
+                DocumentAttribute::default()
+            )
             .is_ok());
         assert!(collection
-            .insert_for_users(&[0], 3, &[3.0, 2.0, 3.0, 4.0], 2, None)
+            .insert_for_users(
+                &[0],
+                3,
+                &[3.0, 2.0, 3.0, 4.0],
+                2,
+                DocumentAttribute::default()
+            )
             .is_ok());
         assert!(collection.remove(0, 2, 3).is_ok());
 
         assert!(collection.flush().is_ok());
         assert!(collection
-            .insert_for_users(&[0], 1, &[1.0, 2.0, 3.0, 4.0], 0, None)
+            .insert_for_users(
+                &[0],
+                1,
+                &[1.0, 2.0, 3.0, 4.0],
+                0,
+                DocumentAttribute::default()
+            )
             .is_ok());
         assert!(collection
-            .insert_for_users(&[0], 2, &[1.0, 2.0, 3.0, 4.0], 1, None)
+            .insert_for_users(
+                &[0],
+                2,
+                &[1.0, 2.0, 3.0, 4.0],
+                1,
+                DocumentAttribute::default()
+            )
             .is_ok());
         assert!(collection
-            .insert_for_users(&[0], 3, &[2.0, 2.0, 3.0, 4.0], 2, None)
+            .insert_for_users(
+                &[0],
+                3,
+                &[2.0, 2.0, 3.0, 4.0],
+                2,
+                DocumentAttribute::default()
+            )
             .is_ok());
         assert!(collection
-            .insert_for_users(&[0], 4, &[3.0, 2.0, 3.0, 4.0], 3, None)
+            .insert_for_users(
+                &[0],
+                4,
+                &[3.0, 2.0, 3.0, 4.0],
+                3,
+                DocumentAttribute::default()
+            )
             .is_ok());
         assert!(collection.remove(0, 2, 4).is_ok());
         assert!(collection.remove(0, 3, 5).is_ok());
@@ -2311,7 +2451,13 @@ mod tests {
         // Add 20 data points
         for i in 0..num_docs_to_add {
             assert!(collection
-                .insert_for_users(&[user_id], i as u128, &vector, i as u64, None)
+                .insert_for_users(
+                    &[user_id],
+                    i as u128,
+                    &vector,
+                    i as u64,
+                    DocumentAttribute::default()
+                )
                 .is_ok());
         }
 
@@ -2381,7 +2527,7 @@ mod tests {
         for (idx, &doc_id) in doc_ids.iter().enumerate() {
             let vector = &test_vectors[idx * num_features..(idx + 1) * num_features];
             collection
-                .insert_for_users(&user_ids, doc_id, vector, 0, None)
+                .insert_for_users(&user_ids, doc_id, vector, 0, DocumentAttribute::default())
                 .unwrap();
         }
 
@@ -2428,7 +2574,7 @@ mod tests {
         for (idx, &doc_id) in docs_to_insert.iter().enumerate() {
             let vector = &test_vectors[idx * num_features..(idx + 1) * num_features];
             collection
-                .insert_for_users(&user_ids, doc_id, vector, 0, None)
+                .insert_for_users(&user_ids, doc_id, vector, 0, DocumentAttribute::default())
                 .unwrap();
         }
 
@@ -2485,6 +2631,7 @@ mod tests {
                                 Arc::from([doc_to_delete]),
                                 Arc::from([USER_ID]),
                                 WalOpType::Delete,
+                                None,
                             )
                             .await
                             .unwrap();
@@ -2503,6 +2650,7 @@ mod tests {
                                 Arc::from([doc_id]),
                                 Arc::from([USER_ID]),
                                 WalOpType::Insert(Arc::from(vector_data.as_slice())),
+                                None,
                             )
                             .await
                             .unwrap();
@@ -2657,6 +2805,7 @@ mod tests {
                         Arc::from([doc_id]),
                         Arc::from([USER_ID]),
                         WalOpType::Insert(Arc::from(vector_data.as_slice())),
+                        None,
                     )
                     .await
                     .unwrap();

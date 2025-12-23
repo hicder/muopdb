@@ -85,6 +85,7 @@ pub struct OpChannelEntry {
     pub seq_no: u64,
     pub op_type: WalOpType<()>,
     pub buffer: Vec<u8>,
+    pub document_attributes: Vec<DocumentAttribute>,
 }
 
 impl OpChannelEntry {
@@ -93,6 +94,7 @@ impl OpChannelEntry {
         user_ids: &[u128],
         seq_no: u64,
         op_type: WalOpType<Arc<[f32]>>,
+        document_attributes: Vec<DocumentAttribute>,
     ) -> Self {
         // Convert the op_type to drop the Arc<[f32]> data and extract the data
         let (data, op_type_unit): (&[f32], WalOpType<()>) = match &op_type {
@@ -115,6 +117,7 @@ impl OpChannelEntry {
             seq_no,
             op_type: op_type_unit,
             buffer,
+            document_attributes,
         }
     }
 
@@ -132,6 +135,10 @@ impl OpChannelEntry {
 
     pub fn data(&self) -> &[f32] {
         transmute_u8_to_slice(&self.buffer[self.data_offset..self.data_offset + self.data_length])
+    }
+
+    pub fn attributes(&self) -> &Vec<DocumentAttribute> {
+        &self.document_attributes
     }
 }
 
@@ -161,16 +168,32 @@ impl BoxedCollection {
         doc_ids: Arc<[u128]>,
         user_ids: Arc<[u128]>,
         wal_op_type: WalOpType<Arc<[f32]>>,
+        document_attributes: Option<Arc<[Option<DocumentAttribute>]>>,
     ) -> Result<u64> {
+        let document_attributes = if let WalOpType::Insert(_) = wal_op_type {
+            match document_attributes {
+                Some(attributes) => {
+                    let mut attrs = vec![];
+                    for attribute in attributes.iter() {
+                        attrs.push(attribute.clone().unwrap_or_default());
+                    }
+                    Some(Arc::new(attrs))
+                }
+                None => None,
+            }
+        } else {
+            None
+        };
+
         match self {
             BoxedCollection::CollectionNoQuantizationL2(collection) => {
                 collection
-                    .write_to_wal(doc_ids, user_ids, wal_op_type)
+                    .write_to_wal(doc_ids, user_ids, wal_op_type, document_attributes)
                     .await
             }
             BoxedCollection::CollectionProductQuantization(collection) => {
                 collection
-                    .write_to_wal(doc_ids, user_ids, wal_op_type)
+                    .write_to_wal(doc_ids, user_ids, wal_op_type, document_attributes)
                     .await
             }
         }
@@ -195,6 +218,7 @@ impl BoxedCollection {
         seq_no: u64,
         document_attribute: Option<DocumentAttribute>,
     ) -> Result<()> {
+        let document_attribute = document_attribute.unwrap_or_default();
         match self {
             BoxedCollection::CollectionNoQuantizationL2(collection) => {
                 collection.insert_for_users(user_ids, doc_id, data, seq_no, document_attribute)
