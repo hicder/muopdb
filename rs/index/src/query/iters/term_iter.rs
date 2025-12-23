@@ -33,8 +33,7 @@ impl<'a> InvertedIndexIter for TermIter<'a> {
                 point
             }
             IterState::At(_) => {
-                let point = self.iter.current();
-                self.iter.next();
+                let point = self.iter.next();
                 self.state = if point.is_some() {
                     IterState::At(point.unwrap())
                 } else {
@@ -67,6 +66,7 @@ impl<'a> InvertedIndexIter for TermIter<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::query::iters::Iter;
     use crate::terms::builder::TermBuilder;
     use crate::terms::writer::TermWriter;
 
@@ -106,6 +106,53 @@ mod tests {
     }
 
     #[test]
+    fn test_and_id_term() {
+        use crate::query::iters::and_iter::AndIter;
+        use crate::query::iters::ids_iter::IdsIter;
+        use crate::query::iters::term_iter::TermIter;
+        use crate::terms::builder::TermBuilder;
+        use crate::terms::writer::TermWriter;
+
+        let temp_dir = tempdir::TempDir::new("test_term_iter_skip").unwrap();
+        let base_directory = temp_dir.path();
+        let base_dir_str = base_directory.to_str().unwrap().to_string();
+
+        let mut builder = TermBuilder::new().unwrap();
+        for i in [0] {
+            builder.add(i, "apple".to_string()).unwrap();
+        }
+
+        builder.build().unwrap();
+        let writer = TermWriter::new(base_dir_str.clone());
+        writer.write(&mut builder).unwrap();
+
+        let path = format!("{base_dir_str}/combined");
+        let file_len = std::fs::metadata(&path).unwrap().len();
+        let index = TermIndex::new(path, 0, file_len as usize).unwrap();
+
+        let apple_id = index.get_term_id("apple").unwrap();
+        let term_iter = TermIter::new(&index, apple_id).unwrap();
+        let ids = vec![0, 1];
+        let ids_iter = IdsIter::new(ids);
+
+        let mut and_iter = Iter::And(AndIter::new(vec![
+            Iter::Term(term_iter),
+            Iter::Ids(ids_iter),
+        ]));
+
+        let val1 = and_iter.next();
+        let cur1 = and_iter.point_id();
+
+        let val2 = and_iter.next();
+        let cur2 = and_iter.point_id();
+
+        assert_eq!(val1, Some(0));
+        assert_eq!(cur1, Some(0));
+        assert_eq!(val2, None);
+        assert_eq!(cur2, None);
+    }
+
+    #[test]
     fn test_term_iter_skip_to() {
         let temp_dir = tempdir::TempDir::new("test_term_iter_skip").unwrap();
         let base_directory = temp_dir.path();
@@ -127,13 +174,15 @@ mod tests {
         let apple_id = index.get_term_id("apple").unwrap();
         let mut iter = TermIter::new(&index, apple_id).unwrap();
 
+        iter.next();
         iter.skip_to(5);
-        assert_eq!(iter.next(), Some(5));
+        assert_eq!(iter.point_id(), Some(5));
         assert_eq!(iter.next(), Some(7));
 
         iter.skip_to(12);
         assert_eq!(iter.point_id(), Some(15));
-        assert_eq!(iter.next(), Some(15));
+        assert_eq!(iter.next(), Some(20));
+        assert_eq!(iter.point_id(), Some(20));
 
         iter.skip_to(30);
         assert_eq!(iter.next(), None);
@@ -224,11 +273,11 @@ mod tests {
         assert_eq!(iter.point_id(), Some(0));
 
         iter.skip_to(5);
-        assert_eq!(iter.next(), Some(6));
         assert_eq!(iter.point_id(), Some(6));
-
         assert_eq!(iter.next(), Some(8));
-        assert_eq!(iter.point_id(), Some(8));
+
+        assert_eq!(iter.next(), Some(10));
+        assert_eq!(iter.point_id(), Some(10));
 
         iter.skip_to(20);
         assert_eq!(iter.next(), None);
