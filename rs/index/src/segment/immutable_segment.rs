@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use config::search_params::SearchParams;
 use quantization::quantization::Quantizer;
 
-use super::Segment;
 use crate::multi_spann::index::MultiSpannIndex;
 use crate::multi_terms::index::MultiTermIndex;
 use crate::query::planner::Planner;
+use crate::segment::Segment;
 use crate::spann::iter::SpannIter;
 use crate::utils::SearchResult;
-
 /// This is an immutable segment. This usually contains a single index.
 pub struct ImmutableSegment<Q: Quantizer> {
     index: MultiSpannIndex<Q>,
@@ -104,13 +104,11 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
         &self,
         user_id: u128,
         query: Vec<f32>,
-        k: usize,
-        ef_construction: u32,
-        record_pages: bool,
+        params: &SearchParams,
         planner: Option<Arc<Planner>>,
     ) -> Option<SearchResult> {
         self.index
-            .search_for_user(user_id, query, k, ef_construction, record_pages, planner)
+            .search_for_user(user_id, query, params, planner)
             .await
     }
 }
@@ -122,6 +120,7 @@ unsafe impl<Q: Quantizer> Sync for ImmutableSegment<Q> {}
 mod tests {
     use config::collection::CollectionConfig;
     use config::enums::IntSeqEncodingType;
+    use config::search_params::SearchParams;
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
 
@@ -179,8 +178,10 @@ mod tests {
         let k = 3;
         let num_probes = 2;
 
+        let params = SearchParams::new(k, num_probes, false);
+
         let results = immutable_segment
-            .search_for_user(0, query.clone(), k, num_probes, false, None)
+            .search_for_user(0, query.clone(), &params, None)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -248,8 +249,10 @@ mod tests {
             .remove(0, num_vectors as u128)
             .expect("Failed to invalidate"));
 
+        let params = SearchParams::new(k, num_probes, false);
+
         let results = immutable_segment
-            .search_for_user(0, query.clone(), k, num_probes, false, None)
+            .search_for_user(0, query.clone(), &params, None)
             .await
             .expect("Failed to search with Multi-SPANN index");
 

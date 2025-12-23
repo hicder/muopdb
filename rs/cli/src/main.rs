@@ -4,7 +4,7 @@ use log::info;
 use proto::aggregator::aggregator_client::AggregatorClient;
 use proto::aggregator::GetRequest;
 use proto::muopdb::index_server_client::IndexServerClient;
-use proto::muopdb::{Id, SearchRequest};
+use proto::muopdb::{Id, SearchParams, SearchRequest};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -40,13 +40,18 @@ async fn main() -> Result<()> {
             let request = tonic::Request::new(GetRequest {
                 index: index_name,
                 vector: vec![1.0, 2.0, 3.0],
-                top_k: 10,
-                record_metrics: true,
-                ef_construction: 100,
+                params: Some(SearchParams {
+                    top_k: 10,
+                    record_metrics: true,
+                    ef_construction: 100,
+                    num_explored_centroids: None,
+                    centroid_distance_ratio: 0.1,
+                }),
                 user_ids: vec![Id {
                     low_id: 0,
                     high_id: 0,
                 }],
+                where_document: None,
             });
 
             let response = client
@@ -65,9 +70,13 @@ async fn main() -> Result<()> {
             let request = tonic::Request::new(SearchRequest {
                 collection_name: index_name,
                 vector: vec,
-                top_k: 10,
-                record_metrics: true,
-                ef_construction: 100,
+                params: Some(SearchParams {
+                    top_k: 10,
+                    record_metrics: true,
+                    ef_construction: 100,
+                    num_explored_centroids: None,
+                    centroid_distance_ratio: 0.1,
+                }),
                 user_ids: vec![Id {
                     low_id: 0,
                     high_id: 0,

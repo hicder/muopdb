@@ -16,7 +16,7 @@ if __name__ == "__main__":
     while i < 5:
         start = time.time()
         search_response = muopdb_client.search(
-            index_name="test-collection-1",
+            collection_name="test-collection-1",
             vector=query_vector,
             top_k=5,
             ef_construction=50,

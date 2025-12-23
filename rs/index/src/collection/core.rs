@@ -1383,6 +1383,7 @@ mod tests {
     use anyhow::{Ok, Result};
     use config::attribute_schema::{AttributeSchema, AttributeType};
     use config::collection::CollectionConfig;
+    use config::search_params::SearchParams;
     use metrics::INTERNAL_METRICS;
     use parking_lot::RwLock;
     use proto::muopdb::DocumentAttribute;
@@ -1608,9 +1609,7 @@ mod tests {
             snapshot,
             &[0],
             vec![1.0, 2.0, 3.0, 4.0],
-            10,
-            10,
-            false,
+            &SearchParams::new(10, 10, false),
             None,
         )
         .await
@@ -1699,9 +1698,7 @@ mod tests {
                     snapshot,
                     &[0],
                     vec![1.0, 2.0, 3.0, 4.0],
-                    10,
-                    10,
-                    false,
+                    &SearchParams::new(10, 10, false),
                     None,
                 )
                 .await
@@ -1977,17 +1974,11 @@ mod tests {
         let ef_construction = 10;
         let record_pages = false;
 
-        let result = Snapshot::search_for_users(
-            snapshot.clone(),
-            &[0],
-            query.clone(),
-            k,
-            ef_construction,
-            record_pages,
-            None,
-        )
-        .await
-        .unwrap();
+        let params = SearchParams::new(k, ef_construction, record_pages);
+        let result =
+            Snapshot::search_for_users(snapshot.clone(), &[0], query.clone(), &params, None)
+                .await
+                .unwrap();
 
         assert_eq!(result.id_with_scores.len(), 3);
 
@@ -2005,9 +1996,7 @@ mod tests {
             snapshot.clone(),
             &[0],
             query.clone(),
-            k,
-            ef_construction,
-            record_pages,
+            &params,
             Some(Arc::new(document_filter)),
         )
         .await
@@ -2039,9 +2028,7 @@ mod tests {
             snapshot.clone(),
             &[0],
             query.clone(),
-            k,
-            ef_construction,
-            record_pages,
+            &params,
             Some(Arc::new(document_filter)),
         )
         .await
@@ -2073,9 +2060,7 @@ mod tests {
             snapshot,
             &[0],
             query.clone(),
-            k,
-            ef_construction,
-            record_pages,
+            &params,
             Some(Arc::new(document_filter)),
         )
         .await

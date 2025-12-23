@@ -3,6 +3,7 @@ use std::vec;
 
 use config::attribute_schema::AttributeSchema;
 use config::collection::CollectionConfig;
+use config::search_params::SearchParams;
 use index::collection::snapshot::SnapshotWithQuantizer;
 use index::wal::entry::WalOpType;
 use log::info;
@@ -165,9 +166,6 @@ impl IndexServer for IndexServerImpl {
         API_METRICS.num_requests_inc("search", &collection_name);
 
         let vec = req.vector;
-        let k = req.top_k;
-        let record_metrics = req.record_metrics;
-        let ef_construction = req.ef_construction;
         let user_ids = ids_to_u128s(&req.user_ids);
         let where_document = req.where_document;
 
@@ -182,15 +180,25 @@ impl IndexServer for IndexServerImpl {
         } else {
             None
         };
+
+        let params = req
+            .params
+            .ok_or_else(|| tonic::Status::invalid_argument("params is required"))?;
+        let search_params = SearchParams::new(
+            params.top_k as usize,
+            params.ef_construction,
+            params.record_metrics,
+        )
+        .with_num_explored_centroids(params.num_explored_centroids.map(|v| v as usize))
+        .with_centroid_distance_ratio(params.centroid_distance_ratio);
+
         if let Some(collection) = collection_opt {
             if let Ok(snapshot) = collection.get_snapshot() {
                 let result = SnapshotWithQuantizer::search_for_users(
                     snapshot,
                     &user_ids,
                     vec,
-                    k as usize,
-                    ef_construction,
-                    record_metrics,
+                    &search_params,
                     filter,
                 )
                 .await;

@@ -6,6 +6,7 @@ pub mod pending_segment;
 use std::sync::Arc;
 
 use anyhow::Result;
+use config::search_params::SearchParams;
 use immutable_segment::ImmutableSegment;
 use parking_lot::RwLock;
 use pending_segment::PendingSegment;
@@ -126,9 +127,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
         s: BoxedImmutableSegment<Q>,
         id: u128,
         query: Vec<f32>,
-        k: usize,
-        ef_construction: u32,
-        record_pages: bool,
+        params: &'a SearchParams,
         planner: Option<Arc<Planner>>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<SearchResult>> + Send + 'a>>
     where
@@ -139,26 +138,19 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
                 BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                     immutable_segment
                         .read()
-                        .search_for_user(
-                            id,
-                            query.clone(),
-                            k,
-                            ef_construction,
-                            record_pages,
-                            planner,
-                        )
+                        .search_for_user(id, query.clone(), params, planner)
                         .await
                 }
                 BoxedImmutableSegment::PendingSegment(pending_segment) => {
                     pending_segment
                         .read()
-                        .search_with_id(id, query.clone(), k, ef_construction, record_pages)
+                        .search_with_id(id, query.clone(), params)
                         .await
                 }
                 BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
                     mocked_segment
                         .read()
-                        .search_with_id(id, query.clone(), k, ef_construction, record_pages)
+                        .search_with_id(id, query.clone(), params)
                         .await
                 }
             }
@@ -259,9 +251,7 @@ impl MockedSegment {
         &self,
         id: u128,
         query: Vec<f32>,
-        k: usize,
-        ef_construction: u32,
-        record_pages: bool,
+        params: &SearchParams,
     ) -> Option<SearchResult> {
         todo!()
     }

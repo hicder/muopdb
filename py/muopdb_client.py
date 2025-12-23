@@ -20,13 +20,18 @@ class IndexServerClient:
         response = self.stub.CreateCollection(request)
         return response
 
-    def search(self, collection_name: str, vector: list[float], top_k: int, ef_construction: int, record_metrics: bool=False, user_ids: list[int]=[0]):
-        request = muopdb_pb2.SearchRequest(
-            collection_name=collection_name,
-            vector=vector,
+    def search(self, collection_name: str, vector: list[float], top_k: int, ef_construction: int, record_metrics: bool=False, user_ids: list[int]=[0], num_explored_centroids: int=None, centroid_distance_ratio: float=0.1):
+        search_params = muopdb_pb2.SearchParams(
             top_k=top_k,
             ef_construction=ef_construction,
             record_metrics=record_metrics,
+            num_explored_centroids=num_explored_centroids,
+            centroid_distance_ratio=centroid_distance_ratio
+        )
+        request = muopdb_pb2.SearchRequest(
+            collection_name=collection_name,
+            vector=vector,
+            params=search_params,
             user_ids=user_ids
         )
         response = self.stub.Search(request)
@@ -57,7 +62,7 @@ if __name__ == '__main__':
     index_server_client = IndexServerClient()
     try:
         search_response = index_server_client.search(
-            index_name="my_index",
+            collection_name="my_index",
             vector=[0.4, 0.5, 0.6],
             top_k=3,
             ef_construction=50,

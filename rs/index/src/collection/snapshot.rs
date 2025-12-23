@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use config::search_params::SearchParams;
 use proto::muopdb::DocumentFilter;
 use quantization::noq::noq::NoQuantizerL2;
 use quantization::pq::pq::ProductQuantizerL2;
@@ -38,9 +39,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
         snapshot: Arc<Snapshot<Q>>,
         user_ids: &[u128],
         query: Vec<f32>,
-        k: usize,
-        ef_construction: u32,
-        record_pages: bool,
+        params: &SearchParams,
         filter: Option<Arc<DocumentFilter>>,
     ) -> Option<SearchResult>
     where
@@ -49,14 +48,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
         let mut results = SearchResult::new();
         for user_id in user_ids {
             if let Some(id_results) = snapshot
-                .search_for_user(
-                    *user_id,
-                    query.clone(),
-                    k,
-                    ef_construction,
-                    record_pages,
-                    filter.clone(),
-                )
+                .search_for_user(*user_id, query.clone(), params, filter.clone())
                 .await
             {
                 results.id_with_scores.extend(id_results.id_with_scores);
@@ -65,7 +57,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
         }
 
         results.id_with_scores.sort();
-        results.id_with_scores.truncate(k);
+        results.id_with_scores.truncate(params.top_k);
 
         Some(results)
     }
@@ -77,9 +69,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
         &self,
         user_id: u128,
         query: Vec<f32>,
-        k: usize,
-        ef_construction: u32,
-        record_pages: bool,
+        params: &SearchParams,
         filter: Option<Arc<DocumentFilter>>,
     ) -> Option<SearchResult>
     where
@@ -102,16 +92,8 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
             };
             let s = segment.clone();
             let q = query.clone();
-            if let Some(results) = BoxedImmutableSegment::search_with_id(
-                s,
-                user_id,
-                q,
-                k,
-                ef_construction,
-                record_pages,
-                planner,
-            )
-            .await
+            if let Some(results) =
+                BoxedImmutableSegment::search_with_id(s, user_id, q, params, planner).await
             {
                 scored_results.id_with_scores.extend(results.id_with_scores);
                 scored_results.stats.merge(&results.stats);
@@ -119,7 +101,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
         }
 
         scored_results.id_with_scores.sort();
-        scored_results.id_with_scores.truncate(k);
+        scored_results.id_with_scores.truncate(params.top_k);
 
         Some(scored_results)
     }
@@ -149,33 +131,19 @@ impl SnapshotWithQuantizer {
         snapshot: SnapshotWithQuantizer,
         user_ids: &[u128],
         query: Vec<f32>,
-        k: usize,
-        ef_construction: u32,
-        record_pages: bool,
+        params: &SearchParams,
         filter: Option<Arc<DocumentFilter>>,
     ) -> Option<SearchResult> {
         match snapshot {
             Self::SnapshotNoQuantizer(snapshot) => {
                 Snapshot::<NoQuantizerL2>::search_for_users(
-                    snapshot,
-                    user_ids,
-                    query,
-                    k,
-                    ef_construction,
-                    record_pages,
-                    filter,
+                    snapshot, user_ids, query, params, filter,
                 )
                 .await
             }
             Self::SnapshotProductQuantizer(snapshot) => {
                 Snapshot::<ProductQuantizerL2>::search_for_users(
-                    snapshot,
-                    user_ids,
-                    query,
-                    k,
-                    ef_construction,
-                    record_pages,
-                    filter,
+                    snapshot, user_ids, query, params, filter,
                 )
                 .await
             }

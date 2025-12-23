@@ -5,7 +5,7 @@ import warnings
 
 import muopdb_pb2 as muopdb__pb2
 
-GRPC_GENERATED_VERSION = '1.68.1'
+GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -18,83 +18,11 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + f' but the generated code in muopdb_pb2_grpc.py depends on'
+        + ' but the generated code in muopdb_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
     )
-
-
-class AggregatorStub(object):
-    """Missing associated documentation comment in .proto file."""
-
-    def __init__(self, channel):
-        """Constructor.
-
-        Args:
-            channel: A grpc.Channel.
-        """
-        self.Get = channel.unary_unary(
-                '/muopdb.Aggregator/Get',
-                request_serializer=muopdb__pb2.GetRequest.SerializeToString,
-                response_deserializer=muopdb__pb2.GetResponse.FromString,
-                _registered_method=True)
-
-
-class AggregatorServicer(object):
-    """Missing associated documentation comment in .proto file."""
-
-    def Get(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-
-def add_AggregatorServicer_to_server(servicer, server):
-    rpc_method_handlers = {
-            'Get': grpc.unary_unary_rpc_method_handler(
-                    servicer.Get,
-                    request_deserializer=muopdb__pb2.GetRequest.FromString,
-                    response_serializer=muopdb__pb2.GetResponse.SerializeToString,
-            ),
-    }
-    generic_handler = grpc.method_handlers_generic_handler(
-            'muopdb.Aggregator', rpc_method_handlers)
-    server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('muopdb.Aggregator', rpc_method_handlers)
-
-
- # This class is part of an EXPERIMENTAL API.
-class Aggregator(object):
-    """Missing associated documentation comment in .proto file."""
-
-    @staticmethod
-    def Get(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/muopdb.Aggregator/Get',
-            muopdb__pb2.GetRequest.SerializeToString,
-            muopdb__pb2.GetResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
 
 
 class IndexServerStub(object):
@@ -120,6 +48,11 @@ class IndexServerStub(object):
                 '/muopdb.IndexServer/Insert',
                 request_serializer=muopdb__pb2.InsertRequest.SerializeToString,
                 response_deserializer=muopdb__pb2.InsertResponse.FromString,
+                _registered_method=True)
+        self.Remove = channel.unary_unary(
+                '/muopdb.IndexServer/Remove',
+                request_serializer=muopdb__pb2.RemoveRequest.SerializeToString,
+                response_deserializer=muopdb__pb2.RemoveResponse.FromString,
                 _registered_method=True)
         self.InsertPacked = channel.unary_unary(
                 '/muopdb.IndexServer/InsertPacked',
@@ -154,6 +87,12 @@ class IndexServerServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Remove(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def InsertPacked(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -183,6 +122,11 @@ def add_IndexServerServicer_to_server(servicer, server):
                     servicer.Insert,
                     request_deserializer=muopdb__pb2.InsertRequest.FromString,
                     response_serializer=muopdb__pb2.InsertResponse.SerializeToString,
+            ),
+            'Remove': grpc.unary_unary_rpc_method_handler(
+                    servicer.Remove,
+                    request_deserializer=muopdb__pb2.RemoveRequest.FromString,
+                    response_serializer=muopdb__pb2.RemoveResponse.SerializeToString,
             ),
             'InsertPacked': grpc.unary_unary_rpc_method_handler(
                     servicer.InsertPacked,
@@ -276,6 +220,33 @@ class IndexServer(object):
             '/muopdb.IndexServer/Insert',
             muopdb__pb2.InsertRequest.SerializeToString,
             muopdb__pb2.InsertResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Remove(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/muopdb.IndexServer/Remove',
+            muopdb__pb2.RemoveRequest.SerializeToString,
+            muopdb__pb2.RemoveResponse.FromString,
             options,
             channel_credentials,
             insecure,

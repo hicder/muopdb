@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
+use config::search_params::SearchParams;
 use log::debug;
 use quantization::noq::noq::NoQuantizer;
 use quantization::quantization::Quantizer;
@@ -80,14 +81,18 @@ impl<Q: Quantizer> Spann<Q> {
     pub async fn search(
         &self,
         query: Vec<f32>,
-        k: usize,
-        ef_construction: u32,
-        record_pages: bool,
+        params: &SearchParams,
         planner: Option<Arc<Planner>>,
     ) -> Option<SearchResult> {
+        let num_explored_centroids = params.num_explored_centroids();
         let nearest_centroids = self
             .centroids
-            .ann_search(&query, k, ef_construction, record_pages)
+            .ann_search(
+                &query,
+                num_explored_centroids,
+                params.ef_construction,
+                params.record_pages,
+            )
             .await;
         let centroid_search_stats = nearest_centroids.stats;
         let nearest_centroid_ids = nearest_centroids.id_with_scores;
@@ -104,7 +109,8 @@ impl<Q: Quantizer> Spann<Q> {
         let nearest_centroid_ids: Vec<usize> = nearest_centroid_ids
             .iter()
             .filter(|centroid_and_distance| {
-                centroid_and_distance.score - nearest_distance <= nearest_distance * 0.1
+                centroid_and_distance.score - nearest_distance
+                    <= nearest_distance * params.centroid_distance_ratio
             })
             .map(|x| x.doc_id as usize)
             .collect();
@@ -116,7 +122,13 @@ impl<Q: Quantizer> Spann<Q> {
 
         let mut results = self
             .posting_lists
-            .search_with_centroids_and_remap(&query, nearest_centroid_ids, k, record_pages, planner)
+            .search_with_centroids_and_remap(
+                &query,
+                nearest_centroid_ids,
+                params.top_k,
+                params.record_pages,
+                planner,
+            )
             .await;
         results.stats.merge(&centroid_search_stats);
         Some(results)
@@ -126,6 +138,7 @@ impl<Q: Quantizer> Spann<Q> {
 #[cfg(test)]
 mod tests {
     use config::enums::{IntSeqEncodingType, QuantizerType};
+    use config::search_params::SearchParams;
     use quantization::noq::noq::NoQuantizer;
     use quantization::pq::pq::ProductQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
@@ -196,8 +209,10 @@ mod tests {
         let k = 2;
         let num_probes = 2;
 
+        let params = SearchParams::new(k, num_probes, false);
+
         let results = spann
-            .search(query, k, num_probes, false, None)
+            .search(query, &params, None)
             .await
             .expect("IVF search should return a result");
 
@@ -271,8 +286,10 @@ mod tests {
         assert!(spann.invalidate(4));
         assert!(spann.is_invalidated(4));
 
+        let params = SearchParams::new(k, num_probes, false);
+
         let results = spann
-            .search(query, k, num_probes, false, None)
+            .search(query, &params, None)
             .await
             .expect("IVF search should return a result");
 
@@ -343,8 +360,10 @@ mod tests {
         let k = 5;
         let num_probes = 2;
 
+        let params = SearchParams::new(k, num_probes, false);
+
         let results = spann
-            .search(query, k, num_probes, false, None)
+            .search(query, &params, None)
             .await
             .expect("IVF search should return a result");
 
