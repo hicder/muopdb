@@ -52,7 +52,9 @@ impl Aggregator for AggregatorServerImpl {
             .ok_or_else(|| {
                 tonic::Status::internal(format!("No nodes found for index: {}", index_name))
             })?;
-        let ef_construction = req.ef_construction;
+        let params = req
+            .params
+            .ok_or_else(|| tonic::Status::invalid_argument("params is required"))?;
 
         let node_infos = self
             .node_manager
@@ -93,11 +95,9 @@ impl Aggregator for AggregatorServerImpl {
                 .search(tonic::Request::new(SearchRequest {
                     collection_name: index_name_for_shard,
                     vector: req.vector.clone(),
-                    top_k: req.top_k,
-                    record_metrics: req.record_metrics,
-                    ef_construction,
+                    params: Some(params.clone()),
                     user_ids: req.user_ids.clone(),
-                    where_document: None,
+                    where_document: req.where_document.clone(),
                 }))
                 .await
                 .map_err(|e| tonic::Status::internal(format!("Search request failed: {}", e)))?;

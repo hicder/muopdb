@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use anyhow::{anyhow, Result};
 use config::collection::CollectionConfig;
+use config::search_params::SearchParams;
 use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
 
@@ -271,9 +272,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
         &self,
         id: u128,
         query: Vec<f32>,
-        k: usize,
-        ef_construction: u32,
-        record_pages: bool,
+        params: &SearchParams,
     ) -> Option<SearchResult>
     where
         <Q as Quantizer>::QuantizedT: Send + Sync,
@@ -283,7 +282,6 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
             .load(std::sync::atomic::Ordering::Acquire)
         {
             let mut results = SearchResult::new();
-            // The invalidated ids vector should be very small, we can just clone it
             let invalidated_ids = self
                 .temp_invalidated_ids
                 .read()
@@ -291,20 +289,24 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
                 .filter(|vec| !vec.is_empty())
                 .cloned()
                 .unwrap_or_default();
+            let adjusted_params = SearchParams::new(
+                params.top_k + invalidated_ids.len(),
+                params.ef_construction,
+                params.record_pages,
+            )
+            .with_num_explored_centroids(params.num_explored_centroids)
+            .with_centroid_distance_ratio(params.centroid_distance_ratio);
             for segment in &self.inner_segments {
                 let s = segment.clone();
                 let segment_result = BoxedImmutableSegment::search_with_id(
                     s,
                     id,
                     query.clone(),
-                    k + invalidated_ids.len(),
-                    ef_construction,
-                    record_pages,
+                    &adjusted_params,
                     None,
                 )
                 .await;
                 if let Some(mut result) = segment_result {
-                    // Filter out invalidated IDs
                     result
                         .id_with_scores
                         .retain(|id_with_score| !invalidated_ids.contains(&id_with_score.doc_id));
@@ -317,11 +319,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
         } else {
             let index = self.index.read();
             match &*index {
-                Some(index) => {
-                    index
-                        .search_for_user(id, query.clone(), k, ef_construction, record_pages, None)
-                        .await
-                }
+                Some(index) => index.search_for_user(id, query.clone(), params, None).await,
                 None => unreachable!("Index should not be None if use_internal_index is set"),
             }
         }
@@ -334,6 +332,7 @@ mod tests {
 
     use config::collection::CollectionConfig;
     use config::enums::IntSeqEncodingType;
+    use config::search_params::SearchParams;
     use quantization::noq::noq::{NoQuantizer, NoQuantizerL2};
     use rand::Rng;
     use utils::distance::l2::L2DistanceCalculator;
@@ -406,8 +405,10 @@ mod tests {
             CollectionConfig::default_test_config(),
         );
 
+        let params = SearchParams::new(1, 10, false);
+
         let results = pending_segment
-            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], 1, 10, false)
+            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], &params)
             .await;
         let res = results.unwrap();
         assert_eq!(res.id_with_scores.len(), 1);
@@ -451,8 +452,10 @@ mod tests {
 
         assert!(pending_segment.remove(0, 0)?);
 
+        let params = SearchParams::new(1, 10, false);
+
         let results = pending_segment
-            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], 1, 10, false)
+            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], &params)
             .await;
         let res = results.unwrap();
         assert_eq!(res.id_with_scores.len(), 1);
@@ -502,8 +505,10 @@ mod tests {
             CollectionConfig::default_test_config(),
         );
 
+        let params = SearchParams::new(1, 10, false);
+
         let results = pending_segment
-            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], 1, 10, false)
+            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], &params)
             .await;
         let res = results.unwrap();
         assert_eq!(res.id_with_scores.len(), 1);

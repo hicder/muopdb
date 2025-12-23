@@ -67,6 +67,7 @@ mod tests {
     use std::sync::Arc;
 
     use config::collection::CollectionConfig;
+    use config::search_params::SearchParams;
     use proto::muopdb::DocumentAttribute;
 
     use super::*;
@@ -140,8 +141,9 @@ mod tests {
 
         let snapshot = collection.get_snapshot()?;
         let snapshot = Arc::new(snapshot);
+        let params = SearchParams::new(3, 10, false);
         let result = snapshot
-            .search_for_user(0, vec![100.0, 101.0, 102.0], 3, 10, false, None)
+            .search_for_user(0, vec![100.0, 101.0, 102.0], &params, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -155,7 +157,7 @@ mod tests {
         assert_eq!(result_ids, vec![4, 5, 6]);
 
         let result = snapshot
-            .search_for_user(0, vec![1.0, 2.0, 3.0], 3, 10, false, None)
+            .search_for_user(0, vec![1.0, 2.0, 3.0], &params, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -247,8 +249,9 @@ mod tests {
         let snapshot = collection.get_snapshot()?;
         let snapshot = Arc::new(snapshot);
 
+        let params = SearchParams::new(3, 10, false);
         let result = snapshot
-            .search_for_user(0, vec![1.0, 2.0, 3.0], 3, 10, false, None)
+            .search_for_user(0, vec![1.0, 2.0, 3.0], &params, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -328,8 +331,9 @@ mod tests {
         assert_eq!(segments.len(), 1);
 
         let snapshot = collection.get_snapshot()?;
+        let params = SearchParams::new(3, 10, false);
         let result = snapshot
-            .search_for_user(0, vec![1.0, 2.0, 3.0], 3, 10, false, None)
+            .search_for_user(0, vec![1.0, 2.0, 3.0], &params, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -343,7 +347,7 @@ mod tests {
         assert_eq!(result_ids, vec![1, 2, 3]);
 
         let result = snapshot
-            .search_for_user(1, vec![10.0, 11.0, 12.0], 3, 10, false, None)
+            .search_for_user(1, vec![10.0, 11.0, 12.0], &params, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -434,8 +438,9 @@ mod tests {
         assert_eq!(segments.len(), 1);
 
         let snapshot = collection.get_snapshot()?;
+        let params = SearchParams::new(3, 10, false);
         let result = snapshot
-            .search_for_user(0, vec![1.0, 2.0, 3.0], 3, 10, false, None)
+            .search_for_user(0, vec![1.0, 2.0, 3.0], &params, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 2);

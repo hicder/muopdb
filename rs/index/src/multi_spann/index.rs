@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use config::enums::IntSeqEncodingType;
+use config::search_params::SearchParams;
 use dashmap::DashMap;
 use memmap2::Mmap;
 use odht::HashTableOwned;
@@ -181,17 +182,11 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         &self,
         user_id: u128,
         query: Vec<f32>,
-        k: usize,
-        ef_construction: u32,
-        record_pages: bool,
+        params: &SearchParams,
         planner: Option<Arc<Planner>>,
     ) -> Option<SearchResult> {
         match self.get_or_create_index(user_id) {
-            Ok(index) => {
-                index
-                    .search(query, k, ef_construction, record_pages, planner)
-                    .await
-            }
+            Ok(index) => index.search(query, params, planner).await,
             Err(_) => None,
         }
     }
@@ -224,6 +219,7 @@ mod tests {
 
     use config::collection::CollectionConfig;
     use config::enums::IntSeqEncodingType;
+    use config::search_params::SearchParams;
     use proto::muopdb::{ContainsFilter, DocumentFilter};
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
@@ -282,8 +278,10 @@ mod tests {
         let k = 3;
         let num_probes = 2;
 
+        let params = SearchParams::new(k, num_probes, false);
+
         let results = multi_spann_index
-            .search_for_user(0, query, k, num_probes, false, None)
+            .search_for_user(0, query, &params, None)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -390,8 +388,10 @@ mod tests {
             .is_invalidated(0, num_vectors)
             .expect("Failed to query invalidation"));
 
+        let params = SearchParams::new(k, num_probes, false);
+
         let results = multi_spann_index
-            .search_for_user(0, query, k, num_probes, false, None)
+            .search_for_user(0, query, &params, None)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -464,8 +464,10 @@ mod tests {
         let k = 3;
         let num_probes = 2;
 
+        let params = SearchParams::new(k, num_probes, false);
+
         let results = multi_spann_index
-            .search_for_user(0, query, k, num_probes, false, None)
+            .search_for_user(0, query, &params, None)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -731,8 +733,10 @@ mod tests {
         let planner =
             Arc::new(Planner::new(0, document_filter, Arc::new(multi_term_index)).unwrap());
 
+        let params = SearchParams::new(k, num_probes, false);
+
         let results = multi_spann_index
-            .search_for_user(0, query, k, num_probes, false, Some(planner))
+            .search_for_user(0, query, &params, Some(planner))
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -818,8 +822,10 @@ mod tests {
         let planner =
             Arc::new(Planner::new(0, document_filter, Arc::new(multi_term_index)).unwrap());
 
+        let params = SearchParams::new(k, num_probes, false);
+
         let results = multi_spann_index
-            .search_for_user(0, query, k, num_probes, false, Some(planner))
+            .search_for_user(0, query, &params, Some(planner))
             .await
             .expect("Failed to search with Multi-SPANN index");
 

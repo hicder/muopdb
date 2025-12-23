@@ -80,9 +80,11 @@ docker-compose up --build
 ```
 {
     "collection_name": "test-collection-2",
-    "ef_construction": 200,
-    "record_metrics": false,
-    "top_k": 1,
+    "params": {
+        "ef_construction": 200,
+        "record_metrics": false,
+        "top_k": 1
+    },
     "user_ids": [
         {
             "high_id": 0,
@@ -123,9 +125,11 @@ You should see something else
 ```
 {
     "collection_name": "test-collection-2",
-    "ef_construction": 200,
-    "record_metrics": false,
-    "top_k": 1,
+    "params": {
+        "ef_construction": 200,
+        "record_metrics": false,
+        "top_k": 1
+    },
     "user_ids": [
         {
             "high_id": 0,

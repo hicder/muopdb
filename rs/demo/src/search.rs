@@ -3,7 +3,7 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use log::{info, LevelFilter};
 use proto::muopdb::index_server_client::IndexServerClient;
-use proto::muopdb::{Id, SearchRequest};
+use proto::muopdb::{Id, SearchParams, SearchRequest};
 use serde_json::{json, json_internal};
 use utils::mem::ids_to_u128s;
 
@@ -53,9 +53,13 @@ async fn main() -> Result<()> {
     let request = tonic::Request::new(SearchRequest {
         collection_name: "test-collection-1".to_string(),
         vector: query_vector,
-        top_k: 5,
-        ef_construction: 100,
-        record_metrics: false,
+        params: Some(SearchParams {
+            top_k: 5,
+            ef_construction: 100,
+            record_metrics: false,
+            num_explored_centroids: None,
+            centroid_distance_ratio: 0.1,
+        }),
         user_ids: vec![Id {
             low_id: 0,
             high_id: 0,
