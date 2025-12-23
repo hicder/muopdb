@@ -392,41 +392,25 @@ impl<'a, T: CompressionInt> EliasFanoDecodingIterator<'a, T> {
             return;
         }
 
-        // Advance from current position to target index
+        // Reset state and scan from the beginning to the target index
+        self.cur_upper_bit_index = 0;
+        self.cumulative_gap_sum = T::zero();
+        self.cur_elem_index = 0;
+
         while self.cur_elem_index < target_index {
-            self.skip_upper_bits_to_next_element();
+            self.decode_upper_part();
             self.cur_elem_index += 1;
         }
 
-        // Decode this element's upper bits (count gaps before its '1')
-        self.decode_upper_part_without_advancing();
-
-        self.post_skip = true;
-    }
-
-    /// Skip upper bits to next element (right after the next '1' bit)
-    fn skip_upper_bits_to_next_element(&mut self) {
-        while self.cur_upper_bit_index < self.upper_bits_slice.len() {
-            if self.upper_bits_slice[self.cur_upper_bit_index] {
-                self.cur_upper_bit_index += 1; // Skip past the '1'
-                break;
-            } else {
-                self.cumulative_gap_sum += T::one(); // Count the gap
-                self.cur_upper_bit_index += 1;
-            }
-        }
-    }
-
-    /// Decode upper part for current element without advancing to next (count all '0' bits before
-    /// the terminating '1' bit)
-    fn decode_upper_part_without_advancing(&mut self) {
+        // Now position before target element's '1' (scan to next '1' but don't skip past it)
         while self.cur_upper_bit_index < self.upper_bits_slice.len()
             && !self.upper_bits_slice[self.cur_upper_bit_index]
         {
             self.cumulative_gap_sum += T::one();
             self.cur_upper_bit_index += 1;
         }
-        // Now cumulative_gap_sum contains the high part for the current element
+
+        self.post_skip = true;
     }
 
     /// Get lower part for current element
@@ -484,6 +468,8 @@ impl<'a, T: CompressionInt> Iterator for EliasFanoDecodingIterator<'a, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let was_post_skip = self.post_skip;
+
         // Check if the iterator was just used for a skip/peek
         if self.post_skip {
             // Advance past the '1' bit of the element we skipped to
@@ -492,6 +478,8 @@ impl<'a, T: CompressionInt> Iterator for EliasFanoDecodingIterator<'a, T> {
             {
                 self.cur_upper_bit_index += 1;
             }
+            // Move to next element since skip_to() positioned us at the current element
+            self.cur_elem_index += 1;
         }
         // Always consume the flag on a call to next()
         self.post_skip = false;
@@ -500,7 +488,12 @@ impl<'a, T: CompressionInt> Iterator for EliasFanoDecodingIterator<'a, T> {
             self.decode_upper_part();
             let upper = self.cumulative_gap_sum;
             let lower = self.get_current_lower_part();
-            self.cur_elem_index += 1;
+
+            // Only increment cur_elem_index at the end if we weren't in post_skip state
+            // (which already incremented it before decoding)
+            if !was_post_skip {
+                self.cur_elem_index += 1;
+            }
 
             Some((upper << self.lower_bit_length) | lower)
         } else {
@@ -938,6 +931,41 @@ mod tests {
             let decoded = ef.get(i).expect(&format!("Failed to decode index {}", i));
             assert_eq!(expected, decoded, "Mismatch at index {}", i);
         }
+    }
+
+    #[test]
+    fn test_skip_to_basic_2() {
+        let values = vec![0u32, 2, 5, 7, 10, 15, 20];
+
+        let mut ef = EliasFano::new_encoder(20, values.len());
+        assert!(ef.encode_batch(&values).is_ok());
+
+        let temp_dir =
+            TempDir::new("test_skip_to_basic").expect("Failed to create temporary directory");
+        let file_path = temp_dir.path().join("test_file");
+        let mut file = File::create(&file_path).expect("Failed to create test file");
+        let mut writer = BufWriter::new(&mut file);
+
+        assert!(ef.write(&mut writer).is_ok());
+        drop(writer);
+
+        let mut file = File::open(&file_path).expect("Failed to open file for read");
+        let mut byte_slice = Vec::new();
+        assert!(file.read_to_end(&mut byte_slice).is_ok());
+
+        let decoder = EliasFanoDecoder::new_decoder(&byte_slice)
+            .expect("Failed to create posting list decoder");
+        let mut iter = decoder.get_iterator(&byte_slice);
+
+        assert_eq!(iter.current(), Some(0));
+
+        iter.skip_to(5u32);
+        assert_eq!(iter.current(), Some(5));
+        assert_eq!(iter.next(), Some(7));
+
+        iter.skip_to(12u32);
+        assert_eq!(iter.current(), Some(15));
+        assert_eq!(iter.next(), Some(20));
     }
 
     #[test]
