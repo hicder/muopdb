@@ -1,8 +1,10 @@
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 
 use anyhow::Result;
 use log::info;
+use proto::muopdb::DocumentAttribute;
 use tokio::sync::watch;
 
 use crate::wal::entry::WalOpType;
@@ -91,6 +93,7 @@ impl Wal {
         doc_ids: &[u128],
         user_ids: &[u128],
         op_type: WalOpType<&[f32]>,
+        attributes: Option<Arc<Vec<DocumentAttribute>>>,
     ) -> Result<u64> {
         let last_file = self.files.back().unwrap();
         if last_file.get_file_size()? >= self.max_file_size {
@@ -105,7 +108,7 @@ impl Wal {
             .files
             .back_mut()
             .unwrap()
-            .append(doc_ids, user_ids, op_type)
+            .append(doc_ids, user_ids, op_type, attributes)
         {
             Ok(seq_no) => {
                 self.last_flushed_seq_no = seq_no.try_into().unwrap();
@@ -265,7 +268,7 @@ mod tests {
         for i in 0..5 {
             let data = vec![i as f32; 10];
             let seq_no = wal
-                .append(&[i as u128], &[i as u128], WalOpType::Insert(&data))
+                .append(&[i as u128], &[i as u128], WalOpType::Insert(&data), None)
                 .unwrap();
             assert_eq!(seq_no, i as u64);
         }
@@ -296,7 +299,7 @@ mod tests {
         let mut wal = Wal::open(dir.to_str().unwrap(), 1024, -1).unwrap();
         for i in 0..5 {
             let seq_no = wal
-                .append(&[i as u128], &[i as u128], WalOpType::Delete)
+                .append(&[i as u128], &[i as u128], WalOpType::Delete, None)
                 .unwrap();
             assert_eq!(seq_no, i as u64);
         }

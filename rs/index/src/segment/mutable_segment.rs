@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use anyhow::{Ok, Result};
 use config::collection::CollectionConfig;
-use log::debug;
+use log::info;
 use proto::muopdb::DocumentAttribute;
 
 use crate::multi_spann::builder::MultiSpannBuilder;
@@ -44,7 +44,7 @@ impl MutableSegment {
     }
 
     pub fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
-        self.insert_for_user(0, doc_id, data, 0, None)
+        self.insert_for_user(0, doc_id, data, 0, DocumentAttribute::default())
     }
 
     /// Insert a document for a user
@@ -54,9 +54,9 @@ impl MutableSegment {
         doc_id: u128,
         data: &[f32],
         sequence_number: u64,
-        document_attribute: Option<DocumentAttribute>,
+        document_attribute: DocumentAttribute,
     ) -> Result<()> {
-        debug!(
+        info!(
             "Inserting for user: {user_id}, doc_id: {doc_id}, sequence_number: {sequence_number}"
         );
         if self.finalized {
@@ -66,30 +66,28 @@ impl MutableSegment {
         let point_id = self.multi_spann_builder.insert(user_id, doc_id, data)?;
 
         // Process document attributes if present
-        if let Some(attributes) = document_attribute {
-            let tokenizer = WhiteSpaceTokenizer {};
+        let tokenizer = WhiteSpaceTokenizer {};
 
-            for (attr_name, attr_value) in attributes.value {
-                match attr_value.value {
-                    Some(proto::muopdb::attribute_value::Value::TextValue(text)) => {
-                        // Tokenize the text attribute
-                        let mut token_stream = tokenizer.input(&text);
+        for (attr_name, attr_value) in document_attribute.value {
+            match attr_value.value {
+                Some(proto::muopdb::attribute_value::Value::TextValue(text)) => {
+                    // Tokenize the text attribute
+                    let mut token_stream = tokenizer.input(&text);
 
-                        // Process each token and insert with the term builder
-                        while let Some(token) = token_stream.next() {
-                            let term = format!("{}:{}", attr_name, token.text);
-                            self.multi_term_builder.add(user_id, point_id, term)?;
-                        }
-                    }
-                    Some(proto::muopdb::attribute_value::Value::KeywordValue(keyword)) => {
-                        // For keyword attributes, insert the whole keyword as a single term
-                        let term = format!("{}:{}", attr_name, keyword);
+                    // Process each token and insert with the term builder
+                    while let Some(token) = token_stream.next() {
+                        let term = format!("{}:{}", attr_name, token.text);
                         self.multi_term_builder.add(user_id, point_id, term)?;
                     }
-                    _ => {
-                        // Other attribute types (int, float, bool) are not tokenized
-                        continue;
-                    }
+                }
+                Some(proto::muopdb::attribute_value::Value::KeywordValue(keyword)) => {
+                    // For keyword attributes, insert the whole keyword as a single term
+                    let term = format!("{}:{}", attr_name, keyword);
+                    self.multi_term_builder.add(user_id, point_id, term)?;
+                }
+                _ => {
+                    // Other attribute types (int, float, bool) are not tokenized
+                    continue;
                 }
             }
         }
@@ -234,7 +232,7 @@ mod tests {
 
         // Insert document with attributes
         assert!(mutable_segment
-            .insert_for_user(0, 1, &[1.0, 2.0, 3.0, 4.0], 0, Some(doc_attr))
+            .insert_for_user(0, 1, &[1.0, 2.0, 3.0, 4.0], 0, doc_attr)
             .is_ok());
 
         // Build the segment
@@ -336,13 +334,13 @@ mod tests {
 
         // Insert documents with attributes
         assert!(mutable_segment
-            .insert_for_user(1, 1, &[1.0, 2.0, 3.0, 4.0], 0, Some(doc_attr1))
+            .insert_for_user(1, 1, &[1.0, 2.0, 3.0, 4.0], 0, doc_attr1)
             .is_ok());
         assert!(mutable_segment
-            .insert_for_user(1, 2, &[5.0, 6.0, 7.0, 8.0], 1, Some(doc_attr2))
+            .insert_for_user(1, 2, &[5.0, 6.0, 7.0, 8.0], 1, doc_attr2)
             .is_ok());
         assert!(mutable_segment
-            .insert_for_user(2, 1, &[9.0, 10.0, 11.0, 12.0], 0, Some(doc_attr3))
+            .insert_for_user(2, 1, &[9.0, 10.0, 11.0, 12.0], 0, doc_attr3)
             .is_ok());
 
         // Build the segment with reindex enabled

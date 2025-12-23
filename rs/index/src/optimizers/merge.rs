@@ -67,6 +67,7 @@ mod tests {
     use std::sync::Arc;
 
     use config::collection::CollectionConfig;
+    use proto::muopdb::DocumentAttribute;
 
     use super::*;
     use crate::collection::core::Collection;
@@ -95,15 +96,33 @@ mod tests {
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
         let collection = reader.read::<NoQuantizerL2>()?;
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, None)?;
-        collection.insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, None)?;
-        collection.insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, None)?;
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())?;
+        collection.insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, DocumentAttribute::default())?;
+        collection.insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, DocumentAttribute::default())?;
 
         collection.flush()?;
 
-        collection.insert_for_users(&[0], 4, &[100.0, 101.0, 102.0], 3, None)?;
-        collection.insert_for_users(&[0], 5, &[103.0, 104.0, 105.0], 4, None)?;
-        collection.insert_for_users(&[0], 6, &[106.0, 107.0, 108.0], 5, None)?;
+        collection.insert_for_users(
+            &[0],
+            4,
+            &[100.0, 101.0, 102.0],
+            3,
+            DocumentAttribute::default(),
+        )?;
+        collection.insert_for_users(
+            &[0],
+            5,
+            &[103.0, 104.0, 105.0],
+            4,
+            DocumentAttribute::default(),
+        )?;
+        collection.insert_for_users(
+            &[0],
+            6,
+            &[106.0, 107.0, 108.0],
+            5,
+            DocumentAttribute::default(),
+        )?;
 
         collection.flush()?;
 
@@ -173,15 +192,33 @@ mod tests {
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
         let collection = reader.read::<NoQuantizerL2>()?;
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, None)?;
-        collection.insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, None)?;
-        collection.insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, None)?;
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())?;
+        collection.insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, DocumentAttribute::default())?;
+        collection.insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, DocumentAttribute::default())?;
 
         collection.flush()?;
 
-        collection.insert_for_users(&[0], 4, &[100.0, 101.0, 102.0], 3, None)?;
-        collection.insert_for_users(&[0], 5, &[103.0, 104.0, 105.0], 4, None)?;
-        collection.insert_for_users(&[0], 6, &[106.0, 107.0, 108.0], 5, None)?;
+        collection.insert_for_users(
+            &[0],
+            4,
+            &[100.0, 101.0, 102.0],
+            3,
+            DocumentAttribute::default(),
+        )?;
+        collection.insert_for_users(
+            &[0],
+            5,
+            &[103.0, 104.0, 105.0],
+            4,
+            DocumentAttribute::default(),
+        )?;
+        collection.insert_for_users(
+            &[0],
+            6,
+            &[106.0, 107.0, 108.0],
+            5,
+            DocumentAttribute::default(),
+        )?;
 
         collection.flush()?;
 
@@ -248,15 +285,33 @@ mod tests {
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
         let collection = reader.read::<NoQuantizerL2>()?;
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, None)?;
-        collection.insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, None)?;
-        collection.insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, None)?;
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())?;
+        collection.insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, DocumentAttribute::default())?;
+        collection.insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, DocumentAttribute::default())?;
 
         collection.flush()?;
 
-        collection.insert_for_users(&[1], 4, &[10.0, 11.0, 12.0], 3, None)?;
-        collection.insert_for_users(&[1], 5, &[13.0, 14.0, 15.0], 4, None)?;
-        collection.insert_for_users(&[1], 6, &[16.0, 17.0, 18.0], 5, None)?;
+        collection.insert_for_users(
+            &[1],
+            4,
+            &[10.0, 11.0, 12.0],
+            3,
+            DocumentAttribute::default(),
+        )?;
+        collection.insert_for_users(
+            &[1],
+            5,
+            &[13.0, 14.0, 15.0],
+            4,
+            DocumentAttribute::default(),
+        )?;
+        collection.insert_for_users(
+            &[1],
+            6,
+            &[16.0, 17.0, 18.0],
+            5,
+            DocumentAttribute::default(),
+        )?;
 
         collection.flush()?;
 
@@ -326,15 +381,33 @@ mod tests {
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
         let collection = reader.read::<NoQuantizerL2>()?;
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, None)?;
-        collection.insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, None)?;
-        collection.insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, None)?;
+        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())?;
+        collection.insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, DocumentAttribute::default())?;
+        collection.insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, DocumentAttribute::default())?;
 
         collection.flush()?;
 
-        collection.insert_for_users(&[1], 4, &[10.0, 11.0, 12.0], 3, None)?;
-        collection.insert_for_users(&[1], 5, &[13.0, 14.0, 15.0], 4, None)?;
-        collection.insert_for_users(&[1], 6, &[16.0, 17.0, 18.0], 5, None)?;
+        collection.insert_for_users(
+            &[1],
+            4,
+            &[10.0, 11.0, 12.0],
+            3,
+            DocumentAttribute::default(),
+        )?;
+        collection.insert_for_users(
+            &[1],
+            5,
+            &[13.0, 14.0, 15.0],
+            4,
+            DocumentAttribute::default(),
+        )?;
+        collection.insert_for_users(
+            &[1],
+            6,
+            &[16.0, 17.0, 18.0],
+            5,
+            DocumentAttribute::default(),
+        )?;
 
         collection.flush()?;
 

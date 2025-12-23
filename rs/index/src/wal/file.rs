@@ -1,13 +1,15 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::sync::Arc;
 
 use anyhow::Result;
 use byteorder::{LittleEndian, ReadBytesExt};
 use log::{info, warn};
+use proto::muopdb::DocumentAttribute;
 use rkyv::util::AlignedVec;
 use utils::mem::{transmute_slice_to_u8, transmute_u8_to_val_unaligned};
 
-use super::entry::{WalEntry, WalOpType};
+use super::entry::{serialize_document_attributes, WalEntry, WalOpType};
 
 const VERSION_1: &[u8] = b"version1";
 
@@ -16,8 +18,8 @@ const VERSION_1: &[u8] = b"version1";
 /// | 8 bytes  | 8 bytes      | ...  |
 ///
 /// Each data entry will have the following format (n is number of doc_ids, m is number of user_ids):
-/// | length   | n       | m       | doc_ids      | user_ids     | data                       | op_type |
-/// | 4 bytes  | 8 bytes | 8 bytes | 16 bytes * n | 16 bytes * m | 4 bytes * n * num_features | 1 byte  |
+/// | length   | n       | m       | doc_ids      | user_ids     | data                       | num_attrs | attr_data | op_type |
+/// | 4 bytes  | 8 bytes | 8 bytes | 16 bytes * n | 16 bytes * m | 4 bytes * n * num_features | 4 bytes   | variable  | 1 byte  |
 ///
 #[allow(unused)]
 pub struct WalFile {
@@ -92,13 +94,22 @@ impl WalFile {
         doc_ids: &[u128],
         user_ids: &[u128],
         op_type: WalOpType<&[f32]>,
+        attributes: Option<Arc<Vec<DocumentAttribute>>>,
     ) -> Result<u64> {
-        let (op_type, data): (u8, &[f32]) = match op_type {
+        let (op_type_byte, data): (u8, &[f32]) = match op_type {
             WalOpType::Insert(data) => (0, data),
             WalOpType::Delete => (1, &[]),
         };
 
-        let len = (8 + 8 + doc_ids.len() * 16 + user_ids.len() * 16 + data.len() * 4 + 1) as u32;
+        let attr_data = attributes
+            .map(|attrs| serialize_document_attributes(attrs.as_ref()))
+            .unwrap_or_default();
+        let attr_len = attr_data.len();
+
+        let entry_len =
+            8 + 8 + doc_ids.len() * 16 + user_ids.len() * 16 + data.len() * 4 + 4 + attr_len + 1;
+
+        let len = entry_len as u32;
         self.file.write_all(&len.to_le_bytes())?;
         self.file.write_all(&(doc_ids.len() as u64).to_le_bytes())?;
         self.file
@@ -106,7 +117,9 @@ impl WalFile {
         self.file.write_all(transmute_slice_to_u8(doc_ids))?;
         self.file.write_all(transmute_slice_to_u8(user_ids))?;
         self.file.write_all(transmute_slice_to_u8(data))?;
-        self.file.write_all(&op_type.to_le_bytes())?;
+        self.file.write_all(&(attr_len as u32).to_le_bytes())?;
+        self.file.write_all(&attr_data)?;
+        self.file.write_all(&op_type_byte.to_le_bytes())?;
         self.file.flush()?;
         // self.file.sync_data()?;
 
