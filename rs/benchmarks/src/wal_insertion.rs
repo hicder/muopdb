@@ -8,6 +8,7 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use index::collection::core::Collection;
 use index::collection::reader::CollectionReader;
 use index::wal::entry::WalOpType;
+use proto::muopdb::DocumentAttribute;
 use quantization::noq::noq::NoQuantizerL2;
 use tempdir::TempDir;
 use tokio::task::JoinSet;
@@ -97,7 +98,12 @@ fn bench_wal_insertion(c: &mut Criterion) {
                             let doc_ids: Arc<[u128]> = Arc::from([doc_id]);
 
                             collection_clone
-                                .write_to_wal(doc_ids, user_ids_ref, WalOpType::Insert(data))
+                                .write_to_wal(
+                                    doc_ids,
+                                    user_ids_ref,
+                                    WalOpType::Insert(data),
+                                    Some(Arc::new(vec![DocumentAttribute::default()])),
+                                )
                                 .await
                                 .unwrap()
                         });

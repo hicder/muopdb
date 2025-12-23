@@ -257,6 +257,7 @@ dependencies = [
  "criterion",
  "index",
  "log",
+ "proto",
  "quantization",
  "rand 0.8.5",
  "tempdir",

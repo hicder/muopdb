@@ -3,6 +3,7 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use index::collection::core::Collection;
 use index::collection::reader::CollectionReader;
 use index::optimizers::vacuum::VacuumOptimizer;
+use proto::muopdb::DocumentAttribute;
 use quantization::noq::noq::NoQuantizerL2;
 use tempdir::TempDir;
 use utils::test_utils::generate_random_vector;
@@ -53,7 +54,13 @@ fn bench_deletion_vacuum(c: &mut Criterion) {
                     let mut doc_id = 0;
                     vectors.iter().for_each(|vector| {
                         collection
-                            .insert_for_users(&user_ids, doc_id, vector, 0, None)
+                            .insert_for_users(
+                                &user_ids,
+                                doc_id,
+                                vector,
+                                0,
+                                DocumentAttribute::default(),
+                            )
                             .unwrap();
                         doc_id += 1;
                     });

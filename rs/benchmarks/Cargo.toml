@@ -33,3 +33,4 @@ quantization.workspace = true
 rand.workspace = true
 tokio.workspace = true
 log.workspace = true
+proto.workspace = true
