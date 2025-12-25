@@ -37,10 +37,13 @@ fn bench_deletion_vacuum(c: &mut Criterion) {
         BenchmarkId::new("DeletionVacuum", 10000),
         &10000,
         |bencher, _| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
             bencher.iter_with_setup(
                 || {
                     // Remove everything under base_directory
-                    std::fs::remove_dir_all(&base_directory).unwrap();
+                    if std::path::Path::new(&base_directory).exists() {
+                        std::fs::remove_dir_all(&base_directory).unwrap();
+                    }
 
                     // init the collection
                     Collection::<NoQuantizerL2>::init_new_collection(
@@ -50,32 +53,38 @@ fn bench_deletion_vacuum(c: &mut Criterion) {
                     .unwrap();
                     let reader =
                         CollectionReader::new(collection_name.to_string(), base_directory.clone());
-                    let collection = reader.read::<NoQuantizerL2>().unwrap();
+                    let collection = rt.block_on(reader.read::<NoQuantizerL2>()).unwrap();
                     let mut doc_id = 0;
-                    vectors.iter().for_each(|vector| {
-                        collection
-                            .insert_for_users(
-                                &user_ids,
-                                doc_id,
-                                vector,
-                                0,
-                                DocumentAttribute::default(),
-                            )
-                            .unwrap();
-                        doc_id += 1;
+                    rt.block_on(async {
+                        for vector in vectors.iter() {
+                            collection
+                                .insert_for_users(
+                                    &user_ids,
+                                    doc_id,
+                                    vector,
+                                    0,
+                                    DocumentAttribute::default(),
+                                )
+                                .await
+                                .unwrap();
+                            doc_id += 1;
+                        }
                     });
-                    let segment_name = collection.flush().unwrap();
+                    let segment_name = rt.block_on(collection.flush()).unwrap();
                     (collection, vec![segment_name])
                 },
                 |collection_and_segment| {
                     let (collection, segment_names) = collection_and_segment;
-                    let pending_segment = collection.init_optimizing(&segment_names).unwrap();
-                    for doc_id in doc_ids_to_delete.iter() {
-                        collection.remove(user_ids[0], *doc_id, 0).unwrap();
-                    }
+                    let pending_segment = rt
+                        .block_on(collection.init_optimizing(&segment_names))
+                        .unwrap();
+                    rt.block_on(async {
+                        for doc_id in doc_ids_to_delete.iter() {
+                            collection.remove(user_ids[0], *doc_id, 0).await.unwrap();
+                        }
+                    });
                     let optimizer = VacuumOptimizer::<NoQuantizerL2>::new();
-                    collection
-                        .run_optimizer(&optimizer, &pending_segment)
+                    rt.block_on(collection.run_optimizer(&optimizer, &pending_segment))
                         .unwrap();
                 },
             );

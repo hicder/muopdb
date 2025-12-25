@@ -3,8 +3,8 @@ use utils::distance::l2::L2DistanceCalculatorImpl;
 
 use crate::typing::VectorT;
 
-pub trait Quantizer {
-    type QuantizedT: VectorT<Self>
+pub trait Quantizer: Send + Sync {
+    type QuantizedT: VectorT<Self> + Send + Sync
     where
         Self: Sized;
 

@@ -1,11 +1,14 @@
 use std::fs::File;
+#[cfg(feature = "async-hnsw")]
 use std::sync::Arc;
 
 use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian};
 use memmap2::Mmap;
 use quantization::quantization::Quantizer;
+#[cfg(feature = "async-hnsw")]
 use tokio::sync::Mutex;
+#[cfg(feature = "async-hnsw")]
 use utils::block_cache::BlockCache;
 
 #[cfg(feature = "async-hnsw")]

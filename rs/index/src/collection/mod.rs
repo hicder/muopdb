@@ -199,18 +199,18 @@ impl BoxedCollection {
         }
     }
 
-    pub fn should_auto_flush(&self) -> bool {
+    pub async fn should_auto_flush(&self) -> bool {
         match self {
             BoxedCollection::CollectionNoQuantizationL2(collection) => {
-                collection.should_auto_flush()
+                collection.should_auto_flush().await
             }
             BoxedCollection::CollectionProductQuantization(collection) => {
-                collection.should_auto_flush()
+                collection.should_auto_flush().await
             }
         }
     }
 
-    pub fn insert_for_users(
+    pub async fn insert_for_users(
         &self,
         user_ids: &[u128],
         doc_id: u128,
@@ -221,29 +221,33 @@ impl BoxedCollection {
         let document_attribute = document_attribute.unwrap_or_default();
         match self {
             BoxedCollection::CollectionNoQuantizationL2(collection) => {
-                collection.insert_for_users(user_ids, doc_id, data, seq_no, document_attribute)
+                collection
+                    .insert_for_users(user_ids, doc_id, data, seq_no, document_attribute)
+                    .await
             }
             BoxedCollection::CollectionProductQuantization(collection) => {
-                collection.insert_for_users(user_ids, doc_id, data, seq_no, document_attribute)
+                collection
+                    .insert_for_users(user_ids, doc_id, data, seq_no, document_attribute)
+                    .await
             }
         }
     }
 
-    pub fn remove(&self, user_id: u128, doc_id: u128, seq_no: u64) -> Result<()> {
+    pub async fn remove(&self, user_id: u128, doc_id: u128, seq_no: u64) -> Result<()> {
         match self {
             BoxedCollection::CollectionNoQuantizationL2(collection) => {
-                collection.remove(user_id, doc_id, seq_no)
+                collection.remove(user_id, doc_id, seq_no).await
             }
             BoxedCollection::CollectionProductQuantization(collection) => {
-                collection.remove(user_id, doc_id, seq_no)
+                collection.remove(user_id, doc_id, seq_no).await
             }
         }
     }
 
-    pub fn flush(&self) -> Result<String> {
+    pub async fn flush(&self) -> Result<String> {
         match self {
-            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.flush(),
-            BoxedCollection::CollectionProductQuantization(collection) => collection.flush(),
+            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.flush().await,
+            BoxedCollection::CollectionProductQuantization(collection) => collection.flush().await,
         }
     }
 
@@ -258,13 +262,13 @@ impl BoxedCollection {
         }
     }
 
-    pub fn get_active_segment_infos(&self) -> SegmentInfoAndVersion {
+    pub async fn get_active_segment_infos(&self) -> SegmentInfoAndVersion {
         match self {
             BoxedCollection::CollectionNoQuantizationL2(collection) => {
-                collection.get_active_segment_infos()
+                collection.get_active_segment_infos().await
             }
             BoxedCollection::CollectionProductQuantization(collection) => {
-                collection.get_active_segment_infos()
+                collection.get_active_segment_infos().await
             }
         }
     }
@@ -280,16 +284,16 @@ impl BoxedCollection {
         }
     }
 
-    pub fn get_snapshot(&self) -> Result<SnapshotWithQuantizer> {
+    pub async fn get_snapshot(&self) -> Result<SnapshotWithQuantizer> {
         match self {
             BoxedCollection::CollectionNoQuantizationL2(collection) => {
                 let col = Arc::clone(collection);
-                let snapshot = col.get_snapshot()?;
+                let snapshot = col.get_snapshot().await?;
                 Ok(SnapshotWithQuantizer::new_with_no_quantizer(snapshot))
             }
             BoxedCollection::CollectionProductQuantization(collection) => {
                 let col = Arc::clone(collection);
-                let snapshot = col.get_snapshot()?;
+                let snapshot = col.get_snapshot().await?;
                 Ok(SnapshotWithQuantizer::new_with_product_quantizer(snapshot))
             }
         }
@@ -298,19 +302,23 @@ impl BoxedCollection {
     /// Triggers an automatic optimization process for the collection.
     ///
     /// This method delegates the optimization call to the underlying collection type.
-    pub fn auto_optimize(&self) -> Result<()> {
+    pub async fn auto_optimize(&self) -> Result<()> {
         match self {
-            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.auto_optimize(),
+            BoxedCollection::CollectionNoQuantizationL2(collection) => {
+                collection.auto_optimize().await
+            }
             BoxedCollection::CollectionProductQuantization(collection) => {
-                collection.auto_optimize()
+                collection.auto_optimize().await
             }
         }
     }
 
-    pub fn sync_wal(&self) -> Result<u64> {
+    pub async fn sync_wal(&self) -> Result<u64> {
         match self {
-            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.sync_wal(),
-            BoxedCollection::CollectionProductQuantization(collection) => collection.sync_wal(),
+            BoxedCollection::CollectionNoQuantizationL2(collection) => collection.sync_wal().await,
+            BoxedCollection::CollectionProductQuantization(collection) => {
+                collection.sync_wal().await
+            }
         }
     }
 }

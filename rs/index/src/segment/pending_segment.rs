@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use anyhow::{anyhow, Result};
+use async_lock::RwLock;
 use config::collection::CollectionConfig;
 use config::search_params::SearchParams;
-use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
 
 use super::{BoxedImmutableSegment, Segment};
@@ -40,6 +40,9 @@ pub struct PendingSegment<Q: Quantizer + Clone + Send + Sync> {
     name: String,
     parent_directory: String,
 
+    // Cached user IDs from inner segments
+    cached_user_ids: Vec<u128>,
+
     // Whether to use the internal index instead of passing the query to inner segments.
     // Invariant: use_internal_index is true if and only if index is Some.
     // Use AtomicBool to ensure cache coherency, making sure latest updates are always propagated
@@ -57,7 +60,7 @@ pub struct PendingSegment<Q: Quantizer + Clone + Send + Sync> {
 }
 
 impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
-    pub fn new(
+    pub async fn new(
         inner_segments: Vec<BoxedImmutableSegment<Q>>,
         data_directory: String,
         collection_config: CollectionConfig,
@@ -68,10 +71,10 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
 
         // base directory is the directory of the data_directory
         let parent_directory = path.parent().unwrap().to_str().unwrap().to_string();
-        let inner_segments_names = inner_segments
-            .iter()
-            .map(|segment| segment.name())
-            .collect();
+        let mut inner_segments_names = Vec::new();
+        for segment in &inner_segments {
+            inner_segments_names.push(segment.name().await);
+        }
 
         let temp_invalidated_ids_directory =
             format!("{data_directory}/temp_invalidated_ids_storage");
@@ -87,11 +90,19 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
                 .push(invalidated_id.doc_id);
         }
 
+        // Collect user IDs from inner segments
+        let mut user_ids_set = HashSet::new();
+        for segment in &inner_segments {
+            user_ids_set.extend(segment.user_ids().await);
+        }
+        let cached_user_ids: Vec<u128> = user_ids_set.into_iter().collect();
+
         Self {
             inner_segments,
             inner_segments_names,
             name,
             parent_directory,
+            cached_user_ids,
             index: RwLock::new(None),
             use_internal_index: AtomicBool::new(false),
             // TODO(tyb): avoid unwrap here
@@ -113,7 +124,7 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
     /// Returns an error if:
     /// - The internal index has already been built (`use_internal_index` is true).
     /// - Reading the index data from disk fails.
-    pub fn build_index(&self) -> Result<()> {
+    pub async fn build_index(&self) -> Result<()> {
         if self
             .use_internal_index
             .load(std::sync::atomic::Ordering::Acquire)
@@ -128,13 +139,13 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
             self.collection_config.posting_list_encoding_type.clone(),
             self.collection_config.num_features,
         )?;
-        self.index.write().replace(index);
+        self.index.write().await.replace(index);
         Ok(())
     }
 
     // Caller must hold the write lock before calling this function.
-    pub fn apply_pending_deletions(&self) -> Result<()> {
-        let internal_index = self.index.read();
+    pub async fn apply_pending_deletions(&self) -> Result<()> {
+        let internal_index = self.index.read().await;
         match &*internal_index {
             Some(index) => {
                 let invalidated_ids_directory = PathBuf::from(format!(
@@ -164,7 +175,8 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
                 // invalidated docs when merging), so we just need to make sure
                 // invalidating doesn't result in error, no need to verify the effectively
                 // invalidated element count.
-                let _ = index.invalidate_batch(&self.temp_invalidated_ids.read())?;
+                let temp_invalidated_ids_guard = self.temp_invalidated_ids.read().await;
+                let _ = index.invalidate_batch(&*temp_invalidated_ids_guard).await?;
                 Ok(())
             }
             None => Err(anyhow!("Internal index does not exist")),
@@ -198,28 +210,26 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
     }
 
     pub fn all_user_ids(&self) -> Vec<u128> {
-        let mut user_ids = HashSet::new();
-        for segment in &self.inner_segments {
-            user_ids.extend(segment.user_ids());
-        }
-        user_ids.into_iter().collect()
+        self.cached_user_ids.clone()
     }
 
-    pub fn temp_invalidated_ids_storage_directory(&self) -> String {
+    pub async fn temp_invalidated_ids_storage_directory(&self) -> String {
         self.temp_invalidated_ids_storage
             .read()
+            .await
             .base_directory()
             .to_string()
     }
 }
 
 #[allow(unused)]
+#[async_trait::async_trait]
 impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
-    fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
+    async fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
         Err(anyhow::anyhow!("Pending segment does not support insert"))
     }
 
-    fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+    async fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         if !self
             .use_internal_index
             .load(std::sync::atomic::Ordering::Acquire)
@@ -236,7 +246,7 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
             // changed. Use temporary storage and hash map instead.
 
             // Acquire the write lock
-            let mut temp_invalidated_ids = self.temp_invalidated_ids.write();
+            let mut temp_invalidated_ids = self.temp_invalidated_ids.write().await;
             let entry = temp_invalidated_ids.entry(user_id).or_default();
             if entry.contains(&doc_id) {
                 Ok(false)
@@ -245,23 +255,24 @@ impl<Q: Quantizer + Clone + Send + Sync> Segment for PendingSegment<Q> {
                 // Only write to storage if doc_id is found
                 self.temp_invalidated_ids_storage
                     .write()
+                    .await
                     .invalidate(user_id, doc_id)?;
                 Ok(true)
             }
         } else {
-            let index = self.index.read();
+            let index = self.index.read().await;
             match &*index {
-                Some(index) => index.invalidate(user_id, doc_id),
+                Some(index) => index.invalidate(user_id, doc_id).await,
                 None => unreachable!("Index should not be None if use_internal_index is set"),
             }
         }
     }
 
-    fn may_contain(&self, _doc_id: u128) -> bool {
+    async fn may_contain(&self, _doc_id: u128) -> bool {
         false
     }
 
-    fn name(&self) -> String {
+    async fn name(&self) -> String {
         self.name.clone()
     }
 }
@@ -282,13 +293,14 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
             .load(std::sync::atomic::Ordering::Acquire)
         {
             let mut results = SearchResult::new();
-            let invalidated_ids = self
-                .temp_invalidated_ids
-                .read()
+            let temp_invalidated_ids_guard = self.temp_invalidated_ids.read().await;
+            let invalidated_ids = temp_invalidated_ids_guard
                 .get(&id)
                 .filter(|vec| !vec.is_empty())
                 .cloned()
                 .unwrap_or_default();
+            drop(temp_invalidated_ids_guard);
+
             let adjusted_params = SearchParams::new(
                 params.top_k + invalidated_ids.len(),
                 params.ef_construction,
@@ -317,7 +329,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
             }
             Some(results)
         } else {
-            let index = self.index.read();
+            let index = self.index.read().await;
             match &*index {
                 Some(index) => index.search_for_user(id, query.clone(), params, None).await,
                 None => unreachable!("Index should not be None if use_internal_index is set"),
@@ -403,7 +415,8 @@ mod tests {
             vec![segment1],
             pending_dir.clone(),
             CollectionConfig::default_test_config(),
-        );
+        )
+        .await;
 
         let params = SearchParams::new(1, 10, false);
 
@@ -448,9 +461,10 @@ mod tests {
             vec![segment1],
             pending_dir.clone(),
             CollectionConfig::default_test_config(),
-        );
+        )
+        .await;
 
-        assert!(pending_segment.remove(0, 0)?);
+        assert!(pending_segment.remove(0, 0).await?);
 
         let params = SearchParams::new(1, 10, false);
 
@@ -503,7 +517,8 @@ mod tests {
             vec![segment1],
             pending_dir.clone(),
             CollectionConfig::default_test_config(),
-        );
+        )
+        .await;
 
         let params = SearchParams::new(1, 10, false);
 

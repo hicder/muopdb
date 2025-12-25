@@ -40,8 +40,8 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
         self.index.user_ids()
     }
 
-    pub fn iter_for_user(&self, user_id: u128) -> Option<SpannIter<Q>> {
-        self.index.iter_for_user(user_id)
+    pub async fn iter_for_user(&self, user_id: u128) -> Option<SpannIter<Q>> {
+        self.index.iter_for_user(user_id).await
     }
 
     pub fn size_in_bytes(&self) -> u64 {
@@ -50,12 +50,12 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
 
     /// This is very expensive and should only be used for testing.
     #[cfg(test)]
-    pub fn get_point_id(&self, user_id: u128, doc_id: u128) -> Option<u32> {
-        self.index.get_point_id(user_id, doc_id)
+    pub async fn get_point_id(&self, user_id: u128, doc_id: u128) -> Option<u32> {
+        self.index.get_point_id(user_id, doc_id).await
     }
 
-    pub fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
-        self.index.is_invalidated(user_id, doc_id)
+    pub async fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+        self.index.is_invalidated(user_id, doc_id).await
     }
 
     pub fn num_docs(&self) -> Result<usize> {
@@ -77,24 +77,25 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
 }
 
 /// This is the implementation of Segment for ImmutableSegment.
+#[async_trait::async_trait]
 impl<Q: Quantizer> Segment for ImmutableSegment<Q> {
     /// ImmutableSegment does not support insertion.
-    fn insert(&self, _doc_id: u128, _data: &[f32]) -> Result<()> {
+    async fn insert(&self, _doc_id: u128, _data: &[f32]) -> Result<()> {
         Err(anyhow!("ImmutableSegment does not support insertion"))
     }
 
     /// ImmutableSegment does not support actual removal, we are just invalidating documents.
-    fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
-        self.index.invalidate(user_id, doc_id)
+    async fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+        self.index.invalidate(user_id, doc_id).await
     }
 
     /// ImmutableSegment does not support contains.
-    fn may_contain(&self, _doc_id: u128) -> bool {
+    async fn may_contain(&self, _doc_id: u128) -> bool {
         // TODO(hicder): Implement this
         true
     }
 
-    fn name(&self) -> String {
+    async fn name(&self) -> String {
         self.name.clone()
     }
 }
@@ -247,6 +248,7 @@ mod tests {
 
         assert!(immutable_segment
             .remove(0, num_vectors as u128)
+            .await
             .expect("Failed to invalidate"));
 
         let params = SearchParams::new(k, num_probes, false);
@@ -263,6 +265,7 @@ mod tests {
 
         assert!(!immutable_segment
             .remove(1, num_vectors as u128)
+            .await
             .expect("Failed to invalidate"));
     }
 }

@@ -193,7 +193,7 @@ impl IndexServer for IndexServerImpl {
         .with_centroid_distance_ratio(params.centroid_distance_ratio);
 
         if let Some(collection) = collection_opt {
-            if let Ok(snapshot) = collection.get_snapshot() {
+            if let Ok(snapshot) = collection.get_snapshot().await {
                 let result = SnapshotWithQuantizer::search_for_users(
                     snapshot,
                     &user_ids,
@@ -317,16 +317,16 @@ impl IndexServer for IndexServerImpl {
                     |attrs| attrs.values.iter().cloned().map(Some).collect::<Vec<_>>(),
                 );
 
-                vectors
+                for ((vector, &id), doc_attr) in vectors
                     .chunks(dimensions)
                     .zip(doc_ids.iter())
                     .zip(doc_attrs)
-                    .for_each(|((vector, &id), doc_attr)| {
-                        // TODO(hicder): Handle errors
-                        collection
-                            .insert_for_users(&user_ids, id, vector, seq_no, doc_attr)
-                            .unwrap()
-                    });
+                {
+                    collection
+                        .insert_for_users(&user_ids, id, vector, seq_no, doc_attr)
+                        .await
+                        .unwrap();
+                }
 
                 // log the duration
                 let end = std::time::Instant::now();
@@ -384,11 +384,11 @@ impl IndexServer for IndexServerImpl {
                     return Ok(tonic::Response::new(RemoveResponse { success }));
                 }
 
-                user_ids.iter().for_each(|&user_id| {
-                    ids.iter().for_each(|&doc_id| {
-                        collection.remove(user_id, doc_id, seq_no).unwrap();
-                    })
-                });
+                for &user_id in user_ids.iter() {
+                    for &doc_id in ids.iter() {
+                        collection.remove(user_id, doc_id, seq_no).await.unwrap();
+                    }
+                }
 
                 // log the duration
                 let end = std::time::Instant::now();
@@ -426,7 +426,7 @@ impl IndexServer for IndexServerImpl {
 
         match collection_opt {
             Some(collection) => {
-                let flushed_segment = collection.flush().unwrap();
+                let flushed_segment = collection.flush().await.unwrap();
                 let duration = end.duration_since(start);
                 info!("Flushed collection {collection_name} in {duration:?}");
 
@@ -511,16 +511,16 @@ impl IndexServer for IndexServerImpl {
                     |attrs| attrs.values.iter().cloned().map(Some).collect::<Vec<_>>(),
                 );
 
-                vectors
+                for ((vector, &id), doc_attr) in vectors
                     .chunks(dimensions)
                     .zip(doc_ids.iter())
                     .zip(doc_attrs)
-                    .for_each(|((vector, &id), doc_attr)| {
-                        // TODO(hicder): Handle errors
-                        collection
-                            .insert_for_users(&user_ids, id, vector, seq_no, doc_attr)
-                            .unwrap()
-                    });
+                {
+                    collection
+                        .insert_for_users(&user_ids, id, vector, seq_no, doc_attr)
+                        .await
+                        .unwrap();
+                }
 
                 // log the duration
                 let end = std::time::Instant::now();

@@ -28,6 +28,7 @@ uninlined_format_args = "allow"
 aggregator = { path = './rs/aggregator' }
 anyhow = "1.0.90"
 approx = "0.5"
+async-lock = "3.4"
 async-trait = "0.1"
 atomic_refcell = "0.1.13"
 bit-vec = "0.8.0"

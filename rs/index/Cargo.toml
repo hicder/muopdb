@@ -11,6 +11,7 @@ default = []
 async-hnsw = []
 
 [dependencies]
+async-lock.workspace = true
 async-trait.workspace = true
 anyhow.workspace = true
 bit-vec.workspace = true
