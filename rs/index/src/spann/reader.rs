@@ -8,8 +8,6 @@ use config::enums::IntSeqEncodingType;
 use quantization::noq::noq::NoQuantizer;
 use quantization::quantization::Quantizer;
 #[cfg(feature = "async-hnsw")]
-use tokio::sync::Mutex;
-#[cfg(feature = "async-hnsw")]
 use utils::block_cache::BlockCache;
 use utils::distance::l2::L2DistanceCalculator;
 
@@ -93,10 +91,7 @@ impl SpannReader {
     }
 
     #[cfg(feature = "async-hnsw")]
-    pub async fn read_async<Q: Quantizer>(
-        &self,
-        block_cache: Arc<Mutex<BlockCache>>,
-    ) -> Result<Spann<Q>> {
+    pub async fn read_async<Q: Quantizer>(&self, block_cache: Arc<BlockCache>) -> Result<Spann<Q>> {
         let posting_list_path = format!("{}/ivf", self.base_directory);
         let centroid_path = format!("{}/centroids", self.base_directory);
 

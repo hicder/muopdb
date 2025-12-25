@@ -4,7 +4,6 @@ use anyhow::Result;
 use config::enums::IntSeqEncodingType;
 use memmap2::Mmap;
 use quantization::quantization::Quantizer;
-use tokio::sync::Mutex;
 use utils::block_cache::BlockCache;
 
 use crate::multi_spann::index::MultiSpannIndex;
@@ -41,7 +40,7 @@ impl MultiSpannReader {
         &self,
         ivf_type: IntSeqEncodingType,
         num_features: usize,
-        block_cache: Arc<Mutex<BlockCache>>,
+        block_cache: Arc<BlockCache>,
         use_async_reader: bool,
     ) -> Result<MultiSpannIndex<Q>> {
         let user_index_info_file_path = format!("{}/user_index_info", self.base_directory);
@@ -58,6 +57,7 @@ impl MultiSpannReader {
             block_cache,
             use_async_reader,
         )
+        .await
     }
 }
 
@@ -175,7 +175,7 @@ mod tests {
         let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
         multi_spann_writer.write(&mut multi_spann_builder)?;
 
-        let block_cache = Arc::new(Mutex::new(BlockCache::new(BlockCacheConfig::default())));
+        let block_cache = Arc::new(BlockCache::new(BlockCacheConfig::default()));
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
             .read_async::<NoQuantizer<L2DistanceCalculator>>(
@@ -226,7 +226,7 @@ mod tests {
         let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
         multi_spann_writer.write(&mut multi_spann_builder)?;
 
-        let block_cache = Arc::new(Mutex::new(BlockCache::new(BlockCacheConfig::default())));
+        let block_cache = Arc::new(BlockCache::new(BlockCacheConfig::default()));
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
             .read_async::<ProductQuantizer<L2DistanceCalculator>>(

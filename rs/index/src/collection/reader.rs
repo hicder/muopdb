@@ -4,7 +4,7 @@ use anyhow::{Ok, Result};
 use async_lock::RwLock;
 use config::collection::CollectionConfig;
 use quantization::quantization::Quantizer;
-use utils::block_cache::BlockCacheConfig;
+use utils::block_cache::{BlockCache, BlockCacheConfig};
 use utils::io::get_latest_version;
 
 use super::core::Collection;
@@ -50,9 +50,7 @@ impl CollectionReader {
         let toc: TableOfContent = serde_json::from_reader(std::fs::File::open(toc_path)?)?;
 
         let block_cache = if self.use_async_reader {
-            Some(Arc::new(tokio::sync::Mutex::new(
-                utils::block_cache::BlockCache::new(self.block_cache_config.clone()),
-            )))
+            Some(Arc::new(BlockCache::new(self.block_cache_config.clone())))
         } else {
             None
         };

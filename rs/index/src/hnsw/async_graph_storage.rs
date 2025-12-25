@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};
-use tokio::sync::Mutex;
 use utils::block_cache::BlockCache;
 
 use super::writer::Header;
@@ -17,23 +16,23 @@ pub struct GraphOffsets {
 }
 
 pub struct AsyncHnswGraphStorage {
-    block_cache: Arc<Mutex<BlockCache>>,
+    block_cache: Arc<BlockCache>,
     graph_file_id: u64,
     header: Header,
     offsets: GraphOffsets,
 }
 
 impl AsyncHnswGraphStorage {
-    pub async fn new(block_cache: Arc<Mutex<BlockCache>>, base_directory: String) -> Result<Self> {
+    pub async fn new(block_cache: Arc<BlockCache>, base_directory: String) -> Result<Self> {
         let graph_path = format!("{}/hnsw/index", base_directory);
         let file_id = {
-            let mut cache = block_cache.lock().await;
+            let cache = block_cache.clone();
             cache.open_file(&graph_path).await
         }
         .map_err(|e| anyhow!("Failed to open graph file: {}", e))?;
 
         let header_data = {
-            let mut cache = block_cache.lock().await;
+            let cache = block_cache.clone();
             cache.read(file_id, 0, 49).await
         }
         .map_err(|e| anyhow!("Failed to read header: {}", e))?;
@@ -50,19 +49,19 @@ impl AsyncHnswGraphStorage {
     }
 
     pub async fn new_with_offset(
-        block_cache: Arc<Mutex<BlockCache>>,
+        block_cache: Arc<BlockCache>,
         base_directory: String,
         data_offset: usize,
     ) -> Result<Self> {
         let graph_path = format!("{}/hnsw/index", base_directory);
         let file_id = {
-            let mut cache = block_cache.lock().await;
+            let cache = block_cache.clone();
             cache.open_file(&graph_path).await
         }
         .map_err(|e| anyhow!("Failed to open graph file: {}", e))?;
 
         let header_data = {
-            let mut cache = block_cache.lock().await;
+            let cache = block_cache.clone();
             cache.read(file_id, data_offset as u64, 49).await
         }
         .map_err(|e| anyhow!("Failed to read header: {}", e))?;
@@ -160,7 +159,7 @@ impl AsyncHnswGraphStorage {
             return Ok(vec![]);
         }
         let data = {
-            let mut cache = self.block_cache.lock().await;
+            let cache = self.block_cache.clone();
             cache.read(self.graph_file_id, start, length).await
         }
         .map_err(|e| anyhow!("Failed to read edges: {}", e))?;
@@ -183,7 +182,7 @@ impl AsyncHnswGraphStorage {
             return Ok(vec![]);
         }
         let data = {
-            let mut cache = self.block_cache.lock().await;
+            let cache = self.block_cache.clone();
             cache.read(self.graph_file_id, start, length).await
         }
         .map_err(|e| anyhow!("Failed to read edge offsets: {}", e))?;
@@ -206,7 +205,7 @@ impl AsyncHnswGraphStorage {
             return Ok(vec![]);
         }
         let data = {
-            let mut cache = self.block_cache.lock().await;
+            let cache = self.block_cache.clone();
             cache.read(self.graph_file_id, start, length).await
         }
         .map_err(|e| anyhow!("Failed to read points: {}", e))?;
@@ -229,7 +228,7 @@ impl AsyncHnswGraphStorage {
             return Ok(vec![]);
         }
         let data = {
-            let mut cache = self.block_cache.lock().await;
+            let cache = self.block_cache.clone();
             cache.read(self.graph_file_id, start, length).await
         }
         .map_err(|e| anyhow!("Failed to read level offsets: {}", e))?;
@@ -252,7 +251,7 @@ impl AsyncHnswGraphStorage {
             return Ok(vec![]);
         }
         let data = {
-            let mut cache = self.block_cache.lock().await;
+            let cache = self.block_cache.clone();
             cache.read(self.graph_file_id, start, length).await
         }
         .map_err(|e| anyhow!("Failed to read doc ID mapping: {}", e))?;
@@ -434,9 +433,9 @@ mod tests {
         create_test_file(base_directory.clone(), 12, 32, 32);
 
         let config = BlockCacheConfig::default();
-        let cache = Arc::new(Mutex::new(BlockCache::new(config)));
+        let cache = Arc::new(BlockCache::new(config));
 
-        let storage = AsyncHnswGraphStorage::new(cache, base_directory)
+        let storage = AsyncHnswGraphStorage::new(cache.clone(), base_directory)
             .await
             .unwrap();
 

@@ -2,14 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use async_lock::RwLock;
 use config::enums::IntSeqEncodingType;
 use config::search_params::SearchParams;
 use dashmap::DashMap;
 use memmap2::Mmap;
 use odht::HashTableOwned;
-use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
-use tokio::sync::Mutex;
 use utils::block_cache::BlockCache;
 
 use super::user_index_info::HashConfig;
@@ -30,7 +29,7 @@ pub struct MultiSpannIndex<Q: Quantizer> {
     pending_invalidations: DashMap<u128, HashSet<u128>>,
     ivf_type: IntSeqEncodingType,
     num_features: usize,
-    block_cache: Option<Arc<Mutex<BlockCache>>>,
+    block_cache: Option<Arc<BlockCache>>,
     #[allow(dead_code)]
     use_async_reader: bool,
 }
@@ -42,22 +41,24 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         ivf_type: IntSeqEncodingType,
         num_features: usize,
     ) -> Result<Self> {
-        Self::new_impl(
+        // Block on a runtime
+        let runtime = tokio::runtime::Runtime::new()?;
+        runtime.block_on(Self::new_impl(
             base_directory,
             user_index_info_mmap,
             ivf_type,
             num_features,
             None,
             false,
-        )
+        ))
     }
 
-    pub fn new_with_cache(
+    pub async fn new_with_cache(
         base_directory: String,
         user_index_info_mmap: Mmap,
         ivf_type: IntSeqEncodingType,
         num_features: usize,
-        block_cache: Arc<Mutex<BlockCache>>,
+        block_cache: Arc<BlockCache>,
         use_async_reader: bool,
     ) -> Result<Self> {
         Self::new_impl(
@@ -68,14 +69,15 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             Some(block_cache),
             use_async_reader,
         )
+        .await
     }
 
-    fn new_impl(
+    async fn new_impl(
         base_directory: String,
         user_index_info_mmap: Mmap,
         ivf_type: IntSeqEncodingType,
         num_features: usize,
-        block_cache: Option<Arc<Mutex<BlockCache>>>,
+        block_cache: Option<Arc<BlockCache>>,
         use_async_reader: bool,
     ) -> Result<Self> {
         let user_index_infos = HashTableOwned::from_raw_bytes(&user_index_info_mmap).unwrap();
@@ -95,7 +97,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         };
 
         {
-            let invalidated_ids = index.invalidated_ids_storage.read();
+            let invalidated_ids = index.invalidated_ids_storage.read().await;
             for invalidated_id in invalidated_ids.iter() {
                 index
                     .pending_invalidations
@@ -138,11 +140,11 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             self.ivf_type.clone(),
         );
 
-        let index = if let Some(ref _block_cache) = self.block_cache {
+        let index = if let Some(ref block_cache) = self.block_cache {
             #[cfg(feature = "async-hnsw")]
             {
                 if self.use_async_reader {
-                    reader.read_async::<Q>(_block_cache.clone()).await?
+                    reader.read_async::<Q>(block_cache.clone()).await?
                 } else {
                     reader.read::<Q>()?
                 }
@@ -192,6 +194,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
                 .insert(doc_id);
             self.invalidated_ids_storage
                 .write()
+                .await
                 .invalidate(user_id, doc_id)?;
         }
         Ok(effectively_invalidated)
@@ -226,7 +229,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
                     .or_insert_with(HashSet::new)
                     .insert(pair.doc_id);
             }
-            let mut invalidated_ids_storage_write = self.invalidated_ids_storage.write();
+            let mut invalidated_ids_storage_write = self.invalidated_ids_storage.write().await;
             invalidated_ids_storage_write.invalidate_batch(&effectively_invalidated_pairs)?;
         }
 
@@ -264,8 +267,8 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         &self.base_directory
     }
 
-    pub fn get_deleted_docs_count(&self) -> usize {
-        return self.invalidated_ids_storage.read().num_entries();
+    pub async fn get_deleted_docs_count(&self) -> usize {
+        return self.invalidated_ids_storage.read().await.num_entries();
     }
 
     pub fn get_total_docs_count(&self) -> Result<usize> {
@@ -528,6 +531,7 @@ mod tests {
             multi_spann_index
                 .invalidated_ids_storage
                 .read()
+                .await
                 .num_entries(),
             1
         );
@@ -596,6 +600,7 @@ mod tests {
             multi_spann_index
                 .invalidated_ids_storage
                 .write()
+                .await
                 .iter()
                 .collect::<Vec<_>>()
                 .len(),
@@ -610,6 +615,7 @@ mod tests {
             multi_spann_index
                 .invalidated_ids_storage
                 .write()
+                .await
                 .iter()
                 .collect::<Vec<_>>()
                 .len(),
@@ -676,6 +682,7 @@ mod tests {
         let invalidated_ids: Vec<_> = multi_spann_index
             .invalidated_ids_storage
             .write()
+            .await
             .iter()
             .collect();
 
@@ -712,6 +719,7 @@ mod tests {
         let updated_invalidated_ids: Vec<_> = multi_spann_index
             .invalidated_ids_storage
             .write()
+            .await
             .iter()
             .collect();
 
