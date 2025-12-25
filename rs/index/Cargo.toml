@@ -7,7 +7,7 @@ edition = "2021"
 workspace = true
 
 [features]
-default = []
+default = ["async-hnsw"]
 async-hnsw = []
 
 [dependencies]
