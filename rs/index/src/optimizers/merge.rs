@@ -25,15 +25,17 @@ impl<Q: Quantizer + Clone + Send + Sync> MergeOptimizer<Q> {
     }
 }
 
+#[async_trait::async_trait]
 impl<Q: Quantizer + Clone + Send + Sync> SegmentOptimizer<Q> for MergeOptimizer<Q> {
     #[allow(unused)]
-    default fn optimize(&self, segment: &PendingSegment<Q>) -> Result<()> {
+    default async fn optimize(&self, segment: &PendingSegment<Q>) -> Result<()> {
         Err(anyhow::anyhow!("not supported"))
     }
 }
 
+#[async_trait::async_trait]
 impl SegmentOptimizer<NoQuantizerL2> for MergeOptimizer<NoQuantizerL2> {
-    fn optimize(&self, pending_segment: &PendingSegment<NoQuantizerL2>) -> Result<()> {
+    async fn optimize(&self, pending_segment: &PendingSegment<NoQuantizerL2>) -> Result<()> {
         let inner_segments = pending_segment.inner_segments();
         if inner_segments.len() < 2 {
             return Ok(());
@@ -45,7 +47,7 @@ impl SegmentOptimizer<NoQuantizerL2> for MergeOptimizer<NoQuantizerL2> {
 
         for user_id in all_user_ids {
             for inner_segment in inner_segments {
-                let iter = inner_segment.iter_for_user(user_id);
+                let iter = inner_segment.iter_for_user(user_id).await;
                 if let Some(iter) = iter {
                     let mut iter = iter;
                     while let Some((doc_id, vector)) = iter.next() {
@@ -95,51 +97,65 @@ mod tests {
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
-        let collection = reader.read::<NoQuantizerL2>()?;
+        let collection = reader.read::<NoQuantizerL2>().await?;
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())?;
-        collection.insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, DocumentAttribute::default())?;
-        collection.insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, DocumentAttribute::default())?;
+        collection
+            .insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())
+            .await?;
+        collection
+            .insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, DocumentAttribute::default())
+            .await?;
+        collection
+            .insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, DocumentAttribute::default())
+            .await?;
 
-        collection.flush()?;
+        collection.flush().await?;
 
-        collection.insert_for_users(
-            &[0],
-            4,
-            &[100.0, 101.0, 102.0],
-            3,
-            DocumentAttribute::default(),
-        )?;
-        collection.insert_for_users(
-            &[0],
-            5,
-            &[103.0, 104.0, 105.0],
-            4,
-            DocumentAttribute::default(),
-        )?;
-        collection.insert_for_users(
-            &[0],
-            6,
-            &[106.0, 107.0, 108.0],
-            5,
-            DocumentAttribute::default(),
-        )?;
+        collection
+            .insert_for_users(
+                &[0],
+                4,
+                &[100.0, 101.0, 102.0],
+                3,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection
+            .insert_for_users(
+                &[0],
+                5,
+                &[103.0, 104.0, 105.0],
+                4,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection
+            .insert_for_users(
+                &[0],
+                6,
+                &[106.0, 107.0, 108.0],
+                5,
+                DocumentAttribute::default(),
+            )
+            .await?;
 
-        collection.flush()?;
+        collection.flush().await?;
 
         // Now we have 2 segments, let merge them
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 2);
-        let pending_segment = collection.init_optimizing(&segments)?;
+        let pending_segment = collection.init_optimizing(&segments).await?;
 
         let optimizer = MergeOptimizer::<NoQuantizerL2>::new();
-        collection.run_optimizer(&optimizer, &pending_segment)?;
+        collection
+            .run_optimizer(&optimizer, &pending_segment)
+            .await?;
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 1);
 
-        let snapshot = collection.get_snapshot()?;
+        let snapshot = collection.get_snapshot().await?;
         let snapshot = Arc::new(snapshot);
         let params = SearchParams::new(3, 10, false);
         let result = snapshot
@@ -192,41 +208,53 @@ mod tests {
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
-        let collection = reader.read::<NoQuantizerL2>()?;
+        let collection = reader.read::<NoQuantizerL2>().await?;
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())?;
-        collection.insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, DocumentAttribute::default())?;
-        collection.insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, DocumentAttribute::default())?;
+        collection
+            .insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())
+            .await?;
+        collection
+            .insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, DocumentAttribute::default())
+            .await?;
+        collection
+            .insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, DocumentAttribute::default())
+            .await?;
 
-        collection.flush()?;
+        collection.flush().await?;
 
-        collection.insert_for_users(
-            &[0],
-            4,
-            &[100.0, 101.0, 102.0],
-            3,
-            DocumentAttribute::default(),
-        )?;
-        collection.insert_for_users(
-            &[0],
-            5,
-            &[103.0, 104.0, 105.0],
-            4,
-            DocumentAttribute::default(),
-        )?;
-        collection.insert_for_users(
-            &[0],
-            6,
-            &[106.0, 107.0, 108.0],
-            5,
-            DocumentAttribute::default(),
-        )?;
+        collection
+            .insert_for_users(
+                &[0],
+                4,
+                &[100.0, 101.0, 102.0],
+                3,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection
+            .insert_for_users(
+                &[0],
+                5,
+                &[103.0, 104.0, 105.0],
+                4,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection
+            .insert_for_users(
+                &[0],
+                6,
+                &[106.0, 107.0, 108.0],
+                5,
+                DocumentAttribute::default(),
+            )
+            .await?;
 
-        collection.flush()?;
+        collection.flush().await?;
 
         // Now we have 2 segments, let's merge them
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 2);
 
         // Remove a doc from the first segment
@@ -236,17 +264,20 @@ mod tests {
             .unwrap()
             .value()
             .remove(0, 1)
+            .await
             .is_ok());
 
-        let pending_segment = collection.init_optimizing(&segments)?;
+        let pending_segment = collection.init_optimizing(&segments).await?;
 
         let optimizer = MergeOptimizer::<NoQuantizerL2>::new();
-        collection.run_optimizer(&optimizer, &pending_segment)?;
+        collection
+            .run_optimizer(&optimizer, &pending_segment)
+            .await?;
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 1);
 
-        let snapshot = collection.get_snapshot()?;
+        let snapshot = collection.get_snapshot().await?;
         let snapshot = Arc::new(snapshot);
 
         let params = SearchParams::new(3, 10, false);
@@ -286,51 +317,65 @@ mod tests {
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
-        let collection = reader.read::<NoQuantizerL2>()?;
+        let collection = reader.read::<NoQuantizerL2>().await?;
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())?;
-        collection.insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, DocumentAttribute::default())?;
-        collection.insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, DocumentAttribute::default())?;
+        collection
+            .insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())
+            .await?;
+        collection
+            .insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, DocumentAttribute::default())
+            .await?;
+        collection
+            .insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, DocumentAttribute::default())
+            .await?;
 
-        collection.flush()?;
+        collection.flush().await?;
 
-        collection.insert_for_users(
-            &[1],
-            4,
-            &[10.0, 11.0, 12.0],
-            3,
-            DocumentAttribute::default(),
-        )?;
-        collection.insert_for_users(
-            &[1],
-            5,
-            &[13.0, 14.0, 15.0],
-            4,
-            DocumentAttribute::default(),
-        )?;
-        collection.insert_for_users(
-            &[1],
-            6,
-            &[16.0, 17.0, 18.0],
-            5,
-            DocumentAttribute::default(),
-        )?;
+        collection
+            .insert_for_users(
+                &[1],
+                4,
+                &[10.0, 11.0, 12.0],
+                3,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection
+            .insert_for_users(
+                &[1],
+                5,
+                &[13.0, 14.0, 15.0],
+                4,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection
+            .insert_for_users(
+                &[1],
+                6,
+                &[16.0, 17.0, 18.0],
+                5,
+                DocumentAttribute::default(),
+            )
+            .await?;
 
-        collection.flush()?;
+        collection.flush().await?;
 
         // Now we have 2 segments, let's merge them
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 2);
-        let pending_segment = collection.init_optimizing(&segments)?;
+        let pending_segment = collection.init_optimizing(&segments).await?;
 
         let optimizer = MergeOptimizer::<NoQuantizerL2>::new();
-        collection.run_optimizer(&optimizer, &pending_segment)?;
+        collection
+            .run_optimizer(&optimizer, &pending_segment)
+            .await?;
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 1);
 
-        let snapshot = collection.get_snapshot()?;
+        let snapshot = collection.get_snapshot().await?;
         let params = SearchParams::new(3, 10, false);
         let result = snapshot
             .search_for_user(0, vec![1.0, 2.0, 3.0], &params, None)
@@ -383,41 +428,53 @@ mod tests {
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
-        let collection = reader.read::<NoQuantizerL2>()?;
+        let collection = reader.read::<NoQuantizerL2>().await?;
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())?;
-        collection.insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, DocumentAttribute::default())?;
-        collection.insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, DocumentAttribute::default())?;
+        collection
+            .insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())
+            .await?;
+        collection
+            .insert_for_users(&[0], 2, &[4.0, 5.0, 6.0], 1, DocumentAttribute::default())
+            .await?;
+        collection
+            .insert_for_users(&[0], 3, &[7.0, 8.0, 9.0], 2, DocumentAttribute::default())
+            .await?;
 
-        collection.flush()?;
+        collection.flush().await?;
 
-        collection.insert_for_users(
-            &[1],
-            4,
-            &[10.0, 11.0, 12.0],
-            3,
-            DocumentAttribute::default(),
-        )?;
-        collection.insert_for_users(
-            &[1],
-            5,
-            &[13.0, 14.0, 15.0],
-            4,
-            DocumentAttribute::default(),
-        )?;
-        collection.insert_for_users(
-            &[1],
-            6,
-            &[16.0, 17.0, 18.0],
-            5,
-            DocumentAttribute::default(),
-        )?;
+        collection
+            .insert_for_users(
+                &[1],
+                4,
+                &[10.0, 11.0, 12.0],
+                3,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection
+            .insert_for_users(
+                &[1],
+                5,
+                &[13.0, 14.0, 15.0],
+                4,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection
+            .insert_for_users(
+                &[1],
+                6,
+                &[16.0, 17.0, 18.0],
+                5,
+                DocumentAttribute::default(),
+            )
+            .await?;
 
-        collection.flush()?;
+        collection.flush().await?;
 
         // Now we have 2 segments, let's merge them
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 2);
 
         // Remove a doc from the first segment
@@ -427,17 +484,20 @@ mod tests {
             .unwrap()
             .value()
             .remove(0, 1)
+            .await
             .is_ok());
 
-        let pending_segment = collection.init_optimizing(&segments)?;
+        let pending_segment = collection.init_optimizing(&segments).await?;
 
         let optimizer = MergeOptimizer::<NoQuantizerL2>::new();
-        collection.run_optimizer(&optimizer, &pending_segment)?;
+        collection
+            .run_optimizer(&optimizer, &pending_segment)
+            .await?;
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 1);
 
-        let snapshot = collection.get_snapshot()?;
+        let snapshot = collection.get_snapshot().await?;
         let params = SearchParams::new(3, 10, false);
         let result = snapshot
             .search_for_user(0, vec![1.0, 2.0, 3.0], &params, None)

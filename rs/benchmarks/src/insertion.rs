@@ -30,10 +30,13 @@ fn bench_insertion(c: &mut Criterion) {
         BenchmarkId::new("Insertion", 10000),
         &10000,
         |bencher, _| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
             bencher.iter_with_setup(
                 || {
                     // Remove everything under base_directory
-                    std::fs::remove_dir_all(&base_directory).unwrap();
+                    if std::path::Path::new(&base_directory).exists() {
+                        std::fs::remove_dir_all(&base_directory).unwrap();
+                    }
 
                     // init the collection
                     Collection::<NoQuantizerL2>::init_new_collection(
@@ -43,23 +46,26 @@ fn bench_insertion(c: &mut Criterion) {
                     .unwrap();
                     let reader =
                         CollectionReader::new(collection_name.to_string(), base_directory.clone());
-                    reader.read::<NoQuantizerL2>().unwrap()
+                    rt.block_on(reader.read::<NoQuantizerL2>()).unwrap()
                 },
                 |collection| {
                     let mut doc_id = 0;
-                    vectors.iter().for_each(|vector| {
-                        collection
-                            .insert_for_users(
-                                &user_ids,
-                                doc_id,
-                                vector,
-                                0,
-                                DocumentAttribute::default(),
-                            )
-                            .unwrap();
-                        doc_id += 1;
+                    rt.block_on(async {
+                        for vector in vectors.iter() {
+                            collection
+                                .insert_for_users(
+                                    &user_ids,
+                                    doc_id,
+                                    vector,
+                                    0,
+                                    DocumentAttribute::default(),
+                                )
+                                .await
+                                .unwrap();
+                            doc_id += 1;
+                        }
+                        collection.flush().await.unwrap();
                     });
-                    collection.flush().unwrap();
                 },
             );
         },

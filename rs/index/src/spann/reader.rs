@@ -1,3 +1,4 @@
+#[cfg(feature = "async-hnsw")]
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -6,7 +7,9 @@ use compression::noc::noc::PlainDecoder;
 use config::enums::IntSeqEncodingType;
 use quantization::noq::noq::NoQuantizer;
 use quantization::quantization::Quantizer;
+#[cfg(feature = "async-hnsw")]
 use tokio::sync::Mutex;
+#[cfg(feature = "async-hnsw")]
 use utils::block_cache::BlockCache;
 use utils::distance::l2::L2DistanceCalculator;
 

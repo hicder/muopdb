@@ -27,15 +27,16 @@ impl<Q: Quantizer + Clone + Send + Sync> NoopOptimizer<Q> {
 }
 
 /// This optimizer does nothing. It just copies the original segment to a new segment.
+#[async_trait::async_trait]
 impl<Q: Quantizer + Clone + Send + Sync> SegmentOptimizer<Q> for NoopOptimizer<Q> {
-    fn optimize(&self, segment: &PendingSegment<Q>) -> Result<()> {
+    async fn optimize(&self, segment: &PendingSegment<Q>) -> Result<()> {
         let inner_segments = segment.inner_segments_names();
         let data_directory = segment.parent_directory();
 
         // Recursively copy everything from the data directory's inner segments to the new data directory.
         for inner_segment in inner_segments {
             let inner_segment_path = format!("{}/{}", data_directory, inner_segment);
-            let pending_segment_path = format!("{}/{}", data_directory, segment.name());
+            let pending_segment_path = format!("{}/{}", data_directory, segment.name().await);
 
             // Ignore errors if we can't create the directory. It might already exist.
             std::fs::create_dir_all(pending_segment_path.clone()).unwrap_or_default();

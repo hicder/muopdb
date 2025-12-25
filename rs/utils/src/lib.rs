@@ -13,7 +13,7 @@ pub mod mem;
 pub mod on_disk_ordered_map;
 pub mod test_utils;
 
-pub trait DistanceCalculator {
+pub trait DistanceCalculator: Send + Sync {
     /// Compute distance between two vectors.
     fn calculate(a: &[f32], b: &[f32]) -> f32;
 

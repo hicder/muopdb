@@ -34,10 +34,11 @@ fn bench_wal_insertion(c: &mut Criterion) {
     std::fs::remove_dir_all(&base_directory).unwrap();
 
     // init the collection
+    let rt = tokio::runtime::Runtime::new().unwrap();
     Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &segment_config)
         .unwrap();
     let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
-    let collection = reader.read::<NoQuantizerL2>().unwrap();
+    let collection = rt.block_on(reader.read::<NoQuantizerL2>()).unwrap();
 
     // Start background thread to process pending operations outside of benchmark
     let running = Arc::new(AtomicBool::new(true));

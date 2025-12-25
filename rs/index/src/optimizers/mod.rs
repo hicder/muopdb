@@ -8,6 +8,7 @@ use quantization::quantization::Quantizer;
 
 use crate::segment::pending_segment::PendingSegment;
 
+#[async_trait::async_trait]
 pub trait SegmentOptimizer<Q: Quantizer + Clone + Send + Sync> {
     /// Optimizes the given pending segment.
     ///
@@ -22,5 +23,5 @@ pub trait SegmentOptimizer<Q: Quantizer + Clone + Send + Sync> {
     /// # Returns
     ///
     /// A `Result` indicating success (`Ok(())`) or an error if the optimization fails.
-    fn optimize(&self, segment: &PendingSegment<Q>) -> Result<()>;
+    async fn optimize(&self, segment: &PendingSegment<Q>) -> Result<()>;
 }

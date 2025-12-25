@@ -93,7 +93,11 @@ impl CollectionManager {
             }
         }
 
-        match self.collection_provider.read_collection(&collection_name) {
+        match self
+            .collection_provider
+            .read_collection(&collection_name)
+            .await
+        {
             Some(collection) => {
                 self.collection_catalog
                     .add_collection(collection_name.clone(), collection)
@@ -190,7 +194,10 @@ impl CollectionManager {
                 Self::get_collections_to_add(&current_collection_names, &new_collection_names);
             for collection_name in collections_to_add.iter() {
                 info!("Fetching collection {collection_name}");
-                let collection_opt = self.collection_provider.read_collection(collection_name);
+                let collection_opt = self
+                    .collection_provider
+                    .read_collection(collection_name)
+                    .await;
                 if let Some(collection) = collection_opt {
                     self.collection_catalog
                         .add_collection(collection_name.clone(), collection)
@@ -243,9 +250,9 @@ impl CollectionManager {
                     .get_collection(&collection_name)
                     .await
                     .unwrap();
-                if collection.should_auto_flush() {
+                if collection.should_auto_flush().await {
                     debug!("Automatically flushing collection {collection_name}");
-                    flushed_ops += (!collection.flush().unwrap().is_empty()) as usize;
+                    flushed_ops += (!collection.flush().await.unwrap().is_empty()) as usize;
                 }
             }
         }
@@ -275,7 +282,7 @@ impl CollectionManager {
                 .await
                 .unwrap();
 
-            collection.auto_optimize().unwrap();
+            collection.auto_optimize().await.unwrap();
         }
         Ok(())
     }

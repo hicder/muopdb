@@ -15,7 +15,7 @@ impl CollectionProvider {
         Self { data_directory }
     }
 
-    pub fn read_collection(&self, name: &str) -> Option<BoxedCollection> {
+    pub async fn read_collection(&self, name: &str) -> Option<BoxedCollection> {
         let collection_path = format!("{}/{}", self.data_directory, name);
         let reader = CollectionReader::new(name.to_string(), collection_path.clone());
 
@@ -26,7 +26,7 @@ impl CollectionProvider {
 
         match collection_config.quantization_type {
             QuantizerType::NoQuantizer => {
-                match reader.read::<NoQuantizer<L2DistanceCalculator>>() {
+                match reader.read::<NoQuantizer<L2DistanceCalculator>>().await {
                     Ok(collection) => Some(BoxedCollection::CollectionNoQuantizationL2(collection)),
                     Err(e) => {
                         println!("Failed to read collection: {}", e);
@@ -35,7 +35,10 @@ impl CollectionProvider {
                 }
             }
             QuantizerType::ProductQuantizer => {
-                match reader.read::<ProductQuantizer<L2DistanceCalculator>>() {
+                match reader
+                    .read::<ProductQuantizer<L2DistanceCalculator>>()
+                    .await
+                {
                     Ok(collection) => {
                         Some(BoxedCollection::CollectionProductQuantization(collection))
                     }

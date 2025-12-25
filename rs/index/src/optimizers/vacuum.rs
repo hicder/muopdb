@@ -25,15 +25,17 @@ impl<Q: Quantizer + Clone + Send + Sync> VacuumOptimizer<Q> {
     }
 }
 
+#[async_trait::async_trait]
 impl<Q: Quantizer + Clone + Send + Sync> SegmentOptimizer<Q> for VacuumOptimizer<Q> {
     #[allow(unused)]
-    default fn optimize(&self, segment: &PendingSegment<Q>) -> Result<()> {
+    default async fn optimize(&self, segment: &PendingSegment<Q>) -> Result<()> {
         Err(anyhow::anyhow!("not supported"))
     }
 }
 
+#[async_trait::async_trait]
 impl SegmentOptimizer<NoQuantizerL2> for VacuumOptimizer<NoQuantizerL2> {
-    fn optimize(&self, pending_segment: &PendingSegment<NoQuantizerL2>) -> Result<()> {
+    async fn optimize(&self, pending_segment: &PendingSegment<NoQuantizerL2>) -> Result<()> {
         let inner_segments = pending_segment.inner_segments();
         if inner_segments.len() != 1 {
             return Ok(());
@@ -45,7 +47,7 @@ impl SegmentOptimizer<NoQuantizerL2> for VacuumOptimizer<NoQuantizerL2> {
         let all_user_ids = pending_segment.all_user_ids();
 
         for user_id in all_user_ids {
-            let iter = inner_segment.iter_for_user(user_id);
+            let iter = inner_segment.iter_for_user(user_id).await;
             if let Some(iter) = iter {
                 let mut iter = iter;
                 while let Some((doc_id, vector)) = iter.next() {
@@ -92,32 +94,38 @@ mod tests {
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
-        let collection = reader.read::<NoQuantizerL2>()?;
+        let collection = reader.read::<NoQuantizerL2>().await?;
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())?;
-        collection.insert_for_users(
-            &[0],
-            2,
-            &[14.0, 15.0, 16.0],
-            1,
-            DocumentAttribute::default(),
-        )?;
-        collection.flush()?;
+        collection
+            .insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())
+            .await?;
+        collection
+            .insert_for_users(
+                &[0],
+                2,
+                &[14.0, 15.0, 16.0],
+                1,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection.flush().await?;
 
         // Now we have 1 segment, let vacuum it
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 1);
 
-        let pending_segment = collection.init_optimizing(&segments)?;
+        let pending_segment = collection.init_optimizing(&segments).await?;
 
         let optimizer = VacuumOptimizer::<NoQuantizerL2>::new();
-        collection.run_optimizer(&optimizer, &pending_segment)?;
+        collection
+            .run_optimizer(&optimizer, &pending_segment)
+            .await?;
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 1);
 
-        let snapshot = collection.get_snapshot()?;
+        let snapshot = collection.get_snapshot().await?;
         let params = SearchParams::new(3, 10, false);
         let result = snapshot
             .search_for_user(0, vec![11.0, 12.0, 13.0], &params, None)
@@ -170,28 +178,34 @@ mod tests {
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
-        let collection = reader.read::<NoQuantizerL2>()?;
+        let collection = reader.read::<NoQuantizerL2>().await?;
 
-        collection.insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())?;
-        collection.insert_for_users(
-            &[0],
-            2,
-            &[20.0, 21.0, 22.0],
-            1,
-            DocumentAttribute::default(),
-        )?;
-        collection.insert_for_users(
-            &[0],
-            3,
-            &[27.0, 28.0, 29.0],
-            2,
-            DocumentAttribute::default(),
-        )?;
-        collection.flush()?;
+        collection
+            .insert_for_users(&[0], 1, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())
+            .await?;
+        collection
+            .insert_for_users(
+                &[0],
+                2,
+                &[20.0, 21.0, 22.0],
+                1,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection
+            .insert_for_users(
+                &[0],
+                3,
+                &[27.0, 28.0, 29.0],
+                2,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection.flush().await?;
 
         // Now we have 1 segment, let vacuum it
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 1);
 
         // Remove a doc from the first segment
@@ -201,17 +215,20 @@ mod tests {
             .unwrap()
             .value()
             .remove(0, 2)
+            .await
             .is_ok());
 
-        let pending_segment = collection.init_optimizing(&segments)?;
+        let pending_segment = collection.init_optimizing(&segments).await?;
 
         let optimizer = VacuumOptimizer::<NoQuantizerL2>::new();
-        collection.run_optimizer(&optimizer, &pending_segment)?;
+        collection
+            .run_optimizer(&optimizer, &pending_segment)
+            .await?;
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 1);
 
-        let snapshot = collection.get_snapshot()?;
+        let snapshot = collection.get_snapshot().await?;
         let params = SearchParams::new(1, 10, false);
         let result = snapshot
             .search_for_user(0, vec![20.0, 21.0, 22.0], &params, None)
@@ -250,38 +267,38 @@ mod tests {
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
-        let collection = reader.read::<NoQuantizerL2>()?;
+        let collection = reader.read::<NoQuantizerL2>().await?;
 
-        collection.insert_for_users(
-            &[0],
-            101,
-            &[1.0, 2.0, 3.0],
-            0,
-            DocumentAttribute::default(),
-        )?;
-        collection.insert_for_users(
-            &[1],
-            202,
-            &[14.0, 15.0, 16.0],
-            1,
-            DocumentAttribute::default(),
-        )?;
-        collection.flush()?;
+        collection
+            .insert_for_users(&[0], 101, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())
+            .await?;
+        collection
+            .insert_for_users(
+                &[1],
+                202,
+                &[14.0, 15.0, 16.0],
+                1,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection.flush().await?;
 
         // Now we have 1 segment, let vacuum it
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 1);
 
-        let pending_segment = collection.init_optimizing(&segments)?;
+        let pending_segment = collection.init_optimizing(&segments).await?;
 
         let optimizer = VacuumOptimizer::<NoQuantizerL2>::new();
-        collection.run_optimizer(&optimizer, &pending_segment)?;
+        collection
+            .run_optimizer(&optimizer, &pending_segment)
+            .await?;
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 1);
 
-        let snapshot = collection.get_snapshot()?;
+        let snapshot = collection.get_snapshot().await?;
         let params = SearchParams::new(3, 10, false);
         let result = snapshot
             .search_for_user(0, vec![11.0, 12.0, 13.0], &params, None)
@@ -334,50 +351,56 @@ mod tests {
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
-        let collection = reader.read::<NoQuantizerL2>()?;
+        let collection = reader.read::<NoQuantizerL2>().await?;
 
-        collection.insert_for_users(&[0], 11, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())?;
-        collection.insert_for_users(
-            &[0],
-            12,
-            &[20.0, 21.0, 22.0],
-            1,
-            DocumentAttribute::default(),
-        )?;
-        collection.insert_for_users(
-            &[0],
-            13,
-            &[27.0, 28.0, 29.0],
-            2,
-            DocumentAttribute::default(),
-        )?;
+        collection
+            .insert_for_users(&[0], 11, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())
+            .await?;
+        collection
+            .insert_for_users(
+                &[0],
+                12,
+                &[20.0, 21.0, 22.0],
+                1,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection
+            .insert_for_users(
+                &[0],
+                13,
+                &[27.0, 28.0, 29.0],
+                2,
+                DocumentAttribute::default(),
+            )
+            .await?;
 
-        collection.insert_for_users(
-            &[1],
-            201,
-            &[1.0, 2.0, 3.0],
-            0,
-            DocumentAttribute::default(),
-        )?;
-        collection.insert_for_users(
-            &[1],
-            202,
-            &[20.0, 21.0, 22.0],
-            1,
-            DocumentAttribute::default(),
-        )?;
-        collection.insert_for_users(
-            &[1],
-            203,
-            &[27.0, 28.0, 29.0],
-            2,
-            DocumentAttribute::default(),
-        )?;
-        collection.flush()?;
+        collection
+            .insert_for_users(&[1], 201, &[1.0, 2.0, 3.0], 0, DocumentAttribute::default())
+            .await?;
+        collection
+            .insert_for_users(
+                &[1],
+                202,
+                &[20.0, 21.0, 22.0],
+                1,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection
+            .insert_for_users(
+                &[1],
+                203,
+                &[27.0, 28.0, 29.0],
+                2,
+                DocumentAttribute::default(),
+            )
+            .await?;
+        collection.flush().await?;
 
         // Now we have 1 segment, let vacuum it
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 1);
 
         // Remove a doc from the first segment
@@ -387,17 +410,20 @@ mod tests {
             .unwrap()
             .value()
             .remove(1, 203)
+            .await
             .is_ok());
 
-        let pending_segment = collection.init_optimizing(&segments)?;
+        let pending_segment = collection.init_optimizing(&segments).await?;
 
         let optimizer = VacuumOptimizer::<NoQuantizerL2>::new();
-        collection.run_optimizer(&optimizer, &pending_segment)?;
+        collection
+            .run_optimizer(&optimizer, &pending_segment)
+            .await?;
 
-        let segments = collection.get_current_toc().toc.clone();
+        let segments = collection.get_current_toc().await.toc.clone();
         assert_eq!(segments.len(), 1);
 
-        let snapshot = collection.get_snapshot()?;
+        let snapshot = collection.get_snapshot().await?;
         let params = SearchParams::new(3, 10, false);
         let result = snapshot
             .search_for_user(0, vec![20.0, 21.0, 22.0], &params, None)

@@ -77,7 +77,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
     {
         let mut scored_results = SearchResult::new();
         for segment in &self.segments {
-            let multi_term_index = segment.get_multi_term_index();
+            let multi_term_index = segment.get_multi_term_index().await;
             let planner = if let Some(multi_term_index) = multi_term_index {
                 if let Some(filter) = &filter {
                     Some(Arc::new(
@@ -109,7 +109,11 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
 
 impl<Q: Quantizer + Clone + Send + Sync + 'static> Drop for Snapshot<Q> {
     fn drop(&mut self) {
-        self.collection.release_version(self.version);
+        let collection = self.collection.clone();
+        let version = self.version;
+        tokio::spawn(async move {
+            collection.release_version(version).await;
+        });
     }
 }
 

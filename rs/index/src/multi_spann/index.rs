@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -27,6 +27,7 @@ pub struct MultiSpannIndex<Q: Quantizer> {
     user_index_info_mmap: Mmap,
     user_index_infos: HashTableOwned<HashConfig>,
     invalidated_ids_storage: RwLock<InvalidatedIdsStorage>,
+    pending_invalidations: DashMap<u128, HashSet<u128>>,
     ivf_type: IntSeqEncodingType,
     num_features: usize,
     block_cache: Option<Arc<Mutex<BlockCache>>>,
@@ -82,6 +83,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             user_to_spann: DashMap::new(),
             user_index_info_mmap,
             user_index_infos,
+            pending_invalidations: DashMap::new(),
             invalidated_ids_storage: RwLock::new(invalidated_ids_storage),
             ivf_type,
             num_features,
@@ -91,8 +93,14 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         {
             let invalidated_ids = index.invalidated_ids_storage.read();
             for invalidated_id in invalidated_ids.iter() {
-                let spann_index = index.get_or_create_index(invalidated_id.user_id)?;
-                let _ = spann_index.invalidate(invalidated_id.doc_id);
+                index
+                    .pending_invalidations
+                    .entry(invalidated_id.user_id)
+                    .or_insert_with(HashSet::new)
+                    .insert(invalidated_id.doc_id);
+                if let Some(spann_index) = index.user_to_spann.get(&invalidated_id.user_id) {
+                    let _ = spann_index.invalidate(invalidated_id.doc_id);
+                }
             }
         }
 
@@ -107,7 +115,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         user_ids
     }
 
-    pub fn get_or_create_index(&self, user_id: u128) -> Result<Arc<Spann<Q>>> {
+    pub async fn get_or_create_index(&self, user_id: u128) -> Result<Arc<Spann<Q>>> {
         if let Some(index) = self.user_to_spann.get(&user_id) {
             return Ok(index.clone());
         }
@@ -126,11 +134,10 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             self.ivf_type.clone(),
         );
 
-        let index = if let Some(ref block_cache) = self.block_cache {
+        let index = if let Some(ref _block_cache) = self.block_cache {
             #[cfg(feature = "async-hnsw")]
             {
-                let runtime = tokio::runtime::Handle::current();
-                runtime.block_on(reader.read_async::<Q>(block_cache.clone()))?
+                reader.read_async::<Q>(_block_cache.clone()).await?
             }
             #[cfg(not(feature = "async-hnsw"))]
             {
@@ -140,13 +147,19 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             reader.read::<Q>()?
         };
 
+        if let Some(invalidated_docs) = self.pending_invalidations.get(&user_id) {
+            let doc_ids: Vec<u128> = invalidated_docs.iter().cloned().collect();
+            index.invalidate_batch(&doc_ids);
+        }
+
         let arc_index = Arc::new(index);
         self.user_to_spann.insert(user_id, arc_index.clone());
+
         Ok(arc_index)
     }
 
-    pub fn iter_for_user(&self, user_id: u128) -> Option<SpannIter<Q>> {
-        match self.get_or_create_index(user_id) {
+    pub async fn iter_for_user(&self, user_id: u128) -> Option<SpannIter<Q>> {
+        match self.get_or_create_index(user_id).await {
             Ok(index) => Some(SpannIter::new(Arc::clone(&index))),
             Err(_) => None,
         }
@@ -161,10 +174,14 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         size
     }
 
-    pub fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
-        let index = self.get_or_create_index(user_id)?;
+    pub async fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+        let index = self.get_or_create_index(user_id).await?;
         let effectively_invalidated = index.invalidate(doc_id);
         if effectively_invalidated {
+            self.pending_invalidations
+                .entry(user_id)
+                .or_insert_with(HashSet::new)
+                .insert(doc_id);
             self.invalidated_ids_storage
                 .write()
                 .invalidate(user_id, doc_id)?;
@@ -172,21 +189,20 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         Ok(effectively_invalidated)
     }
 
-    pub fn invalidate_batch(&self, user_to_doc_ids: &HashMap<u128, Vec<u128>>) -> Result<usize> {
-        // Collect all effectively invalidated (user_id, doc_id) pairs
+    pub async fn invalidate_batch(
+        &self,
+        user_to_doc_ids: &HashMap<u128, Vec<u128>>,
+    ) -> Result<usize> {
         let mut effectively_invalidated_pairs = Vec::new();
 
-        // Track the total number of effectively invalidated doc_ids
         let mut total_effectively_invalidated = 0;
 
-        // Process each user's invalidations
         for (user_id, doc_ids) in user_to_doc_ids {
-            let index = self.get_or_create_index(*user_id)?;
+            let index = self.get_or_create_index(*user_id).await?;
 
             let effectively_invalidated_doc_ids = index.invalidate_batch(doc_ids);
             total_effectively_invalidated += effectively_invalidated_doc_ids.len();
 
-            // Add (user_id, doc_id) pairs to the collection
             effectively_invalidated_pairs.extend(effectively_invalidated_doc_ids.into_iter().map(
                 |doc_id| InvalidatedUserDocId {
                     user_id: *user_id,
@@ -195,8 +211,13 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             ));
         }
 
-        // Persist all effectively invalidated pairs in bulk
         if !effectively_invalidated_pairs.is_empty() {
+            for pair in &effectively_invalidated_pairs {
+                self.pending_invalidations
+                    .entry(pair.user_id)
+                    .or_insert_with(HashSet::new)
+                    .insert(pair.doc_id);
+            }
             let mut invalidated_ids_storage_write = self.invalidated_ids_storage.write();
             invalidated_ids_storage_write.invalidate_batch(&effectively_invalidated_pairs)?;
         }
@@ -204,15 +225,15 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         Ok(total_effectively_invalidated)
     }
 
-    pub fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
-        let index = self.get_or_create_index(user_id)?;
+    pub async fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+        let index = self.get_or_create_index(user_id).await?;
         Ok(index.is_invalidated(doc_id))
     }
 
     /// This is very expensive and should only be used for testing.
     #[cfg(test)]
-    pub fn get_point_id(&self, user_id: u128, doc_id: u128) -> Option<u32> {
-        match self.get_or_create_index(user_id) {
+    pub async fn get_point_id(&self, user_id: u128, doc_id: u128) -> Option<u32> {
+        match self.get_or_create_index(user_id).await {
             Ok(index) => index.get_point_id(doc_id),
             Err(_) => None,
         }
@@ -225,7 +246,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         params: &SearchParams,
         planner: Option<Arc<Planner>>,
     ) -> Option<SearchResult> {
-        match self.get_or_create_index(user_id) {
+        match self.get_or_create_index(user_id).await {
             Ok(index) => index.search(query, params, planner).await,
             Err(_) => None,
         }
@@ -423,9 +444,11 @@ mod tests {
 
         assert!(multi_spann_index
             .invalidate(0, num_vectors)
+            .await
             .expect("Failed to invalidate"));
         assert!(multi_spann_index
             .is_invalidated(0, num_vectors)
+            .await
             .expect("Failed to query invalidation"));
 
         let params = SearchParams::new(k, num_probes, false);
@@ -491,6 +514,7 @@ mod tests {
             .expect("Failed to read Multi-SPANN index");
         assert!(multi_spann_index
             .is_invalidated(0, num_vectors)
+            .await
             .expect("Failed to query invalidation"));
         assert_eq!(
             multi_spann_index
@@ -558,6 +582,7 @@ mod tests {
 
         assert!(multi_spann_index
             .invalidate(0, 0)
+            .await
             .expect("Failed to invalidate"));
         assert_eq!(
             multi_spann_index
@@ -571,6 +596,7 @@ mod tests {
 
         assert!(!multi_spann_index
             .invalidate(0, num_vectors)
+            .await
             .expect("Failed to invalidate"));
         assert_eq!(
             multi_spann_index
@@ -632,6 +658,7 @@ mod tests {
 
         let effectively_invalidated_count = multi_spann_index
             .invalidate_batch(&invalidations)
+            .await
             .expect("Failed to batch invalidate");
 
         // Verify that only valid doc_ids were effectively invalidated
@@ -667,6 +694,7 @@ mod tests {
 
         let new_effectively_invalidated_count = multi_spann_index
             .invalidate_batch(&new_invalidations)
+            .await
             .expect("Failed to batch invalidate");
 
         // Verify that only the new valid doc_id was effectively invalidated

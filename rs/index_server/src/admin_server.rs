@@ -42,7 +42,7 @@ impl IndexServerAdmin for AdminServerImpl {
             match collection {
                 BoxedCollection::CollectionNoQuantizationL2(collection) => {
                     let optimizer = OptimizerEngine::new(collection);
-                    match optimizer.run(segment_names, OptimizingType::Merge) {
+                    match optimizer.run(segment_names, OptimizingType::Merge).await {
                         Ok(new_segment_name) => {
                             returned_segment_name = new_segment_name;
                         }
@@ -86,7 +86,7 @@ impl IndexServerAdmin for AdminServerImpl {
 
         match collection_opt {
             Some(collection) => {
-                let segment_infos = collection.get_active_segment_infos();
+                let segment_infos = collection.get_active_segment_infos().await;
                 let returned_segment_infos = segment_infos
                     .segment_infos
                     .iter()

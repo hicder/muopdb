@@ -6,9 +6,9 @@ pub mod pending_segment;
 use std::sync::Arc;
 
 use anyhow::Result;
+use async_lock::RwLock;
 use config::search_params::SearchParams;
 use immutable_segment::ImmutableSegment;
-use parking_lot::RwLock;
 use pending_segment::PendingSegment;
 use quantization::quantization::Quantizer;
 
@@ -19,23 +19,24 @@ use crate::utils::SearchResult;
 
 /// A segment is a partial index: users can insert some documents, then flush
 /// the containing collection, to effectively create a segment.
+#[async_trait::async_trait]
 pub trait Segment {
     /// Inserts a document into the segment.
     /// Returns an error if the insertion process fails for any reason.
     /// NOTE: Some type of segment may not support insertion.
-    fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()>;
+    async fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()>;
 
     /// Removes a document for an user from the segment.
     /// Returns true if the document was removed, false if the document was not found.
     /// Returns an error if the removal process fails for any reason.
-    fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool>;
+    async fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool>;
 
     /// Returns true if the segment may contain the given document.
     /// False if the segment definitely does not contain the document.
-    fn may_contain(&self, doc_id: u128) -> bool;
+    async fn may_contain(&self, doc_id: u128) -> bool;
 
     /// Returns the name of the segment.
-    fn name(&self) -> String;
+    async fn name(&self) -> String;
 }
 
 #[derive(Clone)]
@@ -48,73 +49,77 @@ pub enum BoxedImmutableSegment<Q: Quantizer + Clone + Send + Sync> {
 }
 
 impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
-    pub fn user_ids(&self) -> Vec<u128> {
+    pub async fn user_ids(&self) -> Vec<u128> {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment.read().user_ids()
+                immutable_segment.read().await.user_ids()
             }
             BoxedImmutableSegment::PendingSegment(pending_segment) => {
-                pending_segment.read().all_user_ids()
+                pending_segment.read().await.all_user_ids()
             }
             BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
-                mocked_segment.read().ids_to_return.clone()
+                mocked_segment.read().await.ids_to_return.clone()
             }
         }
     }
 
-    pub fn iter_for_user(&self, user_id: u128) -> Option<SpannIter<Q>> {
+    pub async fn iter_for_user(&self, user_id: u128) -> Option<SpannIter<Q>> {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment.read().iter_for_user(user_id)
+                immutable_segment.read().await.iter_for_user(user_id).await
             }
             _ => None,
         }
     }
 
-    pub fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+    pub async fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment.read().is_invalidated(user_id, doc_id)
+                immutable_segment
+                    .read()
+                    .await
+                    .is_invalidated(user_id, doc_id)
+                    .await
             }
             _ => Ok(false),
         }
     }
 
     /// Only get the size of the index from immutable segments for now
-    pub fn size_in_bytes_immutable_segments(&self) -> u64 {
+    pub async fn size_in_bytes_immutable_segments(&self) -> u64 {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment.read().size_in_bytes()
+                immutable_segment.read().await.size_in_bytes()
             }
             BoxedImmutableSegment::PendingSegment(_pending_segment) => 0,
             BoxedImmutableSegment::MockedNoQuantizationSegment(_mocked_segment) => 0,
         }
     }
 
-    pub fn num_docs(&self) -> u64 {
+    pub async fn num_docs(&self) -> u64 {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment.read().num_docs().unwrap_or(0) as u64
+                immutable_segment.read().await.num_docs().unwrap_or(0) as u64
             }
             BoxedImmutableSegment::PendingSegment(_pending_segment) => 0,
             BoxedImmutableSegment::MockedNoQuantizationSegment(_mocked_segment) => 0,
         }
     }
 
-    pub fn should_auto_vacuum(&self) -> bool {
+    pub async fn should_auto_vacuum(&self) -> bool {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment.read().should_auto_vacuum()
+                immutable_segment.read().await.should_auto_vacuum()
             }
             BoxedImmutableSegment::PendingSegment(_pending_segment) => false,
             BoxedImmutableSegment::MockedNoQuantizationSegment(_mocked_segment) => false,
         }
     }
 
-    pub fn get_multi_term_index(&self) -> Option<Arc<MultiTermIndex>> {
+    pub async fn get_multi_term_index(&self) -> Option<Arc<MultiTermIndex>> {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment.read().get_multi_term_index()
+                immutable_segment.read().await.get_multi_term_index()
             }
             _ => None,
         }
@@ -138,18 +143,21 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
                 BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
                     immutable_segment
                         .read()
+                        .await
                         .search_for_user(id, query.clone(), params, planner)
                         .await
                 }
                 BoxedImmutableSegment::PendingSegment(pending_segment) => {
                     pending_segment
                         .read()
+                        .await
                         .search_with_id(id, query.clone(), params)
                         .await
                 }
                 BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
                     mocked_segment
                         .read()
+                        .await
                         .search_with_id(id, query.clone(), params)
                         .await
                 }
@@ -158,57 +166,60 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
     }
 }
 
+#[async_trait::async_trait]
 impl<Q: Quantizer + Clone + Send + Sync> Segment for BoxedImmutableSegment<Q> {
-    fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
+    async fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment.write().insert(doc_id, data)
+                immutable_segment.write().await.insert(doc_id, data).await
             }
             BoxedImmutableSegment::PendingSegment(pending_segment) => {
-                pending_segment.write().insert(doc_id, data)
+                pending_segment.write().await.insert(doc_id, data).await
             }
             BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
-                mocked_segment.write().insert(doc_id, data)
+                mocked_segment.write().await.insert(doc_id, data).await
             }
         }
     }
 
-    fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+    async fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment.read().remove(user_id, doc_id)
+                immutable_segment.read().await.remove(user_id, doc_id).await
             }
             BoxedImmutableSegment::PendingSegment(pending_segment) => {
-                pending_segment.read().remove(user_id, doc_id)
+                pending_segment.read().await.remove(user_id, doc_id).await
             }
             BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
-                mocked_segment.read().remove(user_id, doc_id)
+                mocked_segment.read().await.remove(user_id, doc_id).await
             }
         }
     }
 
-    fn may_contain(&self, doc_id: u128) -> bool {
+    async fn may_contain(&self, doc_id: u128) -> bool {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment.read().may_contain(doc_id)
+                immutable_segment.read().await.may_contain(doc_id).await
             }
             BoxedImmutableSegment::PendingSegment(pending_segment) => {
-                pending_segment.read().may_contain(doc_id)
+                pending_segment.read().await.may_contain(doc_id).await
             }
             BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
-                mocked_segment.read().may_contain(doc_id)
+                mocked_segment.read().await.may_contain(doc_id).await
             }
         }
     }
 
-    fn name(&self) -> String {
+    async fn name(&self) -> String {
         match self {
             BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
-                immutable_segment.read().name()
+                immutable_segment.read().await.name().await
             }
-            BoxedImmutableSegment::PendingSegment(pending_segment) => pending_segment.read().name(),
+            BoxedImmutableSegment::PendingSegment(pending_segment) => {
+                pending_segment.read().await.name().await
+            }
             BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
-                mocked_segment.read().name()
+                mocked_segment.read().await.name().await
             }
         }
     }
@@ -258,20 +269,21 @@ impl MockedSegment {
 }
 
 #[allow(unused)]
+#[async_trait::async_trait]
 impl Segment for MockedSegment {
-    fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
+    async fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
         todo!()
     }
 
-    fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
+    async fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         todo!()
     }
 
-    fn may_contain(&self, doc_id: u128) -> bool {
+    async fn may_contain(&self, doc_id: u128) -> bool {
         todo!()
     }
 
-    fn name(&self) -> String {
+    async fn name(&self) -> String {
         self.name.clone()
     }
 }

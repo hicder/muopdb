@@ -24,28 +24,35 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> OptimizerEngine<Q> {
         Self { collection }
     }
 
-    pub fn run(&self, segments: Vec<String>, optimizing_type: OptimizingType) -> Result<String> {
-        let pending_segment = self.collection.init_optimizing(&segments)?;
+    pub async fn run(
+        &self,
+        segments: Vec<String>,
+        optimizing_type: OptimizingType,
+    ) -> Result<String> {
+        let pending_segment = self.collection.init_optimizing(&segments).await?;
         match optimizing_type {
             OptimizingType::Vacuum => {
                 let vacuum_optimizer = VacuumOptimizer::<Q>::new();
                 let new_segment_name = self
                     .collection
-                    .run_optimizer(&vacuum_optimizer, &pending_segment)?;
+                    .run_optimizer(&vacuum_optimizer, &pending_segment)
+                    .await?;
                 Ok(new_segment_name)
             }
             OptimizingType::Merge => {
                 let merge_optimizer = MergeOptimizer::<Q>::new();
                 let new_segment_name = self
                     .collection
-                    .run_optimizer(&merge_optimizer, &pending_segment)?;
+                    .run_optimizer(&merge_optimizer, &pending_segment)
+                    .await?;
                 Ok(new_segment_name)
             }
             OptimizingType::Noop => {
                 let noop_optimizer = NoopOptimizer::new();
                 let new_segment_name = self
                     .collection
-                    .run_optimizer(&noop_optimizer, &pending_segment)?;
+                    .run_optimizer(&noop_optimizer, &pending_segment)
+                    .await?;
                 Ok(new_segment_name)
             }
         }

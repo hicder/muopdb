@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use anyhow::{Ok, Result};
+use async_lock::RwLock;
 use config::collection::CollectionConfig;
-use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
 use utils::io::get_latest_version;
 
@@ -23,7 +23,9 @@ impl CollectionReader {
         Self { name, path }
     }
 
-    pub fn read<Q: Quantizer + Clone + Send + Sync + 'static>(&self) -> Result<Arc<Collection<Q>>> {
+    pub async fn read<Q: Quantizer + Clone + Send + Sync + 'static>(
+        &self,
+    ) -> Result<Arc<Collection<Q>>> {
         // Read the SpannBuilderConfig
         let spann_builder_config_path = format!("{}/collection_config.json", self.path);
         let collection_config: CollectionConfig =
@@ -72,7 +74,7 @@ impl CollectionReader {
             let mut inner_segments: Vec<BoxedImmutableSegment<Q>> = vec![];
             for inner_segment_name in inner_segment_names {
                 for segment in &segments {
-                    if segment.name() == *inner_segment_name {
+                    if segment.name().await == *inner_segment_name {
                         inner_segments.push(segment.clone());
                         break;
                     }
@@ -80,22 +82,28 @@ impl CollectionReader {
             }
 
             segments.push(BoxedImmutableSegment::PendingSegment(Arc::new(
-                RwLock::new(PendingSegment::new(
-                    inner_segments,
-                    pending_segment_path,
-                    collection_config.clone(),
-                )),
+                RwLock::new(
+                    PendingSegment::new(
+                        inner_segments,
+                        pending_segment_path,
+                        collection_config.clone(),
+                    )
+                    .await,
+                ),
             )));
         }
 
-        let collection = Arc::new(Collection::init_from(
-            self.name.clone(),
-            self.path.clone(),
-            latest_version,
-            toc,
-            segments,
-            collection_config,
-        )?);
+        let collection = Arc::new(
+            Collection::init_from(
+                self.name.clone(),
+                self.path.clone(),
+                latest_version,
+                toc,
+                segments,
+                collection_config,
+            )
+            .await?,
+        );
         Ok(collection)
     }
 }
@@ -142,8 +150,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_reader() {
+    #[tokio::test]
+    async fn test_reader() {
         let collection_name = "test_reader";
         let temp_dir = TempDir::new(collection_name).unwrap();
         let base_directory: String = temp_dir.path().to_str().unwrap().to_string();
@@ -177,13 +185,13 @@ mod tests {
         serde_json::to_writer(std::fs::File::create(toc_path).unwrap(), &toc).unwrap();
 
         let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
-        let collection = reader.read().unwrap();
+        let collection = reader.read().await.unwrap();
 
         // Check current version
-        assert_eq!(collection.current_version(), 1);
+        assert_eq!(collection.current_version().await, 1);
 
         // Get current snapshot
-        let snapshot: Snapshot<NoQuantizerL2> = collection.get_snapshot().unwrap();
+        let snapshot: Snapshot<NoQuantizerL2> = collection.get_snapshot().await.unwrap();
         assert_eq!(snapshot.segments.len(), 2);
     }
 }
