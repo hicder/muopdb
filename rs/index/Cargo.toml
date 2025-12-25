@@ -6,8 +6,13 @@ edition = "2021"
 [lints]
 workspace = true
 
+[features]
+default = []
+async-hnsw = []
+
 [dependencies]
-anyhow = "1.0.90"
+async-trait.workspace = true
+anyhow.workspace = true
 bit-vec.workspace = true
 byteorder.workspace = true
 compression.workspace = true

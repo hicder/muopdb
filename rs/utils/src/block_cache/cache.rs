@@ -17,6 +17,16 @@ use crate::file_io::FileIO;
 /// A unique identifier for an opened file in the block cache.
 pub type FileId = u64;
 
+/// Trait for block cache operations.
+/// This allows the block cache to be used as a trait object.
+#[async_trait::async_trait]
+pub trait BlockCacheT: Send + Sync {
+    async fn open_file(&mut self, path: &str) -> Result<FileId>;
+    fn close_file(&mut self, file_id: FileId);
+    async fn read(&mut self, file_id: FileId, offset: u64, length: u64) -> Result<Vec<u8>>;
+    fn get_file_count(&self) -> usize;
+}
+
 /// Configuration for the block cache.
 #[derive(Clone, Debug)]
 pub struct BlockCacheConfig {

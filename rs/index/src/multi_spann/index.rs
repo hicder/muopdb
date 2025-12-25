@@ -9,6 +9,8 @@ use memmap2::Mmap;
 use odht::HashTableOwned;
 use parking_lot::RwLock;
 use quantization::quantization::Quantizer;
+use tokio::sync::Mutex;
+use utils::block_cache::BlockCache;
 
 use super::user_index_info::HashConfig;
 use crate::ivf::files::invalidated_ids::{InvalidatedIdsStorage, InvalidatedUserDocId};
@@ -27,6 +29,7 @@ pub struct MultiSpannIndex<Q: Quantizer> {
     invalidated_ids_storage: RwLock<InvalidatedIdsStorage>,
     ivf_type: IntSeqEncodingType,
     num_features: usize,
+    block_cache: Option<Arc<Mutex<BlockCache>>>,
 }
 
 impl<Q: Quantizer> MultiSpannIndex<Q> {
@@ -36,15 +39,44 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         ivf_type: IntSeqEncodingType,
         num_features: usize,
     ) -> Result<Self> {
+        Self::new_impl(
+            base_directory,
+            user_index_info_mmap,
+            ivf_type,
+            num_features,
+            None,
+        )
+    }
+
+    pub fn new_with_cache(
+        base_directory: String,
+        user_index_info_mmap: Mmap,
+        ivf_type: IntSeqEncodingType,
+        num_features: usize,
+        block_cache: Arc<Mutex<BlockCache>>,
+    ) -> Result<Self> {
+        Self::new_impl(
+            base_directory,
+            user_index_info_mmap,
+            ivf_type,
+            num_features,
+            Some(block_cache),
+        )
+    }
+
+    fn new_impl(
+        base_directory: String,
+        user_index_info_mmap: Mmap,
+        ivf_type: IntSeqEncodingType,
+        num_features: usize,
+        block_cache: Option<Arc<Mutex<BlockCache>>>,
+    ) -> Result<Self> {
         let user_index_infos = HashTableOwned::from_raw_bytes(&user_index_info_mmap).unwrap();
 
-        // Read invalidated ids
         let invalidated_ids_directory = format!("{base_directory}/invalidated_ids_storage");
 
-        // Initialize InvalidatedIdsStorage
         let invalidated_ids_storage = InvalidatedIdsStorage::read(&invalidated_ids_directory)?;
 
-        // Create the MultiSpannIndex instance
         let index = Self {
             base_directory,
             user_to_spann: DashMap::new(),
@@ -53,11 +85,9 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             invalidated_ids_storage: RwLock::new(invalidated_ids_storage),
             ivf_type,
             num_features,
+            block_cache,
         };
 
-        // Iterate over invalidated ids and invalidate each entry. Do not call
-        // MultiSpannIndex::invalidate directly as this also appends invalidated ids to the
-        // storage, whereas these ids are already stored in the storage.
         {
             let invalidated_ids = index.invalidated_ids_storage.read();
             for invalidated_id in invalidated_ids.iter() {
@@ -96,9 +126,19 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             self.ivf_type.clone(),
         );
 
-        let index = reader
-            .read::<Q>()
-            .map_err(|_| anyhow!("Failed to read index"))?;
+        let index = if let Some(ref block_cache) = self.block_cache {
+            #[cfg(feature = "async-hnsw")]
+            {
+                let runtime = tokio::runtime::Handle::current();
+                runtime.block_on(reader.read_async::<Q>(block_cache.clone()))?
+            }
+            #[cfg(not(feature = "async-hnsw"))]
+            {
+                reader.read::<Q>()?
+            }
+        } else {
+            reader.read::<Q>()?
+        };
 
         let arc_index = Arc::new(index);
         self.user_to_spann.insert(user_id, arc_index.clone());

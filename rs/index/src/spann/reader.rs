@@ -1,9 +1,13 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use compression::elias_fano::ef::EliasFanoDecoder;
 use compression::noc::noc::PlainDecoder;
 use config::enums::IntSeqEncodingType;
 use quantization::noq::noq::NoQuantizer;
 use quantization::quantization::Quantizer;
+use tokio::sync::Mutex;
+use utils::block_cache::BlockCache;
 use utils::distance::l2::L2DistanceCalculator;
 
 use super::index::Spann;
@@ -81,6 +85,14 @@ impl SpannReader {
                 Ok(Spann::<_>::new(centroids, IvfType::L2EF(posting_lists)))
             }
         }
+    }
+
+    #[cfg(feature = "async-hnsw")]
+    pub async fn read_async<Q: Quantizer>(
+        &self,
+        _block_cache: Arc<Mutex<BlockCache>>,
+    ) -> Result<Spann<Q>> {
+        self.read::<Q>()
     }
 }
 

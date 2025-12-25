@@ -1,10 +1,15 @@
 use std::fs::File;
+use std::sync::Arc;
 
 use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian};
 use memmap2::Mmap;
 use quantization::quantization::Quantizer;
+use tokio::sync::Mutex;
+use utils::block_cache::BlockCache;
 
+#[cfg(feature = "async-hnsw")]
+use crate::hnsw::async_index::AsyncHnsw;
 use crate::hnsw::index::Hnsw;
 use crate::hnsw::writer::{Header, Version};
 use crate::vector::fixed_file::FixedFileVectorStorage;
@@ -116,6 +121,23 @@ impl HnswReader {
             },
             offset,
         )
+    }
+
+    #[cfg(feature = "async-hnsw")]
+    pub async fn read_async<Q: Quantizer>(
+        &self,
+        block_cache: Arc<Mutex<BlockCache>>,
+    ) -> Result<AsyncHnsw<Q>>
+    where
+        Q::QuantizedT: Send + Sync,
+    {
+        AsyncHnsw::new_with_offsets(
+            block_cache,
+            self.base_directory.clone(),
+            self.index_offset,
+            self.vector_offset,
+        )
+        .await
     }
 }
 

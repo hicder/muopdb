@@ -1,7 +1,11 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use config::enums::IntSeqEncodingType;
 use memmap2::Mmap;
 use quantization::quantization::Quantizer;
+use tokio::sync::Mutex;
+use utils::block_cache::BlockCache;
 
 use crate::multi_spann::index::MultiSpannIndex;
 
@@ -30,6 +34,27 @@ impl MultiSpannReader {
             user_index_info_mmap,
             ivf_type,
             num_features,
+        )
+    }
+
+    pub async fn read_async<Q: Quantizer>(
+        &self,
+        ivf_type: IntSeqEncodingType,
+        num_features: usize,
+        block_cache: Arc<Mutex<BlockCache>>,
+    ) -> Result<MultiSpannIndex<Q>> {
+        let user_index_info_file_path = format!("{}/user_index_info", self.base_directory);
+        let user_index_info_file = std::fs::OpenOptions::new()
+            .read(true)
+            .open(user_index_info_file_path)?;
+
+        let user_index_info_mmap = unsafe { Mmap::map(&user_index_info_file)? };
+        MultiSpannIndex::<Q>::new_with_cache(
+            self.base_directory.clone(),
+            user_index_info_mmap,
+            ivf_type,
+            num_features,
+            block_cache,
         )
     }
 }
