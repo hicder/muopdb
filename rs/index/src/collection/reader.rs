@@ -4,6 +4,7 @@ use anyhow::{Ok, Result};
 use async_lock::RwLock;
 use config::collection::CollectionConfig;
 use quantization::quantization::Quantizer;
+use utils::block_cache::BlockCacheConfig;
 use utils::io::get_latest_version;
 
 use super::core::Collection;
@@ -17,14 +18,21 @@ pub struct CollectionReader {
     name: String,
     path: String,
     use_async_reader: bool,
+    block_cache_config: BlockCacheConfig,
 }
 
 impl CollectionReader {
-    pub fn new(name: String, path: String, use_async_reader: bool) -> Self {
+    pub fn new(
+        name: String,
+        path: String,
+        use_async_reader: bool,
+        block_cache_config: BlockCacheConfig,
+    ) -> Self {
         Self {
             name,
             path,
             use_async_reader,
+            block_cache_config,
         }
     }
 
@@ -43,7 +51,7 @@ impl CollectionReader {
 
         let block_cache = if self.use_async_reader {
             Some(Arc::new(tokio::sync::Mutex::new(
-                utils::block_cache::BlockCache::new(utils::block_cache::BlockCacheConfig::default()),
+                utils::block_cache::BlockCache::new(self.block_cache_config.clone()),
             )))
         } else {
             None
@@ -208,8 +216,12 @@ mod tests {
         let toc = TableOfContent::new(vec!["segment1".to_string(), "segment2".to_string()]);
         serde_json::to_writer(std::fs::File::create(toc_path).unwrap(), &toc).unwrap();
 
-        let reader =
-            CollectionReader::new(collection_name.to_string(), base_directory.clone(), false);
+        let reader = CollectionReader::new(
+            collection_name.to_string(),
+            base_directory.clone(),
+            false,
+            BlockCacheConfig::default(),
+        );
         let collection = reader.read().await.unwrap();
 
         // Check current version

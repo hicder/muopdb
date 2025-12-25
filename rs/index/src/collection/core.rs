@@ -1818,7 +1818,12 @@ mod tests {
             assert_eq!(toc.pending.get(&pending_segment).unwrap().len(), 1);
         }
 
-        let reader = CollectionReader::new(collection_name.to_string(), base_directory, false);
+        let reader = CollectionReader::new(
+            collection_name.to_string(),
+            base_directory,
+            false,
+            utils::block_cache::BlockCacheConfig::default(),
+        );
         let collection = reader.read::<NoQuantizerL2>().await?;
         let toc = collection.get_current_toc().await;
         assert_eq!(toc.pending.len(), 1);
@@ -2183,8 +2188,12 @@ mod tests {
 
         // Insert but don't flush
         {
-            let reader =
-                CollectionReader::new(collection_name.to_string(), base_directory.clone(), false);
+            let reader = CollectionReader::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                false,
+                utils::block_cache::BlockCacheConfig::default(),
+            );
             let collection = reader.read::<NoQuantizerL2>().await?;
 
             collection
@@ -2223,8 +2232,12 @@ mod tests {
 
         let segment1_name;
         {
-            let reader =
-                CollectionReader::new(collection_name.to_string(), base_directory.clone(), false);
+            let reader = CollectionReader::new(
+                collection_name.to_string(),
+                base_directory.clone(),
+                false,
+                utils::block_cache::BlockCacheConfig::default(),
+            );
             let collection = reader.read::<NoQuantizerL2>().await?;
 
             let toc = collection.get_current_toc().await;
@@ -2318,7 +2331,12 @@ mod tests {
         }
 
         {
-            let reader = CollectionReader::new(collection_name.to_string(), base_directory, false);
+            let reader = CollectionReader::new(
+                collection_name.to_string(),
+                base_directory,
+                false,
+                utils::block_cache::BlockCacheConfig::default(),
+            );
             let collection = reader.read::<NoQuantizerL2>().await?;
 
             let toc = collection.get_current_toc().await;

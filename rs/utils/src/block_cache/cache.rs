@@ -43,7 +43,7 @@ impl Default for BlockCacheConfig {
             max_open_files: 1000,
             block_cache_capacity_bytes: 1024 * 1024 * 1024,
             block_size: 4096,
-            use_io_uring: true,
+            use_io_uring: false,
         }
     }
 }

@@ -22,6 +22,7 @@ use tokio::spawn;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tonic::transport::Server;
+use utils::block_cache::BlockCacheConfig;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -55,6 +56,18 @@ struct Args {
 
     #[arg(long, default_value_t = false)]
     use_async_reader: bool,
+
+    #[arg(long, default_value_t = 1000)]
+    block_cache_max_open_files: u64,
+
+    #[arg(long, default_value_t = 1073741824)]
+    block_cache_capacity_bytes: u64,
+
+    #[arg(long, default_value_t = 4096)]
+    block_cache_block_size: usize,
+
+    #[arg(long, default_value_t = false)]
+    block_cache_use_io_uring: bool,
 }
 
 #[tokio::main]
@@ -71,7 +84,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Number of flush workers: {}", arg.num_flush_workers);
 
     let collection_catalog = CollectionCatalog::new();
-    let collection_provider = CollectionProvider::new(collection_data_path, arg.use_async_reader);
+    let block_cache_config = BlockCacheConfig::new(
+        arg.block_cache_max_open_files,
+        arg.block_cache_capacity_bytes,
+        arg.block_cache_block_size,
+        arg.block_cache_use_io_uring,
+    );
+    let collection_provider = CollectionProvider::new(
+        collection_data_path,
+        arg.use_async_reader,
+        block_cache_config,
+    );
     let collection_manager = Arc::new(RwLock::new(CollectionManager::new(
         collection_config_path,
         collection_provider,
