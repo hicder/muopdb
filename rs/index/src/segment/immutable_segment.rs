@@ -62,8 +62,8 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
         self.index.get_total_docs_count()
     }
 
-    pub fn should_auto_vacuum(&self) -> bool {
-        let count_deleted_documents = self.index.get_deleted_docs_count() as f64;
+    pub async fn should_auto_vacuum(&self) -> bool {
+        let count_deleted_documents = self.index.get_deleted_docs_count().await as f64;
         if let Ok(count_all_documents) = self.num_docs() {
             (count_deleted_documents / (count_all_documents as f64)) > 0.1
         } else {

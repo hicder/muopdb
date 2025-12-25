@@ -165,7 +165,7 @@ impl BlockCache {
     /// # Returns
     ///
     /// A Result containing the file ID, or an error if the file cannot be opened.
-    pub async fn open_file(&mut self, path: &str) -> Result<FileId> {
+    pub async fn open_file(&self, path: &str) -> Result<FileId> {
         let file_id = self.file_id_generator.fetch_add(1, Ordering::SeqCst);
 
         info!(
@@ -224,7 +224,7 @@ impl BlockCache {
     ///
     /// A Result containing the read data as a vector of bytes, or an error if the
     /// read fails (e.g., invalid file ID, offset beyond file size, zero length).
-    pub async fn read(&mut self, file_id: FileId, offset: u64, length: u64) -> Result<Vec<u8>> {
+    pub async fn read(&self, file_id: FileId, offset: u64, length: u64) -> Result<Vec<u8>> {
         if length == 0 {
             bail!("length must be greater than 0");
         }
@@ -438,7 +438,7 @@ mod tests {
     async fn test_open_multiple_files() {
         let temp_dir = TempDir::new("block_cache_test").unwrap();
         let config = BlockCacheConfig::new(3, 1024 * 1024, 4096, false);
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         for i in 0..5 {
             let test_file_path = temp_dir.path().join(format!("test_{}.txt", i));
@@ -493,7 +493,7 @@ mod tests {
     #[tokio::test]
     async fn test_invalid_file_id() {
         let config = BlockCacheConfig::default();
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let result = cache.read(999, 0, 10).await;
         assert!(result.is_err());
@@ -694,7 +694,7 @@ mod tests_io_uring {
     async fn test_open_multiple_files_uring() {
         let temp_dir = TempDir::new("block_cache_test").unwrap();
         let config = BlockCacheConfig::new(3, 1024 * 1024, 4096, true);
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         for i in 0..5 {
             let test_file_path = temp_dir.path().join(format!("test_{}.txt", i));
@@ -749,7 +749,7 @@ mod tests_io_uring {
     #[tokio::test]
     async fn test_invalid_file_id_uring() {
         let config = BlockCacheConfig::new(1000, 1024 * 1024 * 1024, 4096, true);
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let result = cache.read(999, 0, 10).await;
         assert!(result.is_err());

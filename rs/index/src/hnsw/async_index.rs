@@ -8,7 +8,6 @@ use num_traits::ToPrimitive;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
-use tokio::sync::Mutex;
 use utils::block_cache::BlockCache;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 
@@ -67,7 +66,7 @@ impl<Q: Quantizer> AsyncHnsw<Q>
 where
     Q::QuantizedT: Send + Sync,
 {
-    pub async fn new(block_cache: Arc<Mutex<BlockCache>>, base_directory: String) -> Result<Self> {
+    pub async fn new(block_cache: Arc<BlockCache>, base_directory: String) -> Result<Self> {
         let graph_storage =
             AsyncHnswGraphStorage::new(block_cache.clone(), base_directory.clone()).await?;
 
@@ -93,7 +92,7 @@ where
     }
 
     pub async fn new_with_offsets(
-        block_cache: Arc<Mutex<BlockCache>>,
+        block_cache: Arc<BlockCache>,
         base_directory: String,
         data_offset: usize,
         vector_offset: usize,
@@ -375,11 +374,12 @@ mod tests {
         writer.write(&mut hnsw_builder, false).unwrap();
 
         let config = BlockCacheConfig::default();
-        let cache = Arc::new(Mutex::new(BlockCache::new(config)));
+        let cache = Arc::new(BlockCache::new(config));
 
-        let hnsw = AsyncHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(cache, base_directory)
-            .await
-            .unwrap();
+        let hnsw =
+            AsyncHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(cache.clone(), base_directory)
+                .await
+                .unwrap();
 
         assert_eq!(hnsw.get_header().num_layers > 0, true);
 
@@ -414,11 +414,12 @@ mod tests {
         writer.write(&mut hnsw_builder, false).unwrap();
 
         let config = BlockCacheConfig::default();
-        let cache = Arc::new(Mutex::new(BlockCache::new(config)));
+        let cache = Arc::new(BlockCache::new(config));
 
-        let hnsw = AsyncHnsw::<NoQuantizer<L2DistanceCalculator>>::new(cache, base_directory)
-            .await
-            .unwrap();
+        let hnsw =
+            AsyncHnsw::<NoQuantizer<L2DistanceCalculator>>::new(cache.clone(), base_directory)
+                .await
+                .unwrap();
 
         let query = generate_random_vector(128);
         let result = hnsw.ann_search(&query, 5, 100, false).await;

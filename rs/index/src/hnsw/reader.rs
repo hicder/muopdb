@@ -7,8 +7,6 @@ use byteorder::{ByteOrder, LittleEndian};
 use memmap2::Mmap;
 use quantization::quantization::Quantizer;
 #[cfg(feature = "async-hnsw")]
-use tokio::sync::Mutex;
-#[cfg(feature = "async-hnsw")]
 use utils::block_cache::BlockCache;
 
 #[cfg(feature = "async-hnsw")]
@@ -129,7 +127,7 @@ impl HnswReader {
     #[cfg(feature = "async-hnsw")]
     pub async fn read_async<Q: Quantizer>(
         &self,
-        block_cache: Arc<Mutex<BlockCache>>,
+        block_cache: Arc<BlockCache>,
     ) -> Result<AsyncHnsw<Q>>
     where
         Q::QuantizedT: Send + Sync,
