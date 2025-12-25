@@ -75,10 +75,12 @@ impl CollectionReader {
                     )
                     .await?
             } else {
-                spann_reader.read::<Q>(
-                    collection_config.posting_list_encoding_type.clone(),
-                    collection_config.num_features,
-                )?
+                spann_reader
+                    .read::<Q>(
+                        collection_config.posting_list_encoding_type.clone(),
+                        collection_config.num_features,
+                    )
+                    .await?
             };
 
             // If terms exists, we read it
