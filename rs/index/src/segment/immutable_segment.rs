@@ -169,6 +169,7 @@ mod tests {
                 IntSeqEncodingType::PlainEncoding,
                 num_features,
             )
+            .await
             .expect("Failed to read Multi-SPANN index");
 
         let name_for_new_segment = format!("segment_{}", rand::random::<u64>());
@@ -236,6 +237,7 @@ mod tests {
                 IntSeqEncodingType::PlainEncoding,
                 num_features,
             )
+            .await
             .expect("Failed to read Multi-SPANN index");
 
         let name_for_new_segment = format!("segment_{}", rand::random::<u64>());

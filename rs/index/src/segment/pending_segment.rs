@@ -135,10 +135,12 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
 
         let current_directory = format!("{}/{}", self.parent_directory, self.name);
         let reader = MultiSpannReader::new(current_directory);
-        let index = reader.read::<Q>(
-            self.collection_config.posting_list_encoding_type.clone(),
-            self.collection_config.num_features,
-        )?;
+        let index = reader
+            .read::<Q>(
+                self.collection_config.posting_list_encoding_type.clone(),
+                self.collection_config.num_features,
+            )
+            .await?;
         self.index.write().await.replace(index);
         Ok(())
     }
@@ -378,9 +380,11 @@ mod tests {
         Ok(())
     }
 
-    fn read_segment(base_directory: String) -> Result<MultiSpannIndex<NoQuantizerL2>> {
+    async fn read_segment(base_directory: String) -> Result<MultiSpannIndex<NoQuantizerL2>> {
         let reader = MultiSpannReader::new(base_directory);
-        let index = reader.read::<NoQuantizerL2>(IntSeqEncodingType::PlainEncoding, 4)?;
+        let index = reader
+            .read::<NoQuantizerL2>(IntSeqEncodingType::PlainEncoding, 4)
+            .await?;
         Ok(index)
     }
 
@@ -394,7 +398,7 @@ mod tests {
         let segment1_dir = format!("{base_dir}/segment_1");
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
-        let segment1 = read_segment(segment1_dir.clone())?;
+        let segment1 = read_segment(segment1_dir.clone()).await?;
         let segment1 = BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(
             Arc::new(RwLock::new(ImmutableSegment::new(
                 segment1,
@@ -440,7 +444,7 @@ mod tests {
         let segment1_dir = format!("{base_dir}/segment_1");
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
-        let segment1 = read_segment(segment1_dir.clone())?;
+        let segment1 = read_segment(segment1_dir.clone()).await?;
         let segment1 = BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(
             Arc::new(RwLock::new(ImmutableSegment::new(
                 segment1,
@@ -488,7 +492,7 @@ mod tests {
         let segment1_dir = format!("{base_dir}/segment_1");
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
-        let segment1 = read_segment(segment1_dir.clone())?;
+        let segment1 = read_segment(segment1_dir.clone()).await?;
         let segment1 = BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(
             Arc::new(RwLock::new(ImmutableSegment::new(
                 segment1,

@@ -35,22 +35,21 @@ pub struct MultiSpannIndex<Q: Quantizer> {
 }
 
 impl<Q: Quantizer> MultiSpannIndex<Q> {
-    pub fn new(
+    pub async fn new(
         base_directory: String,
         user_index_info_mmap: Mmap,
         ivf_type: IntSeqEncodingType,
         num_features: usize,
     ) -> Result<Self> {
-        // Block on a runtime
-        let runtime = tokio::runtime::Runtime::new()?;
-        runtime.block_on(Self::new_impl(
+        Self::new_impl(
             base_directory,
             user_index_info_mmap,
             ivf_type,
             num_features,
             None,
             false,
-        ))
+        )
+        .await
     }
 
     pub async fn new_with_cache(
@@ -344,6 +343,7 @@ mod tests {
                 IntSeqEncodingType::PlainEncoding,
                 num_features,
             )
+            .await
             .expect("Failed to read Multi-SPANN index");
 
         let query = vec![1.4, 2.4, 3.4, 4.4];
@@ -363,8 +363,8 @@ mod tests {
         assert_eq!(results.id_with_scores[2].doc_id, 2);
     }
 
-    #[test]
-    fn test_multi_spann_size_in_bytes() {
+    #[tokio::test]
+    async fn test_multi_spann_size_in_bytes() {
         let temp_dir = tempdir::TempDir::new("multi_spann_size_in_bytes_test")
             .expect("Failed to create temporary directory");
         let base_directory = temp_dir
@@ -402,6 +402,7 @@ mod tests {
                 IntSeqEncodingType::PlainEncoding,
                 num_features,
             )
+            .await
             .expect("Failed to read Multi-SPANN index");
 
         let size_in_bytes = multi_spann_index.size_in_bytes();
@@ -447,6 +448,7 @@ mod tests {
                 IntSeqEncodingType::PlainEncoding,
                 num_features,
             )
+            .await
             .expect("Failed to read Multi-SPANN index");
 
         let query = vec![1.4, 2.4, 3.4, 4.4];
@@ -522,6 +524,7 @@ mod tests {
                 IntSeqEncodingType::PlainEncoding,
                 num_features,
             )
+            .await
             .expect("Failed to read Multi-SPANN index");
         assert!(multi_spann_index
             .is_invalidated(0, num_vectors)
@@ -590,6 +593,7 @@ mod tests {
                 IntSeqEncodingType::PlainEncoding,
                 num_features,
             )
+            .await
             .expect("Failed to read Multi-SPANN index");
 
         assert!(multi_spann_index
@@ -657,6 +661,7 @@ mod tests {
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
             .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding, 4)
+            .await
             .expect("Failed to read Multi-SPANN index");
 
         // Batch invalidate some valid and invalid doc_ids
@@ -798,6 +803,7 @@ mod tests {
                 IntSeqEncodingType::PlainEncoding,
                 num_features,
             )
+            .await
             .expect("Failed to read Multi-SPANN index");
 
         let query = vec![4.4, 4.4, 4.4, 4.4];
@@ -887,6 +893,7 @@ mod tests {
                 IntSeqEncodingType::PlainEncoding,
                 num_features,
             )
+            .await
             .expect("Failed to read Multi-SPANN index");
 
         let query = vec![2.4, 2.4, 2.4, 2.4];

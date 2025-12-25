@@ -900,10 +900,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             self.base_directory,
             name_for_new_segment.clone()
         ));
-        let index = spann_reader.read::<Q>(
-            self.segment_config.posting_list_encoding_type.clone(),
-            self.segment_config.num_features,
-        )?;
+        let index = spann_reader
+            .read::<Q>(
+                self.segment_config.posting_list_encoding_type.clone(),
+                self.segment_config.num_features,
+            )
+            .await?;
         let terms_path = format!(
             "{}/{}/terms",
             self.base_directory,
@@ -1277,10 +1279,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         )?;
 
         // Replace the pending segment with the new segment
-        let index = MultiSpannReader::new(new_segment_path.clone()).read::<Q>(
-            self.segment_config.posting_list_encoding_type.clone(),
-            self.segment_config.num_features,
-        )?;
+        let index = MultiSpannReader::new(new_segment_path.clone())
+            .read::<Q>(
+                self.segment_config.posting_list_encoding_type.clone(),
+                self.segment_config.num_features,
+            )
+            .await?;
         let new_segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
             ImmutableSegment::new(index, random_name.clone(), None),
         )));

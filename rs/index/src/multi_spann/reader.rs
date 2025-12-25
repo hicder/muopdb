@@ -17,7 +17,7 @@ impl MultiSpannReader {
         Self { base_directory }
     }
 
-    pub fn read<Q: Quantizer>(
+    pub async fn read<Q: Quantizer>(
         &self,
         ivf_type: IntSeqEncodingType,
         num_features: usize,
@@ -34,6 +34,7 @@ impl MultiSpannReader {
             ivf_type,
             num_features,
         )
+        .await
     }
 
     pub async fn read_async<Q: Quantizer>(
@@ -94,7 +95,8 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding, 4)?;
+            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding, 4)
+            .await?;
 
         let params = SearchParams::new(3, 100, false);
 
@@ -138,7 +140,8 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<ProductQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding, 4)?;
+            .read::<ProductQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding, 4)
+            .await?;
 
         let params = SearchParams::new(3, 100, false);
 
