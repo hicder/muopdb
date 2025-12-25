@@ -68,13 +68,9 @@ impl AsyncHnswGraphStorage {
         .map_err(|e| anyhow!("Failed to read header: {}", e))?;
 
         let header = Self::parse_header(&header_data);
-        let mut offsets = Self::calculate_offsets(&header, 49);
-        offsets.data_offset = data_offset;
-        offsets.edges_offset = data_offset + (offsets.edges_offset - 49);
-        offsets.points_offset = data_offset + (offsets.points_offset - 49);
-        offsets.edge_offsets_offset = data_offset + (offsets.edge_offsets_offset - 49);
-        offsets.level_offsets_offset = data_offset + (offsets.level_offsets_offset - 49);
-        offsets.doc_id_mapping_offset = data_offset + (offsets.doc_id_mapping_offset - 49);
+        let mut offsets = Self::calculate_offsets(&header, data_offset + 49);
+        // The data_offset in GraphOffsets is expected to be the start of the data block
+        offsets.data_offset = data_offset + 49;
 
         Ok(Self {
             block_cache,

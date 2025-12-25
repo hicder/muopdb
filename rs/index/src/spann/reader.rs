@@ -14,6 +14,8 @@ use utils::block_cache::BlockCache;
 use utils::distance::l2::L2DistanceCalculator;
 
 use super::index::Spann;
+#[cfg(feature = "async-hnsw")]
+use crate::hnsw::async_index::AsyncHnsw;
 use crate::hnsw::reader::HnswReader;
 use crate::ivf::index::IvfType;
 use crate::ivf::reader::IvfReader;
@@ -93,9 +95,44 @@ impl SpannReader {
     #[cfg(feature = "async-hnsw")]
     pub async fn read_async<Q: Quantizer>(
         &self,
-        _block_cache: Arc<Mutex<BlockCache>>,
+        block_cache: Arc<Mutex<BlockCache>>,
     ) -> Result<Spann<Q>> {
-        self.read::<Q>()
+        let posting_list_path = format!("{}/ivf", self.base_directory);
+        let centroid_path = format!("{}/centroids", self.base_directory);
+
+        let centroids = AsyncHnsw::new_with_offsets(
+            block_cache,
+            centroid_path,
+            self.centroids_index_offset,
+            self.centroids_vector_offset,
+        )
+        .await?;
+        match self.ivf_type {
+            IntSeqEncodingType::PlainEncoding => {
+                let posting_lists = IvfReader::new_with_offset(
+                    posting_list_path,
+                    self.ivf_index_offset,
+                    self.ivf_vector_offset,
+                )
+                .read::<Q, L2DistanceCalculator, PlainDecoder>()?;
+                Ok(Spann::<_>::new_async(
+                    centroids,
+                    IvfType::L2Plain(posting_lists),
+                ))
+            }
+            IntSeqEncodingType::EliasFano => {
+                let posting_lists = IvfReader::new_with_offset(
+                    posting_list_path,
+                    self.ivf_index_offset,
+                    self.ivf_vector_offset,
+                )
+                .read::<Q, L2DistanceCalculator, EliasFanoDecoder>()?;
+                Ok(Spann::<_>::new_async(
+                    centroids,
+                    IvfType::L2EF(posting_lists),
+                ))
+            }
+        }
     }
 }
 
@@ -110,6 +147,7 @@ mod tests {
 
     use super::*;
     use crate::spann::builder::{SpannBuilder, SpannBuilderConfig};
+    use crate::spann::index::Centroids;
     use crate::spann::writer::SpannWriter;
 
     #[test]
@@ -167,10 +205,14 @@ mod tests {
 
         let centroids = spann.get_centroids();
         let posting_lists = spann.get_posting_lists();
-        assert_eq!(
-            posting_lists.num_clusters(),
-            centroids.vector_storage.num_vectors()
-        );
+        if let Centroids::Sync(centroids) = centroids {
+            assert_eq!(
+                posting_lists.num_clusters(),
+                centroids.vector_storage.num_vectors()
+            );
+        } else {
+            panic!("Expected Sync centroids");
+        }
     }
 
     #[test]
@@ -228,10 +270,14 @@ mod tests {
 
         let centroids = spann.get_centroids();
         let posting_lists = spann.get_posting_lists();
-        assert_eq!(
-            posting_lists.num_clusters(),
-            centroids.vector_storage.num_vectors()
-        );
+        if let Centroids::Sync(centroids) = centroids {
+            assert_eq!(
+                posting_lists.num_clusters(),
+                centroids.vector_storage.num_vectors()
+            );
+        } else {
+            panic!("Expected Sync centroids");
+        }
         // Verify posting list content
         for i in 0..num_clusters {
             let ref_vector = builder

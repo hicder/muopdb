@@ -8,16 +8,24 @@ use utils::distance::l2::L2DistanceCalculator;
 
 pub struct CollectionProvider {
     data_directory: String,
+    use_async_reader: bool,
 }
 
 impl CollectionProvider {
-    pub fn new(data_directory: String) -> Self {
-        Self { data_directory }
+    pub fn new(data_directory: String, use_async_reader: bool) -> Self {
+        Self {
+            data_directory,
+            use_async_reader,
+        }
     }
 
     pub async fn read_collection(&self, name: &str) -> Option<BoxedCollection> {
         let collection_path = format!("{}/{}", self.data_directory, name);
-        let reader = CollectionReader::new(name.to_string(), collection_path.clone());
+        let reader = CollectionReader::new(
+            name.to_string(),
+            collection_path.clone(),
+            self.use_async_reader,
+        );
 
         // Read the collection config
         let config_path = format!("{}/collection_config.json", collection_path);

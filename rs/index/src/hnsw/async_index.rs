@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use bit_vec::BitVec;
+use log::info;
 use num_traits::ToPrimitive;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
@@ -145,6 +146,8 @@ where
         ef: u32,
         record_pages: bool,
     ) -> SearchResult {
+        info!("[ASYNC] Searching for {} points with ef {}", k, ef);
+
         let quantized_query = Q::QuantizedT::process_vector(query, &self.quantizer);
         let mut current_layer: i32 = self.header.num_layers as i32 - 1;
         let mut ep = self.graph_storage.get_entry_point_top_layer().await;

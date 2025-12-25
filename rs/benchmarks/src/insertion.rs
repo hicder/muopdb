@@ -44,8 +44,11 @@ fn bench_insertion(c: &mut Criterion) {
                         &segment_config,
                     )
                     .unwrap();
-                    let reader =
-                        CollectionReader::new(collection_name.to_string(), base_directory.clone());
+                    let reader = CollectionReader::new(
+                        collection_name.to_string(),
+                        base_directory.clone(),
+                        false,
+                    );
                     rt.block_on(reader.read::<NoQuantizerL2>()).unwrap()
                 },
                 |collection| {

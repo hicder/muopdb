@@ -52,6 +52,9 @@ struct Args {
 
     #[arg(long, default_value_t = 10000)]
     auto_optimizing_sleep_interval_ms: u64,
+
+    #[arg(long, default_value_t = false)]
+    use_async_reader: bool,
 }
 
 #[tokio::main]
@@ -68,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Number of flush workers: {}", arg.num_flush_workers);
 
     let collection_catalog = CollectionCatalog::new();
-    let collection_provider = CollectionProvider::new(collection_data_path);
+    let collection_provider = CollectionProvider::new(collection_data_path, arg.use_async_reader);
     let collection_manager = Arc::new(RwLock::new(CollectionManager::new(
         collection_config_path,
         collection_provider,
