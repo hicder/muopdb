@@ -107,7 +107,58 @@ struct MutableSegments {
     pub pending_mutable_segment: RwLock<Option<PendingMutableSegment>>,
 }
 
-/// Collection is thread-safe. All pub fn are thread-safe.
+/// The central coordinator for a vector collection, managing the lifecycle of segments,
+/// concurrency, and data persistence.
+///
+/// ### Segment Management
+/// A collection consists of three types of segments:
+/// - **Mutable Segment**: An in-memory, writable segment where new data is initially inserted.
+/// - **Pending Mutable Segment**: A segment currently being flushed to disk. It is searchable
+///   but read-only for new inserts.
+/// - **Immutable Segments**: Read-only, memory-mapped segments on disk that have been finalized.
+///
+/// Segments are created during:
+/// 1. **Initialization**: A fresh mutable segment is created when the collection starts.
+/// 2. **Flush**: The current mutable segment is swapped with a new one and then built into an
+///    immutable segment on disk.
+/// 3. **Optimization**: Multiple immutable segments are merged or vacuumed into a new finalized
+///    segment to improve search performance and reclaim space.
+///
+/// ### Atomic Versioning and Segment Addition
+/// Collection state is managed through a versioning system to ensure consistent reads and atomic
+/// updates:
+/// - A `TableOfContent` (TOC) defines the exact set of active segments for any given version.
+/// - When new segments are added (via `add_segments` or `flush`), the collection creates a new
+///   version by writing a new TOC file to disk and renaming it atomically.
+/// - `Snapshot`s allow queries to pin a specific version, ensuring that the segments they are
+///   searching remain valid even if the collection is modified or optimized.
+///
+/// ### Row Invalidation (Deletions)
+/// Deletions are handled by marking rows as invalid across all relevant segments:
+/// - In **Mutable Segments**, rows are invalidated in-memory immediately.
+/// - In **Immutable Segments**, invalidations are tracked via on-disk structures (e.g., bitsets).
+/// - During a **Flush**, any invalidations that occurred while the segment was being built are
+///   replayed to ensure the newly created immutable segment is consistent with the latest state.
+///
+/// ### Locking Strategy
+/// The collection employs a multi-layered locking strategy to maximize concurrency:
+/// - **Version Locking**: `versions_info` uses a `RwLock` to manage version transitions and
+///   reference counting.
+///   - Grab a **write lock** when updating the current version or modifying reference counts
+///     (e.g., when creating a snapshot).
+///   - Grab a **read lock** when you only need to know the current version number (e.g., during
+///     a deletion).
+/// - **Mutable Segment Locking**: `mutable_segments` uses a nested `RwLock` approach.
+///   - **Read Lock**: Grabbed by search, insert, and invalidate operations to access the current
+///     mutable and pending segments.
+///   - **Write Lock**: Grabbed during a flush to atomically swap the active mutable segment.
+/// - **WAL Locking**: If enabled, `wal` uses a `RwLock` to serialize writes.
+///   - Grab a **write lock** when appending new operations to the WAL.
+///   - Grab a **read lock** when syncing the WAL to disk.
+/// - **Segment Access**: `all_segments` uses a `DashMap` for efficient, concurrent access to
+///   immutable segments by name.
+/// - **Flush Coordination**: A dedicated `flushing` Mutex ensures that only one background
+///   flush operation occurs at a time.
 pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
     versions: DashMap<u64, TableOfContent>,
     all_segments: DashMap<String, BoxedImmutableSegment<Q>>,
@@ -132,6 +183,10 @@ pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
 }
 
 impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
+    /// Creates a new `Collection` instance with the given name, base directory, and configuration.
+    ///
+    /// This initializes a fresh collection with an empty version (version 0) and a new mutable segment.
+    /// If WAL is enabled in the configuration, it will also open or create the WAL.
     pub fn new(
         collection_name: String,
         base_directory: String,
@@ -190,6 +245,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         })
     }
 
+    /// Initializes the disk storage for a new collection at the specified base directory.
+    ///
+    /// This creates the necessary directory structure, writes the initial version 0 metadata,
+    /// and saves the collection configuration.
     pub fn init_new_collection(base_directory: String, config: &CollectionConfig) -> Result<()> {
         std::fs::create_dir_all(base_directory.clone())?;
 
@@ -205,6 +264,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         Ok(())
     }
 
+    /// Reconstructs a `Collection` from existing on-disk state.
+    ///
+    /// This function reloads the specified version, attaches the provided segments,
+    /// and replays any operations from the WAL that occurred after the last flush.
     pub async fn init_from(
         collection_name: String,
         base_directory: String,
@@ -382,10 +445,15 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         })
     }
 
+    /// Returns `true` if Write-Ahead Logging (WAL) is enabled for this collection.
     pub fn use_wal(&self) -> bool {
         self.wal.is_some()
     }
 
+    /// Determines whether the collection should perform an automatic flush.
+    ///
+    /// This check is based on the configured `max_pending_ops` and `max_time_to_flush_ms`.
+    /// Returns `true` if either threshold has been reached.
     pub async fn should_auto_flush(&self) -> bool {
         if self.segment_config.max_pending_ops == 0 && self.segment_config.max_time_to_flush_ms == 0
         {
@@ -433,6 +501,11 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         false
     }
 
+    /// Writes a batch of operations to the WAL and queues them for processing.
+    ///
+    /// This method uses a group-commit strategy to batch multiple concurrent WAL writes
+    /// for improved performance. Once persisted to the WAL, operations are sent to
+    /// an internal channel for asynchronous application to the memory segments.
     pub async fn write_to_wal(
         &self,
         doc_ids: Arc<[u128]>,
@@ -639,6 +712,9 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         }
     }
 
+    /// Synchronizes all unpersisted WAL entries to disk.
+    ///
+    /// Returns the number of entries that were successfully synced.
     pub async fn sync_wal(&self) -> Result<u64> {
         if let Some(wal) = &self.wal {
             let wal_read = wal.read().await;
@@ -649,6 +725,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         }
     }
 
+    /// Processes a single pending operation from the internal command channel.
+    ///
+    /// This applies the operation (insert or delete) to the active segments.
+    /// Returns `Ok(1)` if an operation was processed, or `Ok(0)` if the channel was empty.
     pub async fn process_one_op(&self) -> Result<usize> {
         if let std::result::Result::Ok(op) = self.receiver.borrow_mut().try_recv() {
             match op.op_type {
@@ -686,6 +766,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         }
     }
 
+    /// Inserts a document into the current mutable segment.
+    ///
+    /// This is a low-level insertion that bypasses the WAL and multi-user logic.
+    /// Primarily used for tests or internal initialization.
     pub async fn insert(&self, doc_id: u128, data: &[f32]) -> Result<()> {
         self.mutable_segments
             .read()
@@ -701,6 +785,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         Ok(())
     }
 
+    /// Inserts a document for a set of users into the current mutable segment.
+    ///
+    /// This applies the insertion to the active mutable segment, ensuring the document
+    /// is associated with each of the provided user IDs and includes specified attributes.
     pub async fn insert_for_users(
         &self,
         user_ids: &[u128],
@@ -731,13 +819,21 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         Ok(())
     }
 
-    /// Returns the number of features in the collection
+    /// Returns the number of dimensions (features) for vectors in this collection.
     pub fn dimensions(&self) -> usize {
         self.segment_config.num_features
     }
 
-    /// Turns mutable segment into immutable one, which is the only queryable segment type
-    /// currently.
+    /// Flushes the current mutable segment to disk, creating a new immutable segment.
+    ///
+    /// This process involves:
+    /// 1. Swapping the active mutable segment with a fresh one.
+    /// 2. Building the old mutable segment into an on-disk finalized segment.
+    /// 3. Replaying any deletions that occurred during the build process.
+    /// 4. Atomically updating the collection version to include the new segment.
+    /// 5. Trimming the WAL up to the flushed sequence number.
+    ///
+    /// Returns the name of the newly created segment on success.
     pub async fn flush(&self) -> Result<String> {
         // Try to acquire the flushing lock. If it fails, then another thread is already flushing.
         // This is a best effort approach, and we don't want to block the main thread.
@@ -870,6 +966,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         ))
     }
 
+    /// Returns the current Table of Content, which lists all active segments for the latest version.
     pub async fn get_current_toc(&self) -> TableOfContent {
         self.versions
             .get(&self.current_version().await)
@@ -938,7 +1035,11 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         Ok(())
     }
 
-    /// Replace old segments with a new segment.
+    /// Replaces a set of existing segments with a new segment.
+    ///
+    /// This is an internal helper that manages the atomic transition to a new collection version
+    /// where the old segments are removed and the new one is added.
+    ///
     /// This function is not thread-safe. Caller needs to ensure the thread safety.
     async fn replace_segment(
         &self,
@@ -1043,10 +1144,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         Ok(())
     }
 
+    /// Returns the number of the current active version.
     pub async fn current_version(&self) -> u64 {
         self.versions_info.read().await.current_version
     }
 
+    /// Returns the number of active references (snapshots) for a specific version.
     pub async fn get_ref_count(&self, version_number: u64) -> usize {
         *self
             .versions_info
@@ -1085,6 +1188,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         current_version
     }
 
+    /// Returns a list of names for all segments currently managed by the collection.
     pub fn get_all_segment_names(&self) -> Vec<String> {
         self.all_segments
             .iter()
@@ -1117,6 +1221,11 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         }
     }
 
+    /// Initializes an optimization task (like merge or vacuum) for a set of segments.
+    ///
+    /// This creates a `PendingSegment` that wraps the target segments and updates the
+    /// collection's version to include this pending segment, allowing it to be
+    /// optimized in the background while still being searchable.
     pub async fn init_optimizing(&self, segments: &Vec<String>) -> Result<String> {
         let random_name = format!("pending_segment_{}", rand::random::<u64>());
         let pending_segment_path = format!("{}/{}", self.base_directory, random_name);
@@ -1139,6 +1248,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         Ok(random_name)
     }
 
+    /// Finalizes a pending segment by converting it into a persistent immutable segment.
+    ///
+    /// This involves copying the built index data to a permanent location and
+    /// updating the collection's version to replace the pending segment with the finalized one.
     async fn pending_to_finalized(
         &self,
         pending_segment: &str,
@@ -1235,6 +1348,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         self.pending_to_finalized(pending_segment, toc_locked).await
     }
 
+    /// Truncates the WAL by removing entries that have already been persisted to immutable segments.
     async fn trim_wal(&self, flushed_seq_no: i64) -> Result<()> {
         if let Some(wal) = &self.wal {
             wal.write().await.trim_wal(flushed_seq_no)?;
@@ -1242,10 +1356,15 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         Ok(())
     }
 
+    /// Returns a reference to the map containing all segments managed by this collection.
     pub fn all_segments(&self) -> &DashMap<String, BoxedImmutableSegment<Q>> {
         &self.all_segments
     }
 
+    /// Internal implementation for document removal.
+    ///
+    /// Performs the invalidation across the mutable segment, pending mutable segment,
+    /// and all immutable segments present in the provided TOC.
     #[inline(always)]
     async fn remove_impl(
         version: &TableOfContent,
