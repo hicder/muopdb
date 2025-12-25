@@ -93,8 +93,12 @@ mod tests {
 
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
-        let reader =
-            CollectionReader::new(collection_name.to_string(), base_directory.clone(), false);
+        let reader = CollectionReader::new(
+            collection_name.to_string(),
+            base_directory.clone(),
+            false,
+            utils::block_cache::BlockCacheConfig::default(),
+        );
         let collection = reader.read::<NoQuantizerL2>().await?;
 
         collection
@@ -178,8 +182,12 @@ mod tests {
 
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
-        let reader =
-            CollectionReader::new(collection_name.to_string(), base_directory.clone(), false);
+        let reader = CollectionReader::new(
+            collection_name.to_string(),
+            base_directory.clone(),
+            false,
+            utils::block_cache::BlockCacheConfig::default(),
+        );
         let collection = reader.read::<NoQuantizerL2>().await?;
 
         collection
@@ -268,8 +276,12 @@ mod tests {
 
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
-        let reader =
-            CollectionReader::new(collection_name.to_string(), base_directory.clone(), false);
+        let reader = CollectionReader::new(
+            collection_name.to_string(),
+            base_directory.clone(),
+            false,
+            utils::block_cache::BlockCacheConfig::default(),
+        );
         let collection = reader.read::<NoQuantizerL2>().await?;
 
         collection
@@ -353,8 +365,12 @@ mod tests {
 
         Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
 
-        let reader =
-            CollectionReader::new(collection_name.to_string(), base_directory.clone(), false);
+        let reader = CollectionReader::new(
+            collection_name.to_string(),
+            base_directory.clone(),
+            false,
+            utils::block_cache::BlockCacheConfig::default(),
+        );
         let collection = reader.read::<NoQuantizerL2>().await?;
 
         collection

@@ -5,6 +5,7 @@ use index::collection::reader::CollectionReader;
 use proto::muopdb::DocumentAttribute;
 use quantization::noq::noq::NoQuantizerL2;
 use tempdir::TempDir;
+use utils::block_cache::BlockCacheConfig;
 use utils::test_utils::generate_random_vector;
 
 fn bench_insertion(c: &mut Criterion) {
@@ -48,6 +49,7 @@ fn bench_insertion(c: &mut Criterion) {
                         collection_name.to_string(),
                         base_directory.clone(),
                         false,
+                        BlockCacheConfig::default(),
                     );
                     rt.block_on(reader.read::<NoQuantizerL2>()).unwrap()
                 },

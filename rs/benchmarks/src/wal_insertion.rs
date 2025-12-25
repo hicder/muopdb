@@ -12,6 +12,7 @@ use proto::muopdb::DocumentAttribute;
 use quantization::noq::noq::NoQuantizerL2;
 use tempdir::TempDir;
 use tokio::task::JoinSet;
+use utils::block_cache::BlockCacheConfig;
 use utils::test_utils::generate_random_vector;
 
 fn bench_wal_insertion(c: &mut Criterion) {
@@ -37,7 +38,12 @@ fn bench_wal_insertion(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &segment_config)
         .unwrap();
-    let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone(), false);
+    let reader = CollectionReader::new(
+        collection_name.to_string(),
+        base_directory.clone(),
+        false,
+        BlockCacheConfig::default(),
+    );
     let collection = rt.block_on(reader.read::<NoQuantizerL2>()).unwrap();
 
     // Start background thread to process pending operations outside of benchmark

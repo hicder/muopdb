@@ -4,18 +4,25 @@ use index::collection::reader::CollectionReader;
 use index::collection::BoxedCollection;
 use quantization::noq::noq::NoQuantizer;
 use quantization::pq::pq::ProductQuantizer;
+use utils::block_cache::BlockCacheConfig;
 use utils::distance::l2::L2DistanceCalculator;
 
 pub struct CollectionProvider {
     data_directory: String,
     use_async_reader: bool,
+    block_cache_config: BlockCacheConfig,
 }
 
 impl CollectionProvider {
-    pub fn new(data_directory: String, use_async_reader: bool) -> Self {
+    pub fn new(
+        data_directory: String,
+        use_async_reader: bool,
+        block_cache_config: BlockCacheConfig,
+    ) -> Self {
         Self {
             data_directory,
             use_async_reader,
+            block_cache_config,
         }
     }
 
@@ -25,6 +32,7 @@ impl CollectionProvider {
             name.to_string(),
             collection_path.clone(),
             self.use_async_reader,
+            self.block_cache_config.clone(),
         );
 
         // Read the collection config

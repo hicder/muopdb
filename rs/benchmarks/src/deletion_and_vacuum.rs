@@ -6,6 +6,7 @@ use index::optimizers::vacuum::VacuumOptimizer;
 use proto::muopdb::DocumentAttribute;
 use quantization::noq::noq::NoQuantizerL2;
 use tempdir::TempDir;
+use utils::block_cache::BlockCacheConfig;
 use utils::test_utils::generate_random_vector;
 
 fn bench_deletion_vacuum(c: &mut Criterion) {
@@ -55,6 +56,7 @@ fn bench_deletion_vacuum(c: &mut Criterion) {
                         collection_name.to_string(),
                         base_directory.clone(),
                         false,
+                        BlockCacheConfig::default(),
                     );
                     let collection = rt.block_on(reader.read::<NoQuantizerL2>()).unwrap();
                     let mut doc_id = 0;
