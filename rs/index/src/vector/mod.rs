@@ -10,6 +10,9 @@ use crate::utils::IntermediateResult;
 pub mod file;
 pub mod fixed_file;
 
+#[cfg(feature = "async-hnsw")]
+pub mod async_storage;
+
 /// Config for vector storage.
 pub struct VectorStorageConfig {
     pub memory_threshold: usize,

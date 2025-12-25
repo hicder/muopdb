@@ -20,7 +20,7 @@ RUN cargo build --release
 
 # Test
 FROM builder AS test
-RUN cargo test --release
+RUN cargo test --release --features async-hnsw
 
 # Index Server
 FROM builder AS index_server

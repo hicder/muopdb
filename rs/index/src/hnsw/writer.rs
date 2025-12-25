@@ -15,12 +15,12 @@ pub struct HnswWriter<Q: Quantizer> {
     _phantom_q: std::marker::PhantomData<Q>,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Version {
     V0,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Header {
     pub version: Version,
     pub quantized_dimension: u32,
