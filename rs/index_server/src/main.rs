@@ -27,46 +27,82 @@ use utils::block_cache::BlockCacheConfig;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    #[arg(short, long, default_value_t = 9002)]
+    #[arg(short, long, default_value_t = 9002, help = "gRPC server port")]
     port: u32,
 
-    #[arg(long, default_value_t = 9003)]
+    #[arg(long, default_value_t = 9003, help = "HTTP metrics server port")]
     http_port: u16,
 
-    #[arg(short, long)]
+    #[arg(short, long, help = "Unique identifier for this index server node")]
     node_id: u32,
 
-    #[arg(long)]
+    #[arg(long, help = "Path to collection configuration file")]
     index_config_path: String,
 
-    #[arg(long)]
+    #[arg(long, help = "Path to index data directory")]
     index_data_path: String,
 
-    #[arg(long, default_value_t = 10)]
+    #[arg(
+        long,
+        default_value_t = 10,
+        help = "Number of parallel workers for ingesting WAL entries"
+    )]
     num_ingestion_workers: u32,
 
-    #[arg(long, default_value_t = 10)]
+    #[arg(
+        long,
+        default_value_t = 10,
+        help = "Number of parallel workers for flushing segments to disk"
+    )]
     num_flush_workers: u32,
 
-    #[arg(long, default_value_t = true)]
+    #[arg(
+        long,
+        default_value_t = true,
+        help = "Enable automatic segment optimization and merging"
+    )]
     enable_auto_optimizing: bool,
 
-    #[arg(long, default_value_t = 10000)]
+    #[arg(
+        long,
+        default_value_t = 10000,
+        help = "Sleep interval between auto-optimization runs (milliseconds)"
+    )]
     auto_optimizing_sleep_interval_ms: u64,
 
-    #[arg(long, default_value_t = false)]
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Use async I/O reader for vector storage"
+    )]
     use_async_reader: bool,
 
-    #[arg(long, default_value_t = 1000)]
+    #[arg(
+        long,
+        default_value_t = 1000,
+        help = "Maximum number of open files in block cache"
+    )]
     block_cache_max_open_files: u64,
 
-    #[arg(long, default_value_t = 1073741824)]
+    #[arg(
+        long,
+        default_value_t = 1073741824,
+        help = "Block cache capacity in bytes (default: 1GB)"
+    )]
     block_cache_capacity_bytes: u64,
 
-    #[arg(long, default_value_t = 4096)]
+    #[arg(
+        long,
+        default_value_t = 4096,
+        help = "Block size for cache blocks in bytes"
+    )]
     block_cache_block_size: usize,
 
-    #[arg(long, default_value_t = false)]
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Enable io_uring for block cache I/O (Linux only)"
+    )]
     block_cache_use_io_uring: bool,
 }
 
