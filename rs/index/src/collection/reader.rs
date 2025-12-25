@@ -16,11 +16,16 @@ use crate::segment::{BoxedImmutableSegment, Segment};
 pub struct CollectionReader {
     name: String,
     path: String,
+    use_async_reader: bool,
 }
 
 impl CollectionReader {
-    pub fn new(name: String, path: String) -> Self {
-        Self { name, path }
+    pub fn new(name: String, path: String, use_async_reader: bool) -> Self {
+        Self {
+            name,
+            path,
+            use_async_reader,
+        }
     }
 
     pub async fn read<Q: Quantizer + Clone + Send + Sync + 'static>(
@@ -36,6 +41,14 @@ impl CollectionReader {
         let toc_path = format!("{}/version_{}", self.path, latest_version);
         let toc: TableOfContent = serde_json::from_reader(std::fs::File::open(toc_path)?)?;
 
+        let block_cache = if self.use_async_reader {
+            Some(Arc::new(tokio::sync::Mutex::new(
+                utils::block_cache::BlockCache::new(utils::block_cache::BlockCacheConfig::default()),
+            )))
+        } else {
+            None
+        };
+
         // Read the segments
         let mut segments: Vec<BoxedImmutableSegment<Q>> = vec![];
         for name in &toc.toc {
@@ -46,10 +59,21 @@ impl CollectionReader {
 
             let spann_path = format!("{}/{}", self.path, name);
             let spann_reader = MultiSpannReader::new(spann_path.clone());
-            let index = spann_reader.read::<Q>(
-                collection_config.posting_list_encoding_type.clone(),
-                collection_config.num_features,
-            )?;
+            let index = if self.use_async_reader {
+                spann_reader
+                    .read_async::<Q>(
+                        collection_config.posting_list_encoding_type.clone(),
+                        collection_config.num_features,
+                        block_cache.as_ref().unwrap().clone(),
+                        true,
+                    )
+                    .await?
+            } else {
+                spann_reader.read::<Q>(
+                    collection_config.posting_list_encoding_type.clone(),
+                    collection_config.num_features,
+                )?
+            };
 
             // If terms exists, we read it
             let term_path = if std::fs::exists(format!("{}/terms", spann_path.clone())).unwrap() {
@@ -184,7 +208,8 @@ mod tests {
         let toc = TableOfContent::new(vec!["segment1".to_string(), "segment2".to_string()]);
         serde_json::to_writer(std::fs::File::create(toc_path).unwrap(), &toc).unwrap();
 
-        let reader = CollectionReader::new(collection_name.to_string(), base_directory.clone());
+        let reader =
+            CollectionReader::new(collection_name.to_string(), base_directory.clone(), false);
         let collection = reader.read().await.unwrap();
 
         // Check current version

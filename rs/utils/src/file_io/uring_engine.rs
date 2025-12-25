@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use dashmap::DashMap;
+use log::info;
 use parking_lot::Mutex;
 
 /// High-performance asynchronous I/O engine using Linux io_uring.
@@ -110,6 +111,7 @@ impl UringEngine {
     /// let engine = UringEngine::new(512);
     /// ```
     pub fn new(queue_depth: u32) -> Self {
+        info!("Creating UringEngine with queue depth {}", queue_depth);
         let uring = Arc::new(Mutex::new(
             io_uring::IoUring::new(queue_depth)
                 .map_err(|e| anyhow!("Failed to create io_uring: {}", e))

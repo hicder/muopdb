@@ -51,8 +51,11 @@ fn bench_deletion_vacuum(c: &mut Criterion) {
                         &segment_config,
                     )
                     .unwrap();
-                    let reader =
-                        CollectionReader::new(collection_name.to_string(), base_directory.clone());
+                    let reader = CollectionReader::new(
+                        collection_name.to_string(),
+                        base_directory.clone(),
+                        false,
+                    );
                     let collection = rt.block_on(reader.read::<NoQuantizerL2>()).unwrap();
                     let mut doc_id = 0;
                     rt.block_on(async {

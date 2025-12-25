@@ -3,6 +3,7 @@ use std::os::fd::AsRawFd;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
+use log::info;
 
 use crate::file_io::uring_engine::UringEngineHandle;
 use crate::file_io::FileIO;
@@ -83,6 +84,7 @@ impl UringFile {
     ///     .await?;
     /// ```
     pub async fn new(path: &str, engine: UringEngineHandle) -> Result<Self> {
+        info!("[URING] Opening file: {}", path);
         let file =
             std::fs::File::open(path).with_context(|| format!("Failed to open file: {}", path))?;
 
@@ -100,6 +102,7 @@ impl UringFile {
     }
 
     fn get_buffer(&self, length: usize) -> Vec<u8> {
+        info!("[URING] Getting buffer of size {}", length);
         let mut buffers = self.buffers.lock().unwrap();
         if let Some(idx) = buffers.iter().position(|b| b.len() >= length) {
             std::mem::take(&mut buffers[idx])
@@ -154,6 +157,7 @@ impl FileIO for UringFile {
     /// let chunk = file.read(512, 256).await?;
     /// ```
     async fn read(&self, offset: u64, length: u64) -> Result<Vec<u8>> {
+        info!("[URING] Reading {} bytes from offset {}", length, offset);
         if length == 0 {
             return Ok(vec![]);
         }

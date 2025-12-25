@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Result};
 use dashmap::DashMap;
+use log::info;
 use moka::future::Cache;
 use tokio::fs::File;
 
@@ -42,7 +43,7 @@ impl Default for BlockCacheConfig {
             max_open_files: 1000,
             block_cache_capacity_bytes: 1024 * 1024 * 1024,
             block_size: 4096,
-            use_io_uring: false,
+            use_io_uring: true,
         }
     }
 }
@@ -132,6 +133,7 @@ impl BlockCache {
     ///
     /// A new BlockCache instance.
     pub fn new(config: BlockCacheConfig) -> Self {
+        info!("Creating block cache with config: {:#?}", config);
         #[cfg(target_os = "linux")]
         let engine = if config.use_io_uring {
             Some(UringEngine::new(256))
@@ -165,6 +167,11 @@ impl BlockCache {
     /// A Result containing the file ID, or an error if the file cannot be opened.
     pub async fn open_file(&mut self, path: &str) -> Result<FileId> {
         let file_id = self.file_id_generator.fetch_add(1, Ordering::SeqCst);
+
+        info!(
+            "[BLOCK_CACHE] Opening file: {} with io_uring: {}",
+            path, self.config.use_io_uring
+        );
 
         let file: Arc<dyn FileIO + Send + Sync> = if self.config.use_io_uring {
             #[cfg(target_os = "linux")]
