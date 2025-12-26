@@ -7,15 +7,15 @@ use quantization::noq::noq::NoQuantizer;
 use quantization::quantization::Quantizer;
 use utils::distance::l2::L2DistanceCalculator;
 
-use crate::hnsw::async_index::AsyncHnsw;
-use crate::hnsw::index::Hnsw;
+use crate::hnsw::block_based::index::BlockBasedHnsw;
+use crate::hnsw::mmap::index::Hnsw;
 use crate::ivf::index::IvfType;
 use crate::query::planner::Planner;
 use crate::utils::SearchResult;
 
 pub enum Centroids {
     Sync(Hnsw<NoQuantizer<L2DistanceCalculator>>),
-    Async(AsyncHnsw<NoQuantizer<L2DistanceCalculator>>),
+    Async(BlockBasedHnsw<NoQuantizer<L2DistanceCalculator>>),
 }
 
 impl Centroids {
@@ -50,7 +50,7 @@ impl<Q: Quantizer> Spann<Q> {
     }
 
     pub fn new_async(
-        centroids: AsyncHnsw<NoQuantizer<L2DistanceCalculator>>,
+        centroids: BlockBasedHnsw<NoQuantizer<L2DistanceCalculator>>,
         posting_lists: IvfType<Q>,
     ) -> Self {
         Self {

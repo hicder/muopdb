@@ -7,8 +7,8 @@ use memmap2::Mmap;
 use quantization::quantization::Quantizer;
 use utils::block_cache::BlockCache;
 
-use crate::hnsw::async_index::AsyncHnsw;
-use crate::hnsw::index::Hnsw;
+use crate::hnsw::block_based::index::BlockBasedHnsw;
+use crate::hnsw::mmap::index::Hnsw;
 use crate::hnsw::writer::{Header, Version};
 use crate::vector::fixed_file::FixedFileVectorStorage;
 use crate::vector::VectorStorage;
@@ -124,11 +124,11 @@ impl HnswReader {
     pub async fn read_async<Q: Quantizer>(
         &self,
         block_cache: Arc<BlockCache>,
-    ) -> Result<AsyncHnsw<Q>>
+    ) -> Result<BlockBasedHnsw<Q>>
     where
         Q::QuantizedT: Send + Sync,
     {
-        AsyncHnsw::new_with_offsets(
+        BlockBasedHnsw::new_with_offsets(
             block_cache,
             self.base_directory.clone(),
             self.index_offset,

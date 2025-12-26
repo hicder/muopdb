@@ -11,9 +11,9 @@ use quantization::typing::VectorOps;
 use utils::block_cache::BlockCache;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 
-use super::async_graph_storage::AsyncHnswGraphStorage;
-use super::writer::Header;
+use crate::hnsw::block_based::graph_storage::BlockBasedHnswGraphStorage;
 use crate::hnsw::utils::GraphTraversal;
+use crate::hnsw::writer::Header;
 use crate::utils::{IdWithScore, PointAndDistance, SearchContext, SearchResult, SearchStats};
 use crate::vector::async_storage::AsyncFixedFileVectorStorage;
 use crate::vector::StorageContext;
@@ -52,23 +52,23 @@ impl StorageContext for BuilderContext {
     }
 }
 
-pub struct AsyncHnsw<Q: Quantizer>
+pub struct BlockBasedHnsw<Q: Quantizer>
 where
     Q::QuantizedT: Send + Sync,
 {
-    graph_storage: AsyncHnswGraphStorage,
+    graph_storage: BlockBasedHnswGraphStorage,
     vector_storage: AsyncFixedFileVectorStorage<Q::QuantizedT>,
     header: Header,
     quantizer: Q,
 }
 
-impl<Q: Quantizer> AsyncHnsw<Q>
+impl<Q: Quantizer> BlockBasedHnsw<Q>
 where
     Q::QuantizedT: Send + Sync,
 {
     pub async fn new(block_cache: Arc<BlockCache>, base_directory: String) -> Result<Self> {
         let graph_storage =
-            AsyncHnswGraphStorage::new(block_cache.clone(), base_directory.clone()).await?;
+            BlockBasedHnswGraphStorage::new(block_cache.clone(), base_directory.clone()).await?;
 
         let vector_path = format!("{}/hnsw/vector_storage", base_directory);
         let vector_storage = AsyncFixedFileVectorStorage::<Q::QuantizedT>::new(
@@ -97,7 +97,7 @@ where
         data_offset: usize,
         vector_offset: usize,
     ) -> Result<Self> {
-        let graph_storage = AsyncHnswGraphStorage::new_with_offset(
+        let graph_storage = BlockBasedHnswGraphStorage::new_with_offset(
             block_cache.clone(),
             base_directory.clone(),
             data_offset,
@@ -280,7 +280,7 @@ where
     }
 }
 
-impl<Q: Quantizer> GraphTraversal<Q> for AsyncHnsw<Q>
+impl<Q: Quantizer> GraphTraversal<Q> for BlockBasedHnsw<Q>
 where
     Q::QuantizedT: Send + Sync,
 {
@@ -376,10 +376,12 @@ mod tests {
         let config = BlockCacheConfig::default();
         let cache = Arc::new(BlockCache::new(config));
 
-        let hnsw =
-            AsyncHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(cache.clone(), base_directory)
-                .await
-                .unwrap();
+        let hnsw = BlockBasedHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(
+            cache.clone(),
+            base_directory,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(hnsw.get_header().num_layers > 0, true);
 
@@ -417,7 +419,7 @@ mod tests {
         let cache = Arc::new(BlockCache::new(config));
 
         let hnsw =
-            AsyncHnsw::<NoQuantizer<L2DistanceCalculator>>::new(cache.clone(), base_directory)
+            BlockBasedHnsw::<NoQuantizer<L2DistanceCalculator>>::new(cache.clone(), base_directory)
                 .await
                 .unwrap();
 
@@ -484,10 +486,12 @@ mod tests {
         let config = BlockCacheConfig::default();
         let cache = Arc::new(BlockCache::new(config));
 
-        let hnsw =
-            AsyncHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(cache.clone(), base_directory)
-                .await
-                .unwrap();
+        let hnsw = BlockBasedHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(
+            cache.clone(),
+            base_directory,
+        )
+        .await
+        .unwrap();
 
         // Verify we can search the reindexed index
         let query = vec![50.0; 10];
@@ -572,10 +576,12 @@ mod tests {
         let config = BlockCacheConfig::default();
         let cache = Arc::new(BlockCache::new(config));
 
-        let hnsw =
-            AsyncHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(cache.clone(), base_directory)
-                .await
-                .unwrap();
+        let hnsw = BlockBasedHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(
+            cache.clone(),
+            base_directory,
+        )
+        .await
+        .unwrap();
 
         // Test search functionality with various parameters
         let query = generate_random_vector(dimension);
@@ -650,10 +656,12 @@ mod tests {
         let config = BlockCacheConfig::default();
         let cache = Arc::new(BlockCache::new(config));
 
-        let hnsw =
-            AsyncHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(cache.clone(), base_directory)
-                .await
-                .unwrap();
+        let hnsw = BlockBasedHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(
+            cache.clone(),
+            base_directory,
+        )
+        .await
+        .unwrap();
 
         // Verify the index has multiple layers
         assert!(
