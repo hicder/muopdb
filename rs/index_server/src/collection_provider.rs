@@ -9,19 +9,13 @@ use utils::distance::l2::L2DistanceCalculator;
 
 pub struct CollectionProvider {
     data_directory: String,
-    use_async_reader: bool,
-    block_cache_config: BlockCacheConfig,
+    block_cache_config: Option<BlockCacheConfig>,
 }
 
 impl CollectionProvider {
-    pub fn new(
-        data_directory: String,
-        use_async_reader: bool,
-        block_cache_config: BlockCacheConfig,
-    ) -> Self {
+    pub fn new(data_directory: String, block_cache_config: Option<BlockCacheConfig>) -> Self {
         Self {
             data_directory,
-            use_async_reader,
             block_cache_config,
         }
     }
@@ -31,7 +25,6 @@ impl CollectionProvider {
         let reader = CollectionReader::new(
             name.to_string(),
             collection_path.clone(),
-            self.use_async_reader,
             self.block_cache_config.clone(),
         );
 

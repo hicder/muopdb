@@ -72,13 +72,6 @@ struct Args {
 
     #[arg(
         long,
-        default_value_t = false,
-        help = "Use async I/O reader for vector storage"
-    )]
-    use_async_reader: bool,
-
-    #[arg(
-        long,
         default_value_t = 1000,
         help = "Maximum number of open files in block cache"
     )]
@@ -120,17 +113,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Number of flush workers: {}", arg.num_flush_workers);
 
     let collection_catalog = CollectionCatalog::new();
-    let block_cache_config = BlockCacheConfig::new(
-        arg.block_cache_max_open_files,
-        arg.block_cache_capacity_bytes,
-        arg.block_cache_block_size,
-        arg.block_cache_use_io_uring,
-    );
-    let collection_provider = CollectionProvider::new(
-        collection_data_path,
-        arg.use_async_reader,
-        block_cache_config,
-    );
+    let block_cache_config = if arg.block_cache_max_open_files > 0 {
+        Some(BlockCacheConfig::new(
+            arg.block_cache_max_open_files,
+            arg.block_cache_capacity_bytes,
+            arg.block_cache_block_size,
+            arg.block_cache_use_io_uring,
+        ))
+    } else {
+        None
+    };
+    let collection_provider = CollectionProvider::new(collection_data_path, block_cache_config);
     let collection_manager = Arc::new(RwLock::new(CollectionManager::new(
         collection_config_path,
         collection_provider,

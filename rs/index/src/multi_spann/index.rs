@@ -30,8 +30,6 @@ pub struct MultiSpannIndex<Q: Quantizer> {
     ivf_type: IntSeqEncodingType,
     num_features: usize,
     block_cache: Option<Arc<BlockCache>>,
-    #[allow(dead_code)]
-    use_async_reader: bool,
 }
 
 impl<Q: Quantizer> MultiSpannIndex<Q> {
@@ -41,13 +39,12 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         ivf_type: IntSeqEncodingType,
         num_features: usize,
     ) -> Result<Self> {
-        Self::new_impl(
+        Self::new_with_cache(
             base_directory,
             user_index_info_mmap,
             ivf_type,
             num_features,
             None,
-            false,
         )
         .await
     }
@@ -57,27 +54,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         user_index_info_mmap: Mmap,
         ivf_type: IntSeqEncodingType,
         num_features: usize,
-        block_cache: Arc<BlockCache>,
-        use_async_reader: bool,
-    ) -> Result<Self> {
-        Self::new_impl(
-            base_directory,
-            user_index_info_mmap,
-            ivf_type,
-            num_features,
-            Some(block_cache),
-            use_async_reader,
-        )
-        .await
-    }
-
-    async fn new_impl(
-        base_directory: String,
-        user_index_info_mmap: Mmap,
-        ivf_type: IntSeqEncodingType,
-        num_features: usize,
         block_cache: Option<Arc<BlockCache>>,
-        use_async_reader: bool,
     ) -> Result<Self> {
         let user_index_infos = HashTableOwned::from_raw_bytes(&user_index_info_mmap).unwrap();
         let invalidated_ids_directory = format!("{base_directory}/invalidated_ids_storage");
@@ -92,7 +69,6 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             ivf_type,
             num_features,
             block_cache,
-            use_async_reader,
         };
 
         {
@@ -139,19 +115,8 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             self.ivf_type.clone(),
         );
 
-        let index = if let Some(ref block_cache) = self.block_cache {
-            #[cfg(feature = "async-hnsw")]
-            {
-                if self.use_async_reader {
-                    reader.read_async::<Q>(block_cache.clone()).await?
-                } else {
-                    reader.read::<Q>()?
-                }
-            }
-            #[cfg(not(feature = "async-hnsw"))]
-            {
-                reader.read::<Q>()?
-            }
+        let index = if let Some(block_cache) = &self.block_cache {
+            reader.read_async::<Q>(block_cache.clone()).await?
         } else {
             reader.read::<Q>()?
         };

@@ -42,7 +42,6 @@ impl MultiSpannReader {
         ivf_type: IntSeqEncodingType,
         num_features: usize,
         block_cache: Arc<BlockCache>,
-        use_async_reader: bool,
     ) -> Result<MultiSpannIndex<Q>> {
         let user_index_info_file_path = format!("{}/user_index_info", self.base_directory);
         let user_index_info_file = std::fs::OpenOptions::new()
@@ -55,8 +54,7 @@ impl MultiSpannReader {
             user_index_info_mmap,
             ivf_type,
             num_features,
-            block_cache,
-            use_async_reader,
+            Some(block_cache),
         )
         .await
     }
@@ -185,7 +183,6 @@ mod tests {
                 IntSeqEncodingType::PlainEncoding,
                 4,
                 block_cache,
-                true,
             )
             .await?;
 
@@ -236,7 +233,6 @@ mod tests {
                 IntSeqEncodingType::PlainEncoding,
                 4,
                 block_cache,
-                true,
             )
             .await
             .unwrap();
