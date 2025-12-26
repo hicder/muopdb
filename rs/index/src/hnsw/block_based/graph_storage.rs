@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};
 use utils::block_cache::BlockCache;
 
-use super::writer::Header;
+use crate::hnsw::writer::Header;
 
 pub struct GraphOffsets {
     pub data_offset: usize,
@@ -15,7 +15,7 @@ pub struct GraphOffsets {
     pub doc_id_mapping_offset: usize,
 }
 
-pub struct AsyncHnswGraphStorage {
+pub struct BlockBasedHnswGraphStorage {
     block_cache: Arc<BlockCache>,
     graph_file_id: u64,
     header: Header,
@@ -23,7 +23,7 @@ pub struct AsyncHnswGraphStorage {
     level_offsets: Vec<u64>,
 }
 
-impl AsyncHnswGraphStorage {
+impl BlockBasedHnswGraphStorage {
     pub async fn new(block_cache: Arc<BlockCache>, base_directory: String) -> Result<Self> {
         let graph_path = format!("{}/hnsw/index", base_directory);
         let file_id = {
@@ -529,7 +529,7 @@ mod tests {
         let config = BlockCacheConfig::default();
         let cache = Arc::new(BlockCache::new(config));
 
-        let storage = AsyncHnswGraphStorage::new(cache.clone(), base_directory)
+        let storage = BlockBasedHnswGraphStorage::new(cache.clone(), base_directory)
             .await
             .unwrap();
 

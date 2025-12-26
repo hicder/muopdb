@@ -10,7 +10,7 @@ use utils::block_cache::BlockCache;
 use utils::distance::l2::L2DistanceCalculator;
 
 use super::index::Spann;
-use crate::hnsw::async_index::AsyncHnsw;
+use crate::hnsw::block_based::index::BlockBasedHnsw;
 use crate::hnsw::reader::HnswReader;
 use crate::ivf::index::IvfType;
 use crate::ivf::reader::IvfReader;
@@ -91,7 +91,7 @@ impl SpannReader {
         let posting_list_path = format!("{}/ivf", self.base_directory);
         let centroid_path = format!("{}/centroids", self.base_directory);
 
-        let centroids = AsyncHnsw::new_with_offsets(
+        let centroids = BlockBasedHnsw::new_with_offsets(
             block_cache,
             centroid_path,
             self.centroids_index_offset,

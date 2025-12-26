@@ -10,8 +10,8 @@ use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use rand::Rng;
 
-use super::index::Hnsw;
-use super::utils::{BuilderContext, GraphTraversal};
+use crate::hnsw::mmap::index::Hnsw;
+use crate::hnsw::utils::{BuilderContext, GraphTraversal};
 use crate::utils::PointAndDistance;
 use crate::vector::file::FileBackedAppendableVectorStorage;
 use crate::vector::{StorageContext, VectorStorageConfig};

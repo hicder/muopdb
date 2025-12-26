@@ -7,7 +7,7 @@ use quantization::typing::VectorOps;
 use rand::Rng;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 
-use super::utils::GraphTraversal;
+use crate::hnsw::utils::GraphTraversal;
 use crate::hnsw::writer::Header;
 use crate::utils::{IdWithScore, SearchContext, SearchResult, SearchStats};
 use crate::vector::{StorageContext, VectorStorage};
