@@ -6,10 +6,6 @@ edition = "2021"
 [lints]
 workspace = true
 
-[features]
-default = ["async-hnsw"]
-async-hnsw = []
-
 [dependencies]
 async-lock.workspace = true
 async-trait.workspace = true

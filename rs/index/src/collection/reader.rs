@@ -17,21 +17,14 @@ use crate::segment::{BoxedImmutableSegment, Segment};
 pub struct CollectionReader {
     name: String,
     path: String,
-    use_async_reader: bool,
-    block_cache_config: BlockCacheConfig,
+    block_cache_config: Option<BlockCacheConfig>,
 }
 
 impl CollectionReader {
-    pub fn new(
-        name: String,
-        path: String,
-        use_async_reader: bool,
-        block_cache_config: BlockCacheConfig,
-    ) -> Self {
+    pub fn new(name: String, path: String, block_cache_config: Option<BlockCacheConfig>) -> Self {
         Self {
             name,
             path,
-            use_async_reader,
             block_cache_config,
         }
     }
@@ -49,11 +42,10 @@ impl CollectionReader {
         let toc_path = format!("{}/version_{}", self.path, latest_version);
         let toc: TableOfContent = serde_json::from_reader(std::fs::File::open(toc_path)?)?;
 
-        let block_cache = if self.use_async_reader {
-            Some(Arc::new(BlockCache::new(self.block_cache_config.clone())))
-        } else {
-            None
-        };
+        let block_cache = self
+            .block_cache_config
+            .as_ref()
+            .map(|config| Arc::new(BlockCache::new(config.clone())));
 
         // Read the segments
         let mut segments: Vec<BoxedImmutableSegment<Q>> = vec![];
@@ -65,13 +57,12 @@ impl CollectionReader {
 
             let spann_path = format!("{}/{}", self.path, name);
             let spann_reader = MultiSpannReader::new(spann_path.clone());
-            let index = if self.use_async_reader {
+            let index = if let Some(block_cache) = &block_cache {
                 spann_reader
                     .read_async::<Q>(
                         collection_config.posting_list_encoding_type.clone(),
                         collection_config.num_features,
-                        block_cache.as_ref().unwrap().clone(),
-                        true,
+                        block_cache.clone(),
                     )
                     .await?
             } else {
@@ -216,12 +207,8 @@ mod tests {
         let toc = TableOfContent::new(vec!["segment1".to_string(), "segment2".to_string()]);
         serde_json::to_writer(std::fs::File::create(toc_path).unwrap(), &toc).unwrap();
 
-        let reader = CollectionReader::new(
-            collection_name.to_string(),
-            base_directory.clone(),
-            false,
-            BlockCacheConfig::default(),
-        );
+        let reader =
+            CollectionReader::new(collection_name.to_string(), base_directory.clone(), None);
         let collection = reader.read().await.unwrap();
 
         // Check current version

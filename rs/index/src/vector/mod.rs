@@ -7,11 +7,9 @@ use quantization::quantization::Quantizer;
 
 use crate::utils::IntermediateResult;
 
+pub mod async_storage;
 pub mod file;
 pub mod fixed_file;
-
-#[cfg(feature = "async-hnsw")]
-pub mod async_storage;
 
 /// Config for vector storage.
 pub struct VectorStorageConfig {
