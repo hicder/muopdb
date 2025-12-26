@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use compression::elias_fano::ef::EliasFanoDecoder;
+use compression::elias_fano::mmap_decoder::EliasFanoMmapDecoder;
 use compression::noc::noc::PlainDecoder;
 use config::enums::IntSeqEncodingType;
 use quantization::noq::noq::NoQuantizer;
@@ -81,7 +81,7 @@ impl SpannReader {
                     self.ivf_index_offset,
                     self.ivf_vector_offset,
                 )
-                .read::<Q, L2DistanceCalculator, EliasFanoDecoder>()?;
+                .read::<Q, L2DistanceCalculator, EliasFanoMmapDecoder>()?;
                 Ok(Spann::<_>::new(centroids, IvfType::L2EF(posting_lists)))
             }
         }
@@ -117,7 +117,7 @@ impl SpannReader {
                     self.ivf_index_offset,
                     self.ivf_vector_offset,
                 )
-                .read::<Q, L2DistanceCalculator, EliasFanoDecoder>()?;
+                .read::<Q, L2DistanceCalculator, EliasFanoMmapDecoder>()?;
                 Ok(Spann::<_>::new_async(
                     centroids,
                     IvfType::L2EF(posting_lists),

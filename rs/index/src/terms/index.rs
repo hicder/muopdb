@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};
 use compression::compression::IntSeqDecoder;
-use compression::elias_fano::ef::{EliasFanoDecoder, EliasFanoDecodingIterator};
+use compression::elias_fano::mmap_decoder::{EliasFanoMMapDecodingIterator, EliasFanoMmapDecoder};
 use log::debug;
 use ouroboros::self_referencing;
 use utils::on_disk_ordered_map::encoder::VarintIntegerCodec;
@@ -139,7 +139,7 @@ impl TermIndex {
     pub fn get_posting_list_iterator(
         &self,
         term_id: u64,
-    ) -> Result<EliasFanoDecodingIterator<'_, u32>> {
+    ) -> Result<EliasFanoMMapDecodingIterator<'_, u32>> {
         let offset_len = self.get_term_offset_len(term_id);
         let offset_len = match offset_len {
             Some(ol) => ol,
@@ -153,7 +153,7 @@ impl TermIndex {
         debug!("[get_posting_list_iterator] Offset: {offset}, Length: {length}");
 
         let byte_slice = &self.inner.borrow_mmap()[offset..offset + length];
-        let decoder = EliasFanoDecoder::new_decoder(byte_slice)
+        let decoder = EliasFanoMmapDecoder::new_decoder(byte_slice)
             .expect("Failed to create posting list decoder");
         Ok(decoder.get_iterator(byte_slice))
     }

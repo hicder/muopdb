@@ -1,11 +1,11 @@
 use anyhow::Result;
-use compression::elias_fano::ef::EliasFanoDecodingIterator;
+use compression::elias_fano::mmap_decoder::EliasFanoMMapDecodingIterator;
 
 use crate::query::iters::{InvertedIndexIter, IterState};
 use crate::terms::index::TermIndex;
 
 pub struct TermIter<'a> {
-    iter: EliasFanoDecodingIterator<'a, u32>,
+    iter: EliasFanoMMapDecodingIterator<'a, u32>,
     state: IterState<u32>,
 }
 

@@ -18,7 +18,7 @@ impl<T: CompressionInt> EliasFanoMmapDecoder<T> {
 
 impl<T: CompressionInt> IntSeqDecoder<T> for EliasFanoMmapDecoder<T> {
     type IteratorType<'a>
-        = EliasFanoDecodingIterator<'a, T>
+        = EliasFanoMMapDecodingIterator<'a, T>
     where
         T: 'a;
 
@@ -54,7 +54,7 @@ impl<T: CompressionInt> IntSeqDecoder<T> for EliasFanoMmapDecoder<T> {
         let upper_bits_slice = BitSlice::<u64>::from_slice(
             &encoded_data[upper_bits_start..upper_bits_start + self.upper_vec_len],
         );
-        EliasFanoDecodingIterator {
+        EliasFanoMMapDecodingIterator {
             num_elem: self.num_elem,
             cur_elem_index: 0,
             cur_upper_bit_index: 0,
@@ -69,7 +69,7 @@ impl<T: CompressionInt> IntSeqDecoder<T> for EliasFanoMmapDecoder<T> {
     }
 }
 
-pub struct EliasFanoDecodingIterator<'a, T: CompressionInt = u64> {
+pub struct EliasFanoMMapDecodingIterator<'a, T: CompressionInt = u64> {
     num_elem: usize,
     cur_elem_index: usize,
     cur_upper_bit_index: usize,
@@ -88,7 +88,7 @@ pub struct EliasFanoDecodingIterator<'a, T: CompressionInt = u64> {
     post_skip: bool,
 }
 
-impl<'a, T: CompressionInt> EliasFanoDecodingIterator<'a, T> {
+impl<'a, T: CompressionInt> EliasFanoMMapDecodingIterator<'a, T> {
     /// Skip to the first element >= target
     /// Updates iterator state but doesn't return the value
     /// Call current() or next() to get the value after skip_to
@@ -252,7 +252,7 @@ impl<'a, T: CompressionInt> EliasFanoDecodingIterator<'a, T> {
     }
 }
 
-impl<'a, T: CompressionInt> Iterator for EliasFanoDecodingIterator<'a, T> {
+impl<'a, T: CompressionInt> Iterator for EliasFanoMMapDecodingIterator<'a, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
