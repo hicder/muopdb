@@ -20,6 +20,7 @@ pub struct AsyncHnswGraphStorage {
     graph_file_id: u64,
     header: Header,
     offsets: GraphOffsets,
+    level_offsets: Vec<u64>,
 }
 
 impl AsyncHnswGraphStorage {
@@ -40,12 +41,16 @@ impl AsyncHnswGraphStorage {
         let header = Self::parse_header(&header_data);
         let offsets = Self::calculate_offsets(&header, 49);
 
-        Ok(Self {
+        let mut storage = Self {
             block_cache,
             graph_file_id: file_id,
             header,
             offsets,
-        })
+            level_offsets: vec![],
+        };
+        storage.level_offsets = storage.get_level_offsets_slice().await?;
+
+        Ok(storage)
     }
 
     pub async fn new_with_offset(
@@ -71,12 +76,16 @@ impl AsyncHnswGraphStorage {
         // The data_offset in GraphOffsets is expected to be the start of the data block
         offsets.data_offset = data_offset + 49;
 
-        Ok(Self {
+        let mut storage = Self {
             block_cache,
             graph_file_id: file_id,
             header,
             offsets,
-        })
+            level_offsets: vec![],
+        };
+        storage.level_offsets = storage.get_level_offsets_slice().await?;
+
+        Ok(storage)
     }
 
     fn parse_header(data: &[u8]) -> Header {
@@ -152,6 +161,8 @@ impl AsyncHnswGraphStorage {
         &self.offsets
     }
 
+    /// NOTE: This method is very expensive as it loads the entire edges slice into memory.
+    /// Use targeted reads if possible.
     pub async fn get_edges_slice(&self) -> Result<Vec<u32>> {
         let start = self.offsets.edges_offset as u64;
         let length = self.header.edges_len;
@@ -175,6 +186,8 @@ impl AsyncHnswGraphStorage {
         Ok(result)
     }
 
+    /// NOTE: This method is very expensive as it loads the entire edge offsets slice into memory.
+    /// Use targeted reads if possible.
     pub async fn get_edge_offsets_slice(&self) -> Result<Vec<u64>> {
         let start = self.offsets.edge_offsets_offset as u64;
         let length = self.header.edge_offsets_len;
@@ -198,6 +211,8 @@ impl AsyncHnswGraphStorage {
         Ok(result)
     }
 
+    /// NOTE: This method is very expensive as it loads the entire points slice into memory.
+    /// Use targeted reads if possible.
     pub async fn get_points_slice(&self) -> Result<Vec<u32>> {
         let start = self.offsets.points_offset as u64;
         let length = self.header.points_len;
@@ -221,6 +236,8 @@ impl AsyncHnswGraphStorage {
         Ok(result)
     }
 
+    /// Returns the level offsets slice.
+    /// This is relatively small and already cached in `self.level_offsets`.
     pub async fn get_level_offsets_slice(&self) -> Result<Vec<u64>> {
         let start = self.offsets.level_offsets_offset as u64;
         let length = self.header.level_offsets_len;
@@ -244,6 +261,8 @@ impl AsyncHnswGraphStorage {
         Ok(result)
     }
 
+    /// NOTE: This method is very expensive as it loads the entire doc ID mapping slice into memory.
+    /// Use targeted reads if possible.
     pub async fn get_doc_id_mapping_slice(&self) -> Result<Vec<u128>> {
         let start = self.offsets.doc_id_mapping_offset as u64;
         let length = self.header.doc_id_mapping_len;
@@ -267,35 +286,83 @@ impl AsyncHnswGraphStorage {
         Ok(result)
     }
 
+    async fn get_u32_at(&self, offset: u64) -> Result<u32> {
+        let data = self
+            .block_cache
+            .read(self.graph_file_id, offset, 4)
+            .await
+            .map_err(|e| anyhow!("Failed to read u32 at {}: {}", offset, e))?;
+        Ok(LittleEndian::read_u32(&data))
+    }
+
+    async fn get_u64_at(&self, offset: u64) -> Result<u64> {
+        let data = self
+            .block_cache
+            .read(self.graph_file_id, offset, 8)
+            .await
+            .map_err(|e| anyhow!("Failed to read u64 at {}: {}", offset, e))?;
+        Ok(LittleEndian::read_u64(&data))
+    }
+
+    async fn get_u128_at(&self, offset: u64) -> Result<u128> {
+        let data = self
+            .block_cache
+            .read(self.graph_file_id, offset, 16)
+            .await
+            .map_err(|e| anyhow!("Failed to read u128 at {}: {}", offset, e))?;
+        Ok(LittleEndian::read_u128(&data))
+    }
+
+    async fn find_point_in_range(
+        &self,
+        point_id: u32,
+        start_idx: usize,
+        end_idx: usize,
+    ) -> Result<Option<usize>> {
+        const BATCH_SIZE: usize = 1024;
+        let mut current = start_idx;
+        let points_base = self.offsets.points_offset as u64;
+
+        while current < end_idx {
+            let batch_end = (current + BATCH_SIZE).min(end_idx);
+            let read_len = (batch_end - current) * 4;
+            let data = self
+                .block_cache
+                .read(
+                    self.graph_file_id,
+                    points_base + (current * 4) as u64,
+                    read_len as u64,
+                )
+                .await?;
+
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if LittleEndian::read_u32(chunk) == point_id {
+                    return Ok(Some(current + i));
+                }
+            }
+            current = batch_end;
+        }
+        Ok(None)
+    }
+
     pub async fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>> {
         let num_layers = self.header.num_layers as usize;
-        let level_offsets = match self.get_level_offsets_slice().await {
-            Ok(v) => v,
-            Err(_) => return None,
-        };
-        let edge_offsets = match self.get_edge_offsets_slice().await {
-            Ok(v) => v,
-            Err(_) => return None,
-        };
-
         if layer as usize >= num_layers {
             return None;
         }
 
-        let level_idx_start = level_offsets[num_layers - 1 - layer as usize] as usize;
-        let level_idx_end = level_offsets[num_layers - layer as usize] as usize;
+        let level_idx_start = self.level_offsets[num_layers - 1 - layer as usize] as usize;
+        let level_idx_end = self.level_offsets[num_layers - layer as usize] as usize;
 
         let idx_at_layer: i64;
         if layer > 0 {
-            let points = match self.get_points_slice().await {
-                Ok(v) => v,
-                Err(_) => return None,
+            idx_at_layer = match self
+                .find_point_in_range(point_id, level_idx_start, level_idx_end)
+                .await
+            {
+                Ok(Some(idx)) => (idx - level_idx_start) as i64,
+                _ => -1,
             };
-            idx_at_layer = points[level_idx_start..level_idx_end]
-                .iter()
-                .position(|&p| p == point_id)
-                .map(|i| i as i64)
-                .unwrap_or(-1);
         } else {
             idx_at_layer = point_id as i64;
         }
@@ -305,32 +372,63 @@ impl AsyncHnswGraphStorage {
         }
 
         let idx = idx_at_layer as usize;
-        let start_idx_edges = edge_offsets[level_idx_start + idx];
-        let end_idx_edges = edge_offsets[level_idx_start + idx + 1];
+        let edge_offsets_base = self.offsets.edge_offsets_offset as u64;
+        let start_idx_edges = match self
+            .get_u64_at(edge_offsets_base + ((level_idx_start + idx) * 8) as u64)
+            .await
+        {
+            Ok(v) => v,
+            Err(_) => return None,
+        };
+        let end_idx_edges = match self
+            .get_u64_at(edge_offsets_base + ((level_idx_start + idx + 1) * 8) as u64)
+            .await
+        {
+            Ok(v) => v,
+            Err(_) => return None,
+        };
 
         if start_idx_edges == end_idx_edges {
             return None;
         }
 
-        let edges = match self.get_edges_slice().await {
+        let edges_base = self.offsets.edges_offset as u64;
+        let read_len = (end_idx_edges - start_idx_edges) * 4;
+        let data = match self
+            .block_cache
+            .read(
+                self.graph_file_id,
+                edges_base + start_idx_edges * 4,
+                read_len,
+            )
+            .await
+        {
             Ok(v) => v,
             Err(_) => return None,
         };
 
-        Some(edges[start_idx_edges as usize..end_idx_edges as usize].to_vec())
+        let mut result = Vec::with_capacity(data.len() / 4);
+        for chunk in data.chunks_exact(4) {
+            result.push(LittleEndian::read_u32(chunk));
+        }
+        Some(result)
     }
 
     pub async fn get_entry_point_top_layer(&self) -> u32 {
         if self.header.num_layers == 1 {
-            let edge_offsets = match self.get_edge_offsets_slice().await {
-                Ok(v) => v,
-                Err(_) => return 0,
-            };
+            let num_points = (self.header.edge_offsets_len / 8) as usize - 1;
+            let edge_offsets_base = self.offsets.edge_offsets_offset as u64;
             let mut idx = 0;
-            while idx < edge_offsets.len() - 1 {
-                let edge_offset = edge_offsets[idx];
-                let next_edge_offset = edge_offsets[idx + 1];
-                if next_edge_offset - edge_offset > 0 {
+            while idx < num_points {
+                let edge_offset = self
+                    .get_u64_at(edge_offsets_base + (idx * 8) as u64)
+                    .await
+                    .unwrap_or(0);
+                let next_edge_offset = self
+                    .get_u64_at(edge_offsets_base + ((idx + 1) * 8) as u64)
+                    .await
+                    .unwrap_or(0);
+                if next_edge_offset > edge_offset {
                     return idx as u32;
                 }
                 idx += 1;
@@ -338,27 +436,23 @@ impl AsyncHnswGraphStorage {
             return 0;
         }
 
-        let level_offsets = match self.get_level_offsets_slice().await {
-            Ok(v) => v,
-            Err(_) => return 0,
-        };
-        let points = match self.get_points_slice().await {
-            Ok(v) => v,
-            Err(_) => return 0,
-        };
-        let top_layer_points = &points[level_offsets[0] as usize..level_offsets[1] as usize];
-        if top_layer_points.is_empty() {
-            return 0;
-        }
-        top_layer_points[0]
+        let top_layer_start = self.level_offsets[0] as u64;
+        let points_base = self.offsets.points_offset as u64;
+        self.get_u32_at(points_base + top_layer_start * 4)
+            .await
+            .unwrap_or(0)
     }
 
     pub async fn map_point_id_to_doc_id(&self, point_ids: &[u32]) -> Result<Vec<u128>> {
-        let doc_id_mapping = self.get_doc_id_mapping_slice().await?;
-        Ok(point_ids
-            .iter()
-            .map(|x| doc_id_mapping[*x as usize])
-            .collect())
+        let mapping_base = self.offsets.doc_id_mapping_offset as u64;
+        let mut result = Vec::with_capacity(point_ids.len());
+        for &point_id in point_ids {
+            let doc_id = self
+                .get_u128_at(mapping_base + (point_id as u64 * 16))
+                .await?;
+            result.push(doc_id);
+        }
+        Ok(result)
     }
 }
 
