@@ -9,7 +9,7 @@ use utils::distance::l2::L2DistanceCalculator;
 
 use crate::hnsw::block_based::index::BlockBasedHnsw;
 use crate::hnsw::mmap::index::Hnsw;
-use crate::ivf::index::IvfType;
+use crate::ivf::mmap::index::IvfType;
 use crate::query::planner::Planner;
 use crate::utils::SearchResult;
 

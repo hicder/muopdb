@@ -12,7 +12,7 @@ use utils::distance::l2::L2DistanceCalculator;
 use super::index::Spann;
 use crate::hnsw::block_based::index::BlockBasedHnsw;
 use crate::hnsw::reader::HnswReader;
-use crate::ivf::index::IvfType;
+use crate::ivf::mmap::index::IvfType;
 use crate::ivf::reader::IvfReader;
 
 pub struct SpannReader {

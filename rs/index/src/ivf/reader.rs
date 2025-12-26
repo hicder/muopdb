@@ -3,7 +3,7 @@ use compression::compression::IntSeqDecoder;
 use quantization::quantization::Quantizer;
 use utils::DistanceCalculator;
 
-use crate::ivf::index::Ivf;
+use crate::ivf::mmap::index::Ivf;
 use crate::posting_list::combined_file::FixedIndexFile;
 use crate::posting_list::storage::PostingListStorage;
 use crate::vector::fixed_file::FixedFileVectorStorage;
