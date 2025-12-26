@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 
 use anyhow::{Context, Result};
 use compression::compression::IntSeqDecoder;
-use compression::elias_fano::ef::EliasFanoDecoder;
+use compression::elias_fano::mmap_decoder::EliasFanoMmapDecoder;
 use compression::noc::noc::PlainDecoder;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
@@ -42,7 +42,7 @@ pub struct Ivf<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> {
 
 pub enum IvfType<Q: Quantizer> {
     L2Plain(Ivf<Q, L2DistanceCalculator, PlainDecoder>),
-    L2EF(Ivf<Q, L2DistanceCalculator, EliasFanoDecoder>),
+    L2EF(Ivf<Q, L2DistanceCalculator, EliasFanoMmapDecoder>),
 }
 
 impl<Q: Quantizer> IvfType<Q> {

@@ -71,7 +71,8 @@ mod tests {
     use std::fs;
     use std::mem::size_of;
 
-    use compression::elias_fano::ef::{EliasFano, EliasFanoDecoder};
+    use compression::elias_fano::ef::EliasFano;
+    use compression::elias_fano::mmap_decoder::EliasFanoMmapDecoder;
     use compression::noc::noc::{PlainDecoder, PlainEncoder};
     use quantization::noq::noq::NoQuantizer;
     use quantization::pq::pq::ProductQuantizer;
@@ -152,7 +153,7 @@ mod tests {
 
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, EliasFanoDecoder>()
+            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, EliasFanoMmapDecoder>()
             .expect("Failed to read index file");
 
         // Check if files were created
@@ -230,7 +231,7 @@ mod tests {
                 .posting_list_storage
                 .get_posting_list(i)
                 .expect("Failed to read vector from FixedIndexFile");
-            let decoder = EliasFanoDecoder::<u64>::new_decoder(byte_slice)
+            let decoder = EliasFanoMmapDecoder::<u64>::new_decoder(byte_slice)
                 .expect("Failed to create posting list decoder");
             for (val_ref, val_read) in ref_vector.iter().zip(decoder.get_iterator(byte_slice)) {
                 assert_eq!(val_ref, val_read);
@@ -336,7 +337,7 @@ mod tests {
             .expect("Failed to read ref index file");
         let reader = IvfReader::new(base_directory.clone());
         let index = reader
-            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, EliasFanoDecoder>()
+            .read::<NoQuantizer<L2DistanceCalculator>, L2DistanceCalculator, EliasFanoMmapDecoder>()
             .expect("Failed to read index file");
 
         let k = 3;
