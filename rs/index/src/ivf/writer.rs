@@ -66,6 +66,15 @@ where
 
         let num_features = ivf_builder.config().num_features;
         let num_clusters = ivf_builder.centroids().num_vectors();
+        let num_posting_lists = ivf_builder.posting_lists().len();
+
+        if num_clusters != num_posting_lists {
+            return Err(anyhow!(
+                "Mismatch between number of clusters ({}) and number of posting lists ({})",
+                num_clusters,
+                num_posting_lists
+            ));
+        }
         let num_vectors = ivf_builder.vectors().num_vectors();
 
         // Write vectors

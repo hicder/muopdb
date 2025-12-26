@@ -1,9 +1,13 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use compression::compression::IntSeqDecoder;
 use quantization::quantization::Quantizer;
+use utils::block_cache::BlockCache;
 use utils::DistanceCalculator;
 
-use crate::ivf::index::Ivf;
+use crate::ivf::block_based::index::BlockBasedIvf;
+use crate::ivf::mmap::index::Ivf;
 use crate::posting_list::combined_file::FixedIndexFile;
 use crate::posting_list::storage::PostingListStorage;
 use crate::vector::fixed_file::FixedFileVectorStorage;
@@ -63,6 +67,24 @@ impl IvfReader {
             num_clusters,
             quantizer,
         ))
+    }
+
+    pub async fn new_block_based_with_offset<Q: Quantizer>(
+        block_cache: Arc<BlockCache>,
+        base_directory: String,
+        index_offset: usize,
+        vector_offset: usize,
+    ) -> Result<BlockBasedIvf<Q>>
+    where
+        Q::QuantizedT: Send + Sync,
+    {
+        BlockBasedIvf::<Q>::new_with_offset(
+            block_cache,
+            base_directory,
+            index_offset,
+            vector_offset,
+        )
+        .await
     }
 }
 
