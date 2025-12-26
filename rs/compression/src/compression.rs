@@ -1,10 +1,13 @@
 use std::fs::File;
 use std::io::BufWriter;
+use std::sync::Arc;
 
 use anyhow::Result;
 use log::warn;
+use utils::block_cache::cache::{BlockCache, FileId};
 
 pub trait CompressionInt:
+    Send + Sync +
     Copy                                    // Allows copying values instead of moving
     + std::fmt::Debug                       // For debugging and printing
     + std::fmt::Display                     // For debugging and printing
@@ -162,4 +165,41 @@ pub trait IntSeqDecoder<T: CompressionInt = u64> {
     fn get_iterator<'a>(&self, byte_slice: &'a [u8]) -> Self::IteratorType<'a>
     where
         T: 'a;
+}
+
+#[async_trait::async_trait]
+pub trait AsyncIntSeqDecoder<T: CompressionInt = u64>: Send + Sync {
+    type IteratorType: AsyncIntSeqIterator<T>;
+
+    /// Creates a decoder
+    async fn new_decoder(
+        block_cache: Arc<BlockCache>,
+        file_id: FileId,
+        offset: u64,
+        buffer_size: usize,
+    ) -> Result<Self>
+    where
+        Self: Sized;
+
+    /// Creates an iterator that iterates the encoded data and decodes one element at a time on the
+    /// fly
+    fn into_iterator(self) -> Self::IteratorType;
+}
+
+#[async_trait::async_trait]
+pub trait AsyncIntSeqIterator<T: CompressionInt>: Send {
+    /// Get next element
+    async fn next(&mut self) -> Result<Option<T>>;
+
+    /// Get current element without advancing
+    async fn current(&mut self) -> Result<Option<T>>;
+
+    /// Skip to first element >= target
+    async fn skip_to(&mut self, target: T) -> Result<()>;
+
+    /// Current position in sequence
+    fn position(&self) -> usize;
+
+    /// Check if iterator is exhausted
+    fn is_exhausted(&self) -> bool;
 }
