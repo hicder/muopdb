@@ -52,8 +52,7 @@ fn vacuum(c: &mut Criterion) {
                 let reader = CollectionReader::new(
                     collection_name.to_string(),
                     base_directory.clone(),
-                    false,
-                    BlockCacheConfig::default(),
+                    Some(BlockCacheConfig::default()),
                 );
                 let collection = rt.block_on(reader.read::<NoQuantizerL2>()).unwrap();
                 let mut doc_id = 0;

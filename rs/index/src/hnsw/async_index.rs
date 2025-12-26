@@ -425,4 +425,253 @@ mod tests {
         let result = hnsw.ann_search(&query, 5, 100, false).await;
         assert_eq!(result.id_with_scores.len(), 5);
     }
+
+    // Tests adapted from builder.rs to verify AsyncHnsw works with the same test scenarios
+
+    #[tokio::test]
+    async fn test_async_hnsw_with_reindexed_builder() {
+        // This test verifies that AsyncHnsw can correctly read an index that has been reindexed
+        // Similar to test_hnsw_builder_reindex in builder.rs
+        let mut codebook = vec![];
+        for subvector_idx in 0..5 {
+            for i in 0..(1 << 1) {
+                let x = (subvector_idx * 2 + i) as f32;
+                let y = (subvector_idx * 2 + i) as f32;
+                codebook.push(x);
+                codebook.push(y);
+            }
+        }
+
+        let temp_dir = tempdir::TempDir::new("async_reindex_test").unwrap();
+        let base_directory = temp_dir.path().to_str().unwrap().to_string();
+        let vector_dir = format!("{}/vectors", base_directory);
+        fs::create_dir_all(vector_dir.clone()).unwrap();
+
+        let pq = ProductQuantizer::<L2DistanceCalculator>::new(
+            10,
+            2,
+            1,
+            codebook,
+            base_directory.clone(),
+        )
+        .expect("Can't create product quantizer");
+
+        let quantizer_dir = format!("{}/quantizer", base_directory);
+        fs::create_dir_all(&quantizer_dir).unwrap();
+        pq.write_to_directory(&quantizer_dir).unwrap();
+
+        // Use better HNSW parameters to ensure good connectivity
+        let mut builder = HnswBuilder::new(10, 10, 50, 1024, 4096, 5, pq, vector_dir);
+
+        // Insert enough vectors to ensure a well-connected graph
+        for i in 0..100 {
+            let vector = vec![i as f32; 10];
+            builder.insert(100 + i, &vector).unwrap();
+        }
+
+        // Reindex the builder
+        let reindex_dir = format!("{}/reindex_temp", base_directory);
+        fs::create_dir_all(&reindex_dir).unwrap();
+        builder.reindex(reindex_dir).unwrap();
+
+        // Write to disk
+        let hnsw_dir = format!("{}/hnsw", base_directory);
+        fs::create_dir_all(&hnsw_dir).unwrap();
+        let writer = HnswWriter::new(hnsw_dir.clone());
+        writer.write(&mut builder, false).unwrap();
+
+        // Now test with AsyncHnsw
+        let config = BlockCacheConfig::default();
+        let cache = Arc::new(BlockCache::new(config));
+
+        let hnsw =
+            AsyncHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(cache.clone(), base_directory)
+                .await
+                .unwrap();
+
+        // Verify we can search the reindexed index
+        let query = vec![50.0; 10];
+        // Use higher ef for better recall
+        let result = hnsw.ann_search(&query, 10, 50, false).await;
+        // Check we get at least some results (be lenient for probabilistic HNSW)
+        assert!(
+            result.id_with_scores.len() >= 5,
+            "Expected at least 5 results, got {}",
+            result.id_with_scores.len()
+        );
+        assert!(
+            result.id_with_scores.len() <= 10,
+            "Expected at most 10 results, got {}",
+            result.id_with_scores.len()
+        );
+
+        // Verify the doc IDs are in the expected range (100-199)
+        for id_score in result.id_with_scores {
+            assert!(
+                id_score.doc_id >= 100 && id_score.doc_id < 200,
+                "Doc ID {} out of expected range [100, 200)",
+                id_score.doc_id
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_async_hnsw_search_layer_comprehensive() {
+        // This test is adapted from test_search_layer in builder.rs
+        // It verifies AsyncHnsw search works correctly with a larger dataset
+        let dimension = 10;
+        let subvector_dimension = 2;
+        let num_bits = 1;
+
+        let mut codebook = vec![];
+        for subvector_idx in 0..dimension / subvector_dimension {
+            for i in 0..(1 << 1) {
+                let x = (subvector_idx * 2 + i) as f32;
+                let y = (subvector_idx * 2 + i) as f32;
+                codebook.push(x);
+                codebook.push(y);
+            }
+        }
+
+        let temp_dir = tempdir::TempDir::new("async_search_layer_test").unwrap();
+        let base_directory = temp_dir.path().to_str().unwrap().to_string();
+
+        let pq = ProductQuantizer::new(
+            dimension,
+            subvector_dimension,
+            num_bits,
+            codebook,
+            base_directory.clone(),
+        )
+        .expect("ProductQuantizer should be created.");
+
+        let quantizer_dir = format!("{}/quantizer", base_directory);
+        fs::create_dir_all(&quantizer_dir).unwrap();
+        pq.write_to_directory(&quantizer_dir).unwrap();
+
+        let vector_dir = format!("{}/vectors", base_directory);
+        fs::create_dir_all(vector_dir.clone()).unwrap();
+        let mut builder = HnswBuilder::<ProductQuantizer<L2DistanceCalculator>>::new(
+            5, 10, 20, 1024, 4096, 5, pq, vector_dir,
+        );
+
+        // Insert 100 vectors as in the original test
+        for i in 0..100 {
+            builder
+                .insert(i, &generate_random_vector(dimension))
+                .unwrap();
+        }
+
+        // Write the index to disk
+        let hnsw_dir = format!("{}/hnsw", base_directory);
+        fs::create_dir_all(&hnsw_dir).unwrap();
+        let writer = HnswWriter::new(hnsw_dir.clone());
+        writer.write(&mut builder, false).unwrap();
+
+        // Now test with AsyncHnsw
+        let config = BlockCacheConfig::default();
+        let cache = Arc::new(BlockCache::new(config));
+
+        let hnsw =
+            AsyncHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(cache.clone(), base_directory)
+                .await
+                .unwrap();
+
+        // Test search functionality with various parameters
+        let query = generate_random_vector(dimension);
+
+        // Test with k=10, ef=20 (same as builder test)
+        let result = hnsw.ann_search(&query, 10, 20, false).await;
+        assert_eq!(result.id_with_scores.len(), 10);
+
+        // Verify all returned doc_ids are valid (0-99)
+        for id_score in &result.id_with_scores {
+            assert!(id_score.doc_id < 100);
+        }
+
+        // Test with different k values
+        let result_5 = hnsw.ann_search(&query, 5, 20, false).await;
+        assert_eq!(result_5.id_with_scores.len(), 5);
+
+        let result_20 = hnsw.ann_search(&query, 20, 50, false).await;
+        assert_eq!(result_20.id_with_scores.len(), 20);
+    }
+
+    #[tokio::test]
+    async fn test_async_hnsw_multi_layer_structure() {
+        // This test verifies AsyncHnsw works correctly with multi-layer HNSW graphs
+        // Adapted from the layer structure tests in builder.rs
+        let dimension = 128;
+        let temp_dir = tempdir::TempDir::new("async_multi_layer_test").unwrap();
+        let base_directory = temp_dir.path().to_str().unwrap().to_string();
+
+        let pq_dir = format!("{}/quantizer", base_directory);
+        fs::create_dir_all(&pq_dir).unwrap();
+
+        let pq_config = ProductQuantizerConfig {
+            dimension,
+            subvector_dimension: 8,
+            num_bits: 8,
+        };
+
+        let pq_builder_config = ProductQuantizerBuilderConfig {
+            max_iteration: 1000,
+            batch_size: 4,
+        };
+
+        let datapoints: Vec<Vec<f32>> = (0..1000)
+            .map(|_| generate_random_vector(dimension))
+            .collect();
+
+        let mut pq_builder =
+            ProductQuantizerBuilder::<L2DistanceCalculator>::new(pq_config, pq_builder_config);
+        // Use more training data to avoid kmeans assertion failure (need at least batch_size samples)
+        for datapoint in datapoints.iter().take(500) {
+            pq_builder.add(datapoint.clone());
+        }
+        let pq = pq_builder.build(base_directory.clone()).unwrap();
+        pq.write_to_directory(&pq_dir).unwrap();
+
+        let vector_dir = format!("{}/vectors", base_directory);
+        fs::create_dir_all(&vector_dir).unwrap();
+
+        // Use parameters that encourage multi-layer structure
+        let mut hnsw_builder = HnswBuilder::new(10, 128, 20, 1024, 4096, 16, pq, vector_dir);
+
+        for (i, datapoint) in datapoints.iter().enumerate() {
+            hnsw_builder.insert(i as u128, datapoint).unwrap();
+        }
+
+        let hnsw_dir = format!("{}/hnsw", base_directory);
+        fs::create_dir_all(&hnsw_dir).unwrap();
+        let writer = HnswWriter::new(hnsw_dir.clone());
+        writer.write(&mut hnsw_builder, false).unwrap();
+
+        let config = BlockCacheConfig::default();
+        let cache = Arc::new(BlockCache::new(config));
+
+        let hnsw =
+            AsyncHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(cache.clone(), base_directory)
+                .await
+                .unwrap();
+
+        // Verify the index has multiple layers
+        assert!(
+            hnsw.get_header().num_layers > 1,
+            "Expected multi-layer structure"
+        );
+
+        // Test search works correctly across layers
+        let query = generate_random_vector(dimension);
+        let result = hnsw.ann_search(&query, 10, 100, false).await;
+        assert_eq!(result.id_with_scores.len(), 10);
+
+        // Verify results are sorted by distance
+        for i in 1..result.id_with_scores.len() {
+            assert!(
+                result.id_with_scores[i - 1].score <= result.id_with_scores[i].score,
+                "Results should be sorted by distance"
+            );
+        }
+    }
 }
