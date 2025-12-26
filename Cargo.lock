@@ -507,11 +507,13 @@ name = "compression"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bitvec",
  "env_logger",
  "log",
  "num-traits 0.2.19",
  "tempdir",
+ "tokio",
  "utils",
 ]
 
@@ -2755,6 +2757,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
+ "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2 0.6.1",
