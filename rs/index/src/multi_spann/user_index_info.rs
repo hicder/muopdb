@@ -18,6 +18,10 @@ pub struct UserIndexInfo {
 }
 
 impl UserIndexInfo {
+    /// Serializes the index information to a fixed-size little-endian byte array.
+    ///
+    /// # Returns
+    /// * `[u8; 112]` - The serialized bytes representing the index offsets and lengths.
     #[inline]
     pub fn to_le_bytes(&self) -> [u8; 112] {
         let mut bytes = [0u8; 112];
@@ -37,6 +41,13 @@ impl UserIndexInfo {
         bytes
     }
 
+    /// Deserializes the index information from a byte slice.
+    ///
+    /// # Arguments
+    /// * `bytes` - The byte slice containing little-endian encoded index info.
+    ///
+    /// # Returns
+    /// * `Self` - The reconstructed `UserIndexInfo` instance.
     #[inline]
     pub fn from_le_bytes(bytes: &[u8]) -> Self {
         let user_id = u128::from_le_bytes(bytes[0..16].try_into().unwrap());
@@ -78,18 +89,49 @@ impl Config for HashConfig {
     type EncodedValue = [u8; 112];
     type H = FxHashFn;
 
+    /// Encodes a 128-bit key as a little-endian byte array.
+    ///
+    /// # Arguments
+    /// * `k` - The 128-bit key.
+    ///
+    /// # Returns
+    /// * `Self::EncodedKey` - The 16-byte encoded key.
     #[inline]
     fn encode_key(k: &Self::Key) -> Self::EncodedKey {
         k.to_le_bytes()
     }
+
+    /// Encodes a `UserIndexInfo` value as a fixed-size byte array.
+    ///
+    /// # Arguments
+    /// * `v` - A reference to the value to encode.
+    ///
+    /// # Returns
+    /// * `Self::EncodedValue` - The 112-byte encoded value.
     #[inline]
     fn encode_value(v: &Self::Value) -> Self::EncodedValue {
         v.to_le_bytes()
     }
+
+    /// Decodes a 128-bit key from a encoded byte array.
+    ///
+    /// # Arguments
+    /// * `k` - The 16-byte encoded key.
+    ///
+    /// # Returns
+    /// * `Self::Key` - The decoded 128-bit key.
     #[inline]
     fn decode_key(k: &Self::EncodedKey) -> Self::Key {
         u128::from_le_bytes(*k)
     }
+
+    /// Decodes a `UserIndexInfo` value from an encoded byte array.
+    ///
+    /// # Arguments
+    /// * `v` - The 112-byte encoded value.
+    ///
+    /// # Returns
+    /// * `Self::Value` - The decoded `UserIndexInfo` instance.
     #[inline]
     fn decode_value(v: &Self::EncodedValue) -> Self::Value {
         UserIndexInfo::from_le_bytes(v)

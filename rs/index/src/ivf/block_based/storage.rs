@@ -12,6 +12,10 @@ use crate::posting_list::combined_file::{Header, Version};
 
 const PL_METADATA_LEN: usize = 2;
 
+/// Provides asynchronous access to IVF posting lists and related metadata stored on disk.
+///
+/// This storage handler manages the binary layout of the IVF index, including
+/// document ID mappings, centroids, and compressed posting lists.
 pub struct AsyncPostingListStorage {
     block_cache: Arc<BlockCache>,
     file_id: FileId,
@@ -24,10 +28,27 @@ pub struct AsyncPostingListStorage {
 }
 
 impl AsyncPostingListStorage {
+    /// Creates a new `AsyncPostingListStorage` handler for the specified file.
+    ///
+    /// # Arguments
+    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `file_path` - The path to the IVF index file.
+    ///
+    /// # Returns
+    /// * `Result<Self>` - A new storage handler instance or an error if initialization fails.
     pub async fn new(block_cache: Arc<BlockCache>, file_path: String) -> Result<Self> {
         Self::new_with_offset(block_cache, file_path, 0).await
     }
 
+    /// Creates a new `AsyncPostingListStorage` handler starting at a specific file offset.
+    ///
+    /// # Arguments
+    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `file_path` - The path to the IVF index file.
+    /// * `offset` - The byte offset where the IVF storage data begins.
+    ///
+    /// # Returns
+    /// * `Result<Self>` - A new storage handler instance or an error if initialization fails.
     pub async fn new_with_offset(
         block_cache: Arc<BlockCache>,
         file_path: String,
@@ -74,6 +95,14 @@ impl AsyncPostingListStorage {
         })
     }
 
+    /// Parses the IVF storage header from a byte buffer.
+    ///
+    /// # Arguments
+    /// * `buffer` - The byte buffer containing the encoded header.
+    /// * `offset` - The starting position within the buffer.
+    ///
+    /// # Returns
+    /// * `Result<(Header, usize)>` - The parsed header and the size of the header section.
     fn read_header(buffer: &[u8], offset: usize) -> Result<(Header, usize)> {
         let mut curr_offset = offset;
         let version = match buffer[curr_offset] {
@@ -113,11 +142,26 @@ impl AsyncPostingListStorage {
         Ok((header, curr_offset))
     }
 
+    /// Aligns a position to the next multiple of the specified alignment.
+    ///
+    /// # Arguments
+    /// * `current_position` - The current byte position.
+    /// * `alignment` - The desired byte alignment (must be a power of two).
+    ///
+    /// # Returns
+    /// * `usize` - The aligned byte position.
     fn align_to_next_boundary(current_position: usize, alignment: usize) -> usize {
         let mask = alignment - 1;
         (current_position + mask) & !mask
     }
 
+    /// Retrieves a 128-bit document ID for a given internal vector index.
+    ///
+    /// # Arguments
+    /// * `index` - The internal index of the vector.
+    ///
+    /// # Returns
+    /// * `Result<u128>` - The 128-bit document ID or an error if the index is out of bounds.
     pub async fn get_doc_id(&self, index: usize) -> Result<u128> {
         if index >= self.header.num_vectors as usize {
             return Err(anyhow!("Index out of bound"));
@@ -135,6 +179,13 @@ impl AsyncPostingListStorage {
         ))
     }
 
+    /// Retrieves the centroid vector for a given cluster index.
+    ///
+    /// # Arguments
+    /// * `index` - The index of the cluster.
+    ///
+    /// # Returns
+    /// * `Result<Vec<f32>>` - The centroid vector or an error if the index is out of bounds.
     pub async fn get_centroid(&self, index: usize) -> Result<Vec<f32>> {
         if index >= self.header.num_clusters as usize {
             return Err(anyhow!("Index out of bound"));
@@ -152,6 +203,13 @@ impl AsyncPostingListStorage {
         Ok(transmute_u8_to_slice::<f32>(&data).to_vec())
     }
 
+    /// Creates an asynchronous decoder for a specific posting list.
+    ///
+    /// # Arguments
+    /// * `index` - The index of the cluster/posting list to decode.
+    ///
+    /// # Returns
+    /// * `Result<BlockBasedEliasFanoDecoder<u64>>` - A decoder for the posting list.
     pub async fn get_posting_list_decoder(
         &self,
         index: usize,
@@ -184,6 +242,10 @@ impl AsyncPostingListStorage {
         .await
     }
 
+    /// Returns a reference to the IVF storage header.
+    ///
+    /// # Returns
+    /// * `&Header` - A reference to the internal header structure.
     pub fn header(&self) -> &Header {
         &self.header
     }

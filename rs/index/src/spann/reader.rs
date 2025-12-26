@@ -26,6 +26,14 @@ pub struct SpannReader {
 }
 
 impl SpannReader {
+    /// Creates a new `SpannReader` for the specified base directory and IVF type.
+    ///
+    /// # Arguments
+    /// * `base_directory` - The directory where the SPANN index files are stored.
+    /// * `ivf_type` - The encoding type used for the IVF posting lists.
+    ///
+    /// # Returns
+    /// * `Self` - A new `SpannReader` instance.
     pub fn new(base_directory: String, ivf_type: IntSeqEncodingType) -> Self {
         Self {
             base_directory,
@@ -37,6 +45,18 @@ impl SpannReader {
         }
     }
 
+    /// Creates a new `SpannReader` with specific file offsets for each component.
+    ///
+    /// # Arguments
+    /// * `base_directory` - The directory where the SPANN index files are stored.
+    /// * `centroids_index_offset` - Byte offset for the centroids HNSW index.
+    /// * `centroids_vector_offset` - Byte offset for the centroids vector storage.
+    /// * `ivf_index_offset` - Byte offset for the IVF index.
+    /// * `ivf_vector_offset` - Byte offset for the IVF vector storage.
+    /// * `ivf_type` - The encoding type used for the IVF posting lists.
+    ///
+    /// # Returns
+    /// * `Self` - A new `SpannReader` instance.
     pub fn new_with_offsets(
         base_directory: String,
         centroids_index_offset: usize,
@@ -55,6 +75,10 @@ impl SpannReader {
         }
     }
 
+    /// Reads and initializes a synchronous `Spann` index from disk.
+    ///
+    /// # Returns
+    /// * `Result<Spann<Q>>` - The initialized SPANN index or an error if reading fails.
     pub fn read<Q: Quantizer>(&self) -> Result<Spann<Q>> {
         let posting_list_path = format!("{}/ivf", self.base_directory);
         let centroid_path = format!("{}/centroids", self.base_directory);
@@ -87,6 +111,13 @@ impl SpannReader {
         }
     }
 
+    /// Reads and initializes an asynchronous `Spann` index from disk using block caching.
+    ///
+    /// # Arguments
+    /// * `block_cache` - The shared block cache for asynchronous file I/O.
+    ///
+    /// # Returns
+    /// * `Result<Spann<Q>>` - The initialized SPANN index or an error if reading fails.
     pub async fn read_async<Q: Quantizer>(&self, block_cache: Arc<BlockCache>) -> Result<Spann<Q>>
     where
         Q::QuantizedT: Send + Sync,

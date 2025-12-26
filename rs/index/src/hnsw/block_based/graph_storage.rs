@@ -6,15 +6,26 @@ use utils::block_cache::BlockCache;
 
 use crate::hnsw::writer::Header;
 
+/// Stores the byte offsets for different sections of the HNSW graph file.
 pub struct GraphOffsets {
+    /// The start offset of the data block (following the header).
     pub data_offset: usize,
+    /// The byte offset where the edges section starts.
     pub edges_offset: usize,
+    /// The byte offset where the points section starts.
     pub points_offset: usize,
+    /// The byte offset where the edge offsets section starts.
     pub edge_offsets_offset: usize,
+    /// The byte offset where the level offsets section starts.
     pub level_offsets_offset: usize,
+    /// The byte offset where the doc ID mapping section starts.
     pub doc_id_mapping_offset: usize,
 }
 
+/// Provides block-based asynchronous access to HNSW graph data stored on disk.
+///
+/// This storage implementation uses a `BlockCache` to efficiently read parts of the
+/// graph file without loading the entire index into memory.
 pub struct BlockBasedHnswGraphStorage {
     block_cache: Arc<BlockCache>,
     graph_file_id: u64,
@@ -24,6 +35,14 @@ pub struct BlockBasedHnswGraphStorage {
 }
 
 impl BlockBasedHnswGraphStorage {
+    /// Creates a new `BlockBasedHnswGraphStorage` by opening the graph file at the default location.
+    ///
+    /// # Arguments
+    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `base_directory` - The base directory where the HNSW index is stored.
+    ///
+    /// # Returns
+    /// * `Result<Self>` - A new instance of the storage handler or an error if the file cannot be opened or parsed.
     pub async fn new(block_cache: Arc<BlockCache>, base_directory: String) -> Result<Self> {
         let graph_path = format!("{}/hnsw/index", base_directory);
         let file_id = {
@@ -53,6 +72,25 @@ impl BlockBasedHnswGraphStorage {
         Ok(storage)
     }
 
+    /// Creates a new `BlockBasedHnswGraphStorage` starting at a specific offset within the graph file.
+    ///
+    /// This is useful when the HNSW graph is embedded within another file structure.
+    ///
+    /// # Arguments
+    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `base_directory` - The base directory where the HNSW index is stored.
+    /// * `data_offset` - The byte offset where the graph data starts.
+    /// Creates a new `BlockBasedHnswGraphStorage` starting at a specific offset within the graph file.
+    ///
+    /// This is useful when the HNSW graph is embedded within another file structure.
+    ///
+    /// # Arguments
+    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `base_directory` - The base directory where the HNSW index is stored.
+    /// * `data_offset` - The byte offset where the graph data starts.
+    ///
+    /// # Returns
+    /// * `Result<Self>` - A new instance of the storage handler or an error if the file cannot be opened or parsed.
     pub async fn new_with_offset(
         block_cache: Arc<BlockCache>,
         base_directory: String,
@@ -88,6 +126,13 @@ impl BlockBasedHnswGraphStorage {
         Ok(storage)
     }
 
+    /// Parses the HNSW header from raw bytes.
+    ///
+    /// # Arguments
+    /// * `data` - A byte slice containing the encoded header.
+    ///
+    /// # Returns
+    /// * `Header` - The parsed header structure.
     fn parse_header(data: &[u8]) -> Header {
         let mut offset = 0;
         let version = match data[offset] {
@@ -128,6 +173,14 @@ impl BlockBasedHnswGraphStorage {
         }
     }
 
+    /// Calculates the byte offsets for all sections of the graph based on header information.
+    ///
+    /// # Arguments
+    /// * `header` - The HNSW index header containing segment lengths.
+    /// * `data_offset` - The base offset where data sections begin.
+    ///
+    /// # Returns
+    /// * `GraphOffsets` - A struct containing the absolute byte offsets of all graph sections.
     fn calculate_offsets(header: &Header, data_offset: usize) -> GraphOffsets {
         let offset = data_offset;
         let edges_padding = (4 - (offset % 4)) % 4;
@@ -153,16 +206,30 @@ impl BlockBasedHnswGraphStorage {
         }
     }
 
+    /// Returns a reference to the HNSW index header.
+    ///
+    /// # Returns
+    /// * `&Header` - A reference to the internal header store.
     pub fn header(&self) -> &Header {
         &self.header
     }
 
+    /// Returns a reference to the calculated section offsets.
+    ///
+    /// # Returns
+    /// * `&GraphOffsets` - A reference to the internal offsets map.
     pub fn offsets(&self) -> &GraphOffsets {
         &self.offsets
     }
 
-    /// NOTE: This method is very expensive as it loads the entire edges slice into memory.
+    /// Reads all edges into a `Vec<u32>`.
+    ///
+    /// # Warning
+    /// This method is very expensive as it loads the entire edges slice into memory.
     /// Use targeted reads if possible.
+    ///
+    /// # Returns
+    /// * `Result<Vec<u32>>` - A vector of all edges or an error if the read fails.
     pub async fn get_edges_slice(&self) -> Result<Vec<u32>> {
         let start = self.offsets.edges_offset as u64;
         let length = self.header.edges_len;
@@ -186,8 +253,14 @@ impl BlockBasedHnswGraphStorage {
         Ok(result)
     }
 
-    /// NOTE: This method is very expensive as it loads the entire edge offsets slice into memory.
+    /// Reads all edge offsets into a `Vec<u64>`.
+    ///
+    /// # Warning
+    /// This method is very expensive as it loads the entire edge offsets slice into memory.
     /// Use targeted reads if possible.
+    ///
+    /// # Returns
+    /// * `Result<Vec<u64>>` - A vector of all edge offsets or an error if the read fails.
     pub async fn get_edge_offsets_slice(&self) -> Result<Vec<u64>> {
         let start = self.offsets.edge_offsets_offset as u64;
         let length = self.header.edge_offsets_len;
@@ -211,8 +284,14 @@ impl BlockBasedHnswGraphStorage {
         Ok(result)
     }
 
-    /// NOTE: This method is very expensive as it loads the entire points slice into memory.
+    /// Reads all points into a `Vec<u32>`.
+    ///
+    /// # Warning
+    /// This method is very expensive as it loads the entire points slice into memory.
     /// Use targeted reads if possible.
+    ///
+    /// # Returns
+    /// * `Result<Vec<u32>>` - A vector of all points or an error if the read fails.
     pub async fn get_points_slice(&self) -> Result<Vec<u32>> {
         let start = self.offsets.points_offset as u64;
         let length = self.header.points_len;
@@ -237,7 +316,11 @@ impl BlockBasedHnswGraphStorage {
     }
 
     /// Returns the level offsets slice.
+    ///
     /// This is relatively small and already cached in `self.level_offsets`.
+    ///
+    /// # Returns
+    /// * `Result<Vec<u64>>` - A vector of level offsets or an error if the read fails.
     pub async fn get_level_offsets_slice(&self) -> Result<Vec<u64>> {
         let start = self.offsets.level_offsets_offset as u64;
         let length = self.header.level_offsets_len;
@@ -261,8 +344,14 @@ impl BlockBasedHnswGraphStorage {
         Ok(result)
     }
 
-    /// NOTE: This method is very expensive as it loads the entire doc ID mapping slice into memory.
+    /// Reads the entire doc ID mapping into a `Vec<u128>`.
+    ///
+    /// # Warning
+    /// This method is very expensive as it loads the entire doc ID mapping slice into memory.
     /// Use targeted reads if possible.
+    ///
+    /// # Returns
+    /// * `Result<Vec<u128>>` - A vector mapping point IDs to doc IDs or an error if the read fails.
     pub async fn get_doc_id_mapping_slice(&self) -> Result<Vec<u128>> {
         let start = self.offsets.doc_id_mapping_offset as u64;
         let length = self.header.doc_id_mapping_len;
@@ -286,6 +375,13 @@ impl BlockBasedHnswGraphStorage {
         Ok(result)
     }
 
+    /// Reads a 32-bit unsigned integer at the given byte offset.
+    ///
+    /// # Arguments
+    /// * `offset` - The byte offset from the start of the file.
+    ///
+    /// # Returns
+    /// * `Result<u32>` - The parsed value or an error if the read fails.
     async fn get_u32_at(&self, offset: u64) -> Result<u32> {
         let data = self
             .block_cache
@@ -295,6 +391,13 @@ impl BlockBasedHnswGraphStorage {
         Ok(LittleEndian::read_u32(&data))
     }
 
+    /// Reads a 64-bit unsigned integer at the given byte offset.
+    ///
+    /// # Arguments
+    /// * `offset` - The byte offset from the start of the file.
+    ///
+    /// # Returns
+    /// * `Result<u64>` - The parsed value or an error if the read fails.
     async fn get_u64_at(&self, offset: u64) -> Result<u64> {
         let data = self
             .block_cache
@@ -304,6 +407,13 @@ impl BlockBasedHnswGraphStorage {
         Ok(LittleEndian::read_u64(&data))
     }
 
+    /// Reads a 128-bit unsigned integer at the given byte offset.
+    ///
+    /// # Arguments
+    /// * `offset` - The byte offset from the start of the file.
+    ///
+    /// # Returns
+    /// * `Result<u128>` - The parsed value or an error if the read fails.
     async fn get_u128_at(&self, offset: u64) -> Result<u128> {
         let data = self
             .block_cache
@@ -313,6 +423,17 @@ impl BlockBasedHnswGraphStorage {
         Ok(LittleEndian::read_u128(&data))
     }
 
+    /// Searches for a point ID within a given range of point indices.
+    ///
+    /// This is used to find the internal index of a point at a specific HNSW layer.
+    ///
+    /// # Arguments
+    /// * `point_id` - The ID of the point to find.
+    /// * `start_idx` - The starting index in the points section.
+    /// * `end_idx` - The ending index in the points section.
+    ///
+    /// # Returns
+    /// * `Result<Option<usize>>` - The index within the points section if found, or `None`.
     async fn find_point_in_range(
         &self,
         point_id: u32,
@@ -345,6 +466,14 @@ impl BlockBasedHnswGraphStorage {
         Ok(None)
     }
 
+    /// Retrieves the edges (neighboring point IDs) for a point at a specific layer.
+    ///
+    /// # Arguments
+    /// * `point_id` - The ID of the point.
+    /// * `layer` - The layer index (0 is base layer).
+    ///
+    /// # Returns
+    /// * `Option<Vec<u32>>` - A vector of neighbor IDs, or `None` if the point or layer is not found.
     pub async fn get_edges_for_point(&self, point_id: u32, layer: u8) -> Option<Vec<u32>> {
         let num_layers = self.header.num_layers as usize;
         if layer as usize >= num_layers {
@@ -414,6 +543,10 @@ impl BlockBasedHnswGraphStorage {
         Some(result)
     }
 
+    /// Returns the entry point ID at the highest layer of the HNSW graph.
+    ///
+    /// # Returns
+    /// * `u32` - The ID of the entry point. Returns 0 as a fallback.
     pub async fn get_entry_point_top_layer(&self) -> u32 {
         if self.header.num_layers == 1 {
             let num_points = (self.header.edge_offsets_len / 8) as usize - 1;
@@ -443,6 +576,13 @@ impl BlockBasedHnswGraphStorage {
             .unwrap_or(0)
     }
 
+    /// Maps a batch of point IDs to their corresponding document IDs.
+    ///
+    /// # Arguments
+    /// * `point_ids` - A slice of internal point IDs.
+    ///
+    /// # Returns
+    /// * `Result<Vec<u128>>` - A vector of document IDs in the same order as `point_ids`.
     pub async fn map_point_id_to_doc_id(&self, point_ids: &[u32]) -> Result<Vec<u128>> {
         let mapping_base = self.offsets.doc_id_mapping_offset as u64;
         let mut result = Vec::with_capacity(point_ids.len());

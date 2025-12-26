@@ -7,6 +7,13 @@ pub struct WhiteSpaceTokenizer {}
 impl Tokenizer for WhiteSpaceTokenizer {
     type TokenStream<'a> = WhiteSpaceTokenStream<'a>;
 
+    /// Creates a new `WhiteSpaceTokenStream` for the given input text.
+    ///
+    /// # Arguments
+    /// * `text` - The input string to be tokenized by whitespace.
+    ///
+    /// # Returns
+    /// * `WhiteSpaceTokenStream<'a>` - A stream that splits the input into tokens based on whitespace.
     fn input<'a>(&self, text: &'a str) -> WhiteSpaceTokenStream<'a> {
         WhiteSpaceTokenStream::new(text)
     }
@@ -19,6 +26,13 @@ pub struct WhiteSpaceTokenStream<'a> {
 }
 
 impl<'a> WhiteSpaceTokenStream<'a> {
+    /// Creates a new `WhiteSpaceTokenStream` from the provided text.
+    ///
+    /// # Arguments
+    /// * `text` - The string to be tokenized.
+    ///
+    /// # Returns
+    /// * `Self` - A new token stream instance.
     pub fn new(text: &'a str) -> Self {
         WhiteSpaceTokenStream {
             text,
@@ -27,6 +41,10 @@ impl<'a> WhiteSpaceTokenStream<'a> {
         }
     }
 
+    /// Skips leading whitespace characters and returns the byte offset of the next token's start.
+    ///
+    /// # Returns
+    /// * `Option<usize>` - The byte offset of the token start, or `None` if the end of the text is reached.
     fn find_start(&mut self) -> Option<usize> {
         loop {
             let next_value = self.chars.next();
@@ -45,6 +63,10 @@ impl<'a> WhiteSpaceTokenStream<'a> {
         }
     }
 
+    /// Traverses non-whitespace characters and returns the byte offset of the next whitespace or the end of the text.
+    ///
+    /// # Returns
+    /// * `usize` - The byte offset where the current token ends.
     fn find_end(&mut self) -> usize {
         loop {
             let next_value = self.chars.next();
@@ -63,6 +85,10 @@ impl<'a> WhiteSpaceTokenStream<'a> {
 }
 
 impl<'a> TokenStream for WhiteSpaceTokenStream<'a> {
+    /// Advances the stream to the next whitespace-separated token.
+    ///
+    /// # Returns
+    /// * `bool` - `true` if a token was successfully found, `false` otherwise.
     fn advance(&mut self) -> bool {
         if let Some(start_offset) = self.find_start() {
             let end_offset = self.find_end();
@@ -73,10 +99,18 @@ impl<'a> TokenStream for WhiteSpaceTokenStream<'a> {
         }
     }
 
+    /// Returns the most recently extracted token.
+    ///
+    /// # Returns
+    /// * `Token` - The current token instance.
     fn token(&self) -> Token {
         self.token.clone()
     }
 
+    /// Advances the stream and returns the next token if available.
+    ///
+    /// # Returns
+    /// * `Option<Token>` - The next token in the stream, or `None` if end-of-input is reached.
     fn next(&mut self) -> Option<Token> {
         if self.advance() {
             Some(self.token.clone())

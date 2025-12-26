@@ -21,10 +21,25 @@ pub struct SpannWriter {
 }
 
 impl SpannWriter {
+    /// Creates a new `SpannWriter` with the specified base directory.
+    ///
+    /// # Arguments
+    /// * `base_directory` - The directory where the SPANN index will be written.
+    ///
+    /// # Returns
+    /// * `Self` - A new `SpannWriter` instance.
     pub fn new(base_directory: String) -> Self {
         Self { base_directory }
     }
 
+    /// Selects a specified number of unique random row indices and returns them sorted.
+    ///
+    /// # Arguments
+    /// * `num_rows` - The total number of rows available.
+    /// * `num_random_rows` - The number of random rows to select.
+    ///
+    /// # Returns
+    /// * `Vec<u64>` - A sorted vector of randomly selected row indices.
     fn get_sorted_random_rows(num_rows: usize, num_random_rows: usize) -> Vec<u64> {
         let mut v = (0..num_rows).map(|x| x as u64).collect::<Vec<_>>();
         v.shuffle(&mut rand::thread_rng());
@@ -33,6 +48,15 @@ impl SpannWriter {
         ret
     }
 
+    /// Trains a product quantizer and writes the IVF index to disk.
+    ///
+    /// # Arguments
+    /// * `ivf_directory` - The directory where the IVF index will be written.
+    /// * `index_writer_config` - The SPANN builder configuration.
+    /// * `ivf_builder` - The IVF builder containing the vector data.
+    ///
+    /// # Returns
+    /// * `Result<()>` - Ok if the write completes successfully, or an error.
     pub fn write_ivf_pq(
         ivf_directory: &str,
         index_writer_config: &SpannBuilderConfig,
@@ -96,6 +120,15 @@ impl SpannWriter {
         Ok(())
     }
 
+    /// Writes the IVF index to disk without product quantization.
+    ///
+    /// # Arguments
+    /// * `ivf_directory` - The directory where the IVF index will be written.
+    /// * `index_writer_config` - The SPANN builder configuration.
+    /// * `ivf_builder` - The IVF builder containing the vector data.
+    ///
+    /// # Returns
+    /// * `Result<()>` - Ok if the write completes successfully, or an error.
     pub fn write_ivf_noq(
         ivf_directory: &str,
         index_writer_config: &SpannBuilderConfig,
@@ -129,6 +162,13 @@ impl SpannWriter {
         Ok(())
     }
 
+    /// Writes the entire SPANN index (centroids and posting lists) to disk.
+    ///
+    /// # Arguments
+    /// * `spann_builder` - The SPANN builder containing the trained index data.
+    ///
+    /// # Returns
+    /// * `Result<()>` - Ok if the entire index is written successfully, or an error.
     pub fn write(&self, spann_builder: &mut SpannBuilder) -> Result<()> {
         let index_writer_config = &spann_builder.config;
 

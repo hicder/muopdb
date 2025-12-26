@@ -27,6 +27,14 @@ pub struct MultiSpannBuilder {
 }
 
 impl MultiSpannBuilder {
+    /// Creates a new `MultiSpannBuilder` with the specified configuration and base directory.
+    ///
+    /// # Arguments
+    /// * `config` - The overall collection configuration.
+    /// * `base_directory` - The base directory where user-specific indices will be built.
+    ///
+    /// # Returns
+    /// * `Result<Self>` - A new `MultiSpannBuilder` instance or an error.
     pub fn new(config: CollectionConfig, base_directory: String) -> Result<Self> {
         Ok(Self {
             config,
@@ -112,10 +120,13 @@ impl MultiSpannBuilder {
         spann_builder.is_valid_doc_id(doc_id)
     }
 
-    /// Builds the segment for each user.
-    /// Iterates through the inner_builders, triggers the build process for each SpannBuilder.
-    /// Additionally, build the blocked bloom filter, which will later be used for optimizing
-    /// deletions.
+    /// Builds the index segment for each user.
+    ///
+    /// Iterates through all internal builders, triggers the final build process for each
+    /// `SpannBuilder`, and constructs a blocked bloom filter used for optimizing future deletions.
+    ///
+    /// # Returns
+    /// * `Result<()>` - `Ok(())` if building all segments and the bloom filter succeeds, or an error.
     pub fn build(&self) -> Result<()> {
         let mut bloom_filter = BlockedBloomFilter::new(
             self.doc_id_counts.load(Ordering::Relaxed) as usize,
@@ -143,6 +154,10 @@ impl MultiSpannBuilder {
         }
     }
 
+    /// Returns a list of all user IDs that have data in this builder.
+    ///
+    /// # Returns
+    /// * `Vec<u128>` - A vector of 128-bit user IDs.
     pub fn user_ids(&self) -> Vec<u128> {
         self.inner_builders
             .iter()
@@ -150,12 +165,21 @@ impl MultiSpannBuilder {
             .collect()
     }
 
+    /// Returns the base directory of the builder.
+    ///
+    /// # Returns
+    /// * `&str` - The base directory path string.
     pub fn base_directory(&self) -> &str {
         &self.base_directory
     }
 
-    /// This function will remove and return the SPANN builder for the given user id.
-    /// If the builder is not found, it will return None.
+    /// Removes and returns the `SpannBuilder` associated with a specific user ID.
+    ///
+    /// # Arguments
+    /// * `user_id` - The ID of the user whose builder should be removed.
+    ///
+    /// # Returns
+    /// * `Option<SpannBuilder>` - The user's `SpannBuilder` if it exists, otherwise `None`.
     pub fn take_builder_for_user(&self, user_id: u128) -> Option<SpannBuilder> {
         self.inner_builders
             .remove(&user_id)
@@ -163,10 +187,18 @@ impl MultiSpannBuilder {
             .or(None)
     }
 
+    /// Returns a reference to the built bloom filter, if it has been constructed.
+    ///
+    /// # Returns
+    /// * `Option<&BlockedBloomFilter>` - A reference to the bloom filter or `None` if not yet built.
     pub fn bloom_filter(&self) -> Option<&BlockedBloomFilter> {
         self.bloom_filter.get()
     }
 
+    /// Returns a reference to the collection configuration.
+    ///
+    /// # Returns
+    /// * `&CollectionConfig` - A reference to the internal configuration.
     pub fn config(&self) -> &CollectionConfig {
         &self.config
     }

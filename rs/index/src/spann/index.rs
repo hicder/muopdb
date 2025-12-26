@@ -19,6 +19,16 @@ pub enum Centroids {
 }
 
 impl Centroids {
+    /// Performs an approximate nearest neighbor search on the centroid index.
+    ///
+    /// # Arguments
+    /// * `query` - The query vector.
+    /// * `k` - The number of nearest centroids to return.
+    /// * `ef` - The search depth parameter (for HNSW).
+    /// * `record_pages` - Whether to track block cache hits/misses.
+    ///
+    /// # Returns
+    /// * `SearchResult` - The search results containing centroid IDs and distances.
     pub async fn ann_search(
         &self,
         query: &[f32],
@@ -45,6 +55,14 @@ impl<Q: Quantizer> Spann<Q>
 where
     Q::QuantizedT: Send + Sync,
 {
+    /// Creates a new synchronous `Spann` index.
+    ///
+    /// # Arguments
+    /// * `centroids` - The HNSW index for centroids (in-memory/mmap).
+    /// * `posting_lists` - The IVF posting lists (mmap).
+    ///
+    /// # Returns
+    /// * `Self` - A new `Spann` instances.
     pub fn new(
         centroids: Hnsw<NoQuantizer<L2DistanceCalculator>>,
         posting_lists: IvfType<Q>,
@@ -55,6 +73,14 @@ where
         }
     }
 
+    /// Creates a new asynchronous `Spann` index using block-based HNSW for centroids.
+    ///
+    /// # Arguments
+    /// * `centroids` - The block-based HNSW index for centroids.
+    /// * `posting_lists` - The IVF posting lists (mmap).
+    ///
+    /// # Returns
+    /// * `Self` - A new `Spann` instance.
     pub fn new_async(
         centroids: BlockBasedHnsw<NoQuantizer<L2DistanceCalculator>>,
         posting_lists: IvfType<Q>,
@@ -65,18 +91,31 @@ where
         }
     }
 
+    /// Returns a reference to the centroids index.
+    ///
+    /// # Returns
+    /// * `&Centroids` - A reference to the underlying centroids storage.
     #[cfg(test)]
     pub fn get_centroids(&self) -> &Centroids {
         &self.centroids
     }
 
+    /// Returns a reference to the posting lists.
+    ///
+    /// # Returns
+    /// * `&IvfType<Q>` - A reference to the underlying IVF storage.
     #[cfg(test)]
     pub fn get_posting_lists(&self) -> &IvfType<Q> {
         &self.posting_lists
     }
 
-    /// Get the doc_id for a point_id
-    /// Returns None if the point_id is not found
+    /// Returns the document ID associated with a point ID.
+    ///
+    /// # Arguments
+    /// * `point_id` - The internal point ID.
+    ///
+    /// # Returns
+    /// * `Option<u128>` - The 128-bit document ID if found, or `None`.
     pub fn get_doc_id(&self, point_id: u32) -> Option<u128> {
         self.posting_lists
             .get_index_storage()
@@ -84,12 +123,28 @@ where
             .ok()
     }
 
-    /// This is very expensive and should only be used for testing.
+    /// Returns the point ID associated with a document ID.
+    ///
+    /// # Warning
+    /// This is very expensive and should only be used for testing as it performs a scan.
+    ///
+    /// # Arguments
+    /// * `doc_id` - The 128-bit document ID.
+    ///
+    /// # Returns
+    /// * `Option<u32>` - The internal point ID if found, or `None`.
     #[cfg(test)]
     pub fn get_point_id(&self, doc_id: u128) -> Option<u32> {
         self.posting_lists.get_point_id(doc_id)
     }
 
+    /// Retrieves the quantized vector data for a point ID.
+    ///
+    /// # Arguments
+    /// * `point_id` - The internal point ID.
+    ///
+    /// # Returns
+    /// * `Option<&[Q::QuantizedT]>` - A reference to the quantized vector data if found.
     pub fn get_vector(&self, point_id: u32) -> Option<&[Q::QuantizedT]> {
         self.posting_lists
             .get_vector_storage()
@@ -97,18 +152,43 @@ where
             .ok()
     }
 
+    /// Invalidates a document ID in the index.
+    ///
+    /// # Arguments
+    /// * `doc_id` - The document ID to invalidate.
+    ///
+    /// # Returns
+    /// * `bool` - `true` if the document was successfully invalidated, `false` otherwise.
     pub fn invalidate(&self, doc_id: u128) -> bool {
         self.posting_lists.invalidate(doc_id)
     }
 
+    /// Invalidates a batch of document IDs.
+    ///
+    /// # Arguments
+    /// * `doc_ids` - A slice of document IDs to invalidate.
+    ///
+    /// # Returns
+    /// * `Vec<u128>` - The list of document IDs that were successfully invalidated.
     pub fn invalidate_batch(&self, doc_ids: &[u128]) -> Vec<u128> {
         self.posting_lists.invalidate_batch(doc_ids)
     }
 
+    /// Checks if a document ID is invalidated.
+    ///
+    /// # Arguments
+    /// * `doc_id` - The document ID to check.
+    ///
+    /// # Returns
+    /// * `bool` - `true` if the document is invalidated, `false` otherwise.
     pub fn is_invalidated(&self, doc_id: u128) -> bool {
         self.posting_lists.is_invalidated(doc_id)
     }
 
+    /// Returns the total number of documents in the index.
+    ///
+    /// # Returns
+    /// * `usize` - The document count.
     pub fn count_of_all_documents(&self) -> usize {
         self.posting_lists.num_vectors()
     }
@@ -118,6 +198,15 @@ impl<Q: Quantizer> Spann<Q>
 where
     Q::QuantizedT: Send + Sync,
 {
+    /// Performs a search for the nearest neighbors of a query vector.
+    ///
+    /// # Arguments
+    /// * `query` - The query vector.
+    /// * `params` - Search parameters including top_k and num_probes.
+    /// * `planner` - An optional search planner for additional filtering.
+    ///
+    /// # Returns
+    /// * `Option<SearchResult>` - The search results if any, or `None`.
     pub async fn search(
         &self,
         query: Vec<f32>,

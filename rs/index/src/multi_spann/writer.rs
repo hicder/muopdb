@@ -22,10 +22,25 @@ pub struct MultiSpannWriter {
 }
 
 impl MultiSpannWriter {
+    /// Creates a new `MultiSpannWriter` with the specified base directory.
+    ///
+    /// # Arguments
+    /// * `base_directory` - The directory where the combined multi-user index will be written.
+    ///
+    /// # Returns
+    /// * `Self` - A new `MultiSpannWriter` instance.
     pub fn new(base_directory: String) -> Self {
         Self { base_directory }
     }
 
+    /// Writes a shared quantizer configuration or an empty/no-op quantizer for the IVF index.
+    ///
+    /// # Arguments
+    /// * `ivf_directory` - The directory where the IVF quantizer files will be stored.
+    /// * `config` - The overall collection configuration.
+    ///
+    /// # Returns
+    /// * `Result<()>` - `Ok(())` if the write is successful, or an error.
     fn write_common_ivf_quantizer(ivf_directory: &str, config: &CollectionConfig) -> Result<()> {
         let ivf_quantizer_directory = format!("{}/quantizer", ivf_directory);
         fs::create_dir_all(&ivf_quantizer_directory)?;
@@ -56,6 +71,14 @@ impl MultiSpannWriter {
         Ok(())
     }
 
+    /// Combines multiple per-user SPANN indices into a single set of aggregated files and
+    /// generates a mapping table.
+    ///
+    /// # Arguments
+    /// * `multi_spann` - The multi-user SPANN builder containing individual user data.
+    ///
+    /// # Returns
+    /// * `Result<Vec<UserIndexInfo>>` - A list of index offsets and lengths for each user or an error.
     pub fn write(&self, multi_spann: &mut MultiSpannBuilder) -> Result<Vec<UserIndexInfo>> {
         let mut user_ids = multi_spann.user_ids();
         user_ids.sort();

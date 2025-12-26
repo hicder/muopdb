@@ -13,10 +13,25 @@ pub struct MultiSpannReader {
 }
 
 impl MultiSpannReader {
+    /// Creates a new `MultiSpannReader` for the specified base directory.
+    ///
+    /// # Arguments
+    /// * `base_directory` - The directory where the multi-user SPANN index is stored.
+    ///
+    /// # Returns
+    /// * `Self` - A new `MultiSpannReader` instance.
     pub fn new(base_directory: String) -> Self {
         Self { base_directory }
     }
 
+    /// Reads and initializes a synchronous `MultiSpannIndex` from disk.
+    ///
+    /// # Arguments
+    /// * `ivf_type` - The encoding type used for IVF posting lists.
+    /// * `num_features` - The number of dimensions in the vectors.
+    ///
+    /// # Returns
+    /// * `Result<MultiSpannIndex<Q>>` - The initialized multi-user index or an error.
     pub async fn read<Q: Quantizer>(
         &self,
         ivf_type: IntSeqEncodingType,
@@ -37,6 +52,15 @@ impl MultiSpannReader {
         .await
     }
 
+    /// Reads and initializes an asynchronous `MultiSpannIndex` from disk using block caching.
+    ///
+    /// # Arguments
+    /// * `ivf_type` - The encoding type used for IVF posting lists.
+    /// * `num_features` - The number of dimensions in the vectors.
+    /// * `block_cache` - The shared block cache for asynchronous I/O.
+    ///
+    /// # Returns
+    /// * `Result<MultiSpannIndex<Q>>` - The initialized multi-user index or an error.
     pub async fn read_async<Q: Quantizer>(
         &self,
         ivf_type: IntSeqEncodingType,

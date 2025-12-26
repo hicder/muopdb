@@ -49,6 +49,14 @@ pub struct SpannBuilderConfig {
 }
 
 impl SpannBuilderConfig {
+    /// Creates a `SpannBuilderConfig` from a `CollectionConfig`.
+    ///
+    /// # Arguments
+    /// * `collection_config` - The collection configuration to convert from.
+    /// * `base_directory` - The base directory for the SPANN index.
+    ///
+    /// # Returns
+    /// * `Self` - The initialized SPANN builder configuration.
     pub fn from_collection_config(
         collection_config: &CollectionConfig,
         base_directory: String,
@@ -92,6 +100,10 @@ impl SpannBuilderConfig {
 }
 
 impl Default for SpannBuilderConfig {
+    /// Provides a default configuration for `SpannBuilderConfig`.
+    ///
+    /// # Returns
+    /// * `Self` - A `SpannBuilderConfig` with sensible default values for tests or basic usage.
     fn default() -> Self {
         Self {
             centroids_max_neighbors: 10,
@@ -133,6 +145,13 @@ pub struct SpannBuilder {
 }
 
 impl SpannBuilder {
+    /// Creates a new `SpannBuilder` with the specified configuration.
+    ///
+    /// # Arguments
+    /// * `config` - The SPANN builder configuration.
+    ///
+    /// # Returns
+    /// * `Result<Self>` - A new `SpannBuilder` instance or an error if initialization fails.
     pub fn new(config: SpannBuilderConfig) -> Result<Self> {
         let ivf_builder = IvfBuilder::<L2DistanceCalculator>::new(IvfBuilderConfig {
             max_iteration: config.pq_max_iteration,
@@ -174,18 +193,44 @@ impl SpannBuilder {
         })
     }
 
+    /// Adds a vector to the SPANN index.
+    ///
+    /// # Arguments
+    /// * `doc_id` - The document ID associated with the vector.
+    /// * `data` - The vector data as a slice of floats.
+    ///
+    /// # Returns
+    /// * `Result<u32>` - The internal point ID assigned to the vector or an error.
     pub fn add(&mut self, doc_id: u128, data: &[f32]) -> Result<u32> {
         self.ivf_builder.add_vector(doc_id, data)
     }
 
+    /// Marks a document ID as invalid in the index.
+    ///
+    /// # Arguments
+    /// * `doc_id` - The document ID to invalidate.
+    ///
+    /// # Returns
+    /// * `bool` - `true` if the document was successfully invalidated, `false` otherwise.
     pub fn invalidate(&mut self, doc_id: u128) -> bool {
         self.ivf_builder.invalidate(doc_id)
     }
 
+    /// Checks if a document ID is valid in the index.
+    ///
+    /// # Arguments
+    /// * `doc_id` - The document ID to check.
+    ///
+    /// # Returns
+    /// * `bool` - `true` if the document is valid, `false` if it is invalidated or doesn't exist.
     pub fn is_valid_doc_id(&self, doc_id: u128) -> bool {
         self.ivf_builder.is_valid_doc_id(doc_id)
     }
 
+    /// Builds the SPANN index by clustering and building the centroid index.
+    ///
+    /// # Returns
+    /// * `Result<()>` - Ok if the build process completes successfully, or an error.
     pub fn build(&mut self) -> Result<()> {
         self.ivf_builder.build()?;
         debug!("Finish building IVF index");

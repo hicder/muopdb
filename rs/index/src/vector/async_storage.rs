@@ -7,6 +7,10 @@ use utils::block_cache::BlockCache;
 
 use crate::vector::{StorageContext, VectorStorageConfig};
 
+/// An asynchronous, block-based storage implementation for fixed-size vectors.
+///
+/// This storage reads vectors directly from a file using a `BlockCache`,
+/// supporting efficient random access to large-scale vector data.
 pub struct AsyncFixedFileVectorStorage<T: ToBytes + Clone + Send + Sync> {
     block_cache: Arc<BlockCache>,
     vector_file_id: u64,
@@ -17,6 +21,15 @@ pub struct AsyncFixedFileVectorStorage<T: ToBytes + Clone + Send + Sync> {
 }
 
 impl<T: ToBytes + Clone + Send + Sync> AsyncFixedFileVectorStorage<T> {
+    /// Creates a new `AsyncFixedFileVectorStorage` by opening the specified vector file.
+    ///
+    /// # Arguments
+    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `file_path` - The path to the binary vector file.
+    /// * `num_features` - The number of dimensions/features in each vector.
+    ///
+    /// # Returns
+    /// * `Result<Self>` - A new storage instance or an error if initialization fails.
     pub async fn new(
         block_cache: Arc<BlockCache>,
         file_path: String,
@@ -44,6 +57,16 @@ impl<T: ToBytes + Clone + Send + Sync> AsyncFixedFileVectorStorage<T> {
         })
     }
 
+    /// Creates a new `AsyncFixedFileVectorStorage` starting at a specific file offset.
+    ///
+    /// # Arguments
+    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `file_path` - The path to the binary vector file.
+    /// * `num_features` - The number of dimensions/features in each vector.
+    /// * `offset` - The byte offset where the vector data section begins.
+    ///
+    /// # Returns
+    /// * `Result<Self>` - A new storage instance or an error if initialization fails.
     pub async fn new_with_offset(
         block_cache: Arc<BlockCache>,
         file_path: String,
@@ -73,10 +96,25 @@ impl<T: ToBytes + Clone + Send + Sync> AsyncFixedFileVectorStorage<T> {
         })
     }
 
+    /// Calculates the size of a single vector in bytes.
+    ///
+    /// # Arguments
+    /// * `num_features` - The number of features in the vector.
+    ///
+    /// # Returns
+    /// * `usize` - The total size in bytes.
     fn vector_size_in_bytes(num_features: usize) -> usize {
         num_features * std::mem::size_of::<T>()
     }
 
+    /// Retrieves a single vector by its internal ID.
+    ///
+    /// # Arguments
+    /// * `id` - The internal index of the vector to retrieve.
+    /// * `_context` - A storage context for tracking cache stats (currently used for its mutable reference).
+    ///
+    /// # Returns
+    /// * `Result<Vec<T>>` - The retrieved vector or an error if the ID is out of bounds or reading fails.
     pub async fn get(&self, id: u32, _context: &mut impl StorageContext) -> Result<Vec<T>> {
         if id as usize >= self.num_vectors {
             return Err(anyhow!("index out of bounds"));
@@ -104,6 +142,14 @@ impl<T: ToBytes + Clone + Send + Sync> AsyncFixedFileVectorStorage<T> {
         Ok(result)
     }
 
+    /// Retrieves multiple vectors by their internal IDs.
+    ///
+    /// # Arguments
+    /// * `ids` - A slice of internal indices to retrieve.
+    /// * `context` - A storage context for tracking cache stats.
+    ///
+    /// # Returns
+    /// * `Result<Vec<Vec<T>>>` - A list of retrieved vectors or an error if any read fails.
     pub async fn multi_get(
         &self,
         ids: &[u32],
@@ -116,10 +162,18 @@ impl<T: ToBytes + Clone + Send + Sync> AsyncFixedFileVectorStorage<T> {
         Ok(results)
     }
 
+    /// Returns the total number of vectors stored in this handler.
+    ///
+    /// # Returns
+    /// * `usize` - The total vector count.
     pub fn num_vectors(&self) -> usize {
         self.num_vectors
     }
 
+    /// Returns the configuration associated with this vector storage.
+    ///
+    /// # Returns
+    /// * `VectorStorageConfig` - The storage configuration.
     pub fn config(&self) -> VectorStorageConfig {
         VectorStorageConfig {
             memory_threshold: 0,

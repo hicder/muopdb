@@ -33,6 +33,16 @@ pub struct MultiSpannIndex<Q: Quantizer> {
 }
 
 impl<Q: Quantizer> MultiSpannIndex<Q> {
+    /// Creates a new `MultiSpannIndex` without block caching.
+    ///
+    /// # Arguments
+    /// * `base_directory` - The base directory where user indices are stored.
+    /// * `user_index_info_mmap` - Mmapped memory containing user index mapping information.
+    /// * `ivf_type` - The encoding type for IVF posting lists.
+    /// * `num_features` - The number of features in the vectors.
+    ///
+    /// # Returns
+    /// * `Result<Self>` - A new `MultiSpannIndex` instance or an error.
     pub async fn new(
         base_directory: String,
         user_index_info_mmap: Mmap,
@@ -49,6 +59,17 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         .await
     }
 
+    /// Creates a new `MultiSpannIndex` with an optional block cache for asynchronous I/O.
+    ///
+    /// # Arguments
+    /// * `base_directory` - The base directory where user indices are stored.
+    /// * `user_index_info_mmap` - Mmapped memory containing user index mapping information.
+    /// * `ivf_type` - The encoding type for IVF posting lists.
+    /// * `num_features` - The number of features in the vectors.
+    /// * `block_cache` - An optional shared block cache.
+    ///
+    /// # Returns
+    /// * `Result<Self>` - A new `MultiSpannIndex` instance or an error.
     pub async fn new_with_cache(
         base_directory: String,
         user_index_info_mmap: Mmap,
@@ -88,6 +109,10 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         Ok(index)
     }
 
+    /// Returns a list of all user IDs present in the multi-user index.
+    ///
+    /// # Returns
+    /// * `Vec<u128>` - A vector of 128-bit user IDs.
     pub fn user_ids(&self) -> Vec<u128> {
         let mut user_ids = Vec::new();
         for (key, _) in self.user_index_infos.iter() {
@@ -96,6 +121,13 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         user_ids
     }
 
+    /// Retrieves the `Spann` index for a specific user, creating it if it doesn't exist in the cache.
+    ///
+    /// # Arguments
+    /// * `user_id` - The ID of the user whose index to retrieve.
+    ///
+    /// # Returns
+    /// * `Result<Arc<Spann<Q>>>` - The user's SPANN index or an error if not found.
     pub async fn get_or_create_index(&self, user_id: u128) -> Result<Arc<Spann<Q>>> {
         if let Some(index) = self.user_to_spann.get(&user_id) {
             return Ok(index.clone());
@@ -132,6 +164,13 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         Ok(arc_index)
     }
 
+    /// Returns an iterator over the valid documents for a specific user.
+    ///
+    /// # Arguments
+    /// * `user_id` - The ID of the user.
+    ///
+    /// # Returns
+    /// * `Option<SpannIter<Q>>` - An iterator if the user exists, otherwise `None`.
     pub async fn iter_for_user(&self, user_id: u128) -> Option<SpannIter<Q>> {
         match self.get_or_create_index(user_id).await {
             Ok(index) => Some(SpannIter::new(Arc::clone(&index))),
@@ -139,6 +178,10 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         }
     }
 
+    /// Calculates the total size of all index files on disk in bytes.
+    ///
+    /// # Returns
+    /// * `u64` - The total size in bytes.
     pub fn size_in_bytes(&self) -> u64 {
         // Compute the size of all files in the base_directory
         let mut size = 0;
@@ -148,6 +191,14 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         size
     }
 
+    /// Invalidates a document for a specific user.
+    ///
+    /// # Arguments
+    /// * `user_id` - The ID of the user.
+    /// * `doc_id` - The ID of the document to invalidate.
+    ///
+    /// # Returns
+    /// * `Result<bool>` - `true` if the document was successfully invalidated, or an error.
     pub async fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         let index = self.get_or_create_index(user_id).await?;
         let effectively_invalidated = index.invalidate(doc_id);
@@ -164,6 +215,13 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         Ok(effectively_invalidated)
     }
 
+    /// Invalidates a batch of documents across multiple users.
+    ///
+    /// # Arguments
+    /// * `user_to_doc_ids` - A mapping from user IDs to lists of document IDs to invalidate.
+    ///
+    /// # Returns
+    /// * `Result<usize>` - The total number of documents effectively invalidated.
     pub async fn invalidate_batch(
         &self,
         user_to_doc_ids: &HashMap<u128, Vec<u128>>,
@@ -200,12 +258,30 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         Ok(total_effectively_invalidated)
     }
 
+    /// Checks if a document is invalidated for a given user.
+    ///
+    /// # Arguments
+    /// * `user_id` - The ID of the user.
+    /// * `doc_id` - The ID of the document to check.
+    ///
+    /// # Returns
+    /// * `Result<bool>` - `true` if the document is invalidated, otherwise `false`.
     pub async fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         let index = self.get_or_create_index(user_id).await?;
         Ok(index.is_invalidated(doc_id))
     }
 
+    /// Returns the internal point ID for a given user and document ID.
+    ///
+    /// # Warning
     /// This is very expensive and should only be used for testing.
+    ///
+    /// # Arguments
+    /// * `user_id` - The ID of the user.
+    /// * `doc_id` - The ID of the document.
+    ///
+    /// # Returns
+    /// * `Option<u32>` - The internal point ID if found, otherwise `None`.
     #[cfg(test)]
     pub async fn get_point_id(&self, user_id: u128, doc_id: u128) -> Option<u32> {
         match self.get_or_create_index(user_id).await {
@@ -214,6 +290,16 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         }
     }
 
+    /// Searches for the nearest neighbors of a query vector for a specific user.
+    ///
+    /// # Arguments
+    /// * `user_id` - The ID of the user to search for.
+    /// * `query` - The query vector.
+    /// * `params` - Search parameters.
+    /// * `planner` - An optional search planner for additional filtering.
+    ///
+    /// # Returns
+    /// * `Option<SearchResult>` - The search results if any, otherwise `None`.
     pub async fn search_for_user(
         &self,
         user_id: u128,
@@ -227,14 +313,26 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         }
     }
 
+    /// Returns the base directory of the multi-user index.
+    ///
+    /// # Returns
+    /// * `&String` - A reference to the base directory path.
     pub fn base_directory(&self) -> &String {
         &self.base_directory
     }
 
+    /// Returns the total number of deleted documents across all users.
+    ///
+    /// # Returns
+    /// * `usize` - The count of invalidated documents.
     pub async fn get_deleted_docs_count(&self) -> usize {
         return self.invalidated_ids_storage.read().await.num_entries();
     }
 
+    /// Returns the total number of documents (including deleted ones) in the multi-user index.
+    ///
+    /// # Returns
+    /// * `Result<usize>` - The total document count or an error if file access fails.
     pub fn get_total_docs_count(&self) -> Result<usize> {
         let num_users = self.user_index_infos.len();
 

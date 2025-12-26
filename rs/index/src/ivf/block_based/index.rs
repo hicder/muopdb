@@ -29,10 +29,22 @@ where
     invalid_point_ids: RwLock<HashSet<u32>>,
 }
 
+/// A block-based Inverted File Index (IVF) implementation.
+///
+/// This index uses asynchronous I/O and block caching for efficient search
+/// on large-scale vector datasets that do not fit in memory.
 impl<Q: Quantizer> BlockBasedIvf<Q>
 where
     Q::QuantizedT: Send + Sync,
 {
+    /// Creates a new `BlockBasedIvf` index by loading components from the specified directory.
+    ///
+    /// # Arguments
+    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `base_directory` - The directory containing the IVF index files.
+    ///
+    /// # Returns
+    /// * `Result<Self>` - A new IVF index instance or an error if loading fails.
     pub async fn new(block_cache: Arc<BlockCache>, base_directory: String) -> Result<Self> {
         let index_storage =
             AsyncPostingListStorage::new(block_cache.clone(), format!("{}/index", base_directory))
@@ -59,6 +71,16 @@ where
         })
     }
 
+    /// Creates a new `BlockBasedIvf` index with specific file offsets for the index and vectors.
+    ///
+    /// # Arguments
+    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `base_directory` - The directory containing the IVF index files.
+    /// * `index_offset` - The byte offset within the index file where the IVF data starts.
+    /// * `vector_offset` - The byte offset within the vector file where the vector data starts.
+    ///
+    /// # Returns
+    /// * `Result<Self>` - A new IVF index instance or an error if loading fails.
     pub async fn new_with_offset(
         block_cache: Arc<BlockCache>,
         base_directory: String,
@@ -94,6 +116,14 @@ where
         })
     }
 
+    /// Finds the centroids nearest to the given query vector.
+    ///
+    /// # Arguments
+    /// * `vector` - The query vector to search for.
+    /// * `num_probes` - The number of nearest centroids to return.
+    ///
+    /// # Returns
+    /// * `Result<Vec<usize>>` - A list of indices for the nearest centroids.
     pub async fn find_nearest_centroids(
         &self,
         vector: &[f32],
@@ -112,6 +142,16 @@ where
         Ok(nearest_centroids.into_iter().map(|(idx, _)| idx).collect())
     }
 
+    /// Scans a single posting list (cell) for vectors similar to the query.
+    ///
+    /// # Arguments
+    /// * `centroid` - The index of the centroid/cell to scan.
+    /// * `query` - The query vector.
+    /// * `record_pages` - Whether to track block cache hits/misses.
+    /// * `planner` - An optional search planner for additional filtering.
+    ///
+    /// # Returns
+    /// * `Result<IntermediateResult>` - The search results from this posting list.
     async fn scan_posting_list(
         &self,
         centroid: usize,
@@ -180,6 +220,17 @@ where
         })
     }
 
+    /// Performs a search across multiple specified clusters/centroids.
+    ///
+    /// # Arguments
+    /// * `query` - The query vector.
+    /// * `nearest_centroid_ids` - The list of centroid indices to explore.
+    /// * `k` - The number of nearest neighbors to return.
+    /// * `record_pages` - Whether to track block cache hits/misses.
+    /// * `planner` - An optional search planner for additional filtering.
+    ///
+    /// # Returns
+    /// * `Result<IntermediateResult>` - The combined search results from all probed clusters.
     async fn search_with_centroids(
         &self,
         query: &[f32],
@@ -217,6 +268,17 @@ where
         })
     }
 
+    /// Performs a search across clusters and maps local point IDs back to document IDs.
+    ///
+    /// # Arguments
+    /// * `query` - The query vector.
+    /// * `nearest_centroid_ids` - The list of centroid indices to explore.
+    /// * `k` - The number of nearest neighbors to return.
+    /// * `record_pages` - Whether to track block cache hits/misses.
+    /// * `planner` - An optional search planner for additional filtering.
+    ///
+    /// # Returns
+    /// * `Result<SearchResult>` - The final search results containing document IDs and scores.
     pub async fn search_with_centroids_and_remap(
         &self,
         query: &[f32],
@@ -247,14 +309,33 @@ where
         })
     }
 
+    /// Returns the total number of clusters in the index.
+    ///
+    /// # Returns
+    /// * `usize` - The cluster count.
     pub fn num_clusters(&self) -> usize {
         self.num_clusters
     }
 
+    /// Returns the total number of vectors stored in the index.
+    ///
+    /// # Returns
+    /// * `usize` - The vector count.
     pub fn num_vectors(&self) -> usize {
         self.vector_storage.num_vectors()
     }
 
+    /// Performs a complete IVF search for the given query.
+    ///
+    /// # Arguments
+    /// * `query` - The query vector.
+    /// * `k` - The number of nearest neighbors to return.
+    /// * `num_probes` - The number of clusters to probe.
+    /// * `record_pages` - Whether to track block cache hits/misses.
+    /// * `planner` - An optional search planner for additional filtering.
+    ///
+    /// # Returns
+    /// * `Result<Option<SearchResult>>` - The search results, or `None` if no results were found.
     pub async fn search(
         &self,
         query: &[f32],
@@ -273,6 +354,13 @@ where
         Ok(Some(results))
     }
 
+    /// Marks a document ID as invalid/deleted in the index.
+    ///
+    /// # Arguments
+    /// * `doc_id` - The document ID to invalidate.
+    ///
+    /// # Returns
+    /// * `Result<bool>` - `true` if the document was successfully marked as invalid, `false` if it wasn't found.
     pub async fn invalidate(&self, doc_id: u128) -> Result<bool> {
         match self.get_point_id(doc_id).await? {
             Some(point_id) => Ok(self.invalid_point_ids.write().unwrap().insert(point_id)),
@@ -280,6 +368,13 @@ where
         }
     }
 
+    /// Marks a batch of document IDs as invalid/deleted.
+    ///
+    /// # Arguments
+    /// * `doc_ids` - The list of document IDs to invalidate.
+    ///
+    /// # Returns
+    /// * `Result<Vec<u128>>` - The list of document IDs that were successfully invalidated.
     pub async fn invalidate_batch(&self, doc_ids: &[u128]) -> Result<Vec<u128>> {
         let mut successfully_invalidated = Vec::new();
         for &doc_id in doc_ids {
@@ -290,6 +385,13 @@ where
         Ok(successfully_invalidated)
     }
 
+    /// Checks if a document ID has been marked as invalid.
+    ///
+    /// # Arguments
+    /// * `doc_id` - The document ID to check.
+    ///
+    /// # Returns
+    /// * `Result<bool>` - `true` if invalid, `false` otherwise.
     pub async fn is_invalidated(&self, doc_id: u128) -> Result<bool> {
         match self.get_point_id(doc_id).await? {
             Some(point_id) => Ok(self.invalid_point_ids.read().unwrap().contains(&point_id)),
@@ -297,6 +399,13 @@ where
         }
     }
 
+    /// Resolves a document ID to its internal point ID.
+    ///
+    /// # Arguments
+    /// * `doc_id` - The document ID to lookup.
+    ///
+    /// # Returns
+    /// * `Result<Option<u32>>` - The internal point ID if found, or `None`.
     async fn get_point_id(&self, doc_id: u128) -> Result<Option<u32>> {
         for point_id in 0..self.vector_storage.num_vectors() {
             if let Ok(stored_doc_id) = self.posting_list_storage.get_doc_id(point_id).await {
