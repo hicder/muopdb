@@ -33,12 +33,18 @@ impl Centroids {
     }
 }
 
-pub struct Spann<Q: Quantizer> {
+pub struct Spann<Q: Quantizer>
+where
+    Q::QuantizedT: Send + Sync,
+{
     centroids: Centroids,
     posting_lists: IvfType<Q>,
 }
 
-impl<Q: Quantizer> Spann<Q> {
+impl<Q: Quantizer> Spann<Q>
+where
+    Q::QuantizedT: Send + Sync,
+{
     pub fn new(
         centroids: Hnsw<NoQuantizer<L2DistanceCalculator>>,
         posting_lists: IvfType<Q>,
@@ -108,7 +114,10 @@ impl<Q: Quantizer> Spann<Q> {
     }
 }
 
-impl<Q: Quantizer> Spann<Q> {
+impl<Q: Quantizer> Spann<Q>
+where
+    Q::QuantizedT: Send + Sync,
+{
     pub async fn search(
         &self,
         query: Vec<f32>,

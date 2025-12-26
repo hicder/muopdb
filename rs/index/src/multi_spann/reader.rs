@@ -166,6 +166,7 @@ mod tests {
         let base_directory = temp_dir.path().to_str().unwrap().to_string();
         let mut spann_builder_config = CollectionConfig::default_test_config();
         spann_builder_config.num_features = 4;
+        spann_builder_config.posting_list_encoding_type = IntSeqEncodingType::EliasFano;
         let mut multi_spann_builder =
             MultiSpannBuilder::new(spann_builder_config, base_directory.clone())?;
         multi_spann_builder.insert(0, 1, &[1.0, 2.0, 3.0, 4.0])?;
@@ -180,7 +181,7 @@ mod tests {
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
             .read_async::<NoQuantizer<L2DistanceCalculator>>(
-                IntSeqEncodingType::PlainEncoding,
+                IntSeqEncodingType::EliasFano,
                 4,
                 block_cache,
             )
@@ -216,6 +217,7 @@ mod tests {
         spann_builder_config.product_quantization_num_training_rows = 1;
         spann_builder_config.product_quantization_batch_size = 0;
         spann_builder_config.quantization_type = QuantizerType::ProductQuantizer;
+        spann_builder_config.posting_list_encoding_type = IntSeqEncodingType::EliasFano;
         let mut multi_spann_builder =
             MultiSpannBuilder::new(spann_builder_config, base_directory.clone())?;
         multi_spann_builder.insert(0, 1, &[1.0, 2.0, 3.0, 4.0])?;
@@ -230,7 +232,7 @@ mod tests {
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
             .read_async::<ProductQuantizer<L2DistanceCalculator>>(
-                IntSeqEncodingType::PlainEncoding,
+                IntSeqEncodingType::EliasFano,
                 4,
                 block_cache,
             )

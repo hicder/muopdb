@@ -11,6 +11,7 @@ use quantization::typing::VectorOps;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::DistanceCalculator;
 
+use crate::ivf::block_based::index::BlockBasedIvf;
 use crate::posting_list::storage::PostingListStorage;
 use crate::query::iters::InvertedIndexIter;
 use crate::query::planner::Planner;
@@ -40,12 +41,19 @@ pub struct Ivf<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> {
     _decoder_marker: PhantomData<D>,
 }
 
-pub enum IvfType<Q: Quantizer> {
+pub enum IvfType<Q: Quantizer>
+where
+    Q::QuantizedT: Send + Sync,
+{
     L2Plain(Ivf<Q, L2DistanceCalculator, PlainDecoder>),
     L2EF(Ivf<Q, L2DistanceCalculator, EliasFanoMmapDecoder>),
+    BlockBased(BlockBasedIvf<Q>),
 }
 
-impl<Q: Quantizer> IvfType<Q> {
+impl<Q: Quantizer> IvfType<Q>
+where
+    Q::QuantizedT: Send + Sync,
+{
     pub async fn search_with_centroids_and_remap(
         &self,
         query: &[f32],
@@ -75,6 +83,27 @@ impl<Q: Quantizer> IvfType<Q> {
                 )
                 .await
             }
+            IvfType::BlockBased(ivf) => {
+                match ivf
+                    .search_with_centroids_and_remap(
+                        query,
+                        nearest_centroid_ids,
+                        k,
+                        record_pages,
+                        planner,
+                    )
+                    .await
+                {
+                    Ok(res) => res,
+                    Err(e) => {
+                        log::error!("BlockBasedIvf search failed: {}", e);
+                        SearchResult {
+                            id_with_scores: vec![],
+                            stats: SearchStats::new(),
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -84,6 +113,9 @@ impl<Q: Quantizer> IvfType<Q> {
         match self {
             IvfType::L2Plain(ivf) => ivf.get_point_id(doc_id),
             IvfType::L2EF(ivf) => ivf.get_point_id(doc_id),
+            IvfType::BlockBased(_) => {
+                unimplemented!("get_point_id is not yet implemented for BlockBasedIvf")
+            }
         }
     }
 
@@ -91,6 +123,9 @@ impl<Q: Quantizer> IvfType<Q> {
         match self {
             IvfType::L2Plain(ivf) => &ivf.vector_storage,
             IvfType::L2EF(ivf) => &ivf.vector_storage,
+            IvfType::BlockBased(_) => {
+                unimplemented!("get_vector_storage is not yet implemented for BlockBasedIvf")
+            }
         }
     }
 
@@ -98,6 +133,9 @@ impl<Q: Quantizer> IvfType<Q> {
         match self {
             IvfType::L2Plain(ivf) => &ivf.posting_list_storage,
             IvfType::L2EF(ivf) => &ivf.posting_list_storage,
+            IvfType::BlockBased(_) => {
+                unimplemented!("get_index_storage is not yet implemented for BlockBasedIvf")
+            }
         }
     }
 
@@ -105,6 +143,15 @@ impl<Q: Quantizer> IvfType<Q> {
         match self {
             IvfType::L2Plain(ivf) => ivf.invalidate(doc_id),
             IvfType::L2EF(ivf) => ivf.invalidate(doc_id),
+            IvfType::BlockBased(_) => {
+                // BlockBasedIvf::invalidate is async and returns Result<bool>
+                // This is a problem because IvfType::invalidate is synchronous.
+                // However, IvfType is used in Spann which also uses it in a synchronous context sometimes?
+                // Let's check Spann::invalidate.
+                unimplemented!(
+                    "BlockBasedIvf::invalidate is async, but IvfType::invalidate is sync"
+                )
+            }
         }
     }
 
@@ -112,6 +159,11 @@ impl<Q: Quantizer> IvfType<Q> {
         match self {
             IvfType::L2Plain(ivf) => ivf.invalidate_batch(doc_ids),
             IvfType::L2EF(ivf) => ivf.invalidate_batch(doc_ids),
+            IvfType::BlockBased(_) => {
+                unimplemented!(
+                    "BlockBasedIvf::invalidate_batch is async, but IvfType::invalidate_batch is sync"
+                )
+            }
         }
     }
 
@@ -119,6 +171,11 @@ impl<Q: Quantizer> IvfType<Q> {
         match self {
             IvfType::L2Plain(ivf) => ivf.is_invalidated(doc_id),
             IvfType::L2EF(ivf) => ivf.is_invalidated(doc_id),
+            IvfType::BlockBased(_) => {
+                unimplemented!(
+                    "BlockBasedIvf::is_invalidated is async, but IvfType::is_invalidated is sync"
+                )
+            }
         }
     }
 
@@ -126,6 +183,7 @@ impl<Q: Quantizer> IvfType<Q> {
         match self {
             IvfType::L2Plain(ivf) => ivf.num_clusters,
             IvfType::L2EF(ivf) => ivf.num_clusters,
+            IvfType::BlockBased(ivf) => ivf.num_clusters(),
         }
     }
 
@@ -133,6 +191,7 @@ impl<Q: Quantizer> IvfType<Q> {
         match self {
             IvfType::L2Plain(ivf) => ivf.vector_storage.num_vectors(),
             IvfType::L2EF(ivf) => ivf.vector_storage.num_vectors(),
+            IvfType::BlockBased(ivf) => ivf.num_vectors(),
         }
     }
 }

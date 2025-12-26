@@ -1,0 +1,190 @@
+use std::mem::size_of;
+use std::sync::Arc;
+
+use anyhow::{anyhow, Result};
+use byteorder::{ByteOrder, LittleEndian};
+use compression::compression::AsyncIntSeqDecoder;
+use compression::elias_fano::block_based_decoder::BlockBasedEliasFanoDecoder;
+use utils::block_cache::cache::{BlockCache, FileId};
+use utils::mem::transmute_u8_to_slice;
+
+use crate::posting_list::combined_file::{Header, Version};
+
+const PL_METADATA_LEN: usize = 2;
+
+pub struct AsyncPostingListStorage {
+    block_cache: Arc<BlockCache>,
+    file_id: FileId,
+    header: Header,
+    doc_id_mapping_offset: usize,
+    centroid_offset: usize,
+    posting_list_metadata_offset: usize,
+    posting_list_start_offset: usize,
+    num_posting_lists: usize,
+}
+
+impl AsyncPostingListStorage {
+    pub async fn new(block_cache: Arc<BlockCache>, file_path: String) -> Result<Self> {
+        Self::new_with_offset(block_cache, file_path, 0).await
+    }
+
+    pub async fn new_with_offset(
+        block_cache: Arc<BlockCache>,
+        file_path: String,
+        offset: usize,
+    ) -> Result<Self> {
+        let file_id = block_cache
+            .open_file(&file_path)
+            .await
+            .map_err(|e| anyhow!("Failed to open index file: {}", e))?;
+
+        let header_data = block_cache
+            .read(file_id, offset as u64, 64) // Read enough for header
+            .await?;
+
+        let (header, section_offset) = Self::read_header(&header_data, 0)?;
+        let doc_id_mapping_offset = offset + section_offset;
+
+        let centroid_offset = Self::align_to_next_boundary(
+            doc_id_mapping_offset + header.doc_id_mapping_len as usize,
+            8,
+        );
+
+        let metadata_section_offset =
+            Self::align_to_next_boundary(centroid_offset + header.centroids_len as usize, 8);
+
+        let count_data = block_cache
+            .read(file_id, metadata_section_offset as u64, 8)
+            .await?;
+        let num_posting_lists = LittleEndian::read_u64(&count_data) as usize;
+
+        let posting_list_metadata_offset = metadata_section_offset + size_of::<u64>();
+        let posting_list_start_offset =
+            posting_list_metadata_offset + num_posting_lists * PL_METADATA_LEN * size_of::<u64>();
+
+        Ok(Self {
+            block_cache,
+            file_id,
+            header,
+            doc_id_mapping_offset,
+            centroid_offset,
+            posting_list_metadata_offset,
+            posting_list_start_offset,
+            num_posting_lists,
+        })
+    }
+
+    fn read_header(buffer: &[u8], offset: usize) -> Result<(Header, usize)> {
+        let mut curr_offset = offset;
+        let version = match buffer[curr_offset] {
+            0 => Version::V0,
+            default => return Err(anyhow!("Unknown version: {}", default)),
+        };
+        curr_offset += 1;
+
+        let num_features = LittleEndian::read_u32(&buffer[curr_offset..]);
+        curr_offset += 4;
+        let quantized_dimension = LittleEndian::read_u32(&buffer[curr_offset..]);
+        curr_offset += 4;
+        let num_clusters = LittleEndian::read_u32(&buffer[curr_offset..]);
+        curr_offset += 4;
+        let num_vectors = LittleEndian::read_u64(&buffer[curr_offset..]);
+        curr_offset += 8;
+        let doc_id_mapping_len = LittleEndian::read_u64(&buffer[curr_offset..]);
+        curr_offset += 8;
+        let centroids_len = LittleEndian::read_u64(&buffer[curr_offset..]);
+        curr_offset += 8;
+        let posting_lists_and_metadata_len = LittleEndian::read_u64(&buffer[curr_offset..]);
+        curr_offset += 8;
+
+        let header = Header {
+            version,
+            num_features,
+            quantized_dimension,
+            num_clusters,
+            num_vectors,
+            doc_id_mapping_len,
+            centroids_len,
+            posting_lists_and_metadata_len,
+        };
+
+        curr_offset = Self::align_to_next_boundary(curr_offset, 16);
+
+        Ok((header, curr_offset))
+    }
+
+    fn align_to_next_boundary(current_position: usize, alignment: usize) -> usize {
+        let mask = alignment - 1;
+        (current_position + mask) & !mask
+    }
+
+    pub async fn get_doc_id(&self, index: usize) -> Result<u128> {
+        if index >= self.header.num_vectors as usize {
+            return Err(anyhow!("Index out of bound"));
+        }
+
+        let start = self.doc_id_mapping_offset + size_of::<u128>() + index * size_of::<u128>();
+
+        let data = self
+            .block_cache
+            .read(self.file_id, start as u64, 16)
+            .await?;
+        Ok(u128::from_le_bytes(
+            data.try_into()
+                .map_err(|_| anyhow!("Failed to read doc_id"))?,
+        ))
+    }
+
+    pub async fn get_centroid(&self, index: usize) -> Result<Vec<f32>> {
+        if index >= self.header.num_clusters as usize {
+            return Err(anyhow!("Index out of bound"));
+        }
+
+        let start = self.centroid_offset
+            + size_of::<u64>()
+            + index * self.header.num_features as usize * size_of::<f32>();
+        let length = self.header.num_features as usize * size_of::<f32>();
+
+        let data = self
+            .block_cache
+            .read(self.file_id, start as u64, length as u64)
+            .await?;
+        Ok(transmute_u8_to_slice::<f32>(&data).to_vec())
+    }
+
+    pub async fn get_posting_list_decoder(
+        &self,
+        index: usize,
+    ) -> Result<BlockBasedEliasFanoDecoder<u64>> {
+        if index >= self.num_posting_lists {
+            return Err(anyhow!(
+                "Index {} out of bound (num_posting_lists: {})",
+                index,
+                self.num_posting_lists
+            ));
+        }
+
+        let metadata_offset =
+            self.posting_list_metadata_offset + index * PL_METADATA_LEN * size_of::<u64>();
+
+        let metadata_data = self
+            .block_cache
+            .read(self.file_id, metadata_offset as u64, 16)
+            .await?;
+        let _pl_len = LittleEndian::read_u64(&metadata_data[0..8]) as usize;
+        let pl_offset =
+            LittleEndian::read_u64(&metadata_data[8..16]) as usize + self.posting_list_start_offset;
+
+        BlockBasedEliasFanoDecoder::new_decoder(
+            self.block_cache.clone(),
+            self.file_id,
+            pl_offset as u64,
+            4096, // default buffer size
+        )
+        .await
+    }
+
+    pub fn header(&self) -> &Header {
+        &self.header
+    }
+}
