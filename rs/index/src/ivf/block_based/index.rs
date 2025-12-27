@@ -10,7 +10,7 @@ use utils::block_cache::BlockCache;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::DistanceCalculator;
 
-use crate::ivf::block_based::storage::AsyncPostingListStorage;
+use crate::ivf::block_based::storage::BlockBasedPostingListStorage;
 use crate::query::iters::InvertedIndexIter;
 use crate::query::planner::Planner;
 use crate::utils::{
@@ -23,7 +23,7 @@ where
     Q::QuantizedT: Send + Sync,
 {
     vector_storage: AsyncFixedFileVectorStorage<Q::QuantizedT>,
-    posting_list_storage: AsyncPostingListStorage,
+    posting_list_storage: BlockBasedPostingListStorage,
     num_clusters: usize,
     quantizer: Q,
     invalid_point_ids: RwLock<HashSet<u32>>,
@@ -46,9 +46,11 @@ where
     /// # Returns
     /// * `Result<Self>` - A new IVF index instance or an error if loading fails.
     pub async fn new(block_cache: Arc<BlockCache>, base_directory: String) -> Result<Self> {
-        let index_storage =
-            AsyncPostingListStorage::new(block_cache.clone(), format!("{}/index", base_directory))
-                .await?;
+        let index_storage = BlockBasedPostingListStorage::new(
+            block_cache.clone(),
+            format!("{}/index", base_directory),
+        )
+        .await?;
 
         let vector_storage = AsyncFixedFileVectorStorage::<Q::QuantizedT>::new(
             block_cache.clone(),
@@ -87,7 +89,7 @@ where
         index_offset: usize,
         vector_offset: usize,
     ) -> Result<Self> {
-        let index_storage = AsyncPostingListStorage::new_with_offset(
+        let index_storage = BlockBasedPostingListStorage::new_with_offset(
             block_cache.clone(),
             format!("{}/index", base_directory),
             index_offset,

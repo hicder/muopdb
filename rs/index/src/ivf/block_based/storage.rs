@@ -16,7 +16,7 @@ const PL_METADATA_LEN: usize = 2;
 ///
 /// This storage handler manages the binary layout of the IVF index, including
 /// document ID mappings, centroids, and compressed posting lists.
-pub struct AsyncPostingListStorage {
+pub struct BlockBasedPostingListStorage {
     block_cache: Arc<BlockCache>,
     file_id: FileId,
     header: Header,
@@ -27,7 +27,7 @@ pub struct AsyncPostingListStorage {
     num_posting_lists: usize,
 }
 
-impl AsyncPostingListStorage {
+impl BlockBasedPostingListStorage {
     /// Creates a new `AsyncPostingListStorage` handler for the specified file.
     ///
     /// # Arguments
