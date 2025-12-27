@@ -884,7 +884,7 @@ mod tests {
         };
 
         let planner =
-            Arc::new(Planner::new(0, document_filter, Arc::new(multi_term_index)).unwrap());
+            Arc::new(Planner::new(0, document_filter, Arc::new(multi_term_index), None).unwrap());
 
         let params = SearchParams::new(k, num_probes, false);
 
@@ -974,7 +974,7 @@ mod tests {
         };
 
         let planner =
-            Arc::new(Planner::new(0, document_filter, Arc::new(multi_term_index)).unwrap());
+            Arc::new(Planner::new(0, document_filter, Arc::new(multi_term_index), None).unwrap());
 
         let params = SearchParams::new(k, num_probes, false);
 

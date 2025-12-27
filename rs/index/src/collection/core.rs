@@ -183,6 +183,10 @@ pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
 }
 
 impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
+    pub fn config(&self) -> &CollectionConfig {
+        &self.segment_config
+    }
+
     /// Creates a new `Collection` instance with the given name, base directory, and configuration.
     ///
     /// This initializes a fresh collection with an empty version (version 0) and a new mutable segment.
@@ -1528,7 +1532,7 @@ mod tests {
 
     use anyhow::{Ok, Result};
     use async_lock::RwLock;
-    use config::attribute_schema::{AttributeSchema, AttributeType};
+    use config::attribute_schema::{AttributeSchema, AttributeType, Language};
     use config::collection::CollectionConfig;
     use config::search_params::SearchParams;
     use metrics::INTERNAL_METRICS;
@@ -2095,7 +2099,7 @@ mod tests {
         segment_config.num_features = 4;
 
         let mut schema_map = HashMap::new();
-        schema_map.insert("title".to_string(), AttributeType::Text);
+        schema_map.insert("title".to_string(), AttributeType::Text(Language::English));
         schema_map.insert("category".to_string(), AttributeType::Keyword);
         segment_config.attribute_schema = Some(AttributeSchema::new(schema_map));
 

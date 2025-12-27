@@ -81,8 +81,13 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
             let planner = if let Some(multi_term_index) = multi_term_index {
                 if let Some(filter) = &filter {
                     Some(Arc::new(
-                        Planner::new(user_id, filter.as_ref().clone(), multi_term_index.clone())
-                            .unwrap(),
+                        Planner::new(
+                            user_id,
+                            filter.as_ref().clone(),
+                            multi_term_index.clone(),
+                            self.collection.config().attribute_schema.clone(),
+                        )
+                        .unwrap(),
                     ))
                 } else {
                     None

@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicU64;
 use std::time::Instant;
 
 use anyhow::{Ok, Result};
+use config::attribute_schema::{AttributeSchema, AttributeType};
 use config::collection::CollectionConfig;
 use log::info;
 use proto::muopdb::DocumentAttribute;
@@ -10,12 +11,13 @@ use crate::multi_spann::builder::MultiSpannBuilder;
 use crate::multi_spann::writer::MultiSpannWriter;
 use crate::multi_terms::builder::MultiTermBuilder;
 use crate::multi_terms::writer::MultiTermWriter;
+use crate::tokenizer::stemming_tokenizer::StemmingTokenizer;
 use crate::tokenizer::tokenizer::{TokenStream, Tokenizer};
-use crate::tokenizer::white_space_tokenizer::WhiteSpaceTokenizer;
 
 pub struct MutableSegment {
     multi_spann_builder: MultiSpannBuilder,
     multi_term_builder: MultiTermBuilder,
+    attribute_schema: Option<AttributeSchema>,
 
     // Prevent a mutable segment from being modified after it is built.
     finalized: bool,
@@ -30,8 +32,9 @@ impl MutableSegment {
         std::fs::create_dir_all(&term_directory)?;
 
         Ok(Self {
-            multi_spann_builder: MultiSpannBuilder::new(config, base_directory)?,
+            multi_spann_builder: MultiSpannBuilder::new(config.clone(), base_directory)?,
             multi_term_builder: MultiTermBuilder::new(),
+            attribute_schema: config.attribute_schema,
             finalized: false,
             last_sequence_number: AtomicU64::new(0),
             num_docs: AtomicU64::new(0),
@@ -66,13 +69,22 @@ impl MutableSegment {
         let point_id = self.multi_spann_builder.insert(user_id, doc_id, data)?;
 
         // Process document attributes if present
-        let tokenizer = WhiteSpaceTokenizer {};
-
         for (attr_name, attr_value) in document_attribute.value {
             match attr_value.value {
                 Some(proto::muopdb::attribute_value::Value::TextValue(text)) => {
                     // Tokenize the text attribute
-                    let mut token_stream = tokenizer.input(&text);
+                    let language = self
+                        .attribute_schema
+                        .as_ref()
+                        .and_then(|s| s.fields.get(&attr_name))
+                        .map(|t| match t {
+                            AttributeType::Text(l) => *l,
+                            _ => config::attribute_schema::Language::English,
+                        })
+                        .unwrap_or(config::attribute_schema::Language::English);
+
+                    let stemming_tokenizer = StemmingTokenizer::for_language(language);
+                    let mut token_stream = stemming_tokenizer.input(&text);
 
                     // Process each token and insert with the term builder
                     while let Some(token) = token_stream.next() {
@@ -376,16 +388,16 @@ mod tests {
         // Verify User 1's terms are accessible
         // Check for tokenized terms from text attributes
         assert!(multi_term_index
-            .get_term_id_for_user(1, "title:apple")
+            .get_term_id_for_user(1, "title:appl")
             .is_ok());
         assert!(multi_term_index
             .get_term_id_for_user(1, "title:banana")
             .is_ok());
         assert!(multi_term_index
-            .get_term_id_for_user(1, "title:cherry")
+            .get_term_id_for_user(1, "title:cherri")
             .is_ok());
         assert!(multi_term_index
-            .get_term_id_for_user(1, "title:orange")
+            .get_term_id_for_user(1, "title:orang")
             .is_ok());
         // Check for keyword terms
         assert!(multi_term_index
@@ -403,7 +415,7 @@ mod tests {
             .get_term_id_for_user(2, "title:cat")
             .is_ok());
         assert!(multi_term_index
-            .get_term_id_for_user(2, "title:mouse")
+            .get_term_id_for_user(2, "title:mous")
             .is_ok());
         assert!(multi_term_index
             .get_term_id_for_user(2, "category:animal")
@@ -433,5 +445,56 @@ mod tests {
             .unwrap()
             .collect();
         assert_eq!(dog_pl.len(), 1, "Dog should appear in 1 document");
+    }
+
+    #[tokio::test]
+    async fn test_mutable_segment_french_stemming() {
+        use config::attribute_schema::Language;
+        let tmp_dir = tempdir::TempDir::new("mutable_segment_french_test").unwrap();
+        let base_dir = tmp_dir.path().to_str().unwrap().to_string();
+
+        let mut segment_config = CollectionConfig::default_test_config();
+        let mut schema_map = std::collections::HashMap::new();
+        schema_map.insert(
+            "description".to_string(),
+            AttributeType::Text(Language::French),
+        );
+        segment_config.attribute_schema = Some(AttributeSchema::new(schema_map));
+
+        let mut mutable_segment = MutableSegment::new(segment_config.clone(), base_dir)
+            .expect("Failed to create mutable segment");
+
+        let mut attributes = std::collections::HashMap::new();
+        attributes.insert(
+            "description".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::TextValue(
+                    "les chevaux".to_string(),
+                )),
+            },
+        );
+        let doc_attr = proto::muopdb::DocumentAttribute { value: attributes };
+
+        mutable_segment
+            .insert_for_user(1, 1, &[1.0, 2.0, 3.0, 4.0], 0, doc_attr)
+            .unwrap();
+
+        // Check if terms are stemmed: "description:le", "description:cheval"
+        mutable_segment
+            .build(
+                tmp_dir.path().to_str().unwrap().to_string(),
+                "french_seg".to_string(),
+            )
+            .unwrap();
+
+        let terms_dir = format!("{}/french_seg/terms", tmp_dir.path().to_str().unwrap());
+        let multi_term_index = crate::multi_terms::index::MultiTermIndex::new(terms_dir).unwrap();
+
+        assert!(multi_term_index
+            .get_term_id_for_user(1, "description:le")
+            .is_ok());
+        assert!(multi_term_index
+            .get_term_id_for_user(1, "description:cheval")
+            .is_ok());
     }
 }

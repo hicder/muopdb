@@ -25,6 +25,7 @@ num-traits.workspace = true
 ordered-float.workspace = true
 ouroboros.workspace = true
 quantization.workspace = true
+rust-stemmers.workspace = true
 rand.workspace = true
 roaring.workspace = true
 sorted-vec.workspace = true

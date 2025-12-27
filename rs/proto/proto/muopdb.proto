@@ -224,6 +224,12 @@ enum AttributeType {
 message AttributeField {
   string name         = 1;
   AttributeType type  = 2;
+
+  // Only applicable for ATTRIBUTE_TYPE_TEXT. Specifies the language for stemming.
+  // Valid values: arabic, danish, dutch, english, finnish, french, german, greek,
+  // hungarian, italian, norwegian, portuguese, romanian, russian, spanish, swedish,
+  // tamil, turkish, vietnamese. Defaults to english if not specified.
+  optional string language = 3;
 }
 
 message AttributeSchema {
