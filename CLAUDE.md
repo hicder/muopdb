@@ -51,6 +51,7 @@ brew install hdf5 protobuf openblas
 | `proto/` | gRPC protocol definitions |
 | `metrics/` | Internal metrics |
 | `cli/` | Command-line interface |
+| `demo/` | Demo binaries for testing (insert, search) |
 
 ### Key Data Flow
 
@@ -69,6 +70,10 @@ Collection
 
 ### SPANN Index Structure
 
+SPANN supports two index implementations:
+- **mmap-based**: Uses HNSW (mmap) for centroids and IVF (mmap) for posting lists
+- **block-based**: Uses BlockBasedHNSW and BlockBasedIVF (newer, more cache-friendly)
+
 ```
 Spann<Q>
 ├── centroids: Hnsw<NoQuantizer>  # Coarse-level search (in-memory)
@@ -78,6 +83,12 @@ Spann<Q>
 ### Multi-User Support
 
 `MultiSpannIndex<Q>` uses `DashMap<u128, Arc<Spann<Q>>>` for per-user indices with lazy loading.
+
+### Hybrid Search (MultiTerms)
+
+The `multi_terms` module supports combining text and vector search:
+- `MultiTermIndex`: Combined term + vector index per segment
+- Supports filtering and scoring across both modalities
 
 ### Quantizer Trait
 
@@ -101,7 +112,13 @@ pub trait Quantizer {
 
 - Uses `ouroboros` for self-referential structs
 - Uses `dashmap` for concurrent segment access
-- Uses `parking_lot` mutexes (not std)
+- Uses `async_lock` for mutexes (not std)
 - Uses `anyhow` for error handling
 - Uses `rkyv` for serialization (zero-copy deserialization)
 - Nightly Rust required (features: `auto_traits`, `min_specialization`)
+
+## Key Data Types
+
+- **User/Doc IDs**: `u128` (high 64 bits + low 64 bits for sharding)
+- **Vector IDs**: Internal mapping uses `u128` to external indices
+- **Collection versioning**: Atomic counter for snapshot isolation
