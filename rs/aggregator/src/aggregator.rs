@@ -7,6 +7,7 @@ use proto::aggregator::{GetRequest, GetResponse};
 use proto::muopdb::index_server_client::IndexServerClient;
 use proto::muopdb::SearchRequest;
 use tokio::sync::RwLock;
+use utils::mem::id_to_u128;
 
 use crate::node_manager::{self, NodeManager};
 use crate::shard_manager::ShardManager;
@@ -29,8 +30,7 @@ impl AggregatorServerImpl {
 }
 
 struct IdAndScore {
-    low_id: u64,
-    high_id: u64,
+    id: u128,
     score: f32,
 }
 
@@ -108,9 +108,9 @@ impl Aggregator for AggregatorServerImpl {
                 .iter()
                 .zip(inner.scores.iter())
                 .for_each(|(id, score)| {
+                    let id_u128 = id_to_u128(id).unwrap_or(0);
                     vecs_and_scores.push(IdAndScore {
-                        low_id: id.low_id,
-                        high_id: id.high_id,
+                        id: id_u128,
                         score: *score,
                     });
                     num_pages_accessed += inner.num_pages_accessed as usize;
@@ -121,8 +121,11 @@ impl Aggregator for AggregatorServerImpl {
         vecs_and_scores.sort_by(|a, b| b.score.total_cmp(&a.score));
 
         Ok(tonic::Response::new(GetResponse {
-            low_ids: vecs_and_scores.iter().map(|x| x.low_id).collect(),
-            high_ids: vecs_and_scores.iter().map(|x| x.high_id).collect(),
+            low_ids: vecs_and_scores.iter().map(|x| x.id as u64).collect(),
+            high_ids: vecs_and_scores
+                .iter()
+                .map(|x| (x.id >> 64) as u64)
+                .collect(),
             num_pages_accessed: num_pages_accessed as u64,
         }))
     }

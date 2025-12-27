@@ -139,43 +139,35 @@ where
         }
     }
 
-    pub fn invalidate(&self, doc_id: u128) -> bool {
+    pub async fn get_doc_id(&self, point_id: u32) -> Option<u128> {
+        match self {
+            IvfType::L2Plain(ivf) => ivf.posting_list_storage.get_doc_id(point_id as usize).ok(),
+            IvfType::L2EF(ivf) => ivf.posting_list_storage.get_doc_id(point_id as usize).ok(),
+            IvfType::BlockBased(ivf) => ivf.get_doc_id(point_id).await.ok(),
+        }
+    }
+
+    pub async fn invalidate(&self, doc_id: u128) -> bool {
         match self {
             IvfType::L2Plain(ivf) => ivf.invalidate(doc_id),
             IvfType::L2EF(ivf) => ivf.invalidate(doc_id),
-            IvfType::BlockBased(_) => {
-                // BlockBasedIvf::invalidate is async and returns Result<bool>
-                // This is a problem because IvfType::invalidate is synchronous.
-                // However, IvfType is used in Spann which also uses it in a synchronous context sometimes?
-                // Let's check Spann::invalidate.
-                unimplemented!(
-                    "BlockBasedIvf::invalidate is async, but IvfType::invalidate is sync"
-                )
-            }
+            IvfType::BlockBased(ivf) => ivf.invalidate(doc_id).await.unwrap_or(false),
         }
     }
 
-    pub fn invalidate_batch(&self, doc_ids: &[u128]) -> Vec<u128> {
+    pub async fn invalidate_batch(&self, doc_ids: &[u128]) -> Vec<u128> {
         match self {
             IvfType::L2Plain(ivf) => ivf.invalidate_batch(doc_ids),
             IvfType::L2EF(ivf) => ivf.invalidate_batch(doc_ids),
-            IvfType::BlockBased(_) => {
-                unimplemented!(
-                    "BlockBasedIvf::invalidate_batch is async, but IvfType::invalidate_batch is sync"
-                )
-            }
+            IvfType::BlockBased(ivf) => ivf.invalidate_batch(doc_ids).await.unwrap_or_default(),
         }
     }
 
-    pub fn is_invalidated(&self, doc_id: u128) -> bool {
+    pub async fn is_invalidated(&self, doc_id: u128) -> bool {
         match self {
             IvfType::L2Plain(ivf) => ivf.is_invalidated(doc_id),
             IvfType::L2EF(ivf) => ivf.is_invalidated(doc_id),
-            IvfType::BlockBased(_) => {
-                unimplemented!(
-                    "BlockBasedIvf::is_invalidated is async, but IvfType::is_invalidated is sync"
-                )
-            }
+            IvfType::BlockBased(ivf) => ivf.is_invalidated(doc_id).await.unwrap_or(false),
         }
     }
 

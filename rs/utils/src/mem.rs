@@ -67,14 +67,56 @@ pub fn bytes_to_u128s(bytes: &[u8]) -> Vec<u128> {
         .collect()
 }
 
-pub fn ids_to_u128s(ids: &[Id]) -> Vec<u128> {
-    let mut result = Vec::with_capacity(ids.len());
+pub fn ids_to_u128s(ids: &[Id]) -> Result<Vec<u128>, String> {
+    ids.iter().map(id_to_u128).collect()
+}
 
-    for id in ids {
-        result.push(id.low_id as u128 | (id.high_id as u128) << 64);
+/// Converts a UUID string (with or without hyphens) to u128.
+/// Supports formats like "550e8400-e29b-41d4-a716-446655440000" or "550e8400e29b41d4a716446655440000".
+pub fn uuid_str_to_u128(uuid: &str) -> Result<u128, String> {
+    let hex_str: String = uuid.chars().filter(|c| *c != '-').collect();
+    if hex_str.len() != 32 {
+        return Err(format!(
+            "Invalid UUID length: expected 32 hex chars, got {}",
+            hex_str.len()
+        ));
     }
+    u128::from_str_radix(&hex_str, 16).map_err(|e| format!("Invalid UUID hex: {}", e))
+}
 
-    result
+/// Converts a single Id proto to u128.
+/// Returns an error if neither uuid nor (low_id AND high_id) are set.
+pub fn id_to_u128(id: &Id) -> Result<u128, String> {
+    if let Some(uuid) = &id.uuid {
+        uuid_str_to_u128(uuid)
+    } else {
+        match (id.low_id, id.high_id) {
+            (Some(low), Some(high)) => Ok(low as u128 | (high as u128) << 64),
+            _ => Err("Either uuid or both low_id and high_id must be set".to_string()),
+        }
+    }
+}
+
+/// Converts a u128 to a hyphenated UUID string.
+pub fn u128_to_uuid_str(id: u128) -> String {
+    let s = format!("{:032x}", id);
+    format!(
+        "{}-{}-{}-{}-{}",
+        &s[0..8],
+        &s[8..12],
+        &s[12..16],
+        &s[16..20],
+        &s[20..32]
+    )
+}
+
+/// Converts a u128 to an Id proto with all fields populated.
+pub fn u128_to_id(id: u128) -> Id {
+    Id {
+        low_id: Some(id as u64),
+        high_id: Some((id >> 64) as u64),
+        uuid: Some(u128_to_uuid_str(id)),
+    }
 }
 
 #[cfg(test)]
@@ -124,10 +166,14 @@ mod tests {
         let id_proto: Vec<Id> = lows
             .iter()
             .zip(highs.iter())
-            .map(|(&low_id, &high_id)| Id { low_id, high_id })
+            .map(|(&low_id, &high_id)| Id {
+                low_id: Some(low_id),
+                high_id: Some(high_id),
+                uuid: None,
+            })
             .collect();
 
-        let ids = ids_to_u128s(&id_proto);
+        let ids = ids_to_u128s(&id_proto).unwrap();
 
         assert_eq!(
             ids,
@@ -138,6 +184,72 @@ mod tests {
                 0x4312123456789abcdef3,
                 0x4312123456789abcdef4
             ]
+        );
+    }
+
+    #[test]
+    fn test_uuid_parsing() {
+        let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
+        let expected: u128 = 0x550e8400e29b41d4a716446655440000;
+        assert_eq!(uuid_str_to_u128(uuid_str).unwrap(), expected);
+
+        let uuid_str_no_hyphen = "550e8400e29b41d4a716446655440000";
+        assert_eq!(uuid_str_to_u128(uuid_str_no_hyphen).unwrap(), expected);
+
+        // Invalid hex
+        assert!(uuid_str_to_u128("550e8400-e29b-41d4-a716-44665544000G").is_err());
+        // Invalid length
+        assert!(uuid_str_to_u128("550e8400-e29b-41d4-a716").is_err());
+    }
+
+    #[test]
+    fn test_id_to_u128_with_uuid() {
+        let id = Id {
+            low_id: Some(123),
+            high_id: Some(456),
+            uuid: Some("550e8400-e29b-41d4-a716-446655440000".to_string()),
+        };
+        // UUID should take precedence
+        assert_eq!(id_to_u128(&id).unwrap(), 0x550e8400e29b41d4a716446655440000);
+    }
+
+    #[test]
+    fn test_id_to_u128_validation() {
+        // Missing both
+        let id_none = Id {
+            low_id: None,
+            high_id: None,
+            uuid: None,
+        };
+        assert!(id_to_u128(&id_none).is_err());
+
+        // Missing high
+        let id_no_high = Id {
+            low_id: Some(123),
+            high_id: None,
+            uuid: None,
+        };
+        assert!(id_to_u128(&id_no_high).is_err());
+
+        // Valid low/high
+        let id_valid = Id {
+            low_id: Some(123),
+            high_id: Some(456),
+            uuid: None,
+        };
+        assert_eq!(id_to_u128(&id_valid).unwrap(), 123 | (456 << 64));
+    }
+
+    #[test]
+    fn test_u128_to_id() {
+        let id_val: u128 = 0x550e8400f29b41d4a716446655440000;
+        let id_proto = u128_to_id(id_val);
+
+        assert_eq!(id_proto.low_id, Some(0xa716446655440000));
+        assert_eq!(id_proto.high_id, Some(0x550e8400f29b41d4));
+        assert_eq!(
+            id_proto.uuid,
+            Some("550e8400-f29b-41d4-a716-446655440000".to_string())
         );
     }
 

@@ -48,8 +48,9 @@ async fn main() -> Result<()> {
                     centroid_distance_ratio: 0.1,
                 }),
                 user_ids: vec![Id {
-                    low_id: 0,
-                    high_id: 0,
+                    low_id: Some(0),
+                    high_id: Some(0),
+                    uuid: None,
                 }],
                 where_document: None,
             });
@@ -78,8 +79,9 @@ async fn main() -> Result<()> {
                     centroid_distance_ratio: 0.1,
                 }),
                 user_ids: vec![Id {
-                    low_id: 0,
-                    high_id: 0,
+                    low_id: Some(0),
+                    high_id: Some(0),
+                    uuid: None,
                 }],
                 where_document: None,
             });
