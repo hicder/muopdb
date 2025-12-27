@@ -3,13 +3,69 @@ use std::collections::HashMap;
 use proto::muopdb;
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Copy)]
+pub enum Language {
+    Arabic,
+    Danish,
+    Dutch,
+    English,
+    Finnish,
+    French,
+    German,
+    Greek,
+    Hungarian,
+    Italian,
+    Norwegian,
+    Portuguese,
+    Romanian,
+    Russian,
+    Spanish,
+    Swedish,
+    Tamil,
+    Turkish,
+    Vietnamese,
+}
+
+impl Default for Language {
+    fn default() -> Self {
+        Language::English
+    }
+}
+
+impl Language {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "arabic" => Some(Language::Arabic),
+            "danish" => Some(Language::Danish),
+            "dutch" => Some(Language::Dutch),
+            "english" => Some(Language::English),
+            "finnish" => Some(Language::Finnish),
+            "french" => Some(Language::French),
+            "german" => Some(Language::German),
+            "greek" => Some(Language::Greek),
+            "hungarian" => Some(Language::Hungarian),
+            "italy" | "italian" => Some(Language::Italian),
+            "norwegian" => Some(Language::Norwegian),
+            "portuguese" => Some(Language::Portuguese),
+            "romanian" => Some(Language::Romanian),
+            "russian" => Some(Language::Russian),
+            "spanish" => Some(Language::Spanish),
+            "swedish" => Some(Language::Swedish),
+            "tamil" => Some(Language::Tamil),
+            "turkish" => Some(Language::Turkish),
+            "vietnamese" => Some(Language::Vietnamese),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum AttributeType {
     None,
     Integer,
     Float,
     Boolean,
-    Text,
+    Text(Language),
     Keyword,
 
     VectorInt,
@@ -18,7 +74,7 @@ pub enum AttributeType {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AttributeSchema {
-    fields: HashMap<String, AttributeType>,
+    pub fields: HashMap<String, AttributeType>,
 }
 
 impl From<muopdb::AttributeSchema> for AttributeSchema {
@@ -30,7 +86,14 @@ impl From<muopdb::AttributeSchema> for AttributeSchema {
                 muopdb::AttributeType::Float => AttributeType::Float,
                 muopdb::AttributeType::Bool => AttributeType::Boolean,
                 muopdb::AttributeType::Keyword => AttributeType::Keyword,
-                muopdb::AttributeType::Text => AttributeType::Text,
+                muopdb::AttributeType::Text => {
+                    let language = attribute
+                        .language
+                        .as_deref()
+                        .and_then(Language::from_str)
+                        .unwrap_or(Language::English);
+                    AttributeType::Text(language)
+                }
                 muopdb::AttributeType::VectorInt => AttributeType::VectorInt,
                 muopdb::AttributeType::VectorKeyword => AttributeType::VectorKeyword,
             };
@@ -56,30 +119,37 @@ mod tests {
             muopdb::AttributeField {
                 name: String::from("i32_field"),
                 r#type: muopdb::AttributeType::Int as i32,
+                language: None,
             },
             muopdb::AttributeField {
                 name: String::from("text_field"),
                 r#type: muopdb::AttributeType::Text as i32,
+                language: Some("french".to_string()),
             },
             muopdb::AttributeField {
                 name: String::from("float_field"),
                 r#type: muopdb::AttributeType::Float as i32,
+                language: None,
             },
             muopdb::AttributeField {
                 name: String::from("bool_field"),
                 r#type: muopdb::AttributeType::Bool as i32,
+                language: None,
             },
             muopdb::AttributeField {
                 name: String::from("vector_int_field"),
                 r#type: muopdb::AttributeType::VectorInt as i32,
+                language: None,
             },
             muopdb::AttributeField {
                 name: String::from("vector_keyword_field"),
                 r#type: muopdb::AttributeType::VectorKeyword as i32,
+                language: None,
             },
             muopdb::AttributeField {
                 name: String::from("keyword_field"),
                 r#type: muopdb::AttributeType::Keyword as i32,
+                language: None,
             },
         ];
 
@@ -95,7 +165,10 @@ mod tests {
             schema.fields.get("i32_field"),
             Some(&AttributeType::Integer)
         );
-        assert_eq!(schema.fields.get("text_field"), Some(&AttributeType::Text));
+        assert_eq!(
+            schema.fields.get("text_field"),
+            Some(&AttributeType::Text(Language::French))
+        );
         assert_eq!(
             schema.fields.get("keyword_field"),
             Some(&AttributeType::Keyword)
@@ -127,5 +200,13 @@ mod tests {
         let schema: AttributeSchema = proto_schema.into();
 
         assert!(schema.fields.is_empty());
+    }
+
+    #[test]
+    fn test_language_parsing() {
+        assert_eq!(Language::from_str("English"), Some(Language::English));
+        assert_eq!(Language::from_str("french"), Some(Language::French));
+        assert_eq!(Language::from_str("VIETNAMESE"), Some(Language::Vietnamese));
+        assert_eq!(Language::from_str("invalid"), None);
     }
 }

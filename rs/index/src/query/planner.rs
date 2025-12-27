@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use config::attribute_schema::{AttributeSchema, AttributeType, Language};
 use proto::muopdb::{AndFilter, DocumentFilter, IdsFilter, OrFilter};
 
 use crate::multi_terms::index::MultiTermIndex;
@@ -10,12 +11,15 @@ use crate::query::iters::or_iter::OrIter;
 use crate::query::iters::term_iter::TermIter;
 use crate::query::iters::Iter;
 use crate::terms::index::TermIndex;
+use crate::tokenizer::stemming_tokenizer::StemmingTokenizer;
+use crate::tokenizer::tokenizer::{TokenStream, Tokenizer};
 
 #[allow(unused)]
 pub struct Planner {
     user_id: u128,
     query: DocumentFilter,
     term_index: Arc<TermIndex>,
+    attribute_schema: Option<AttributeSchema>,
 }
 
 impl Planner {
@@ -23,12 +27,14 @@ impl Planner {
         user_id: u128,
         query: DocumentFilter,
         multi_term_index: Arc<MultiTermIndex>,
+        attribute_schema: Option<AttributeSchema>,
     ) -> Result<Self> {
         let term_index = multi_term_index.get_or_create_index(user_id)?;
         Ok(Self {
             user_id,
             query,
             term_index,
+            attribute_schema,
         })
     }
 
@@ -62,13 +68,54 @@ impl Planner {
             Some(Filter::Or(or_filter)) => self.plan_or_filter(or_filter),
             Some(Filter::Ids(ids_filter)) => self.plan_ids_filter(ids_filter),
             Some(Filter::Contains(contains_filter)) => {
-                let term = format!("{}:{}", contains_filter.path, contains_filter.value);
-                if let Some(term_id) = self.term_index.get_term_id(&term) {
-                    Ok(Iter::Term(TermIter::new(&self.term_index, term_id)?))
-                } else {
-                    // Term not found - return an iterator that yields no results
-                    Ok(Iter::Ids(IdsIter::new(vec![])))
+                let language = self
+                    .attribute_schema
+                    .as_ref()
+                    .and_then(|s| s.fields.get(&contains_filter.path))
+                    .map(|t| match t {
+                        AttributeType::Text(l) => *l,
+                        _ => Language::English,
+                    })
+                    .unwrap_or(Language::English);
+
+                let tokenizer = StemmingTokenizer::for_language(language);
+                let mut stream = tokenizer.input(&contains_filter.value);
+
+                // Collect all stemmed tokens
+                let mut stemmed_tokens = Vec::new();
+                while let Some(token) = stream.next() {
+                    stemmed_tokens.push(token.text);
                 }
+
+                if stemmed_tokens.is_empty() {
+                    // Empty input - return an iterator that yields no results
+                    return Ok(Iter::Ids(IdsIter::new(vec![])));
+                }
+
+                // If we have only one token, we can just return a TermIter
+                if stemmed_tokens.len() == 1 {
+                    let stemmed_value = &stemmed_tokens[0];
+                    let term = format!("{}:{}", contains_filter.path, stemmed_value);
+                    if let Some(term_id) = self.term_index.get_term_id(&term) {
+                        return Ok(Iter::Term(TermIter::new(&self.term_index, term_id)?));
+                    } else {
+                        return Ok(Iter::Ids(IdsIter::new(vec![])));
+                    }
+                }
+
+                // Multiple tokens - create an AndIter
+                let mut iters = Vec::new();
+                for stemmed_value in stemmed_tokens {
+                    let term = format!("{}:{}", contains_filter.path, stemmed_value);
+                    if let Some(term_id) = self.term_index.get_term_id(&term) {
+                        iters.push(Iter::Term(TermIter::new(&self.term_index, term_id)?));
+                    } else {
+                        // If any term is not found, the intersection will be empty
+                        return Ok(Iter::Ids(IdsIter::new(vec![])));
+                    }
+                }
+
+                Ok(Iter::And(AndIter::new(iters)))
             }
             Some(Filter::NotContains(_not_contains_filter)) => {
                 // Skip NotContains filter for now as requested
@@ -205,7 +252,7 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::Ids(ids_filter)),
         };
 
-        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+        let planner = Planner::new(user_id, document_filter, multi_term_index, None).unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());
@@ -242,7 +289,7 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::And(and_filter)),
         };
 
-        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+        let planner = Planner::new(user_id, document_filter, multi_term_index, None).unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());
@@ -274,7 +321,7 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::Or(or_filter)),
         };
 
-        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+        let planner = Planner::new(user_id, document_filter, multi_term_index, None).unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());
@@ -289,7 +336,7 @@ mod tests {
 
         let document_filter = DocumentFilter { filter: None };
 
-        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+        let planner = Planner::new(user_id, document_filter, multi_term_index, None).unwrap();
         let result = planner.plan();
 
         assert!(result.is_ok());
@@ -309,7 +356,7 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::Ids(ids_filter)),
         };
 
-        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+        let planner = Planner::new(user_id, document_filter, multi_term_index, None).unwrap();
 
         // Extra IDs that partially overlap with DocumentFilter
         let extra_ids = vec![2, 3, 4, 5];
@@ -332,7 +379,7 @@ mod tests {
         // Empty DocumentFilter
         let document_filter = DocumentFilter { filter: None };
 
-        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+        let planner = Planner::new(user_id, document_filter, multi_term_index, None).unwrap();
         let extra_ids = vec![1, 2, 3];
         let result = planner.plan_with_ids(&extra_ids);
 
@@ -353,7 +400,7 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::Ids(ids_filter)),
         };
 
-        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+        let planner = Planner::new(user_id, document_filter, multi_term_index, None).unwrap();
 
         // Empty extra_ids should passthrough DocumentFilter results
         let extra_ids: Vec<u32> = vec![];
@@ -379,7 +426,7 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::Ids(ids_filter)),
         };
 
-        let planner = Planner::new(user_id, document_filter, multi_term_index).unwrap();
+        let planner = Planner::new(user_id, document_filter, multi_term_index, None).unwrap();
 
         // Extra IDs with no overlap
         let extra_ids = vec![10, 11, 12];
@@ -389,6 +436,59 @@ mod tests {
         let mut iter = result.unwrap();
 
         // No overlap means no results
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_plan_contains_multi_word_filter() {
+        let temp_dir = tempdir::TempDir::new("term_index_test").unwrap();
+        let base_dir = temp_dir.path().to_str().unwrap();
+        let term_dir = format!("{}/terms", base_dir);
+        fs::create_dir_all(&term_dir).unwrap();
+
+        let user_id = 12345u128;
+
+        // Create terminology index with two points:
+        // Point 1: has "run" and "connect"
+        // Point 2: has only "run"
+        let multi_builder = MultiTermBuilder::new();
+        multi_builder
+            .add(user_id, 1, "field:run".to_string())
+            .unwrap();
+        multi_builder
+            .add(user_id, 1, "field:connect".to_string())
+            .unwrap();
+        multi_builder
+            .add(user_id, 2, "field:run".to_string())
+            .unwrap();
+        multi_builder.build().unwrap();
+
+        let multi_writer = MultiTermWriter::new(term_dir.clone());
+        multi_writer.write(&multi_builder).unwrap();
+
+        let multi_term_index = Arc::new(MultiTermIndex::new(term_dir).unwrap());
+
+        // Test with multi-word filter "running connections"
+        // Both should be stemmed: running -> run, connections -> connect
+        let contains_filter = proto::muopdb::ContainsFilter {
+            path: "field".to_string(),
+            value: "running connections".to_string(),
+        };
+
+        let document_filter = DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                contains_filter,
+            )),
+        };
+
+        let planner = Planner::new(user_id, document_filter, multi_term_index, None).unwrap();
+        let result = planner.plan();
+
+        assert!(result.is_ok());
+        let mut iter = result.unwrap();
+
+        // Should only return Point 1 (which has both terms)
+        assert_eq!(iter.next(), Some(1));
         assert_eq!(iter.next(), None);
     }
 }
