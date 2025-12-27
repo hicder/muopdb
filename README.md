@@ -3,7 +3,8 @@ MuopDB - A vector database for AI memories
 
 ## Introduction
 MuopDB is a vector database for machine learning. Currently, it supports:
-* Index type: HNSW, IVF, SPANN, Multi-user SPANN. All on-disk with mmap.
+* Index type: HNSW, IVF, SPANN, Multi-user SPANN. All on-disk.
+* Different I/O model: mmap, async I/O (with optional `io_uring` support on Linux).
 * Quantization: product quantization
 
 ## Why MuopDB?
@@ -58,14 +59,12 @@ docker-compose up --build
     "collection_name": "test-collection-2",
     "doc_ids": [
         {
-            "high_id": 0,
-            "low_id": 100
+            "uuid": "00000000-0000-0000-0000-000000000064"
         }
     ],
     "user_ids": [
         {
-            "high_id": 0,
-            "low_id": 0
+            "uuid": "00000000-0000-0000-0000-000000000000"
         }
     ],
     "vectors": [
@@ -87,8 +86,7 @@ docker-compose up --build
     },
     "user_ids": [
         {
-            "high_id": 0,
-            "low_id": 0
+            "uuid": "00000000-0000-0000-0000-000000000000"
         }
     ],
     "vector": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0]
@@ -105,14 +103,12 @@ docker-compose up --build
     "collection_name": "test-collection-2",
     "doc_ids": [
         {
-            "low_id": 100,
-            "high_id": 0
+            "uuid": "00000000-0000-0000-0000-000000000064"
         }
     ],
     "user_ids": [
         {
-            "low_id": 0,
-            "high_id": 0
+            "uuid": "00000000-0000-0000-0000-000000000000"
         }
     ]
 }
@@ -132,8 +128,7 @@ You should see something else
     },
     "user_ids": [
         {
-            "high_id": 0,
-            "low_id": 0
+            "uuid": "00000000-0000-0000-0000-000000000000"
         }
     ],
     "vector": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0]
