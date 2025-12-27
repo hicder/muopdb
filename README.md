@@ -3,6 +3,7 @@ MuopDB - A vector database for AI memories
 
 ## Introduction
 MuopDB is a vector database for machine learning. Currently, it supports:
+* Hybrid search: Text search (with stemming support), vector search with filtering.
 * Index type: HNSW, IVF, SPANN, Multi-user SPANN. All on-disk.
 * Different I/O model: mmap, async I/O (with optional `io_uring` support on Linux).
 * Quantization: product quantization
