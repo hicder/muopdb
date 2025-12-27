@@ -273,7 +273,7 @@ impl CollectionManager {
             .get_all_collection_names_sorted()
             .await;
 
-        info!("Auto optimizing collections: {collections:?}");
+        debug!("Auto optimizing collections: {collections:?}");
 
         for collection_name in collections {
             let collection = self

@@ -1514,7 +1514,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
 
     /// Checks for segments that should be auto-vacuumed and initiates optimization for them.
     pub async fn auto_optimize(&self) -> Result<()> {
-        info!("{}: Auto optimizing", self.collection_name);
+        debug!("{}: Auto optimizing", self.collection_name);
         self.auto_vacuum().await?;
         self.auto_merge().await?;
 
