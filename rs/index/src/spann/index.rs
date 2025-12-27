@@ -116,11 +116,8 @@ where
     ///
     /// # Returns
     /// * `Option<u128>` - The 128-bit document ID if found, or `None`.
-    pub fn get_doc_id(&self, point_id: u32) -> Option<u128> {
-        self.posting_lists
-            .get_index_storage()
-            .get_doc_id(point_id as usize)
-            .ok()
+    pub async fn get_doc_id(&self, point_id: u32) -> Option<u128> {
+        self.posting_lists.get_doc_id(point_id).await
     }
 
     /// Returns the point ID associated with a document ID.
@@ -159,8 +156,8 @@ where
     ///
     /// # Returns
     /// * `bool` - `true` if the document was successfully invalidated, `false` otherwise.
-    pub fn invalidate(&self, doc_id: u128) -> bool {
-        self.posting_lists.invalidate(doc_id)
+    pub async fn invalidate(&self, doc_id: u128) -> bool {
+        self.posting_lists.invalidate(doc_id).await
     }
 
     /// Invalidates a batch of document IDs.
@@ -170,8 +167,8 @@ where
     ///
     /// # Returns
     /// * `Vec<u128>` - The list of document IDs that were successfully invalidated.
-    pub fn invalidate_batch(&self, doc_ids: &[u128]) -> Vec<u128> {
-        self.posting_lists.invalidate_batch(doc_ids)
+    pub async fn invalidate_batch(&self, doc_ids: &[u128]) -> Vec<u128> {
+        self.posting_lists.invalidate_batch(doc_ids).await
     }
 
     /// Checks if a document ID is invalidated.
@@ -181,8 +178,8 @@ where
     ///
     /// # Returns
     /// * `bool` - `true` if the document is invalidated, `false` otherwise.
-    pub fn is_invalidated(&self, doc_id: u128) -> bool {
-        self.posting_lists.is_invalidated(doc_id)
+    pub async fn is_invalidated(&self, doc_id: u128) -> bool {
+        self.posting_lists.is_invalidated(doc_id).await
     }
 
     /// Returns the total number of documents in the index.
@@ -412,8 +409,8 @@ mod tests {
         let k = 2;
         let num_probes = 2;
 
-        assert!(spann.invalidate(4));
-        assert!(spann.is_invalidated(4));
+        assert!(spann.invalidate(4).await);
+        assert!(spann.is_invalidated(4).await);
 
         let params = SearchParams::new(k, num_probes, false);
 

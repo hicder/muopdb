@@ -50,7 +50,7 @@ impl SegmentOptimizer<NoQuantizerL2> for VacuumOptimizer<NoQuantizerL2> {
             let iter = inner_segment.iter_for_user(user_id).await;
             if let Some(iter) = iter {
                 let mut iter = iter;
-                while let Some((doc_id, vector)) = iter.next() {
+                while let Some((doc_id, vector)) = iter.next().await {
                     builder.insert(user_id, doc_id, vector)?;
                 }
             }

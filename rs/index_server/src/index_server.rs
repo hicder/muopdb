@@ -11,11 +11,11 @@ use metrics::API_METRICS;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
     CreateCollectionRequest, CreateCollectionResponse, DocumentAttribute, FlushRequest,
-    FlushResponse, Id, InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse,
+    FlushResponse, InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse,
     RemoveRequest, RemoveResponse, SearchRequest, SearchResponse,
 };
 use tokio::sync::RwLock;
-use utils::mem::{bytes_to_u128s, ids_to_u128s, transmute_u8_to_slice};
+use utils::mem::{bytes_to_u128s, ids_to_u128s, transmute_u8_to_slice, u128_to_id};
 
 use crate::collection_manager::CollectionManager;
 
@@ -166,7 +166,8 @@ impl IndexServer for IndexServerImpl {
         API_METRICS.num_requests_inc("search", &collection_name);
 
         let vec = req.vector;
-        let user_ids = ids_to_u128s(&req.user_ids);
+        let user_ids = ids_to_u128s(&req.user_ids)
+            .map_err(|e| tonic::Status::invalid_argument(format!("Invalid user_ids: {}", e)))?;
         let where_document = req.where_document;
 
         let collection_opt = self
@@ -209,10 +210,7 @@ impl IndexServer for IndexServerImpl {
                         let mut scores = vec![];
                         for id_with_score in result.id_with_scores {
                             // TODO(hicder): Support u128
-                            doc_ids.push(Id {
-                                low_id: id_with_score.doc_id as u64,
-                                high_id: (id_with_score.doc_id >> 64) as u64,
-                            });
+                            doc_ids.push(u128_to_id(id_with_score.doc_id));
 
                             scores.push(id_with_score.score);
                         }
@@ -262,9 +260,11 @@ impl IndexServer for IndexServerImpl {
         let collection_name = req.collection_name;
         API_METRICS.num_requests_inc("insert", &collection_name);
 
-        let doc_ids = ids_to_u128s(&req.doc_ids);
+        let doc_ids = ids_to_u128s(&req.doc_ids)
+            .map_err(|e| tonic::Status::invalid_argument(format!("Invalid doc_ids: {}", e)))?;
         let vectors = req.vectors;
-        let user_ids = ids_to_u128s(&req.user_ids);
+        let user_ids = ids_to_u128s(&req.user_ids)
+            .map_err(|e| tonic::Status::invalid_argument(format!("Invalid user_ids: {}", e)))?;
         let collection_opt = self
             .collection_manager
             .read()
@@ -353,8 +353,10 @@ impl IndexServer for IndexServerImpl {
         let collection_name = req.collection_name;
         API_METRICS.num_requests_inc("remove", &collection_name);
 
-        let ids = ids_to_u128s(&req.doc_ids);
-        let user_ids = ids_to_u128s(&req.user_ids);
+        let ids = ids_to_u128s(&req.doc_ids)
+            .map_err(|e| tonic::Status::invalid_argument(format!("Invalid doc_ids: {}", e)))?;
+        let user_ids = ids_to_u128s(&req.user_ids)
+            .map_err(|e| tonic::Status::invalid_argument(format!("Invalid user_ids: {}", e)))?;
         let collection_opt = self
             .collection_manager
             .read()
@@ -455,7 +457,8 @@ impl IndexServer for IndexServerImpl {
         let doc_ids = bytes_to_u128s(&req.doc_ids);
         let num_docs = doc_ids.len();
         let vectors_buffer = req.vectors;
-        let user_ids = ids_to_u128s(&req.user_ids);
+        let user_ids = ids_to_u128s(&req.user_ids)
+            .map_err(|e| tonic::Status::invalid_argument(format!("Invalid user_ids: {}", e)))?;
 
         let collection_opt = self
             .collection_manager

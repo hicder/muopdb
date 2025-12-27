@@ -69,10 +69,13 @@ message CreateCollectionResponse {
 
 message Id {
   // The lower 64 bits of the id.
-  uint64 low_id = 1;
+  optional uint64 low_id = 1;
 
-  // The lower 64 bits of the id.
-  uint64 high_id = 2;
+  // The upper 64 bits of the id.
+  optional uint64 high_id = 2;
+
+  // The uuid of the id.
+  optional string uuid = 3;
 }
 
 message DocumentFilter {

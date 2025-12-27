@@ -101,7 +101,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
                     .or_insert_with(HashSet::new)
                     .insert(invalidated_id.doc_id);
                 if let Some(spann_index) = index.user_to_spann.get(&invalidated_id.user_id) {
-                    let _ = spann_index.invalidate(invalidated_id.doc_id);
+                    let _ = spann_index.invalidate(invalidated_id.doc_id).await;
                 }
             }
         }
@@ -155,7 +155,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
 
         if let Some(invalidated_docs) = self.pending_invalidations.get(&user_id) {
             let doc_ids: Vec<u128> = invalidated_docs.iter().cloned().collect();
-            index.invalidate_batch(&doc_ids);
+            index.invalidate_batch(&doc_ids).await;
         }
 
         let arc_index = Arc::new(index);
@@ -201,7 +201,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
     /// * `Result<bool>` - `true` if the document was successfully invalidated, or an error.
     pub async fn invalidate(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         let index = self.get_or_create_index(user_id).await?;
-        let effectively_invalidated = index.invalidate(doc_id);
+        let effectively_invalidated = index.invalidate(doc_id).await;
         if effectively_invalidated {
             self.pending_invalidations
                 .entry(user_id)
@@ -233,7 +233,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         for (user_id, doc_ids) in user_to_doc_ids {
             let index = self.get_or_create_index(*user_id).await?;
 
-            let effectively_invalidated_doc_ids = index.invalidate_batch(doc_ids);
+            let effectively_invalidated_doc_ids = index.invalidate_batch(doc_ids).await;
             total_effectively_invalidated += effectively_invalidated_doc_ids.len();
 
             effectively_invalidated_pairs.extend(effectively_invalidated_doc_ids.into_iter().map(
@@ -268,7 +268,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
     /// * `Result<bool>` - `true` if the document is invalidated, otherwise `false`.
     pub async fn is_invalidated(&self, user_id: u128, doc_id: u128) -> Result<bool> {
         let index = self.get_or_create_index(user_id).await?;
-        Ok(index.is_invalidated(doc_id))
+        Ok(index.is_invalidated(doc_id).await)
     }
 
     /// Returns the internal point ID for a given user and document ID.

@@ -29,11 +29,10 @@ impl<Q: Quantizer> SpannIter<Q> {
     ///
     /// # Returns
     /// * `Option<(u128, &[Q::QuantizedT])>` - The next valid document ID and its quantized vector data, or `None` if the end is reached.
-    #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> Option<(u128, &[Q::QuantizedT])> {
+    pub async fn next(&mut self) -> Option<(u128, &[Q::QuantizedT])> {
         loop {
-            if let Some(doc_id) = self.index.get_doc_id(self.next_point_id) {
-                if !self.index.is_invalidated(doc_id) {
+            if let Some(doc_id) = self.index.get_doc_id(self.next_point_id).await {
+                if !self.index.is_invalidated(doc_id).await {
                     let vector = self.index.get_vector(self.next_point_id).unwrap();
                     self.next_point_id += 1;
                     return Some((doc_id, vector));

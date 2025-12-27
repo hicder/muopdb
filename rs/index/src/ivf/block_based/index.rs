@@ -327,6 +327,12 @@ where
         self.vector_storage.num_vectors()
     }
 
+    pub async fn get_doc_id(&self, point_id: u32) -> Result<u128> {
+        self.posting_list_storage
+            .get_doc_id(point_id as usize)
+            .await
+    }
+
     /// Performs a complete IVF search for the given query.
     ///
     /// # Arguments
