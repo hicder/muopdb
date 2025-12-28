@@ -119,18 +119,7 @@ where
         }
     }
 
-    pub fn get_vector_storage(&self) -> Option<&VectorStorage<Q::QuantizedT>> {
-        match self {
-            IvfType::L2Plain(ivf) => Some(&ivf.vector_storage),
-            IvfType::L2EF(ivf) => Some(&ivf.vector_storage),
-            IvfType::BlockBased(_) => {
-                // BlockBasedIvf uses AsyncFixedFileVectorStorage which is a different type
-                // and requires async operations, so we return None here
-                None
-            }
-        }
-    }
-
+    #[cfg(test)]
     pub fn get_index_storage(&self) -> &PostingListStorage {
         match self {
             IvfType::L2Plain(ivf) => &ivf.posting_list_storage,
