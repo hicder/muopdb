@@ -43,23 +43,54 @@ impl SegmentOptimizer<NoQuantizerL2> for MergeOptimizer<NoQuantizerL2> {
 
         let config = pending_segment.collection_config();
         let mut builder = MultiSpannBuilder::new(config.clone(), pending_segment.base_directory())?;
+        let term_builder = crate::multi_terms::builder::MultiTermBuilder::new();
         let all_user_ids = pending_segment.all_user_ids();
 
+        // Track point ID mappings: (seg_idx, user_id, old_point_id) -> new_point_id
+        let mut point_id_mappings = std::collections::HashMap::<(usize, u128, u32), u32>::new();
+
         for user_id in all_user_ids {
-            for inner_segment in inner_segments {
+            for (seg_idx, inner_segment) in inner_segments.iter().enumerate() {
                 let iter = inner_segment.iter_for_user(user_id).await;
                 if let Some(iter) = iter {
                     let mut iter = iter;
-                    while let Some((doc_id, vector)) = iter.next().await {
-                        builder.insert(user_id, doc_id, vector)?;
+                    while let Some((old_point_id, doc_id, vector)) = iter.next().await {
+                        let new_point_id = builder.insert(user_id, doc_id, &vector)?;
+                        point_id_mappings.insert((seg_idx, user_id, old_point_id), new_point_id);
                     }
                 }
             }
         }
 
+        // Merge term indices
+        for (seg_idx, inner_segment) in inner_segments.iter().enumerate() {
+            let user_ids = inner_segment.user_ids().await;
+            for user_id in user_ids {
+                if let Some(term_pairs) = inner_segment.iter_terms_for_user(user_id).await {
+                    for (term, old_point_id) in term_pairs {
+                        if let Some(&new_point_id) =
+                            point_id_mappings.get(&(seg_idx, user_id, old_point_id))
+                        {
+                            term_builder.add(user_id, new_point_id, term)?;
+                        }
+                    }
+                }
+            }
+        }
+
+        term_builder.build()?;
+
         builder.build()?;
         let writer = MultiSpannWriter::new(pending_segment.base_directory().clone());
         writer.write(&mut builder)?;
+
+        // Write term index
+        let term_writer = crate::multi_terms::writer::MultiTermWriter::new(format!(
+            "{}/terms",
+            pending_segment.base_directory()
+        ));
+        term_writer.write(&term_builder)?;
+
         Ok(())
     }
 }
@@ -516,6 +547,122 @@ mod tests {
             .collect::<Vec<_>>();
         result_ids.sort();
         assert_eq!(result_ids, vec![2, 3]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_merge_optimizer_with_terms() -> Result<()> {
+        let collection_name = "test_merge_optimizer_with_terms";
+        let tmp_dir = tempdir::TempDir::new(collection_name)?;
+        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
+        let mut config = CollectionConfig::default_test_config();
+        config.num_features = 3;
+        config.wal_file_size = 0;
+        config.max_time_to_flush_ms = 0;
+        config.max_pending_ops = 0;
+        config.initial_num_centroids = 1;
+
+        Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
+
+        let reader =
+            CollectionReader::new(collection_name.to_string(), base_directory.clone(), None);
+        let collection = reader.read::<NoQuantizerL2>().await?;
+
+        // Segment 1: Doc 1 (tag:a), Doc 2 (tag:b)
+        let mut attr1 = DocumentAttribute::default();
+        attr1.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "a".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[0], 1, &[1.0, 1.0, 1.0], 0, attr1)
+            .await?;
+
+        let mut attr2 = DocumentAttribute::default();
+        attr2.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "b".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[0], 2, &[2.0, 2.0, 2.0], 1, attr2)
+            .await?;
+
+        collection.flush().await?;
+
+        // Segment 2: Doc 3 (tag:a), Doc 4 (tag:c)
+        let mut attr3 = DocumentAttribute::default();
+        attr3.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "a".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[0], 3, &[3.0, 3.0, 3.0], 2, attr3)
+            .await?;
+
+        let mut attr4 = DocumentAttribute::default();
+        attr4.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "c".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[0], 4, &[4.0, 4.0, 4.0], 3, attr4)
+            .await?;
+
+        collection.flush().await?;
+
+        // Verify we have 2 segments
+        let segments = collection.get_current_toc().await.toc.clone();
+        assert_eq!(segments.len(), 2);
+
+        // Merge segments
+        let pending_segment = collection.init_optimizing(&segments).await?;
+        let optimizer = MergeOptimizer::<NoQuantizerL2>::new();
+        collection
+            .run_optimizer(&optimizer, &pending_segment)
+            .await?;
+
+        // Verify we have 1 segment
+        let segments = collection.get_current_toc().await.toc.clone();
+        assert_eq!(segments.len(), 1);
+
+        // Test search with term filter "tag:a"
+        let snapshot = collection.get_snapshot().await?;
+        let mut filter = proto::muopdb::DocumentFilter::default();
+        filter.filter = Some(proto::muopdb::document_filter::Filter::Contains(
+            proto::muopdb::ContainsFilter {
+                path: "tag".to_string(),
+                value: "a".to_string(),
+            },
+        ));
+
+        let params = SearchParams::new(10, 10, false);
+        let result = snapshot
+            .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
+            .await
+            .unwrap();
+
+        // Should find Doc 1 and Doc 3
+        assert_eq!(result.id_with_scores.len(), 2);
+        let mut doc_ids: Vec<u128> = result.id_with_scores.iter().map(|r| r.doc_id).collect();
+        doc_ids.sort();
+        assert_eq!(doc_ids, vec![1, 3]);
 
         Ok(())
     }

@@ -17,6 +17,7 @@ use crate::utils::{
     IdWithScore, IntermediateResult, PointAndDistance, SearchContext, SearchResult, SearchStats,
 };
 use crate::vector::async_storage::AsyncFixedFileVectorStorage;
+use crate::vector::StorageContext;
 
 pub struct BlockBasedIvf<Q: Quantizer>
 where
@@ -331,6 +332,22 @@ where
         self.posting_list_storage
             .get_doc_id(point_id as usize)
             .await
+    }
+
+    /// Retrieves the vector data for a given point ID.
+    ///
+    /// # Arguments
+    /// * `point_id` - The internal point ID.
+    /// * `context` - A storage context for tracking cache stats.
+    ///
+    /// # Returns
+    /// * `Result<Vec<Q::QuantizedT>>` - The vector data if found, or an error.
+    pub async fn get_vector(
+        &self,
+        point_id: u32,
+        context: &mut impl StorageContext,
+    ) -> Result<Vec<Q::QuantizedT>> {
+        self.vector_storage.get(point_id, context).await
     }
 
     /// Performs a complete IVF search for the given query.

@@ -141,12 +141,11 @@ where
     /// * `point_id` - The internal point ID.
     ///
     /// # Returns
-    /// * `Option<&[Q::QuantizedT]>` - A reference to the quantized vector data if found.
-    pub fn get_vector(&self, point_id: u32) -> Option<&[Q::QuantizedT]> {
-        self.posting_lists
-            .get_vector_storage()
-            .get_no_context(point_id)
-            .ok()
+    /// * `Option<Vec<Q::QuantizedT>>` - The quantized vector data if found.
+    pub async fn get_vector(&self, point_id: u32) -> Option<Vec<Q::QuantizedT>> {
+        use crate::utils::SearchContext;
+        let mut context = SearchContext::new(false);
+        self.posting_lists.get_vector(point_id, &mut context).await
     }
 
     /// Invalidates a document ID in the index.

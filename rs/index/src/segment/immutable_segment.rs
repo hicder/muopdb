@@ -128,6 +128,15 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
             .await
     }
 
+    /// Iterates all (term, point_id) pairs for a given user.
+    pub async fn iter_terms_for_user(&self, user_id: u128) -> Option<Vec<(String, u32)>> {
+        let multi_term_index = self.get_multi_term_index()?;
+        multi_term_index
+            .iter_term_point_pairs_for_user(user_id)
+            .ok()
+            .map(|iter| iter.collect())
+    }
+
     /// Search only the term index for documents matching the filter.
     /// Returns a Vec of point IDs (internal format).
     pub async fn search_terms_for_user(
@@ -158,10 +167,13 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
             Err(_) => return vec![],
         };
 
-        // Manually collect since Iter doesn't implement Iterator
+        // Manually collect since iters::Iter doesn't implement Iterator trait directly
         let mut result = Vec::new();
-        while let Some(point_id) = iter.next() {
-            result.push(point_id);
+        loop {
+            match iter.next() {
+                Some(point_id) => result.push(point_id),
+                None => break,
+            }
         }
         result
     }
