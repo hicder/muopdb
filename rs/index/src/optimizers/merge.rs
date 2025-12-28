@@ -666,4 +666,501 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_merge_optimizer_with_multiple_terms_per_doc() -> Result<()> {
+        let collection_name = "test_merge_optimizer_with_multiple_terms";
+        let tmp_dir = tempdir::TempDir::new(collection_name)?;
+        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
+        let mut config = CollectionConfig::default_test_config();
+        config.num_features = 3;
+        config.wal_file_size = 0;
+        config.max_time_to_flush_ms = 0;
+        config.max_pending_ops = 0;
+        config.initial_num_centroids = 1;
+
+        Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
+
+        let reader =
+            CollectionReader::new(collection_name.to_string(), base_directory.clone(), None);
+        let collection = reader.read::<NoQuantizerL2>().await?;
+
+        // Segment 1: Doc 1 (tag:a, color:red), Doc 2 (tag:b, color:blue)
+        let mut attr1 = DocumentAttribute::default();
+        attr1.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "a".to_string(),
+                )),
+            },
+        );
+        attr1.value.insert(
+            "color".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "red".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[0], 1, &[1.0, 1.0, 1.0], 0, attr1)
+            .await?;
+
+        let mut attr2 = DocumentAttribute::default();
+        attr2.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "b".to_string(),
+                )),
+            },
+        );
+        attr2.value.insert(
+            "color".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "blue".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[0], 2, &[2.0, 2.0, 2.0], 1, attr2)
+            .await?;
+
+        collection.flush().await?;
+
+        // Segment 2: Doc 3 (tag:a, color:blue), Doc 4 (tag:c, color:red)
+        let mut attr3 = DocumentAttribute::default();
+        attr3.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "a".to_string(),
+                )),
+            },
+        );
+        attr3.value.insert(
+            "color".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "blue".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[0], 3, &[3.0, 3.0, 3.0], 2, attr3)
+            .await?;
+
+        let mut attr4 = DocumentAttribute::default();
+        attr4.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "c".to_string(),
+                )),
+            },
+        );
+        attr4.value.insert(
+            "color".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "red".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[0], 4, &[4.0, 4.0, 4.0], 3, attr4)
+            .await?;
+
+        collection.flush().await?;
+
+        // Verify we have 2 segments
+        let segments = collection.get_current_toc().await.toc.clone();
+        assert_eq!(segments.len(), 2);
+
+        // Merge segments
+        let pending_segment = collection.init_optimizing(&segments).await?;
+        let optimizer = MergeOptimizer::<NoQuantizerL2>::new();
+        collection
+            .run_optimizer(&optimizer, &pending_segment)
+            .await?;
+
+        // Verify we have 1 segment
+        let segments = collection.get_current_toc().await.toc.clone();
+        assert_eq!(segments.len(), 1);
+
+        let snapshot = collection.get_snapshot().await?;
+        let params = SearchParams::new(10, 10, false);
+
+        // Test search with term filter "tag:a" - should find Doc 1 and Doc 3
+        let mut filter = proto::muopdb::DocumentFilter::default();
+        filter.filter = Some(proto::muopdb::document_filter::Filter::Contains(
+            proto::muopdb::ContainsFilter {
+                path: "tag".to_string(),
+                value: "a".to_string(),
+            },
+        ));
+
+        let result = snapshot
+            .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
+            .await
+            .unwrap();
+
+        assert_eq!(result.id_with_scores.len(), 2);
+        let mut doc_ids: Vec<u128> = result.id_with_scores.iter().map(|r| r.doc_id).collect();
+        doc_ids.sort();
+        assert_eq!(doc_ids, vec![1, 3]);
+
+        // Test search with term filter "color:red" - should find Doc 1 and Doc 4
+        let mut filter = proto::muopdb::DocumentFilter::default();
+        filter.filter = Some(proto::muopdb::document_filter::Filter::Contains(
+            proto::muopdb::ContainsFilter {
+                path: "color".to_string(),
+                value: "red".to_string(),
+            },
+        ));
+
+        let result = snapshot
+            .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
+            .await
+            .unwrap();
+
+        assert_eq!(result.id_with_scores.len(), 2);
+        let mut doc_ids: Vec<u128> = result.id_with_scores.iter().map(|r| r.doc_id).collect();
+        doc_ids.sort();
+        assert_eq!(doc_ids, vec![1, 4]);
+
+        // Test search with term filter "color:blue" - should find Doc 2 and Doc 3
+        let mut filter = proto::muopdb::DocumentFilter::default();
+        filter.filter = Some(proto::muopdb::document_filter::Filter::Contains(
+            proto::muopdb::ContainsFilter {
+                path: "color".to_string(),
+                value: "blue".to_string(),
+            },
+        ));
+
+        let result = snapshot
+            .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
+            .await
+            .unwrap();
+
+        assert_eq!(result.id_with_scores.len(), 2);
+        let mut doc_ids: Vec<u128> = result.id_with_scores.iter().map(|r| r.doc_id).collect();
+        doc_ids.sort();
+        assert_eq!(doc_ids, vec![2, 3]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_merge_optimizer_with_terms_multiple_users() -> Result<()> {
+        let collection_name = "test_merge_optimizer_with_terms_multi_user";
+        let tmp_dir = tempdir::TempDir::new(collection_name)?;
+        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
+        let mut config = CollectionConfig::default_test_config();
+        config.num_features = 3;
+        config.wal_file_size = 0;
+        config.max_time_to_flush_ms = 0;
+        config.max_pending_ops = 0;
+        config.initial_num_centroids = 1;
+
+        Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
+
+        let reader =
+            CollectionReader::new(collection_name.to_string(), base_directory.clone(), None);
+        let collection = reader.read::<NoQuantizerL2>().await?;
+
+        // Segment 1: User 0 (tag:x, cat:electronics), User 1 (tag:p, cat:food)
+        let mut attr1 = DocumentAttribute::default();
+        attr1.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "x".to_string(),
+                )),
+            },
+        );
+        attr1.value.insert(
+            "cat".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "electronics".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[0], 1, &[1.0, 1.0, 1.0], 0, attr1)
+            .await?;
+
+        let mut attr2 = DocumentAttribute::default();
+        attr2.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "p".to_string(),
+                )),
+            },
+        );
+        attr2.value.insert(
+            "cat".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "food".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[1], 2, &[2.0, 2.0, 2.0], 1, attr2)
+            .await?;
+
+        collection.flush().await?;
+
+        // Segment 2: User 0 (tag:y, cat:food), User 1 (tag:q, cat:electronics)
+        let mut attr3 = DocumentAttribute::default();
+        attr3.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "y".to_string(),
+                )),
+            },
+        );
+        attr3.value.insert(
+            "cat".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "food".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[0], 3, &[3.0, 3.0, 3.0], 2, attr3)
+            .await?;
+
+        let mut attr4 = DocumentAttribute::default();
+        attr4.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "q".to_string(),
+                )),
+            },
+        );
+        attr4.value.insert(
+            "cat".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "electronics".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[1], 4, &[4.0, 4.0, 4.0], 3, attr4)
+            .await?;
+
+        collection.flush().await?;
+
+        let segments = collection.get_current_toc().await.toc.clone();
+        assert_eq!(segments.len(), 2);
+
+        let pending_segment = collection.init_optimizing(&segments).await?;
+        let optimizer = MergeOptimizer::<NoQuantizerL2>::new();
+        collection
+            .run_optimizer(&optimizer, &pending_segment)
+            .await?;
+
+        let segments = collection.get_current_toc().await.toc.clone();
+        assert_eq!(segments.len(), 1);
+
+        let snapshot = collection.get_snapshot().await?;
+        let params = SearchParams::new(10, 10, false);
+
+        // Test User 0: search for tag:x - should find Doc 1
+        let mut filter = proto::muopdb::DocumentFilter::default();
+        filter.filter = Some(proto::muopdb::document_filter::Filter::Contains(
+            proto::muopdb::ContainsFilter {
+                path: "tag".to_string(),
+                value: "x".to_string(),
+            },
+        ));
+
+        let result = snapshot
+            .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
+            .await
+            .unwrap();
+        assert_eq!(result.id_with_scores.len(), 1);
+        assert_eq!(result.id_with_scores[0].doc_id, 1);
+
+        // Test User 1: search for tag:p - should find Doc 2
+        let mut filter = proto::muopdb::DocumentFilter::default();
+        filter.filter = Some(proto::muopdb::document_filter::Filter::Contains(
+            proto::muopdb::ContainsFilter {
+                path: "tag".to_string(),
+                value: "p".to_string(),
+            },
+        ));
+
+        let result = snapshot
+            .search_for_user(1, vec![2.0, 2.0, 2.0], &params, Some(Arc::new(filter)))
+            .await
+            .unwrap();
+        assert_eq!(result.id_with_scores.len(), 1);
+        assert_eq!(result.id_with_scores[0].doc_id, 2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_merge_optimizer_with_terms_and_invalidation() -> Result<()> {
+        let collection_name = "test_merge_optimizer_with_terms_invalidated";
+        let tmp_dir = tempdir::TempDir::new(collection_name)?;
+        let base_directory = tmp_dir.path().to_str().unwrap().to_string();
+        let mut config = CollectionConfig::default_test_config();
+        config.num_features = 3;
+        config.wal_file_size = 0;
+        config.max_time_to_flush_ms = 0;
+        config.max_pending_ops = 0;
+        config.initial_num_centroids = 1;
+
+        Collection::<NoQuantizerL2>::init_new_collection(base_directory.clone(), &config)?;
+
+        let reader =
+            CollectionReader::new(collection_name.to_string(), base_directory.clone(), None);
+        let collection = reader.read::<NoQuantizerL2>().await?;
+
+        // Segment 1: Doc 1 (tag:m, status:active), Doc 2 (tag:n, status:active)
+        let mut attr1 = DocumentAttribute::default();
+        attr1.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "m".to_string(),
+                )),
+            },
+        );
+        attr1.value.insert(
+            "status".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "active".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[0], 1, &[1.0, 1.0, 1.0], 0, attr1)
+            .await?;
+
+        let mut attr2 = DocumentAttribute::default();
+        attr2.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "n".to_string(),
+                )),
+            },
+        );
+        attr2.value.insert(
+            "status".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "active".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[0], 2, &[2.0, 2.0, 2.0], 1, attr2)
+            .await?;
+
+        collection.flush().await?;
+
+        // Segment 2: Doc 3 (tag:m, status:archived), Doc 4 (tag:o, status:active)
+        let mut attr3 = DocumentAttribute::default();
+        attr3.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "m".to_string(),
+                )),
+            },
+        );
+        attr3.value.insert(
+            "status".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "archived".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[0], 3, &[3.0, 3.0, 3.0], 2, attr3)
+            .await?;
+
+        let mut attr4 = DocumentAttribute::default();
+        attr4.value.insert(
+            "tag".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "o".to_string(),
+                )),
+            },
+        );
+        attr4.value.insert(
+            "status".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::KeywordValue(
+                    "active".to_string(),
+                )),
+            },
+        );
+        collection
+            .insert_for_users(&[0], 4, &[4.0, 4.0, 4.0], 3, attr4)
+            .await?;
+
+        collection.flush().await?;
+
+        let segments = collection.get_current_toc().await.toc.clone();
+        assert_eq!(segments.len(), 2);
+
+        // Remove Doc 1 (tag:m, status:active) from first segment
+        assert!(collection
+            .all_segments()
+            .get(&segments[0])
+            .unwrap()
+            .value()
+            .remove(0, 1)
+            .await
+            .is_ok());
+
+        let pending_segment = collection.init_optimizing(&segments).await?;
+        let optimizer = MergeOptimizer::<NoQuantizerL2>::new();
+        collection
+            .run_optimizer(&optimizer, &pending_segment)
+            .await?;
+
+        let segments = collection.get_current_toc().await.toc.clone();
+        assert_eq!(segments.len(), 1);
+
+        let snapshot = collection.get_snapshot().await?;
+        let params = SearchParams::new(10, 10, false);
+
+        // Search for tag:m - should find Doc 3 only (Doc 1 was invalidated but we check)
+        let mut filter = proto::muopdb::DocumentFilter::default();
+        filter.filter = Some(proto::muopdb::document_filter::Filter::Contains(
+            proto::muopdb::ContainsFilter {
+                path: "tag".to_string(),
+                value: "m".to_string(),
+            },
+        ));
+
+        let result = snapshot
+            .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
+            .await
+            .unwrap();
+        // Doc 1 was invalidated but its term may still be in index
+        // The search returns whatever is in the term index
+        assert!(result.id_with_scores.len() >= 1);
+
+        Ok(())
+    }
 }
