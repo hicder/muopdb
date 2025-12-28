@@ -17,6 +17,8 @@ service IndexServer {
 
   rpc Search(SearchRequest) returns (SearchResponse) {}
 
+  rpc TermSearch(TermSearchRequest) returns (TermSearchResponse) {}
+
   rpc Insert(InsertRequest) returns (InsertResponse) {}
 
   rpc Remove(RemoveRequest) returns (RemoveResponse) {}
@@ -135,6 +137,18 @@ message SearchResponse {
 
   // For metrics, not enabled by default
   uint64 num_pages_accessed = 3;
+}
+
+message TermSearchRequest {
+  string collection_name = 1;
+  DocumentFilter filter = 2;
+  repeated Id user_ids = 3;
+  uint32 limit = 4;
+}
+
+message TermSearchResponse {
+  repeated Id doc_ids = 1;
+  uint64 num_docs = 2;
 }
 
 message InsertRequest {

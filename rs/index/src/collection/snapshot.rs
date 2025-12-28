@@ -110,6 +110,43 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
 
         Some(scored_results)
     }
+
+    /// Search only the term index across all segments and users.
+    /// Returns up to `limit` document IDs.
+    pub async fn search_terms_for_users(
+        &self,
+        user_ids: &[u128],
+        filter: Arc<DocumentFilter>,
+        limit: usize,
+    ) -> Vec<u128> {
+        let mut all_doc_ids: Vec<u128> = Vec::new();
+
+        for segment in &self.segments {
+            for &user_id in user_ids {
+                let point_ids = segment
+                    .search_terms_for_user(
+                        user_id,
+                        filter.clone(),
+                        self.collection.config().attribute_schema.clone(),
+                    )
+                    .await;
+
+                // Convert point IDs to doc IDs and collect
+                for point_id in point_ids {
+                    if let Some(doc_id) = segment.get_doc_id(user_id, point_id).await {
+                        all_doc_ids.push(doc_id);
+                    }
+                }
+            }
+        }
+
+        // Deduplicate doc IDs
+        all_doc_ids.sort();
+        all_doc_ids.dedup();
+
+        // Get up to 'limit' doc IDs
+        all_doc_ids.into_iter().take(limit).collect()
+    }
 }
 
 impl<Q: Quantizer + Clone + Send + Sync + 'static> Drop for Snapshot<Q> {
@@ -153,6 +190,28 @@ impl SnapshotWithQuantizer {
             Self::SnapshotProductQuantizer(snapshot) => {
                 Snapshot::<ProductQuantizerL2>::search_for_users(
                     snapshot, user_ids, query, params, filter,
+                )
+                .await
+            }
+        }
+    }
+
+    pub async fn search_terms_for_users(
+        snapshot: SnapshotWithQuantizer,
+        user_ids: &[u128],
+        filter: Arc<DocumentFilter>,
+        limit: usize,
+    ) -> Vec<u128> {
+        match snapshot {
+            Self::SnapshotNoQuantizer(snapshot) => {
+                Snapshot::<NoQuantizerL2>::search_terms_for_users(
+                    &snapshot, user_ids, filter, limit,
+                )
+                .await
+            }
+            Self::SnapshotProductQuantizer(snapshot) => {
+                Snapshot::<ProductQuantizerL2>::search_terms_for_users(
+                    &snapshot, user_ids, filter, limit,
                 )
                 .await
             }

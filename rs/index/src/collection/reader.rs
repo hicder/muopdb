@@ -124,6 +124,7 @@ impl CollectionReader {
                 toc,
                 segments,
                 collection_config,
+                block_cache,
             )
             .await?,
         );

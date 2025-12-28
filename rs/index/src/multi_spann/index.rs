@@ -290,6 +290,21 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         }
     }
 
+    /// Returns the document ID associated with a point ID.
+    ///
+    /// # Arguments
+    /// * `user_id` - The ID of the user.
+    /// * `point_id` - The internal point ID.
+    ///
+    /// # Returns
+    /// * `Option<u128>` - The 128-bit document ID if found, otherwise `None`.
+    pub async fn get_doc_id(&self, user_id: u128, point_id: u32) -> Option<u128> {
+        match self.get_or_create_index(user_id).await {
+            Ok(index) => index.get_doc_id(point_id).await,
+            Err(_) => None,
+        }
+    }
+
     /// Searches for the nearest neighbors of a query vector for a specific user.
     ///
     /// # Arguments

@@ -13,6 +13,7 @@ use proto::muopdb::DocumentAttribute;
 use quantization::quantization::Quantizer;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, Mutex as AsyncMutex};
+use utils::block_cache::BlockCache;
 
 use super::snapshot::Snapshot;
 use super::{OpChannelEntry, TableOfContent, VersionsInfo};
@@ -180,6 +181,9 @@ pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
     flushing: tokio::sync::Mutex<()>,
 
     write_coordinator: Arc<AsyncMutex<WalWriteCoordinator>>,
+
+    // Optional block cache for async I/O operations
+    block_cache: Option<Arc<BlockCache>>,
 }
 
 impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
@@ -246,6 +250,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             write_coordinator: Arc::new(AsyncMutex::new(WalWriteCoordinator::new(
                 wal_write_group_size,
             ))),
+            block_cache: None,
         })
     }
 
@@ -279,6 +284,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         toc: TableOfContent,
         segments: Vec<BoxedImmutableSegment<Q>>,
         segment_config: CollectionConfig,
+        block_cache: Option<Arc<BlockCache>>,
     ) -> Result<Self> {
         let versions_info = RwLock::new(VersionsInfo::new());
         versions_info.write().await.current_version = version;
@@ -446,6 +452,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             write_coordinator: Arc::new(AsyncMutex::new(WalWriteCoordinator::new(
                 wal_write_group_size,
             ))),
+            block_cache,
         })
     }
 
@@ -1283,14 +1290,25 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         )?;
 
         // Replace the pending segment with the new segment
-        let index = MultiSpannReader::new(new_segment_path.clone())
-            .read::<Q>(
-                self.segment_config.posting_list_encoding_type.clone(),
-                self.segment_config.num_features,
-            )
-            .await?;
+        let index = if let Some(block_cache) = &self.block_cache {
+            MultiSpannReader::new(new_segment_path.clone())
+                .read_async::<Q>(
+                    self.segment_config.posting_list_encoding_type.clone(),
+                    self.segment_config.num_features,
+                    block_cache.clone(),
+                )
+                .await?
+        } else {
+            MultiSpannReader::new(new_segment_path.clone())
+                .read::<Q>(
+                    self.segment_config.posting_list_encoding_type.clone(),
+                    self.segment_config.num_features,
+                )
+                .await?
+        };
+        let terms_path = format!("{}/{}/terms", self.base_directory, random_name.clone());
         let new_segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
-            ImmutableSegment::new(index, random_name.clone(), None),
+            ImmutableSegment::new(index, random_name.clone(), Some(terms_path)),
         )));
         self.replace_segment(
             new_segment,
