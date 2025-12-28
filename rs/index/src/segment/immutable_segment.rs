@@ -1,11 +1,14 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use config::attribute_schema::AttributeSchema;
 use config::search_params::SearchParams;
+use proto::muopdb::DocumentFilter;
 use quantization::quantization::Quantizer;
 
 use crate::multi_spann::index::MultiSpannIndex;
 use crate::multi_terms::index::MultiTermIndex;
+use crate::query::iters::InvertedIndexIter;
 use crate::query::planner::Planner;
 use crate::segment::Segment;
 use crate::spann::iter::SpannIter;
@@ -74,6 +77,18 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
     pub fn get_multi_term_index(&self) -> Option<Arc<MultiTermIndex>> {
         self.multi_term_index.clone()
     }
+
+    /// Returns the document ID associated with a point ID.
+    ///
+    /// # Arguments
+    /// * `user_id` - The ID of the user.
+    /// * `point_id` - The internal point ID.
+    ///
+    /// # Returns
+    /// * `Option<u128>` - The 128-bit document ID if found, otherwise `None`.
+    pub async fn get_doc_id(&self, user_id: u128, point_id: u32) -> Option<u128> {
+        self.index.get_doc_id(user_id, point_id).await
+    }
 }
 
 /// This is the implementation of Segment for ImmutableSegment.
@@ -111,6 +126,44 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
         self.index
             .search_for_user(user_id, query, params, planner)
             .await
+    }
+
+    /// Search only the term index for documents matching the filter.
+    /// Returns a Vec of point IDs (internal format).
+    pub async fn search_terms_for_user(
+        &self,
+        user_id: u128,
+        filter: Arc<DocumentFilter>,
+        attribute_schema: Option<AttributeSchema>,
+    ) -> Vec<u32> {
+        let multi_term_index = match self.get_multi_term_index() {
+            Some(idx) => idx,
+            None => return vec![],
+        };
+
+        // Create a planner with the filter (no vector search)
+        let planner = match Planner::new(
+            user_id,
+            (*filter).clone(),
+            multi_term_index,
+            attribute_schema,
+        ) {
+            Ok(p) => p,
+            Err(_) => return vec![],
+        };
+
+        // Collect all point IDs from the iterator
+        let mut iter = match planner.plan() {
+            Ok(iter) => iter,
+            Err(_) => return vec![],
+        };
+
+        // Manually collect since Iter doesn't implement Iterator
+        let mut result = Vec::new();
+        while let Some(point_id) = iter.next() {
+            result.push(point_id);
+        }
+        result
     }
 }
 

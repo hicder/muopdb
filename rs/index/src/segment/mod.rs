@@ -10,6 +10,7 @@ use async_lock::RwLock;
 use config::search_params::SearchParams;
 use immutable_segment::ImmutableSegment;
 use pending_segment::PendingSegment;
+use proto::muopdb::DocumentFilter;
 use quantization::quantization::Quantizer;
 
 use crate::multi_terms::index::MultiTermIndex;
@@ -122,6 +123,37 @@ impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
                 immutable_segment.read().await.get_multi_term_index()
             }
             _ => None,
+        }
+    }
+
+    pub async fn get_doc_id(&self, user_id: u128, point_id: u32) -> Option<u128> {
+        match self {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                immutable_segment
+                    .read()
+                    .await
+                    .get_doc_id(user_id, point_id)
+                    .await
+            }
+            _ => None,
+        }
+    }
+
+    pub async fn search_terms_for_user(
+        &self,
+        user_id: u128,
+        filter: Arc<DocumentFilter>,
+        attribute_schema: Option<config::attribute_schema::AttributeSchema>,
+    ) -> Vec<u32> {
+        match self {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                immutable_segment
+                    .read()
+                    .await
+                    .search_terms_for_user(user_id, filter, attribute_schema)
+                    .await
+            }
+            _ => vec![],
         }
     }
 }

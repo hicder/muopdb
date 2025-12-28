@@ -12,7 +12,8 @@ use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
     CreateCollectionRequest, CreateCollectionResponse, DocumentAttribute, FlushRequest,
     FlushResponse, InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse,
-    RemoveRequest, RemoveResponse, SearchRequest, SearchResponse,
+    RemoveRequest, RemoveResponse, SearchRequest, SearchResponse, TermSearchRequest,
+    TermSearchResponse,
 };
 use tokio::sync::RwLock;
 use utils::mem::{bytes_to_u128s, ids_to_u128s, transmute_u8_to_slice, u128_to_id};
@@ -238,6 +239,74 @@ impl IndexServer for IndexServerImpl {
                         }));
                     }
                 }
+            } else {
+                return Err(tonic::Status::new(
+                    tonic::Code::Internal,
+                    "Failed to get snapshot",
+                ));
+            }
+        }
+        Err(tonic::Status::new(
+            tonic::Code::NotFound,
+            "Collection not found",
+        ))
+    }
+
+    async fn term_search(
+        &self,
+        request: tonic::Request<TermSearchRequest>,
+    ) -> Result<tonic::Response<TermSearchResponse>, tonic::Status> {
+        let start = std::time::Instant::now();
+        let req = request.into_inner();
+        let collection_name = req.collection_name;
+        API_METRICS.num_requests_inc("term_search", &collection_name);
+
+        let user_ids = ids_to_u128s(&req.user_ids)
+            .map_err(|e| tonic::Status::invalid_argument(format!("Invalid user_ids: {}", e)))?;
+
+        let filter = req
+            .filter
+            .ok_or_else(|| tonic::Status::invalid_argument("filter is required"))?;
+
+        let limit = req.limit as usize;
+        if limit == 0 {
+            return Err(tonic::Status::invalid_argument(
+                "limit must be greater than 0",
+            ));
+        }
+
+        let collection_opt = self
+            .collection_manager
+            .read()
+            .await
+            .get_collection(&collection_name)
+            .await;
+
+        if let Some(collection) = collection_opt {
+            if let Ok(snapshot) = collection.get_snapshot().await {
+                let result = SnapshotWithQuantizer::search_terms_for_users(
+                    snapshot,
+                    &user_ids,
+                    Arc::new(filter),
+                    limit,
+                )
+                .await;
+
+                let num_docs = result.len();
+                let mut doc_ids = vec![];
+                for doc_id in result {
+                    doc_ids.push(u128_to_id(doc_id));
+                }
+
+                let duration = start.elapsed();
+                info!("[{collection_name}] Term searched collection in {duration:?}");
+
+                API_METRICS.request_latency_ms_observe("term_search", duration.as_millis() as f64);
+
+                return Ok(tonic::Response::new(TermSearchResponse {
+                    doc_ids,
+                    num_docs: num_docs as u64,
+                }));
             } else {
                 return Err(tonic::Status::new(
                     tonic::Code::Internal,
