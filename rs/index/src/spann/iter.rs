@@ -25,17 +25,18 @@ impl<Q: Quantizer> SpannIter<Q> {
         }
     }
 
-    /// Returns the next valid document ID and its vector data.
+    /// Returns the next valid point ID, document ID and its vector data.
     ///
     /// # Returns
-    /// * `Option<(u128, &[Q::QuantizedT])>` - The next valid document ID and its quantized vector data, or `None` if the end is reached.
-    pub async fn next(&mut self) -> Option<(u128, &[Q::QuantizedT])> {
+    /// * `Option<(u32, u128, Vec<Q::QuantizedT>)>` - The next valid internal point ID, document ID and its quantized vector data, or `None` if the end is reached.
+    pub async fn next(&mut self) -> Option<(u32, u128, Vec<Q::QuantizedT>)> {
         loop {
-            if let Some(doc_id) = self.index.get_doc_id(self.next_point_id).await {
+            let current_point_id = self.next_point_id;
+            if let Some(doc_id) = self.index.get_doc_id(current_point_id).await {
                 if !self.index.is_invalidated(doc_id).await {
-                    let vector = self.index.get_vector(self.next_point_id).unwrap();
+                    let vector = self.index.get_vector(current_point_id).await?;
                     self.next_point_id += 1;
-                    return Some((doc_id, vector));
+                    return Some((current_point_id, doc_id, vector));
                 }
             } else {
                 return None;

@@ -168,6 +168,20 @@ impl TermIndex {
         let results: Vec<u32> = ef_iter.collect();
         Ok(Box::new(results.into_iter()))
     }
+
+    /// Returns an iterator over all terms and their posting lists.
+    /// Each item is (term_string, point_id).
+    pub fn iter_term_point_pairs(&self) -> Box<dyn Iterator<Item = (String, u32)> + '_> {
+        let term_map = self.inner.borrow_term_map();
+        let iter = term_map.iter().flat_map(move |(term, term_id)| {
+            let it = self
+                .get_posting_list_iterator(term_id)
+                .expect("Term ID should be valid");
+            let term_clone = term.clone();
+            it.map(move |point_id| (term_clone.clone(), point_id))
+        });
+        Box::new(iter)
+    }
 }
 
 #[cfg(test)]

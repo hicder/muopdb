@@ -82,6 +82,16 @@ impl MultiTermIndex {
     pub fn term_index_info(&self) -> &TermIndexInfoHashTable {
         &self.user_index_info
     }
+
+    /// Iterates all (term, point_id) pairs for a given user.
+    pub fn iter_term_point_pairs_for_user(
+        &self,
+        user_id: u128,
+    ) -> Result<Box<dyn Iterator<Item = (String, u32)> + '_>> {
+        let term_index = self.get_or_create_index(user_id)?;
+        let pairs: Vec<(String, u32)> = term_index.iter_term_point_pairs().collect();
+        Ok(Box::new(pairs.into_iter()))
+    }
 }
 
 #[cfg(test)]

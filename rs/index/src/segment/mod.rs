@@ -139,6 +139,19 @@ impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
         }
     }
 
+    pub async fn iter_terms_for_user(&self, user_id: u128) -> Option<Vec<(String, u32)>> {
+        match self {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                immutable_segment
+                    .read()
+                    .await
+                    .iter_terms_for_user(user_id)
+                    .await
+            }
+            _ => None,
+        }
+    }
+
     pub async fn search_terms_for_user(
         &self,
         user_id: u128,

@@ -16,7 +16,7 @@ use crate::posting_list::storage::PostingListStorage;
 use crate::query::iters::InvertedIndexIter;
 use crate::query::planner::Planner;
 use crate::utils::{IdWithScore, IntermediateResult, PointAndDistance, SearchResult, SearchStats};
-use crate::vector::VectorStorage;
+use crate::vector::{StorageContext, VectorStorage};
 
 pub struct Ivf<Q: Quantizer, DC: DistanceCalculator, D: IntSeqDecoder> {
     // The dataset.
@@ -119,12 +119,14 @@ where
         }
     }
 
-    pub fn get_vector_storage(&self) -> &VectorStorage<Q::QuantizedT> {
+    pub fn get_vector_storage(&self) -> Option<&VectorStorage<Q::QuantizedT>> {
         match self {
-            IvfType::L2Plain(ivf) => &ivf.vector_storage,
-            IvfType::L2EF(ivf) => &ivf.vector_storage,
+            IvfType::L2Plain(ivf) => Some(&ivf.vector_storage),
+            IvfType::L2EF(ivf) => Some(&ivf.vector_storage),
             IvfType::BlockBased(_) => {
-                unimplemented!("get_vector_storage is not yet implemented for BlockBasedIvf")
+                // BlockBasedIvf uses AsyncFixedFileVectorStorage which is a different type
+                // and requires async operations, so we return None here
+                None
             }
         }
     }
@@ -184,6 +186,37 @@ where
             IvfType::L2Plain(ivf) => ivf.vector_storage.num_vectors(),
             IvfType::L2EF(ivf) => ivf.vector_storage.num_vectors(),
             IvfType::BlockBased(ivf) => ivf.num_vectors(),
+        }
+    }
+
+    /// Retrieves the vector data for a given point ID.
+    ///
+    /// For mmap-based IVF variants, this is a synchronous operation.
+    /// For BlockBasedIvf, this requires async I/O.
+    ///
+    /// # Arguments
+    /// * `point_id` - The internal point ID.
+    /// * `context` - A storage context for tracking cache stats.
+    ///
+    /// # Returns
+    /// * `Option<Vec<Q::QuantizedT>>` - The vector data if found, or `None`.
+    pub async fn get_vector(
+        &self,
+        point_id: u32,
+        context: &mut impl StorageContext,
+    ) -> Option<Vec<Q::QuantizedT>> {
+        match self {
+            IvfType::L2Plain(ivf) => ivf
+                .vector_storage
+                .get(point_id, context)
+                .ok()
+                .map(|slice| slice.to_vec()),
+            IvfType::L2EF(ivf) => ivf
+                .vector_storage
+                .get(point_id, context)
+                .ok()
+                .map(|slice| slice.to_vec()),
+            IvfType::BlockBased(ivf) => ivf.get_vector(point_id, context).await.ok(),
         }
     }
 }

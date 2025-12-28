@@ -129,6 +129,67 @@ impl<'a, C: IntegerCodec> OnDiskOrderedMap<'a, C> {
             None => None,
         }
     }
+
+    pub fn iter(&self) -> OnDiskOrderedMapIterator<'_, C> {
+        OnDiskOrderedMapIterator {
+            map: self,
+            offset: self.data_offset,
+            prev_key: Vec::new(),
+        }
+    }
+}
+
+pub struct OnDiskOrderedMapIterator<'a, C: IntegerCodec> {
+    map: &'a OnDiskOrderedMap<'a, C>,
+    offset: usize,
+    prev_key: Vec<u8>,
+}
+
+impl<'a, C: IntegerCodec> Iterator for OnDiskOrderedMapIterator<'a, C> {
+    type Item = (String, u64);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.offset >= self.map.end_offset {
+            return None;
+        }
+
+        let res = self.map.codec.decode_u32(&self.map.mmap[self.offset..]);
+        let shared = res.value as usize;
+        self.offset += res.num_bytes_read;
+
+        let res = self.map.codec.decode_u32(&self.map.mmap[self.offset..]);
+        let unshared = res.value as usize;
+        self.offset += res.num_bytes_read;
+
+        // Reset prev_key if it was cleared (at block boundaries)
+        if shared == 0 {
+            self.prev_key.clear();
+        } else {
+            self.prev_key.truncate(shared);
+        }
+
+        self.prev_key
+            .extend_from_slice(&self.map.mmap[self.offset..self.offset + unshared]);
+        self.offset += unshared;
+
+        let res = self.map.codec.decode_u64(&self.map.mmap[self.offset..]);
+        self.offset += res.num_bytes_read;
+
+        let key = String::from_utf8(self.prev_key.clone()).unwrap();
+        let value = res.value;
+
+        // If we crossed a block boundary in the next iteration, shared_len will be 0.
+        // But we don't know it yet.
+        // Actually, the builder clears prev_key at block boundaries.
+        // Line 183: prev_key.clear();
+        // So shared_len will be 0 at the start of each block.
+
+        // Wait, if shared_len is 0, it means it's the start of a block (or just a key with no shared prefix).
+        // The builder does `prev_key.clear()` at block boundary (line 183).
+        // This is correct.
+
+        Some((key, value))
+    }
 }
 
 #[cfg(test)]
