@@ -130,6 +130,7 @@ impl CompressionInt for u128 {
     }
 }
 
+#[allow(clippy::len_without_is_empty)]
 pub trait IntSeqEncoder<T: CompressionInt = u64> {
     /// Creates an encoder
     fn new_encoder(universe: T, num_elem: usize) -> Self

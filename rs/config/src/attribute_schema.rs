@@ -1,13 +1,15 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use proto::muopdb;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Copy, Default)]
 pub enum Language {
     Arabic,
     Danish,
     Dutch,
+    #[default]
     English,
     Finnish,
     French,
@@ -26,36 +28,38 @@ pub enum Language {
     Vietnamese,
 }
 
-impl Default for Language {
-    fn default() -> Self {
-        Language::English
+impl FromStr for Language {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "arabic" => Ok(Language::Arabic),
+            "danish" => Ok(Language::Danish),
+            "dutch" => Ok(Language::Dutch),
+            "english" => Ok(Language::English),
+            "finnish" => Ok(Language::Finnish),
+            "french" => Ok(Language::French),
+            "german" => Ok(Language::German),
+            "greek" => Ok(Language::Greek),
+            "hungarian" => Ok(Language::Hungarian),
+            "italy" | "italian" => Ok(Language::Italian),
+            "norwegian" => Ok(Language::Norwegian),
+            "portuguese" => Ok(Language::Portuguese),
+            "romanian" => Ok(Language::Romanian),
+            "russian" => Ok(Language::Russian),
+            "spanish" => Ok(Language::Spanish),
+            "swedish" => Ok(Language::Swedish),
+            "tamil" => Ok(Language::Tamil),
+            "turkish" => Ok(Language::Turkish),
+            "vietnamese" => Ok(Language::Vietnamese),
+            _ => Err(format!("Invalid language: {}", s)),
+        }
     }
 }
 
 impl Language {
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "arabic" => Some(Language::Arabic),
-            "danish" => Some(Language::Danish),
-            "dutch" => Some(Language::Dutch),
-            "english" => Some(Language::English),
-            "finnish" => Some(Language::Finnish),
-            "french" => Some(Language::French),
-            "german" => Some(Language::German),
-            "greek" => Some(Language::Greek),
-            "hungarian" => Some(Language::Hungarian),
-            "italy" | "italian" => Some(Language::Italian),
-            "norwegian" => Some(Language::Norwegian),
-            "portuguese" => Some(Language::Portuguese),
-            "romanian" => Some(Language::Romanian),
-            "russian" => Some(Language::Russian),
-            "spanish" => Some(Language::Spanish),
-            "swedish" => Some(Language::Swedish),
-            "tamil" => Some(Language::Tamil),
-            "turkish" => Some(Language::Turkish),
-            "vietnamese" => Some(Language::Vietnamese),
-            _ => None,
-        }
+    pub fn parse_str(s: &str) -> Option<Self> {
+        Self::from_str(s).ok()
     }
 }
 
@@ -90,7 +94,7 @@ impl From<muopdb::AttributeSchema> for AttributeSchema {
                     let language = attribute
                         .language
                         .as_deref()
-                        .and_then(Language::from_str)
+                        .and_then(Language::parse_str)
                         .unwrap_or(Language::English);
                     AttributeType::Text(language)
                 }
@@ -204,9 +208,12 @@ mod tests {
 
     #[test]
     fn test_language_parsing() {
-        assert_eq!(Language::from_str("English"), Some(Language::English));
-        assert_eq!(Language::from_str("french"), Some(Language::French));
-        assert_eq!(Language::from_str("VIETNAMESE"), Some(Language::Vietnamese));
-        assert_eq!(Language::from_str("invalid"), None);
+        assert_eq!(Language::from_str("English"), Ok(Language::English));
+        assert_eq!(Language::from_str("french"), Ok(Language::French));
+        assert_eq!(Language::from_str("VIETNAMESE"), Ok(Language::Vietnamese));
+        assert_eq!(
+            Language::from_str("invalid"),
+            Err("Invalid language: invalid".to_string())
+        );
     }
 }

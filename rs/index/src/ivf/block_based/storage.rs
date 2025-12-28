@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::mem::size_of;
 use std::sync::Arc;
 
@@ -5,12 +6,14 @@ use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};
 use compression::compression::AsyncIntSeqDecoder;
 use compression::elias_fano::block_based_decoder::BlockBasedEliasFanoDecoder;
+use futures::future;
 use utils::block_cache::cache::{BlockCache, FileId};
 use utils::mem::transmute_u8_to_slice;
 
 use crate::posting_list::combined_file::{Header, Version};
 
 const PL_METADATA_LEN: usize = 2;
+const MAX_READ_SIZE: u64 = 128;
 
 /// Provides asynchronous access to IVF posting lists and related metadata stored on disk.
 ///
@@ -137,7 +140,7 @@ impl BlockBasedPostingListStorage {
             posting_lists_and_metadata_len,
         };
 
-        curr_offset = Self::align_to_next_boundary(curr_offset, 16);
+        curr_offset = Self::align_to_next_boundary(curr_offset, 8);
 
         Ok((header, curr_offset))
     }
@@ -177,6 +180,141 @@ impl BlockBasedPostingListStorage {
             data.try_into()
                 .map_err(|_| anyhow!("Failed to read doc_id"))?,
         ))
+    }
+
+    /// Retrieves a batch of 128-bit document IDs for the given internal vector indices.
+    ///
+    /// Optimizes reads by grouping indices that share the same block and fall within
+    /// the same 128-byte aligned region. This reduces the number of read requests
+    /// to the block cache significantly.
+    ///
+    /// # Arguments
+    /// * `indices` - A slice of internal indices of the vectors.
+    ///
+    /// # Returns
+    /// * `Vec<Result<u128>>` - A vector of results, one per index.
+    pub async fn get_doc_ids(&self, indices: &[usize]) -> Vec<Result<u128>> {
+        if indices.is_empty() {
+            return Vec::new();
+        }
+
+        let num_indices = indices.len();
+        let mut results: Vec<Result<u128>> = Vec::with_capacity(num_indices);
+        results.resize_with(num_indices, || Err(anyhow!("Not initialized")));
+
+        let index_to_offset: Vec<(usize, Option<usize>)> = indices
+            .iter()
+            .enumerate()
+            .map(|(result_idx, &index)| {
+                if index >= self.header.num_vectors as usize {
+                    return (result_idx, None);
+                }
+                let offset =
+                    self.doc_id_mapping_offset + size_of::<u128>() + index * size_of::<u128>();
+                (result_idx, Some(offset))
+            })
+            .collect();
+
+        for (result_idx, offset_opt) in &index_to_offset {
+            if offset_opt.is_none() {
+                results[*result_idx] = Err(anyhow!("Index out of bound"));
+            }
+        }
+
+        let index_to_offset: Vec<(usize, usize)> = index_to_offset
+            .into_iter()
+            .filter_map(|(idx, o)| o.map(|off| (idx, off)))
+            .collect();
+
+        if index_to_offset.is_empty() {
+            return results;
+        }
+
+        let mut block_groups: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+        let block_size = self.block_cache.block_size();
+        for (result_idx, offset) in index_to_offset.iter().copied() {
+            let block = offset as u64 / block_size;
+            block_groups
+                .entry(block)
+                .or_default()
+                .push((result_idx, offset));
+        }
+
+        let mut read_futures = Vec::new();
+        for (_block, offsets) in block_groups {
+            let mut offsets = offsets.clone();
+            offsets.sort_by_key(|&(_, o)| o);
+
+            let mut i = 0;
+            while i < offsets.len() {
+                let start_offset = offsets[i].1;
+                let chunk_index = start_offset / MAX_READ_SIZE as usize;
+                let mut cluster_indices = Vec::new();
+
+                while i < offsets.len() && offsets[i].1 / MAX_READ_SIZE as usize == chunk_index {
+                    cluster_indices.push(offsets[i]);
+                    i += 1;
+                }
+
+                let read_start = (chunk_index * MAX_READ_SIZE as usize) as u64;
+                let read_length = MAX_READ_SIZE;
+                let read_indices = cluster_indices;
+
+                let file_id = self.file_id;
+                let block_cache = self.block_cache.clone();
+                read_futures.push(async move {
+                    let data = block_cache.read(file_id, read_start, read_length).await?;
+                    Ok((data, read_indices))
+                });
+            }
+        }
+
+        let read_results: Vec<Result<(Vec<u8>, Vec<(usize, usize)>), anyhow::Error>> =
+            future::join_all(read_futures).await;
+
+        let mut read_data_map: HashMap<(u64, usize), Vec<u8>> = HashMap::new();
+        let outer_indices = indices;
+        for read_result in read_results {
+            match read_result {
+                Ok((data, indices)) => {
+                    for (_result_idx, offset) in indices {
+                        let key = (offset as u64 / block_size, offset / MAX_READ_SIZE as usize);
+                        if !read_data_map.contains_key(&key) {
+                            read_data_map.insert(key, data.clone());
+                        }
+                    }
+                }
+                Err(e) => {
+                    for &result_idx in outer_indices.iter() {
+                        if results[result_idx].is_err() {
+                            results[result_idx] = Err(anyhow!("{}", e));
+                        }
+                    }
+                }
+            }
+        }
+
+        for (result_idx, offset) in index_to_offset {
+            let key = (offset as u64 / block_size, offset / MAX_READ_SIZE as usize);
+            match read_data_map.get(&key) {
+                Some(data) => {
+                    let pos = offset % MAX_READ_SIZE as usize;
+                    let doc_id_bytes: [u8; 16] = match data[pos..pos + 16].try_into() {
+                        Ok(bytes) => bytes,
+                        Err(_) => {
+                            results[result_idx] = Err(anyhow!("Failed to read doc_id"));
+                            continue;
+                        }
+                    };
+                    results[result_idx] = Ok(u128::from_le_bytes(doc_id_bytes));
+                }
+                None => {
+                    results[result_idx] = Err(anyhow!("Failed to read doc_id"));
+                }
+            }
+        }
+
+        results
     }
 
     /// Retrieves the centroid vector for a given cluster index.

@@ -89,6 +89,18 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
     pub async fn get_doc_id(&self, user_id: u128, point_id: u32) -> Option<u128> {
         self.index.get_doc_id(user_id, point_id).await
     }
+
+    /// Retrieves document IDs for a batch of point IDs for a specific user.
+    ///
+    /// # Arguments
+    /// * `user_id` - The ID of the user.
+    /// * `point_ids` - A slice of internal point IDs.
+    ///
+    /// # Returns
+    /// * `Vec<Option<u128>>` - A vector of document IDs, one per point ID.
+    pub async fn get_doc_ids(&self, user_id: u128, point_ids: &[u32]) -> Vec<Option<u128>> {
+        self.index.get_doc_ids(user_id, point_ids).await
+    }
 }
 
 /// This is the implementation of Segment for ImmutableSegment.

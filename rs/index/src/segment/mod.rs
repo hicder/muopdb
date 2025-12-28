@@ -139,6 +139,19 @@ impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
         }
     }
 
+    pub async fn get_doc_ids(&self, user_id: u128, point_ids: &[u32]) -> Vec<Option<u128>> {
+        match self {
+            BoxedImmutableSegment::FinalizedSegment(immutable_segment) => {
+                immutable_segment
+                    .read()
+                    .await
+                    .get_doc_ids(user_id, point_ids)
+                    .await
+            }
+            _ => vec![None; point_ids.len()],
+        }
+    }
+
     pub async fn search_terms_for_user(
         &self,
         user_id: u128,

@@ -308,6 +308,15 @@ impl BlockCache {
         self.block_cache.run_pending_tasks().await;
         self.block_cache.weighted_size()
     }
+
+    /// Returns the configured block size in bytes.
+    ///
+    /// # Returns
+    ///
+    /// The block size used for cache operations.
+    pub fn block_size(&self) -> u64 {
+        self.config.block_size as u64
+    }
 }
 
 #[cfg(test)]

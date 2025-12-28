@@ -119,6 +119,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
         filter: Arc<DocumentFilter>,
         limit: usize,
     ) -> Vec<u128> {
+        const BATCH_SIZE: usize = 102;
         let mut all_doc_ids: Vec<u128> = Vec::new();
 
         for segment in &self.segments {
@@ -131,9 +132,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
                     )
                     .await;
 
-                // Convert point IDs to doc IDs and collect
-                for point_id in point_ids {
-                    if let Some(doc_id) = segment.get_doc_id(user_id, point_id).await {
+                // Convert point IDs to doc IDs in batches
+                for chunk in point_ids.chunks(BATCH_SIZE) {
+                    let doc_ids = segment.get_doc_ids(user_id, chunk).await;
+                    for doc_id in doc_ids.into_iter().flatten() {
                         all_doc_ids.push(doc_id);
                     }
                 }

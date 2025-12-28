@@ -120,6 +120,17 @@ where
         self.posting_lists.get_doc_id(point_id).await
     }
 
+    /// Retrieves document IDs for a batch of point IDs.
+    ///
+    /// # Arguments
+    /// * `point_ids` - A slice of internal point IDs.
+    ///
+    /// # Returns
+    /// * `Vec<Option<u128>>` - A vector of document IDs, one per point ID.
+    pub async fn get_doc_ids(&self, point_ids: &[u32]) -> Vec<Option<u128>> {
+        self.posting_lists.get_doc_ids(point_ids).await
+    }
+
     /// Returns the point ID associated with a document ID.
     ///
     /// # Warning

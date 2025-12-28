@@ -115,7 +115,7 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
 
     pub fn fit(&self, flattened_data: Vec<f32>) -> Result<KMeansResult> {
         // Validate dimension
-        if flattened_data.len() % self.dimension != 0 {
+        if !flattened_data.len().is_multiple_of(self.dimension) {
             return Err(anyhow!(
                 "Dimension of data point {} is not equal to dimension of KMeans object {}",
                 flattened_data.len(),
@@ -125,11 +125,11 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> KMeansBuilder<D> {
 
         match self.variant {
             KMeansVariant::Lloyd => {
-                if self.dimension % 16 == 0 {
+                if self.dimension.is_multiple_of(16) {
                     self.run_lloyd::<LaneConformingDistanceCalculator<16, D>, 16>(flattened_data)
-                } else if self.dimension % 8 == 0 {
+                } else if self.dimension.is_multiple_of(8) {
                     self.run_lloyd::<LaneConformingDistanceCalculator<8, D>, 8>(flattened_data)
-                } else if self.dimension % 4 == 0 {
+                } else if self.dimension.is_multiple_of(4) {
                     self.run_lloyd::<LaneConformingDistanceCalculator<4, D>, 4>(flattened_data)
                 } else {
                     self.run_lloyd::<D, 1>(flattened_data)

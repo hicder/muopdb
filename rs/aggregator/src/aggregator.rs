@@ -95,7 +95,7 @@ impl Aggregator for AggregatorServerImpl {
                 .search(tonic::Request::new(SearchRequest {
                     collection_name: index_name_for_shard,
                     vector: req.vector.clone(),
-                    params: Some(params.clone()),
+                    params: Some(params),
                     user_ids: req.user_ids.clone(),
                     where_document: req.where_document.clone(),
                 }))

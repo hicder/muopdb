@@ -67,6 +67,12 @@ impl MultiSpannReader {
         num_features: usize,
         block_cache: Arc<BlockCache>,
     ) -> Result<MultiSpannIndex<Q>> {
+        if ivf_type != IntSeqEncodingType::EliasFano {
+            return Err(anyhow::anyhow!(
+                "Only EliasFano encoding is supported for block caching"
+            ));
+        }
+
         let user_index_info_file_path = format!("{}/user_index_info", self.base_directory);
         let user_index_info_file = std::fs::OpenOptions::new()
             .read(true)

@@ -37,7 +37,7 @@ pub struct ProductQuantizerConfig {
 
 impl ProductQuantizerConfig {
     pub fn validate(&self) -> Result<()> {
-        if self.dimension % self.subvector_dimension != 0 {
+        if !self.dimension.is_multiple_of(self.subvector_dimension) {
             return Err(Error::msg("Dimensions are not valid"));
         }
         Ok(())
@@ -81,7 +81,7 @@ impl<D: DistanceCalculator> ProductQuantizer<D> {
         base_directory: String,
     ) -> Result<Self> {
         // TODO(tyb0807): maybe lift this restriction in the future.
-        if dimension % subvector_dimension != 0 {
+        if !dimension.is_multiple_of(subvector_dimension) {
             return Err(Error::msg(
                 "Vector dimension needs to be divisible by the subvector dimension.",
             ));

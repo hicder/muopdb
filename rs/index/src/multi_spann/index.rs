@@ -305,6 +305,21 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         }
     }
 
+    /// Retrieves document IDs for a batch of point IDs for a specific user.
+    ///
+    /// # Arguments
+    /// * `user_id` - The ID of the user.
+    /// * `point_ids` - A slice of internal point IDs.
+    ///
+    /// # Returns
+    /// * `Vec<Option<u128>>` - A vector of document IDs, one per point ID.
+    pub async fn get_doc_ids(&self, user_id: u128, point_ids: &[u32]) -> Vec<Option<u128>> {
+        match self.get_or_create_index(user_id).await {
+            Ok(index) => index.get_doc_ids(point_ids).await,
+            Err(_) => vec![None; point_ids.len()],
+        }
+    }
+
     /// Searches for the nearest neighbors of a query vector for a specific user.
     ///
     /// # Arguments
@@ -970,6 +985,639 @@ mod tests {
             .read::<NoQuantizer<L2DistanceCalculator>>(
                 IntSeqEncodingType::PlainEncoding,
                 num_features,
+            )
+            .await
+            .expect("Failed to read Multi-SPANN index");
+
+        let query = vec![2.4, 2.4, 2.4, 2.4];
+        let k = 10;
+        let num_probes = 2;
+
+        let contains_filter = ContainsFilter {
+            path: "field".to_string(),
+            value: "nonexistent".to_string(),
+        };
+        let document_filter = DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                contains_filter,
+            )),
+        };
+
+        let planner =
+            Arc::new(Planner::new(0, document_filter, Arc::new(multi_term_index), None).unwrap());
+
+        let params = SearchParams::new(k, num_probes, false);
+
+        let results = multi_spann_index
+            .search_for_user(0, query, &params, Some(planner))
+            .await
+            .expect("Failed to search with Multi-SPANN index");
+
+        assert_eq!(results.id_with_scores.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_multi_spann_search_with_cache() {
+        let temp_dir = tempdir::TempDir::new("multi_spann_search_with_cache_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_features = 4;
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        spann_builder_config.posting_list_encoding_type = IntSeqEncodingType::EliasFano;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        assert!(multi_spann_builder
+            .insert(0, 1, &[1.0, 2.0, 3.0, 4.0])
+            .is_ok());
+        assert!(multi_spann_builder
+            .insert(0, 2, &[5.0, 6.0, 7.0, 8.0])
+            .is_ok());
+        assert!(multi_spann_builder
+            .insert(0, 3, &[9.0, 10.0, 11.0, 12.0])
+            .is_ok());
+        assert!(multi_spann_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let block_cache = Arc::new(utils::block_cache::BlockCache::new(
+            utils::block_cache::BlockCacheConfig::default(),
+        ));
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read_async::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::EliasFano,
+                num_features,
+                block_cache,
+            )
+            .await
+            .expect("Failed to read Multi-SPANN index");
+
+        let query = vec![1.0, 2.0, 3.0, 4.0];
+        let k = 3;
+        let num_probes = 100;
+
+        let params = SearchParams::new(k, num_probes, false);
+
+        let results = multi_spann_index
+            .search_for_user(0, query, &params, None)
+            .await
+            .expect("Failed to search with Multi-SPANN index");
+
+        assert!(results.id_with_scores.len() >= 1);
+        assert_eq!(results.id_with_scores[0].doc_id, 1);
+    }
+
+    #[tokio::test]
+    async fn test_multi_spann_size_in_bytes_with_cache() {
+        let temp_dir = tempdir::TempDir::new("multi_spann_size_in_bytes_with_cache_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_vectors = 1000;
+        let num_features = 4;
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        for i in 0..num_vectors {
+            assert!(multi_spann_builder
+                .insert(0, i, &[i as f32, i as f32, i as f32, i as f32])
+                .is_ok());
+        }
+        assert!(multi_spann_builder
+            .insert(0, num_vectors, &[1.2, 2.2, 3.2, 4.2])
+            .is_ok());
+        assert!(multi_spann_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let block_cache = Arc::new(utils::block_cache::BlockCache::new(
+            utils::block_cache::BlockCacheConfig::default(),
+        ));
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read_async::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::EliasFano,
+                num_features,
+                block_cache,
+            )
+            .await
+            .expect("Failed to read Multi-SPANN index");
+
+        let size_in_bytes = multi_spann_index.size_in_bytes();
+        assert!(size_in_bytes >= 2000);
+    }
+
+    #[tokio::test]
+    async fn test_multi_spann_search_with_invalidation_with_cache() {
+        let temp_dir =
+            tempdir::TempDir::new("multi_spann_search_with_invalidation_with_cache_test")
+                .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_vectors = 1000;
+        let num_features = 4;
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        spann_builder_config.posting_list_encoding_type = IntSeqEncodingType::EliasFano;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        for i in 0..num_vectors {
+            assert!(multi_spann_builder
+                .insert(0, i, &[i as f32, i as f32, i as f32, i as f32])
+                .is_ok());
+        }
+        assert!(multi_spann_builder
+            .insert(0, num_vectors, &[1.2, 2.2, 3.2, 4.2])
+            .is_ok());
+        assert!(multi_spann_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let block_cache = Arc::new(utils::block_cache::BlockCache::new(
+            utils::block_cache::BlockCacheConfig::default(),
+        ));
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read_async::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::EliasFano,
+                num_features,
+                block_cache,
+            )
+            .await
+            .expect("Failed to read Multi-SPANN index");
+
+        let query = vec![1.4, 2.4, 3.4, 4.4];
+        let k = 3;
+        let num_probes = 2;
+
+        assert!(multi_spann_index
+            .invalidate(0, num_vectors)
+            .await
+            .expect("Failed to invalidate"));
+        assert!(multi_spann_index
+            .is_invalidated(0, num_vectors)
+            .await
+            .expect("Failed to query invalidation"));
+
+        let params = SearchParams::new(k, num_probes, false);
+
+        let results = multi_spann_index
+            .search_for_user(0, query, &params, None)
+            .await
+            .expect("Failed to search with Multi-SPANN index");
+
+        assert_eq!(results.id_with_scores.len(), k);
+        assert_eq!(results.id_with_scores[0].doc_id, 3);
+        assert_eq!(results.id_with_scores[1].doc_id, 2);
+        assert_eq!(results.id_with_scores[2].doc_id, 4);
+    }
+
+    #[tokio::test]
+    async fn test_multi_spann_create_with_invalidation_with_cache() {
+        let temp_dir =
+            tempdir::TempDir::new("multi_spann_create_with_invalidation_with_cache_test")
+                .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_vectors = 1000;
+        let num_features = 4;
+
+        let invalidated_ids_dir = format!("{base_directory}/invalidated_ids_storage");
+        assert!(fs::create_dir(&invalidated_ids_dir).is_ok());
+
+        let mut storage = InvalidatedIdsStorage::new(&invalidated_ids_dir, 1024);
+
+        assert!(storage.invalidate(0, num_vectors).is_ok());
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        spann_builder_config.posting_list_encoding_type = IntSeqEncodingType::EliasFano;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        for i in 0..num_vectors {
+            assert!(multi_spann_builder
+                .insert(0, i, &[i as f32, i as f32, i as f32, i as f32])
+                .is_ok());
+        }
+        assert!(multi_spann_builder
+            .insert(0, num_vectors, &[1.2, 2.2, 3.2, 4.2])
+            .is_ok());
+        assert!(multi_spann_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let block_cache = Arc::new(utils::block_cache::BlockCache::new(
+            utils::block_cache::BlockCacheConfig::default(),
+        ));
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read_async::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::EliasFano,
+                num_features,
+                block_cache,
+            )
+            .await
+            .expect("Failed to read Multi-SPANN index");
+        assert!(multi_spann_index
+            .is_invalidated(0, num_vectors)
+            .await
+            .expect("Failed to query invalidation"));
+        assert_eq!(
+            multi_spann_index
+                .invalidated_ids_storage
+                .read()
+                .await
+                .num_entries(),
+            1
+        );
+
+        let query = vec![1.4, 2.4, 3.4, 4.4];
+        let k = 3;
+        let num_probes = 2;
+
+        let mut params = SearchParams::new(k, num_probes, false);
+        params = params.with_num_explored_centroids(Some(2));
+
+        let results = multi_spann_index
+            .search_for_user(0, query, &params, None)
+            .await
+            .expect("Failed to search with Multi-SPANN index");
+
+        assert_eq!(results.id_with_scores.len(), k);
+        assert_eq!(results.id_with_scores[0].doc_id, 3);
+        assert_eq!(results.id_with_scores[1].doc_id, 2);
+        assert_eq!(results.id_with_scores[2].doc_id, 4);
+    }
+
+    #[tokio::test]
+    async fn test_multi_spann_invalidate_with_cache() {
+        let temp_dir = tempdir::TempDir::new("multi_spann_invalidate_with_cache_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_vectors = 10;
+        let num_features = 4;
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        for i in 0..num_vectors {
+            assert!(multi_spann_builder
+                .insert(0, i, &[i as f32, i as f32, i as f32, i as f32])
+                .is_ok());
+        }
+
+        assert!(multi_spann_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let block_cache = Arc::new(utils::block_cache::BlockCache::new(
+            utils::block_cache::BlockCacheConfig::default(),
+        ));
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read_async::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::EliasFano,
+                num_features,
+                block_cache,
+            )
+            .await
+            .expect("Failed to read Multi-SPANN index");
+
+        assert!(multi_spann_index
+            .invalidate(0, 0)
+            .await
+            .expect("Failed to invalidate"));
+        assert_eq!(
+            multi_spann_index
+                .invalidated_ids_storage
+                .write()
+                .await
+                .iter()
+                .collect::<Vec<_>>()
+                .len(),
+            1
+        );
+
+        assert!(!multi_spann_index
+            .invalidate(0, num_vectors)
+            .await
+            .expect("Failed to invalidate"));
+        assert_eq!(
+            multi_spann_index
+                .invalidated_ids_storage
+                .write()
+                .await
+                .iter()
+                .collect::<Vec<_>>()
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn test_multi_spann_invalidate_batch_with_cache() {
+        let temp_dir = tempdir::TempDir::new("multi_spann_invalidate_batch_with_cache_test")
+            .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_vectors = 10;
+        let num_features = 4;
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        for i in 0..num_vectors {
+            assert!(multi_spann_builder
+                .insert(0, i, &[i as f32, i as f32, i as f32, i as f32])
+                .is_ok());
+        }
+
+        assert!(multi_spann_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let block_cache = Arc::new(utils::block_cache::BlockCache::new(
+            utils::block_cache::BlockCacheConfig::default(),
+        ));
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read_async::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::EliasFano,
+                num_features,
+                block_cache,
+            )
+            .await
+            .expect("Failed to read Multi-SPANN index");
+
+        let mut invalidations: HashMap<u128, Vec<u128>> = HashMap::new();
+        invalidations.insert(0, vec![0_u128, 1_u128, num_vectors]);
+
+        let effectively_invalidated_count = multi_spann_index
+            .invalidate_batch(&invalidations)
+            .await
+            .expect("Failed to batch invalidate");
+
+        assert_eq!(effectively_invalidated_count, 2);
+
+        let invalidated_ids: Vec<_> = multi_spann_index
+            .invalidated_ids_storage
+            .write()
+            .await
+            .iter()
+            .collect();
+
+        assert_eq!(invalidated_ids.len(), 2);
+        assert!(invalidated_ids.contains(&InvalidatedUserDocId {
+            user_id: 0,
+            doc_id: 0_u128
+        }));
+        assert!(invalidated_ids.contains(&InvalidatedUserDocId {
+            user_id: 0,
+            doc_id: 1_u128
+        }));
+
+        let mut new_invalidations: HashMap<u128, Vec<u128>> = HashMap::new();
+        new_invalidations.insert(0, vec![1_u128, 2_u128, num_vectors + 1]);
+
+        let new_effectively_invalidated_count = multi_spann_index
+            .invalidate_batch(&new_invalidations)
+            .await
+            .expect("Failed to batch invalidate");
+
+        assert_eq!(new_effectively_invalidated_count, 1);
+
+        let updated_invalidated_ids: Vec<_> = multi_spann_index
+            .invalidated_ids_storage
+            .write()
+            .await
+            .iter()
+            .collect();
+
+        assert_eq!(updated_invalidated_ids.len(), 3);
+        assert!(updated_invalidated_ids.contains(&InvalidatedUserDocId {
+            user_id: 0,
+            doc_id: 0_u128
+        }));
+        assert!(updated_invalidated_ids.contains(&InvalidatedUserDocId {
+            user_id: 0,
+            doc_id: 1_u128
+        }));
+        assert!(updated_invalidated_ids.contains(&InvalidatedUserDocId {
+            user_id: 0,
+            doc_id: 2_u128
+        }));
+    }
+
+    #[tokio::test]
+    async fn test_multi_spann_search_with_where_document_with_cache() {
+        let temp_dir =
+            tempdir::TempDir::new("multi_spann_search_with_where_document_with_cache_test")
+                .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+        let term_dir = format!("{}/terms", base_directory);
+        std::fs::create_dir_all(&term_dir).unwrap();
+
+        let num_features = 4;
+        let num_vectors = 10usize;
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        let point_ids = (0..num_vectors)
+            .map(|i| {
+                multi_spann_builder
+                    .insert(0, i as u128, &[i as f32, i as f32, i as f32, i as f32])
+                    .unwrap()
+            })
+            .collect::<Vec<u32>>();
+
+        let multi_builder = MultiTermBuilder::new();
+        for (i, &point_id) in point_ids.iter().enumerate() {
+            if i % 2 == 0 {
+                multi_builder
+                    .add(0, point_id, format!("field:even"))
+                    .unwrap();
+            } else {
+                multi_builder
+                    .add(0, point_id, format!("field:odd"))
+                    .unwrap();
+            }
+        }
+
+        assert!(multi_spann_builder.build().is_ok());
+        assert!(multi_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let multi_term_writer = MultiTermWriter::new_with_segment_dir(base_directory.clone());
+        multi_term_writer.write(&multi_builder).unwrap();
+
+        let multi_term_index = MultiTermIndex::new(term_dir.clone()).unwrap();
+
+        let block_cache = Arc::new(utils::block_cache::BlockCache::new(
+            utils::block_cache::BlockCacheConfig::default(),
+        ));
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read_async::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::EliasFano,
+                num_features,
+                block_cache,
+            )
+            .await
+            .expect("Failed to read Multi-SPANN index");
+
+        let query = vec![4.4, 4.4, 4.4, 4.4];
+        let k = 10;
+        let num_probes = 5;
+
+        let contains_filter = ContainsFilter {
+            path: "field".to_string(),
+            value: "even".to_string(),
+        };
+        let document_filter = DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                contains_filter,
+            )),
+        };
+
+        let planner =
+            Arc::new(Planner::new(0, document_filter, Arc::new(multi_term_index), None).unwrap());
+
+        let params = SearchParams::new(k, num_probes, false);
+
+        let results = multi_spann_index
+            .search_for_user(0, query, &params, Some(planner))
+            .await
+            .expect("Failed to search with Multi-SPANN index");
+
+        for result in &results.id_with_scores {
+            assert_eq!(
+                result.doc_id % 2,
+                0,
+                "Expected even doc_id, got {}",
+                result.doc_id
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_multi_spann_search_with_empty_where_document_filter_with_cache() {
+        let temp_dir = tempdir::TempDir::new(
+            "multi_spann_search_with_empty_where_document_filter_with_cache_test",
+        )
+        .expect("Failed to create temporary directory");
+        let base_directory = temp_dir
+            .path()
+            .to_str()
+            .expect("Failed to convert temporary directory path to string")
+            .to_string();
+
+        let num_features = 4;
+        let num_vectors = 10usize;
+
+        let mut spann_builder_config = CollectionConfig::default_test_config();
+        spann_builder_config.num_features = num_features;
+        let mut multi_spann_builder =
+            MultiSpannBuilder::new(spann_builder_config, base_directory.clone())
+                .expect("Failed to create Multi-SPANN builder");
+
+        let mut point_ids = Vec::new();
+        for i in 0..num_vectors {
+            let point_id = multi_spann_builder
+                .insert(0, i as u128, &[i as f32, i as f32, i as f32, i as f32])
+                .unwrap();
+            point_ids.push(point_id);
+        }
+        assert!(multi_spann_builder.build().is_ok());
+
+        let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
+        assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
+
+        let term_dir = format!("{}/terms", base_directory);
+        std::fs::create_dir_all(&term_dir).unwrap();
+
+        let multi_builder = MultiTermBuilder::new();
+        for (i, &point_id) in point_ids.iter().enumerate() {
+            multi_builder
+                .add(0, point_id, format!("field:term{}", i))
+                .unwrap();
+        }
+        multi_builder.build().unwrap();
+
+        let multi_term_writer = MultiTermWriter::new_with_segment_dir(base_directory.clone());
+        multi_term_writer.write(&multi_builder).unwrap();
+
+        let multi_term_index = MultiTermIndex::new(term_dir).unwrap();
+
+        let block_cache = Arc::new(utils::block_cache::BlockCache::new(
+            utils::block_cache::BlockCacheConfig::default(),
+        ));
+        let multi_spann_reader = MultiSpannReader::new(base_directory);
+        let multi_spann_index = multi_spann_reader
+            .read_async::<NoQuantizer<L2DistanceCalculator>>(
+                IntSeqEncodingType::EliasFano,
+                num_features,
+                block_cache,
             )
             .await
             .expect("Failed to read Multi-SPANN index");

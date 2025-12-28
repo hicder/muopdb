@@ -293,12 +293,17 @@ where
             .search_with_centroids(query, nearest_centroid_ids, k, record_pages, planner)
             .await?;
 
+        let point_ids: Vec<u32> = results
+            .point_and_distances
+            .iter()
+            .map(|pd| pd.point_id)
+            .collect();
+
+        let doc_id_results = self.get_doc_ids(&point_ids).await;
+
         let mut id_with_scores = Vec::with_capacity(results.point_and_distances.len());
-        for pd in results.point_and_distances {
-            let doc_id = self
-                .posting_list_storage
-                .get_doc_id(pd.point_id as usize)
-                .await?;
+        for (pd, doc_id_result) in results.point_and_distances.into_iter().zip(doc_id_results) {
+            let doc_id = doc_id_result?;
             id_with_scores.push(IdWithScore {
                 doc_id,
                 score: *pd.distance,
@@ -331,6 +336,18 @@ where
         self.posting_list_storage
             .get_doc_id(point_id as usize)
             .await
+    }
+
+    /// Retrieves document IDs for a batch of point IDs.
+    ///
+    /// # Arguments
+    /// * `point_ids` - A slice of internal point IDs.
+    ///
+    /// # Returns
+    /// * `Vec<Result<u128>>` - A vector of results, one per point ID.
+    pub async fn get_doc_ids(&self, point_ids: &[u32]) -> Vec<Result<u128>> {
+        let indices: Vec<usize> = point_ids.iter().map(|&id| id as usize).collect();
+        self.posting_list_storage.get_doc_ids(&indices).await
     }
 
     /// Performs a complete IVF search for the given query.

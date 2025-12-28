@@ -147,6 +147,30 @@ where
         }
     }
 
+    /// Retrieves document IDs for a batch of point IDs.
+    ///
+    /// # Arguments
+    /// * `point_ids` - A slice of internal point IDs.
+    ///
+    /// # Returns
+    /// * `Vec<Option<u128>>` - A vector of document IDs, one per point ID.
+    pub async fn get_doc_ids(&self, point_ids: &[u32]) -> Vec<Option<u128>> {
+        match self {
+            IvfType::L2Plain(ivf) => point_ids
+                .iter()
+                .map(|&point_id| ivf.posting_list_storage.get_doc_id(point_id as usize).ok())
+                .collect(),
+            IvfType::L2EF(ivf) => point_ids
+                .iter()
+                .map(|&point_id| ivf.posting_list_storage.get_doc_id(point_id as usize).ok())
+                .collect(),
+            IvfType::BlockBased(ivf) => {
+                let results = ivf.get_doc_ids(point_ids).await;
+                results.into_iter().map(|r| r.ok()).collect()
+            }
+        }
+    }
+
     pub async fn invalidate(&self, doc_id: u128) -> bool {
         match self {
             IvfType::L2Plain(ivf) => ivf.invalidate(doc_id),
