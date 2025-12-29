@@ -5,7 +5,8 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use dashmap::DashMap;
 
-use crate::block_cache::cache::{BlockCache, BlockCacheConfig, FileId};
+pub use crate::block_cache::cache::FileId;
+use crate::block_cache::cache::{BlockCache, BlockCacheConfig};
 use crate::file_io::cached_file::CachedFileIO;
 use crate::file_io::mmap_file::MMapFileIO;
 use crate::file_io::standard_file::AppendableStandardFile;

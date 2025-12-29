@@ -1,5 +1,5 @@
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -7,6 +7,8 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use log::{info, warn};
 use proto::muopdb::DocumentAttribute;
 use rkyv::util::AlignedVec;
+use utils::file_io::env::{Env, FileId};
+use utils::file_io::AppendableFileIO;
 use utils::mem::{transmute_slice_to_u8, transmute_u8_to_val_unaligned};
 
 use super::entry::{serialize_document_attributes, WalEntry, WalOpType};
@@ -23,7 +25,9 @@ const VERSION_1: &[u8] = b"version1";
 ///
 #[allow(unused)]
 pub struct WalFile {
-    file: File,
+    file: Arc<dyn AppendableFileIO + Send + Sync>,
+    file_id: FileId,
+    env: Arc<Box<dyn Env>>,
 
     // metadata: Metadata,
     path: String,
@@ -36,25 +40,30 @@ pub struct WalFile {
 }
 
 impl WalFile {
-    pub fn create(path: &str, start_seq_no: i64) -> Result<Self> {
+    pub async fn create(env: Arc<Box<dyn Env>>, path: &str, start_seq_no: i64) -> Result<Self> {
         // If the file does not exist, create it
-        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+        let open_result = env.open_append(path).await?;
+        let file = open_result.file_io;
+        let file_id = open_result.file_id;
+
         // Write "version1" to the file
-        file.write_all(b"version1")?;
+        file.append(b"version1").await?;
         // Write the start sequence number to the file
-        file.write_all(&start_seq_no.to_le_bytes())?;
+        file.append(&start_seq_no.to_le_bytes()).await?;
         // Flush
-        file.flush()?;
+        file.flush().await?;
 
         Ok(Self {
             file,
+            file_id,
+            env,
             path: path.to_string(),
             start_seq_no,
             num_entries: 0,
         })
     }
 
-    pub fn open(path: &str) -> Result<Self> {
+    pub async fn open(env: Arc<Box<dyn Env>>, path: &str) -> Result<Self> {
         let mut file = OpenOptions::new().read(true).write(true).open(path)?;
 
         // Interestingly, you should always sync the file on open.
@@ -75,21 +84,24 @@ impl WalFile {
             path, start_seq_no, num_entries
         );
 
-        // Reopen with append only for writing.
-        file = OpenOptions::new().append(true).open(path)?;
+        // Open with Env for append only for writing.
+        let open_result = env.open_append(path).await?;
+
         info!(
             "Opened WAL file {} with start seq no {} and {} entries",
             path, start_seq_no, num_entries
         );
         Ok(Self {
-            file,
+            file: open_result.file_io,
+            file_id: open_result.file_id,
+            env,
             path: path.to_string(),
             start_seq_no,
             num_entries,
         })
     }
 
-    pub fn append(
+    pub async fn append(
         &mut self,
         doc_ids: &[u128],
         user_ids: &[u128],
@@ -110,31 +122,34 @@ impl WalFile {
             8 + 8 + doc_ids.len() * 16 + user_ids.len() * 16 + data.len() * 4 + 4 + attr_len + 1;
 
         let len = entry_len as u32;
-        self.file.write_all(&len.to_le_bytes())?;
-        self.file.write_all(&(doc_ids.len() as u64).to_le_bytes())?;
+        self.file.append(&len.to_le_bytes()).await?;
         self.file
-            .write_all(&(user_ids.len() as u64).to_le_bytes())?;
-        self.file.write_all(transmute_slice_to_u8(doc_ids))?;
-        self.file.write_all(transmute_slice_to_u8(user_ids))?;
-        self.file.write_all(transmute_slice_to_u8(data))?;
-        self.file.write_all(&(attr_len as u32).to_le_bytes())?;
-        self.file.write_all(&attr_data)?;
-        self.file.write_all(&op_type_byte.to_le_bytes())?;
-        self.file.flush()?;
-        // self.file.sync_data()?;
+            .append(&(doc_ids.len() as u64).to_le_bytes())
+            .await?;
+        self.file
+            .append(&(user_ids.len() as u64).to_le_bytes())
+            .await?;
+        self.file.append(transmute_slice_to_u8(doc_ids)).await?;
+        self.file.append(transmute_slice_to_u8(user_ids)).await?;
+        self.file.append(transmute_slice_to_u8(data)).await?;
+        self.file.append(&(attr_len as u32).to_le_bytes()).await?;
+        self.file.append(&attr_data).await?;
+        self.file.append(&op_type_byte.to_le_bytes()).await?;
+        self.file.flush().await?;
+        // self.file.sync_data().await?;
 
         // Increment the number of entries in the file
         self.num_entries += 1;
         Ok((self.start_seq_no + self.num_entries as i64) as u64)
     }
 
-    pub fn append_raw(&mut self, data: &[u8]) -> Result<u64> {
+    pub async fn append_raw(&mut self, data: &[u8]) -> Result<u64> {
         // Write the length first as u32
         let length = data.len() as u32;
-        self.file.write_all(&length.to_le_bytes())?;
-        self.file.write_all(data)?;
-        self.file.flush()?;
-        // self.file.sync_data()?;
+        self.file.append(&length.to_le_bytes()).await?;
+        self.file.append(data).await?;
+        self.file.flush().await?;
+        // self.file.sync_data().await?;
 
         // Increment the number of entries in the file
         self.num_entries += 1;
@@ -174,8 +189,7 @@ impl WalFile {
     }
 
     pub fn get_file_size(&self) -> Result<u64> {
-        let metadata = self.file.metadata()?;
-        Ok(metadata.len())
+        Ok(std::fs::metadata(&self.path)?.len())
     }
 
     pub fn get_start_seq_no(&self) -> i64 {
@@ -194,8 +208,8 @@ impl WalFile {
         self.path.split(".").last().unwrap().parse::<u32>().unwrap()
     }
 
-    pub fn sync_data(&self) -> Result<()> {
-        self.file.sync_data()?;
+    pub async fn sync_data(&self) -> Result<()> {
+        self.file.sync_all().await?;
         Ok(())
     }
 }
@@ -286,30 +300,41 @@ impl Iterator for WalFileIterator {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_wal() {
+    fn create_env() -> Arc<Box<dyn Env>> {
+        let env_config = utils::file_io::env::EnvConfig::default();
+        Arc::new(Box::new(utils::file_io::env::DefaultEnv::new(env_config)))
+    }
+
+    #[tokio::test]
+    async fn test_wal() {
         let tmp_dir = tempdir::TempDir::new("wal_file_test").unwrap();
+        let env = create_env();
         let mut wal_file =
-            WalFile::create(tmp_dir.path().join("test.wal").to_str().unwrap(), -1).unwrap();
+            WalFile::create(env, tmp_dir.path().join("test.wal").to_str().unwrap(), -1)
+                .await
+                .unwrap();
 
         // Append some data
-        wal_file.append_raw(b"hello").unwrap();
+        wal_file.append_raw(b"hello").await.unwrap();
         assert_eq!(wal_file.get_num_entries(), 1);
 
         // Append some more data
-        wal_file.append_raw(b"world").unwrap();
+        wal_file.append_raw(b"world").await.unwrap();
         assert_eq!(wal_file.get_num_entries(), 2);
     }
 
-    #[test]
-    fn test_get_entry() {
+    #[tokio::test]
+    async fn test_get_entry() {
         let tmp_dir = tempdir::TempDir::new("wal_file_test").unwrap();
+        let env = create_env();
         let mut wal_file =
-            WalFile::create(tmp_dir.path().join("test.wal").to_str().unwrap(), 100).unwrap();
+            WalFile::create(env, tmp_dir.path().join("test.wal").to_str().unwrap(), 100)
+                .await
+                .unwrap();
 
         // Append some data
-        wal_file.append_raw(b"hello").unwrap();
-        wal_file.append_raw(b"world").unwrap();
+        wal_file.append_raw(b"hello").await.unwrap();
+        wal_file.append_raw(b"world").await.unwrap();
 
         let mut iter = wal_file.get_iterator().unwrap();
         let start_seq_no = iter.current_seq_no;
@@ -327,16 +352,20 @@ mod tests {
         assert!(entry.is_none());
     }
 
-    #[test]
-    fn test_skip_to() {
+    #[tokio::test]
+    async fn test_skip_to() {
         let tmp_dir = tempdir::TempDir::new("wal_file_test").unwrap();
+        let env = create_env();
         let mut wal_file =
-            WalFile::create(tmp_dir.path().join("test.wal").to_str().unwrap(), -1).unwrap();
+            WalFile::create(env, tmp_dir.path().join("test.wal").to_str().unwrap(), -1)
+                .await
+                .unwrap();
 
         // Insert hello_x for x = 0, 1, 2, 3, 4
         for x in 0..5 {
             wal_file
                 .append_raw(format!("hello_{}", x).as_bytes())
+                .await
                 .unwrap();
         }
 
