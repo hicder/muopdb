@@ -8,6 +8,8 @@ use quantization::quantization::Quantizer;
 
 use crate::multi_spann::index::MultiSpannIndex;
 use crate::multi_terms::index::MultiTermIndex;
+use crate::query::async_iters::AsyncInvertedIndexIter;
+use crate::query::async_planner::AsyncPlanner;
 use crate::query::iters::InvertedIndexIter;
 use crate::query::planner::Planner;
 use crate::segment::Segment;
@@ -173,6 +175,44 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
             match iter.next() {
                 Some(point_id) => result.push(point_id),
                 None => break,
+            }
+        }
+        result
+    }
+
+    /// Search only the term index for documents matching the filter using async planner.
+    pub async fn search_terms_for_user_async(
+        &self,
+        user_id: u128,
+        filter: Arc<DocumentFilter>,
+        attribute_schema: Option<AttributeSchema>,
+    ) -> Vec<u32> {
+        let multi_term_index = match self.get_multi_term_index() {
+            Some(idx) => idx,
+            None => return vec![],
+        };
+
+        let planner = match AsyncPlanner::new(
+            user_id,
+            (*filter).clone(),
+            multi_term_index,
+            attribute_schema,
+        ) {
+            Ok(p) => p,
+            Err(_) => return vec![],
+        };
+
+        let mut iter = match planner.plan().await {
+            Ok(iter) => iter,
+            Err(_) => return vec![],
+        };
+
+        let mut result = Vec::new();
+        loop {
+            match iter.next().await {
+                Ok(Some(point_id)) => result.push(point_id),
+                Ok(None) => break,
+                Err(_) => break,
             }
         }
         result
