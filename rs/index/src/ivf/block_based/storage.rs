@@ -49,8 +49,13 @@ impl BlockBasedPostingListStorage {
     ///
     /// # Returns
     /// * `Result<Self>` - A new storage handler instance or an error if initialization fails.
-    pub async fn new_with_offset(env: Arc<Box<dyn Env>>, file_path: String, offset: usize) -> Result<Self> {
-        let OpenResult { file_io, .. } = env.open(&file_path)
+    pub async fn new_with_offset(
+        env: Arc<Box<dyn Env>>,
+        file_path: String,
+        offset: usize,
+    ) -> Result<Self> {
+        let OpenResult { file_io, .. } = env
+            .open(&file_path)
             .await
             .map_err(|e| anyhow!("Failed to open index file: {}", e))?;
 

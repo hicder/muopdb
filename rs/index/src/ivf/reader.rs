@@ -3,8 +3,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use compression::compression::IntSeqDecoder;
 use quantization::quantization::Quantizer;
-use utils::DistanceCalculator;
 use utils::file_io::env::Env;
+use utils::DistanceCalculator;
 
 use crate::ivf::block_based::index::BlockBasedIvf;
 use crate::ivf::mmap::index::Ivf;
@@ -78,13 +78,7 @@ impl IvfReader {
     where
         Q::QuantizedT: Send + Sync,
     {
-        BlockBasedIvf::<Q>::new_with_offset(
-            env,
-            base_directory,
-            index_offset,
-            vector_offset,
-        )
-        .await
+        BlockBasedIvf::<Q>::new_with_offset(env, base_directory, index_offset, vector_offset).await
     }
 }
 

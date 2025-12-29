@@ -359,10 +359,9 @@ mod tests {
         let env = create_env();
         let file_io = env.open(file_path.to_str().unwrap()).await.unwrap().file_io;
 
-        let decoder =
-            BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
-                .await
-                .unwrap();
+        let decoder = BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
+            .await
+            .unwrap();
 
         let mut iter = decoder.into_iterator();
         for expected in values {
@@ -389,10 +388,9 @@ mod tests {
         let env = create_env();
         let file_io = env.open(file_path.to_str().unwrap()).await.unwrap().file_io;
 
-        let decoder =
-            BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
-                .await
-                .unwrap();
+        let decoder = BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
+            .await
+            .unwrap();
 
         let mut iter = decoder.into_iterator();
 
@@ -431,10 +429,9 @@ mod tests {
         let env = create_env();
         let file_io = env.open(file_path.to_str().unwrap()).await.unwrap().file_io;
 
-        let decoder =
-            BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
-                .await
-                .unwrap();
+        let decoder = BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
+            .await
+            .unwrap();
 
         let mut iter = decoder.into_iterator();
 
@@ -478,10 +475,9 @@ mod tests {
         let env = create_env();
         let file_io = env.open(file_path.to_str().unwrap()).await.unwrap().file_io;
 
-        let decoder =
-            BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
-                .await
-                .unwrap();
+        let decoder = BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
+            .await
+            .unwrap();
 
         let mut iter = decoder.into_iterator();
 
@@ -514,10 +510,9 @@ mod tests {
         let env = create_env();
         let file_io = env.open(file_path.to_str().unwrap()).await.unwrap().file_io;
 
-        let decoder =
-            BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
-                .await
-                .unwrap();
+        let decoder = BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
+            .await
+            .unwrap();
 
         let mut iter = decoder.into_iterator();
 
@@ -548,10 +543,9 @@ mod tests {
         let env = create_env();
         let file_io = env.open(file_path.to_str().unwrap()).await.unwrap().file_io;
 
-        let decoder =
-            BlockBasedEliasFanoDecoder::<u32>::new_decoder(file_io, 0, 4096)
-                .await
-                .unwrap();
+        let decoder = BlockBasedEliasFanoDecoder::<u32>::new_decoder(file_io, 0, 4096)
+            .await
+            .unwrap();
 
         let mut iter = decoder.into_iterator();
         for expected in values {
@@ -581,10 +575,9 @@ mod tests {
         let env = create_env();
         let file_io = env.open(file_path.to_str().unwrap()).await.unwrap().file_io;
 
-        let decoder =
-            BlockBasedEliasFanoDecoder::<u128>::new_decoder(file_io, 0, 4096)
-                .await
-                .unwrap();
+        let decoder = BlockBasedEliasFanoDecoder::<u128>::new_decoder(file_io, 0, 4096)
+            .await
+            .unwrap();
 
         let mut iter = decoder.into_iterator();
         for expected in values {

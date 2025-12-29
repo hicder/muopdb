@@ -436,7 +436,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_term_index_block_based() {
-
         let temp_dir = TempDir::new("test_term_index_block_based").unwrap();
         let base_directory = temp_dir.path();
         let base_dir_str = base_directory.to_str().unwrap().to_string();

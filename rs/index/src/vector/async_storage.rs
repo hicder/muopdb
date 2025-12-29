@@ -30,9 +30,19 @@ impl<T: ToBytes + Clone + Send + Sync> AsyncFixedFileVectorStorage<T> {
     ///
     /// # Returns
     /// * `Result<Self>` - A new storage instance or an error if initialization fails.
-    pub async fn new(env: Arc<Box<dyn Env>>, file_path: String, num_features: usize) -> Result<Self> {
-        let OpenResult { file_io, .. } = env.open(&file_path).await.map_err(|e| anyhow!("Failed to open vector file: {}", e))?;
-        let num_vectors_data = file_io.read(0, 8).await.map_err(|e| anyhow!("Failed to read num_vectors: {}", e))?;
+    pub async fn new(
+        env: Arc<Box<dyn Env>>,
+        file_path: String,
+        num_features: usize,
+    ) -> Result<Self> {
+        let OpenResult { file_io, .. } = env
+            .open(&file_path)
+            .await
+            .map_err(|e| anyhow!("Failed to open vector file: {}", e))?;
+        let num_vectors_data = file_io
+            .read(0, 8)
+            .await
+            .map_err(|e| anyhow!("Failed to read num_vectors: {}", e))?;
         let num_vectors = u64::from_le_bytes(num_vectors_data.try_into().unwrap()) as usize;
 
         Ok(Self {
@@ -60,9 +70,15 @@ impl<T: ToBytes + Clone + Send + Sync> AsyncFixedFileVectorStorage<T> {
         num_features: usize,
         offset: usize,
     ) -> Result<Self> {
-        let OpenResult { file_io, .. } = env.open(&file_path).await.map_err(|e| anyhow!("Failed to open vector file: {}", e))?;
+        let OpenResult { file_io, .. } = env
+            .open(&file_path)
+            .await
+            .map_err(|e| anyhow!("Failed to open vector file: {}", e))?;
 
-        let num_vectors_data = file_io.read(offset as u64, 8).await.map_err(|e| anyhow!("Failed to read num_vectors: {}", e))?;
+        let num_vectors_data = file_io
+            .read(offset as u64, 8)
+            .await
+            .map_err(|e| anyhow!("Failed to read num_vectors: {}", e))?;
         let num_vectors = u64::from_le_bytes(num_vectors_data.try_into().unwrap()) as usize;
 
         Ok(Self {
@@ -100,7 +116,11 @@ impl<T: ToBytes + Clone + Send + Sync> AsyncFixedFileVectorStorage<T> {
         let start = self.offset + 8 + (id as usize) * Self::vector_size_in_bytes(self.num_features);
         let length = Self::vector_size_in_bytes(self.num_features) as u64;
 
-        let data = self.file_io.read(start as u64, length).await.map_err(|e| anyhow!("Failed to read vector: {}", e))?;
+        let data = self
+            .file_io
+            .read(start as u64, length)
+            .await
+            .map_err(|e| anyhow!("Failed to read vector: {}", e))?;
 
         let item_size = std::mem::size_of::<T>();
         let num_items = data.len() / item_size;
