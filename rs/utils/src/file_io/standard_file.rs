@@ -3,13 +3,15 @@
 /// Wraps a [`tokio::fs::File`] with thread-safe access using `RwLock`.
 /// Provides async file reading operations for regular filesystem files.
 use std::fs::Metadata;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio::sync::RwLock;
 
-use crate::file_io::FileIO;
+use crate::file_io::{AppendableFileIO, FileIO};
 
 /// A thread-safe file wrapper for async read operations.
 ///
@@ -73,5 +75,229 @@ impl FileIO for StandardFile {
     /// Returns the length of the file in bytes.
     async fn file_length(&self) -> Result<u64> {
         Ok(self.file_length)
+    }
+}
+
+/// A thread-safe file wrapper for async write operations.
+///
+/// Uses `RwLock` for write serialization and `AtomicU64` for thread-safe
+/// length tracking. Provides append-only semantics with guaranteed
+/// all-or-nothing writes.
+pub struct AppendableStandardFile {
+    /// The underlying tokio file.
+    file: RwLock<File>,
+    /// Length of the file in bytes, atomically updated.
+    file_length: Arc<AtomicU64>,
+}
+
+impl AppendableStandardFile {
+    /// Creates a new `AppendableStandardFile` instance from a [`File`].
+    ///
+    /// The file should be opened in append mode or with appropriate permissions
+    /// for writing. The initial file length is read from the file metadata.
+    ///
+    /// # Arguments
+    /// * `file` - An opened tokio file handle with write permissions
+    ///
+    /// # Returns
+    /// A new `AppendableStandardFile` instance.
+    pub async fn new(file: File) -> Self {
+        let metadata = file.metadata().await.unwrap();
+        Self {
+            file: RwLock::new(file),
+            file_length: Arc::new(AtomicU64::new(metadata.len())),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl AppendableFileIO for AppendableStandardFile {
+    /// Appends data to the end of the file.
+    ///
+    /// This method guarantees all-or-nothing semantics - either all bytes
+    /// are written or none are. The cached file length is updated atomically
+    /// after a successful write.
+    ///
+    /// # Arguments
+    /// * `data` - Byte slice to append
+    ///
+    /// # Returns
+    /// Number of bytes written
+    ///
+    /// # Errors
+    /// Returns an error if the write operation fails.
+    async fn append(&self, data: &[u8]) -> Result<u64> {
+        let mut file = self.file.write().await;
+
+        let offset = self
+            .file_length
+            .fetch_add(data.len() as u64, Ordering::SeqCst);
+        file.seek(SeekFrom::Start(offset)).await?;
+        file.write_all(data).await?;
+
+        Ok(data.len() as u64)
+    }
+
+    /// Flushes buffered writes to disk.
+    ///
+    /// # Errors
+    /// Returns an error if the flush operation fails.
+    async fn flush(&self) -> Result<()> {
+        let mut file = self.file.write().await;
+        file.flush().await?;
+        Ok(())
+    }
+
+    /// Syncs file metadata and data to disk.
+    ///
+    /// # Errors
+    /// Returns an error if the sync operation fails.
+    async fn sync_all(&self) -> Result<()> {
+        let file = self.file.write().await;
+        file.sync_all().await?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read;
+
+    use tempdir::TempDir;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_append_basic() {
+        let temp_dir = TempDir::new("appendable_standard_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_append.txt");
+
+        let file = File::create(&test_file_path).await.unwrap();
+        let appendable = AppendableStandardFile::new(file).await;
+
+        appendable.append(b"Hello, World!").await.unwrap();
+        appendable.flush().await.unwrap();
+
+        let mut read_file = std::fs::File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+        assert_eq!(&buffer, b"Hello, World!");
+    }
+
+    #[tokio::test]
+    async fn test_append_multiple() {
+        let temp_dir = TempDir::new("appendable_standard_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_append_multiple.txt");
+
+        let file = File::create(&test_file_path).await.unwrap();
+        let appendable = AppendableStandardFile::new(file).await;
+
+        appendable.append(b"Hello, ").await.unwrap();
+        appendable.append(b"World!").await.unwrap();
+        appendable.flush().await.unwrap();
+
+        let mut read_file = std::fs::File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+        assert_eq!(&buffer, b"Hello, World!");
+    }
+
+    #[tokio::test]
+    async fn test_append_empty() {
+        let temp_dir = TempDir::new("appendable_standard_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_append_empty.txt");
+
+        let file = File::create(&test_file_path).await.unwrap();
+        let appendable = AppendableStandardFile::new(file).await;
+
+        let bytes_written = appendable.append(b"").await.unwrap();
+        assert_eq!(bytes_written, 0);
+        appendable.flush().await.unwrap();
+
+        let read_file = std::fs::File::open(&test_file_path).unwrap();
+        let metadata = read_file.metadata().unwrap();
+        assert_eq!(metadata.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_append_large() {
+        let temp_dir = TempDir::new("appendable_standard_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_append_large.txt");
+
+        let file = File::create(&test_file_path).await.unwrap();
+        let appendable = AppendableStandardFile::new(file).await;
+
+        let large_data = vec![42u8; 1024 * 1024];
+        appendable.append(&large_data).await.unwrap();
+        appendable.flush().await.unwrap();
+
+        let read_file = std::fs::File::open(&test_file_path).unwrap();
+        let metadata = read_file.metadata().unwrap();
+        assert_eq!(metadata.len(), 1024 * 1024);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_appends() {
+        let temp_dir = TempDir::new("appendable_standard_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_concurrent_appends.txt");
+
+        let file = File::create(&test_file_path).await.unwrap();
+        let appendable = Arc::new(AppendableStandardFile::new(file).await);
+
+        let mut handles = Vec::new();
+        for i in 0..5 {
+            let appendable = appendable.clone();
+            let data = format!("Batch {}", i);
+            let handle = tokio::spawn(async move {
+                appendable.append(data.as_bytes()).await.unwrap();
+            });
+            handles.push(handle);
+        }
+
+        futures::future::join_all(handles).await;
+
+        appendable.flush().await.unwrap();
+
+        let mut read_file = std::fs::File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+
+        let result = String::from_utf8(buffer).unwrap();
+        assert!(result.starts_with("Batch "));
+        assert_eq!(result.len(), 35);
+    }
+
+    #[tokio::test]
+    async fn test_flush() {
+        let temp_dir = TempDir::new("appendable_standard_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_flush.txt");
+
+        let file = File::create(&test_file_path).await.unwrap();
+        let appendable = AppendableStandardFile::new(file).await;
+
+        appendable.append(b"Test data").await.unwrap();
+        appendable.flush().await.unwrap();
+
+        let mut read_file = std::fs::File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+        assert_eq!(&buffer, b"Test data");
+    }
+
+    #[tokio::test]
+    async fn test_sync_all() {
+        let temp_dir = TempDir::new("appendable_standard_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_sync_all.txt");
+
+        let file = File::create(&test_file_path).await.unwrap();
+        let appendable = AppendableStandardFile::new(file).await;
+
+        appendable.append(b"Sync test").await.unwrap();
+        appendable.sync_all().await.unwrap();
+
+        let mut read_file = std::fs::File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+        assert_eq!(&buffer, b"Sync test");
     }
 }

@@ -18,6 +18,10 @@ pub mod uring_engine;
 #[cfg(target_os = "linux")]
 pub mod uring_file;
 
+pub use standard_file::{AppendableStandardFile, StandardFile};
+#[cfg(target_os = "linux")]
+pub use uring_file::{AppendableUringFile, UringFile};
+
 #[async_trait]
 /// Trait for asynchronous file reading operations.
 ///
@@ -42,4 +46,36 @@ pub trait FileIO {
 
     /// Returns the length of the file in bytes.
     async fn file_length(&self) -> Result<u64>;
+}
+
+#[async_trait]
+/// Trait for asynchronous file appending operations.
+///
+/// Provides a unified interface for appending data to files with support
+/// for flushing and syncing to disk.
+pub trait AppendableFileIO {
+    /// Appends data to the end of the file.
+    ///
+    /// # Arguments
+    /// * `data` - Byte slice to append
+    ///
+    /// # Returns
+    /// Number of bytes written
+    ///
+    /// # Errors
+    /// Returns an error if the write operation fails. If an error occurs,
+    /// no data is written to the file.
+    async fn append(&self, data: &[u8]) -> Result<u64>;
+
+    /// Flushes buffered writes to disk.
+    ///
+    /// # Errors
+    /// Returns an error if the flush operation fails.
+    async fn flush(&self) -> Result<()>;
+
+    /// Syncs file metadata and data to disk.
+    ///
+    /// # Errors
+    /// Returns an error if the sync operation fails.
+    async fn sync_all(&self) -> Result<()>;
 }
