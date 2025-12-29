@@ -1,9 +1,15 @@
+use std::sync::Arc;
+
 use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};
-use compression::compression::IntSeqDecoder;
+use compression::compression::{AsyncIntSeqDecoder, IntSeqDecoder};
+use compression::elias_fano::block_based_decoder::{
+    BlockBasedEliasFanoDecoder, BlockBasedEliasFanoIterator,
+};
 use compression::elias_fano::mmap_decoder::{EliasFanoMMapDecodingIterator, EliasFanoMmapDecoder};
 use log::debug;
 use ouroboros::self_referencing;
+use utils::block_cache::cache::{BlockCache, FileId};
 use utils::on_disk_ordered_map::encoder::VarintIntegerCodec;
 use utils::on_disk_ordered_map::map::OnDiskOrderedMap;
 
@@ -29,6 +35,10 @@ struct TermIndexInner {
     offsets_offset: usize,
     pl_offset: usize,
     offset_len: u64,
+
+    // Block cache support
+    block_cache: Option<Arc<BlockCache>>,
+    file_id: Option<FileId>,
 }
 
 impl TermIndex {
@@ -55,13 +65,13 @@ impl TermIndex {
 
         let term_map_offset = 24;
         let offsets_offset = term_map_offset + term_map_len as usize;
-        let offsets_offset = offsets_offset.div_ceil(8) * 8;
+        let offsets_offset = (offsets_offset as u64).div_ceil(8) as usize * 8;
 
         let pl_offset = offsets_offset + offset_len as usize;
         let inner = TermIndexInnerBuilder {
             term_map_builder: |mmap| {
                 OnDiskOrderedMap::<VarintIntegerCodec>::new(
-                    path,
+                    path.clone(),
                     mmap,
                     term_map_offset,
                     term_map_offset + term_map_len as usize,
@@ -72,6 +82,64 @@ impl TermIndex {
             offsets_offset,
             pl_offset,
             offset_len,
+            block_cache: None,
+            file_id: None,
+        }
+        .build();
+
+        Ok(TermIndex { inner })
+    }
+
+    pub async fn new_with_block_cache(
+        block_cache: Arc<BlockCache>,
+        path: String,
+        start: usize,
+        len: usize,
+    ) -> Result<Self> {
+        // Make sure start is 8 bytes aligned
+        if start % 8 != 0 {
+            return Err(anyhow::anyhow!(
+                "Start offset {} must be 8 bytes aligned",
+                start
+            ));
+        }
+
+        let file_id = block_cache.open_file(&path).await?;
+        let mmap_data = block_cache.read(file_id, start as u64, 24).await?;
+        let term_map_len = LittleEndian::read_u64(&mmap_data[0..8]);
+        let offset_len = LittleEndian::read_u64(&mmap_data[8..16]);
+
+        let term_map_offset = 24;
+        let offsets_offset = term_map_offset + term_map_len as usize;
+        let offsets_offset = (offsets_offset as u64).div_ceil(8) as usize * 8;
+
+        let pl_offset = offsets_offset + offset_len as usize;
+
+        // Still need mmap for the term map for now, since OnDiskOrderedMap uses it
+        let backing_file = std::fs::File::open(&path)?;
+        let mmap = unsafe {
+            memmap2::MmapOptions::new()
+                .offset(start as u64)
+                .len(len)
+                .map(&backing_file)?
+        };
+
+        let inner = TermIndexInnerBuilder {
+            term_map_builder: |mmap| {
+                OnDiskOrderedMap::<VarintIntegerCodec>::new(
+                    path.clone(),
+                    mmap,
+                    term_map_offset,
+                    term_map_offset + term_map_len as usize,
+                )
+                .unwrap()
+            },
+            mmap,
+            offsets_offset,
+            pl_offset,
+            offset_len,
+            block_cache: Some(block_cache),
+            file_id: Some(file_id),
         }
         .build();
 
@@ -158,6 +226,34 @@ impl TermIndex {
         Ok(decoder.get_iterator(byte_slice))
     }
 
+    /// Returns a block-based iterator over the posting list for a given term ID.
+    pub async fn get_posting_list_iterator_block_based(
+        &self,
+        term_id: u64,
+    ) -> Result<BlockBasedEliasFanoIterator<u32>> {
+        let offset_len = self
+            .get_term_offset_len(term_id)
+            .ok_or_else(|| anyhow!("Term ID {} is out of bound", term_id))?;
+
+        let block_cache = self
+            .inner
+            .borrow_block_cache()
+            .as_ref()
+            .ok_or_else(|| anyhow!("TermIndex was not initialized with a block cache"))?;
+
+        let file_id = self.inner.borrow_file_id().unwrap();
+
+        let decoder = BlockBasedEliasFanoDecoder::new_decoder(
+            block_cache.clone(),
+            file_id,
+            offset_len.offset as u64,
+            4096, // default buffer size
+        )
+        .await?;
+
+        Ok(decoder.into_iterator())
+    }
+
     /// Get posting list iterator that doesn't borrow from self
     /// Returns a boxed iterator that owns the data
     pub fn get_posting_list_iterator_owned(
@@ -187,7 +283,11 @@ impl TermIndex {
 #[cfg(test)]
 mod tests {
 
+    use std::sync::Arc;
+
+    use compression::compression::AsyncIntSeqIterator;
     use tempdir::TempDir;
+    use utils::block_cache::cache::BlockCache;
 
     use super::TermIndex;
     use crate::terms::builder::TermBuilder;
@@ -339,5 +439,53 @@ mod tests {
             assert_eq!(it.next().unwrap(), doc_id);
             assert!(it.next().is_none());
         }
+    }
+
+    #[tokio::test]
+    async fn test_term_index_block_based() {
+        use utils::block_cache::cache::BlockCacheConfig;
+
+        let temp_dir = TempDir::new("test_term_index_block_based").unwrap();
+        let base_directory = temp_dir.path();
+        let base_dir_str = base_directory.to_str().unwrap().to_string();
+
+        let mut builder = TermBuilder::new().unwrap();
+        builder.add(0, "apple".to_string()).unwrap();
+        builder.add(5, "apple".to_string()).unwrap();
+        builder.add(10, "apple".to_string()).unwrap();
+        builder.add(1, "banana".to_string()).unwrap();
+
+        builder.build().unwrap();
+        let writer = TermWriter::new(base_dir_str.clone());
+        writer.write(&mut builder).unwrap();
+
+        let path = format!("{base_dir_str}/combined");
+        let file_len = std::fs::metadata(&path).unwrap().len();
+
+        let config = BlockCacheConfig::default();
+        let block_cache = Arc::new(BlockCache::new(config));
+
+        let index = TermIndex::new_with_block_cache(block_cache, path, 0, file_len as usize)
+            .await
+            .unwrap();
+
+        let apple_id = index.get_term_id("apple").unwrap();
+        let mut it = index
+            .get_posting_list_iterator_block_based(apple_id)
+            .await
+            .unwrap();
+
+        assert_eq!(it.next().await.unwrap(), Some(0));
+        assert_eq!(it.next().await.unwrap(), Some(5));
+        assert_eq!(it.next().await.unwrap(), Some(10));
+        assert_eq!(it.next().await.unwrap(), None);
+
+        let banana_id = index.get_term_id("banana").unwrap();
+        let mut it = index
+            .get_posting_list_iterator_block_based(banana_id)
+            .await
+            .unwrap();
+        assert_eq!(it.next().await.unwrap(), Some(1));
+        assert_eq!(it.next().await.unwrap(), None);
     }
 }
