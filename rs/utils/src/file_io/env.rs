@@ -49,8 +49,8 @@ pub trait Env: Send + Sync {
 }
 
 pub struct DefaultEnv {
-    config: EnvConfig,
-    block_cache: Option<Arc<BlockCache>>,
+    pub config: EnvConfig,
+    pub block_cache: Option<Arc<BlockCache>>,
     file_id_generator: AtomicU64,
     open_files: DashMap<FileId, Arc<dyn FileIO + Send + Sync>>,
 }

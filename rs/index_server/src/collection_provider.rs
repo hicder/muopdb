@@ -4,19 +4,19 @@ use index::collection::reader::CollectionReader;
 use index::collection::BoxedCollection;
 use quantization::noq::noq::NoQuantizer;
 use quantization::pq::pq::ProductQuantizer;
-use utils::block_cache::BlockCacheConfig;
 use utils::distance::l2::L2DistanceCalculator;
+use utils::file_io::env::EnvConfig;
 
 pub struct CollectionProvider {
     data_directory: String,
-    block_cache_config: Option<BlockCacheConfig>,
+    env_config: Option<EnvConfig>,
 }
 
 impl CollectionProvider {
-    pub fn new(data_directory: String, block_cache_config: Option<BlockCacheConfig>) -> Self {
+    pub fn new(data_directory: String, env_config: Option<EnvConfig>) -> Self {
         Self {
             data_directory,
-            block_cache_config,
+            env_config,
         }
     }
 
@@ -25,7 +25,7 @@ impl CollectionProvider {
         let reader = CollectionReader::new(
             name.to_string(),
             collection_path.clone(),
-            self.block_cache_config.clone(),
+            self.env_config.clone(),
         );
 
         // Read the collection config

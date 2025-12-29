@@ -9,7 +9,7 @@ use compression::elias_fano::block_based_decoder::{
 use compression::elias_fano::mmap_decoder::{EliasFanoMMapDecodingIterator, EliasFanoMmapDecoder};
 use log::debug;
 use ouroboros::self_referencing;
-use utils::block_cache::cache::{BlockCache, FileId};
+use utils::file_io::FileIO;
 use utils::on_disk_ordered_map::encoder::VarintIntegerCodec;
 use utils::on_disk_ordered_map::map::OnDiskOrderedMap;
 
@@ -36,9 +36,8 @@ struct TermIndexInner {
     pl_offset: usize,
     offset_len: u64,
 
-    // Block cache support
-    block_cache: Option<Arc<BlockCache>>,
-    file_id: Option<FileId>,
+    // File I/O support
+    file_io: Option<Arc<dyn FileIO + Send + Sync>>,
 }
 
 impl TermIndex {
@@ -82,16 +81,15 @@ impl TermIndex {
             offsets_offset,
             pl_offset,
             offset_len,
-            block_cache: None,
-            file_id: None,
+            file_io: None,
         }
         .build();
 
         Ok(TermIndex { inner })
     }
 
-    pub async fn new_with_block_cache(
-        block_cache: Arc<BlockCache>,
+    pub async fn new_with_file_io(
+        file_io: Arc<dyn FileIO + Send + Sync>,
         path: String,
         start: usize,
         len: usize,
@@ -104,8 +102,7 @@ impl TermIndex {
             ));
         }
 
-        let file_id = block_cache.open_file(&path).await?;
-        let mmap_data = block_cache.read(file_id, start as u64, 24).await?;
+        let mmap_data = file_io.read(start as u64, 24).await?;
         let term_map_len = LittleEndian::read_u64(&mmap_data[0..8]);
         let offset_len = LittleEndian::read_u64(&mmap_data[8..16]);
 
@@ -138,8 +135,7 @@ impl TermIndex {
             offsets_offset,
             pl_offset,
             offset_len,
-            block_cache: Some(block_cache),
-            file_id: Some(file_id),
+            file_io: Some(file_io),
         }
         .build();
 
@@ -235,17 +231,14 @@ impl TermIndex {
             .get_term_offset_len(term_id)
             .ok_or_else(|| anyhow!("Term ID {} is out of bound", term_id))?;
 
-        let block_cache = self
+        let file_io = self
             .inner
-            .borrow_block_cache()
+            .borrow_file_io()
             .as_ref()
-            .ok_or_else(|| anyhow!("TermIndex was not initialized with a block cache"))?;
-
-        let file_id = self.inner.borrow_file_id().unwrap();
+            .ok_or_else(|| anyhow!("TermIndex was not initialized with a file_io"))?;
 
         let decoder = BlockBasedEliasFanoDecoder::new_decoder(
-            block_cache.clone(),
-            file_id,
+            file_io.clone(),
             offset_len.offset as u64,
             4096, // default buffer size
         )
@@ -287,7 +280,7 @@ mod tests {
 
     use compression::compression::AsyncIntSeqIterator;
     use tempdir::TempDir;
-    use utils::block_cache::cache::BlockCache;
+    use utils::file_io::env::{DefaultEnv, Env, EnvConfig, FileType};
 
     use super::TermIndex;
     use crate::terms::builder::TermBuilder;
@@ -443,7 +436,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_term_index_block_based() {
-        use utils::block_cache::cache::BlockCacheConfig;
 
         let temp_dir = TempDir::new("test_term_index_block_based").unwrap();
         let base_directory = temp_dir.path();
@@ -462,10 +454,14 @@ mod tests {
         let path = format!("{base_dir_str}/combined");
         let file_len = std::fs::metadata(&path).unwrap().len();
 
-        let config = BlockCacheConfig::default();
-        let block_cache = Arc::new(BlockCache::new(config));
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            ..EnvConfig::default()
+        };
+        let env = Arc::new(DefaultEnv::new(config));
+        let file_io = env.open(&path).await.unwrap().file_io;
 
-        let index = TermIndex::new_with_block_cache(block_cache, path, 0, file_len as usize)
+        let index = TermIndex::new_with_file_io(file_io, path.clone(), 0, file_len as usize)
             .await
             .unwrap();
 

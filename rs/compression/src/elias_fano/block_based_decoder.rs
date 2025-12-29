@@ -3,14 +3,13 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use bitvec::prelude::*;
-use utils::block_cache::cache::{BlockCache, FileId};
+use utils::file_io::FileIO;
 use utils::mem::transmute_u8_to_slice;
 
 use crate::compression::{AsyncIntSeqDecoder, AsyncIntSeqIterator, CompressionInt};
 
 pub struct BlockBasedEliasFanoDecoder<T: CompressionInt = u64> {
-    block_cache: Arc<BlockCache>,
-    file_id: FileId,
+    file_io: Arc<dyn FileIO + Send + Sync>,
     base_offset: u64,
     buffer_size: usize,
 
@@ -29,12 +28,11 @@ impl<T: CompressionInt + Send + Sync> AsyncIntSeqDecoder<T> for BlockBasedEliasF
     type IteratorType = BlockBasedEliasFanoIterator<T>;
 
     async fn new_decoder(
-        block_cache: Arc<BlockCache>,
-        file_id: FileId,
+        file_io: Arc<dyn FileIO + Send + Sync>,
         offset: u64,
         buffer_size: usize,
     ) -> Result<Self> {
-        let metadata_bytes = block_cache.read(file_id, offset, 32).await?;
+        let metadata_bytes = file_io.read(offset, 32).await?;
         if metadata_bytes.len() < 32 {
             return Err(anyhow!("Not enough metadata for EliasFano encoded data"));
         }
@@ -46,8 +44,7 @@ impl<T: CompressionInt + Send + Sync> AsyncIntSeqDecoder<T> for BlockBasedEliasF
         let upper_vec_len = metadata[3] as usize;
 
         Ok(Self {
-            block_cache,
-            file_id,
+            file_io,
             base_offset: offset,
             buffer_size,
             num_elem,
@@ -61,8 +58,7 @@ impl<T: CompressionInt + Send + Sync> AsyncIntSeqDecoder<T> for BlockBasedEliasF
 
     fn into_iterator(self) -> Self::IteratorType {
         BlockBasedEliasFanoIterator {
-            block_cache: self.block_cache,
-            file_id: self.file_id,
+            file_io: self.file_io,
             base_offset: self.base_offset,
             buffer_size: self.buffer_size,
             num_elem: self.num_elem,
@@ -83,8 +79,7 @@ impl<T: CompressionInt + Send + Sync> AsyncIntSeqDecoder<T> for BlockBasedEliasF
 }
 
 pub struct BlockBasedEliasFanoIterator<T: CompressionInt = u64> {
-    block_cache: Arc<BlockCache>,
-    file_id: FileId,
+    file_io: Arc<dyn FileIO + Send + Sync>,
     base_offset: u64,
     buffer_size: usize,
     num_elem: usize,
@@ -113,10 +108,7 @@ impl<T: CompressionInt> BlockBasedEliasFanoIterator<T> {
         let bit_in_first_byte = bit_offset % 8;
 
         let bytes_needed = (bit_in_first_byte + self.lower_bit_length + 7) / 8;
-        let data = self
-            .block_cache
-            .read(self.file_id, byte_start, bytes_needed as u64)
-            .await?;
+        let data = self.file_io.read(byte_start, bytes_needed as u64).await?;
 
         let bits = BitSlice::<u8, Lsb0>::from_slice(&data);
         let mut low = T::zero();
@@ -154,10 +146,7 @@ impl<T: CompressionInt> BlockBasedEliasFanoIterator<T> {
         let remaining_bytes = total_upper_bytes - bytes_from_bit;
         let read_len = std::cmp::min(self.buffer_size as u64, remaining_bytes);
 
-        self.upper_bits_buffer = self
-            .block_cache
-            .read(self.file_id, byte_offset, read_len)
-            .await?;
+        self.upper_bits_buffer = self.file_io.read(byte_offset, read_len).await?;
         self.upper_bits_buffer_bit_start = (bit_index / 8) * 8;
 
         Ok(())
@@ -339,11 +328,19 @@ mod tests {
     use std::io::BufWriter;
 
     use tempdir::TempDir;
-    use utils::block_cache::cache::{BlockCache, BlockCacheConfig};
+    use utils::file_io::env::{DefaultEnv, Env, EnvConfig, FileType};
 
     use super::*;
     use crate::compression::IntSeqEncoder;
     use crate::elias_fano::ef::EliasFano;
+
+    fn create_env() -> Arc<DefaultEnv> {
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            ..EnvConfig::default()
+        };
+        Arc::new(DefaultEnv::new(config))
+    }
 
     #[tokio::test]
     async fn test_block_based_elias_fano_decoding() {
@@ -359,15 +356,11 @@ mod tests {
         assert!(ef.write(&mut writer).is_ok());
         drop(writer);
 
-        let config = BlockCacheConfig::default();
-        let block_cache = Arc::new(BlockCache::new(config));
-        let file_id = block_cache
-            .open_file(file_path.to_str().unwrap())
-            .await
-            .unwrap();
+        let env = create_env();
+        let file_io = env.open(file_path.to_str().unwrap()).await.unwrap().file_io;
 
         let decoder =
-            BlockBasedEliasFanoDecoder::<u64>::new_decoder(block_cache.clone(), file_id, 0, 4096)
+            BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
                 .await
                 .unwrap();
 
@@ -393,15 +386,11 @@ mod tests {
         assert!(ef.write(&mut writer).is_ok());
         drop(writer);
 
-        let config = BlockCacheConfig::default();
-        let block_cache = Arc::new(BlockCache::new(config));
-        let file_id = block_cache
-            .open_file(file_path.to_str().unwrap())
-            .await
-            .unwrap();
+        let env = create_env();
+        let file_io = env.open(file_path.to_str().unwrap()).await.unwrap().file_io;
 
         let decoder =
-            BlockBasedEliasFanoDecoder::<u64>::new_decoder(block_cache.clone(), file_id, 0, 4096)
+            BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
                 .await
                 .unwrap();
 
@@ -439,15 +428,11 @@ mod tests {
         assert!(ef.write(&mut writer).is_ok());
         drop(writer);
 
-        let config = BlockCacheConfig::default();
-        let block_cache = Arc::new(BlockCache::new(config));
-        let file_id = block_cache
-            .open_file(file_path.to_str().unwrap())
-            .await
-            .unwrap();
+        let env = create_env();
+        let file_io = env.open(file_path.to_str().unwrap()).await.unwrap().file_io;
 
         let decoder =
-            BlockBasedEliasFanoDecoder::<u64>::new_decoder(block_cache.clone(), file_id, 0, 4096)
+            BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
                 .await
                 .unwrap();
 
@@ -490,15 +475,11 @@ mod tests {
         assert!(ef.write(&mut writer).is_ok());
         drop(writer);
 
-        let config = BlockCacheConfig::default();
-        let block_cache = Arc::new(BlockCache::new(config));
-        let file_id = block_cache
-            .open_file(file_path.to_str().unwrap())
-            .await
-            .unwrap();
+        let env = create_env();
+        let file_io = env.open(file_path.to_str().unwrap()).await.unwrap().file_io;
 
         let decoder =
-            BlockBasedEliasFanoDecoder::<u64>::new_decoder(block_cache.clone(), file_id, 0, 4096)
+            BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
                 .await
                 .unwrap();
 
@@ -530,15 +511,11 @@ mod tests {
         assert!(ef.write(&mut writer).is_ok());
         drop(writer);
 
-        let config = BlockCacheConfig::default();
-        let block_cache = Arc::new(BlockCache::new(config));
-        let file_id = block_cache
-            .open_file(file_path.to_str().unwrap())
-            .await
-            .unwrap();
+        let env = create_env();
+        let file_io = env.open(file_path.to_str().unwrap()).await.unwrap().file_io;
 
         let decoder =
-            BlockBasedEliasFanoDecoder::<u64>::new_decoder(block_cache.clone(), file_id, 0, 4096)
+            BlockBasedEliasFanoDecoder::<u64>::new_decoder(file_io, 0, 4096)
                 .await
                 .unwrap();
 
@@ -568,15 +545,11 @@ mod tests {
         assert!(ef.write(&mut writer).is_ok());
         drop(writer);
 
-        let config = BlockCacheConfig::default();
-        let block_cache = Arc::new(BlockCache::new(config));
-        let file_id = block_cache
-            .open_file(file_path.to_str().unwrap())
-            .await
-            .unwrap();
+        let env = create_env();
+        let file_io = env.open(file_path.to_str().unwrap()).await.unwrap().file_io;
 
         let decoder =
-            BlockBasedEliasFanoDecoder::<u32>::new_decoder(block_cache.clone(), file_id, 0, 4096)
+            BlockBasedEliasFanoDecoder::<u32>::new_decoder(file_io, 0, 4096)
                 .await
                 .unwrap();
 
@@ -605,15 +578,11 @@ mod tests {
         assert!(ef.write(&mut writer).is_ok());
         drop(writer);
 
-        let config = BlockCacheConfig::default();
-        let block_cache = Arc::new(BlockCache::new(config));
-        let file_id = block_cache
-            .open_file(file_path.to_str().unwrap())
-            .await
-            .unwrap();
+        let env = create_env();
+        let file_io = env.open(file_path.to_str().unwrap()).await.unwrap().file_io;
 
         let decoder =
-            BlockBasedEliasFanoDecoder::<u128>::new_decoder(block_cache.clone(), file_id, 0, 4096)
+            BlockBasedEliasFanoDecoder::<u128>::new_decoder(file_io, 0, 4096)
                 .await
                 .unwrap();
 

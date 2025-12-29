@@ -9,7 +9,7 @@ use dashmap::DashMap;
 use memmap2::Mmap;
 use odht::HashTableOwned;
 use quantization::quantization::Quantizer;
-use utils::block_cache::BlockCache;
+use utils::file_io::env::Env;
 
 use super::user_index_info::HashConfig;
 use crate::ivf::files::invalidated_ids::{InvalidatedIdsStorage, InvalidatedUserDocId};
@@ -29,7 +29,7 @@ pub struct MultiSpannIndex<Q: Quantizer> {
     pending_invalidations: DashMap<u128, HashSet<u128>>,
     ivf_type: IntSeqEncodingType,
     num_features: usize,
-    block_cache: Option<Arc<BlockCache>>,
+    env: Option<Arc<Box<dyn Env>>>,
 }
 
 impl<Q: Quantizer> MultiSpannIndex<Q> {
@@ -49,7 +49,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         ivf_type: IntSeqEncodingType,
         num_features: usize,
     ) -> Result<Self> {
-        Self::new_with_cache(
+        Self::new_with_env(
             base_directory,
             user_index_info_mmap,
             ivf_type,
@@ -59,23 +59,23 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         .await
     }
 
-    /// Creates a new `MultiSpannIndex` with an optional block cache for asynchronous I/O.
+    /// Creates a new `MultiSpannIndex` with an optional Env for asynchronous I/O.
     ///
     /// # Arguments
     /// * `base_directory` - The base directory where user indices are stored.
     /// * `user_index_info_mmap` - Mmapped memory containing user index mapping information.
     /// * `ivf_type` - The encoding type for IVF posting lists.
     /// * `num_features` - The number of features in the vectors.
-    /// * `block_cache` - An optional shared block cache.
+    /// * `env` - An optional Arc<dyn Env> for file I/O.
     ///
     /// # Returns
     /// * `Result<Self>` - A new `MultiSpannIndex` instance or an error.
-    pub async fn new_with_cache(
+    pub async fn new_with_env(
         base_directory: String,
         user_index_info_mmap: Mmap,
         ivf_type: IntSeqEncodingType,
         num_features: usize,
-        block_cache: Option<Arc<BlockCache>>,
+        env: Option<Arc<Box<dyn Env>>>,
     ) -> Result<Self> {
         let user_index_infos = HashTableOwned::from_raw_bytes(&user_index_info_mmap).unwrap();
         let invalidated_ids_directory = format!("{base_directory}/invalidated_ids_storage");
@@ -89,7 +89,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             invalidated_ids_storage: RwLock::new(invalidated_ids_storage),
             ivf_type,
             num_features,
-            block_cache,
+            env,
         };
 
         {
@@ -147,8 +147,8 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             self.ivf_type.clone(),
         );
 
-        let index = if let Some(block_cache) = &self.block_cache {
-            reader.read_async::<Q>(block_cache.clone()).await?
+        let index = if let Some(env) = &self.env {
+            reader.read_async::<Q>(env.clone()).await?
         } else {
             reader.read::<Q>()?
         };

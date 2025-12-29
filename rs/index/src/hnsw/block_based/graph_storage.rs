@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};
-use utils::block_cache::BlockCache;
+use utils::file_io::env::{Env, OpenResult};
+use utils::file_io::FileIO;
 
 use crate::hnsw::writer::Header;
 
@@ -24,11 +25,10 @@ pub struct GraphOffsets {
 
 /// Provides block-based asynchronous access to HNSW graph data stored on disk.
 ///
-/// This storage implementation uses a `BlockCache` to efficiently read parts of the
+/// This storage implementation uses an `Env` abstraction to efficiently read parts of the
 /// graph file without loading the entire index into memory.
 pub struct BlockBasedHnswGraphStorage {
-    block_cache: Arc<BlockCache>,
-    graph_file_id: u64,
+    file_io: Arc<dyn FileIO + Send + Sync>,
     header: Header,
     offsets: GraphOffsets,
     level_offsets: Vec<u64>,
@@ -38,31 +38,28 @@ impl BlockBasedHnswGraphStorage {
     /// Creates a new `BlockBasedHnswGraphStorage` by opening the graph file at the default location.
     ///
     /// # Arguments
-    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `env` - The environment for file I/O.
     /// * `base_directory` - The base directory where the HNSW index is stored.
     ///
     /// # Returns
     /// * `Result<Self>` - A new instance of the storage handler or an error if the file cannot be opened or parsed.
-    pub async fn new(block_cache: Arc<BlockCache>, base_directory: String) -> Result<Self> {
+    pub async fn new(env: Arc<Box<dyn Env>>, base_directory: String) -> Result<Self> {
         let graph_path = format!("{}/hnsw/index", base_directory);
-        let file_id = {
-            let cache = block_cache.clone();
-            cache.open_file(&graph_path).await
-        }
-        .map_err(|e| anyhow!("Failed to open graph file: {}", e))?;
+        let OpenResult { file_io, .. } = env
+            .open(&graph_path)
+            .await
+            .map_err(|e| anyhow!("Failed to open graph file: {}", e))?;
 
-        let header_data = {
-            let cache = block_cache.clone();
-            cache.read(file_id, 0, 49).await
-        }
-        .map_err(|e| anyhow!("Failed to read header: {}", e))?;
+        let header_data = file_io
+            .read(0, 49)
+            .await
+            .map_err(|e| anyhow!("Failed to read header: {}", e))?;
 
         let header = Self::parse_header(&header_data);
         let offsets = Self::calculate_offsets(&header, 49);
 
         let mut storage = Self {
-            block_cache,
-            graph_file_id: file_id,
+            file_io: file_io,
             header,
             offsets,
             level_offsets: vec![],
@@ -77,37 +74,27 @@ impl BlockBasedHnswGraphStorage {
     /// This is useful when the HNSW graph is embedded within another file structure.
     ///
     /// # Arguments
-    /// * `block_cache` - The shared block cache for file I/O.
-    /// * `base_directory` - The base directory where the HNSW index is stored.
-    /// * `data_offset` - The byte offset where the graph data starts.
-    /// Creates a new `BlockBasedHnswGraphStorage` starting at a specific offset within the graph file.
-    ///
-    /// This is useful when the HNSW graph is embedded within another file structure.
-    ///
-    /// # Arguments
-    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `env` - The environment for file I/O.
     /// * `base_directory` - The base directory where the HNSW index is stored.
     /// * `data_offset` - The byte offset where the graph data starts.
     ///
     /// # Returns
     /// * `Result<Self>` - A new instance of the storage handler or an error if the file cannot be opened or parsed.
     pub async fn new_with_offset(
-        block_cache: Arc<BlockCache>,
+        env: Arc<Box<dyn Env>>,
         base_directory: String,
         data_offset: usize,
     ) -> Result<Self> {
         let graph_path = format!("{}/hnsw/index", base_directory);
-        let file_id = {
-            let cache = block_cache.clone();
-            cache.open_file(&graph_path).await
-        }
-        .map_err(|e| anyhow!("Failed to open graph file: {}", e))?;
+        let OpenResult { file_io, .. } = env
+            .open(&graph_path)
+            .await
+            .map_err(|e| anyhow!("Failed to open graph file: {}", e))?;
 
-        let header_data = {
-            let cache = block_cache.clone();
-            cache.read(file_id, data_offset as u64, 49).await
-        }
-        .map_err(|e| anyhow!("Failed to read header: {}", e))?;
+        let header_data = file_io
+            .read(data_offset as u64, 49)
+            .await
+            .map_err(|e| anyhow!("Failed to read header: {}", e))?;
 
         let header = Self::parse_header(&header_data);
         let mut offsets = Self::calculate_offsets(&header, data_offset + 49);
@@ -115,8 +102,7 @@ impl BlockBasedHnswGraphStorage {
         offsets.data_offset = data_offset + 49;
 
         let mut storage = Self {
-            block_cache,
-            graph_file_id: file_id,
+            file_io,
             header,
             offsets,
             level_offsets: vec![],
@@ -236,11 +222,11 @@ impl BlockBasedHnswGraphStorage {
         if length == 0 {
             return Ok(vec![]);
         }
-        let data = {
-            let cache = self.block_cache.clone();
-            cache.read(self.graph_file_id, start, length).await
-        }
-        .map_err(|e| anyhow!("Failed to read edges: {}", e))?;
+        let data = self
+            .file_io
+            .read(start, length)
+            .await
+            .map_err(|e| anyhow!("Failed to read edges: {}", e))?;
 
         let num_elements = data.len() / 4;
         let mut result = Vec::with_capacity(num_elements);
@@ -267,11 +253,11 @@ impl BlockBasedHnswGraphStorage {
         if length == 0 {
             return Ok(vec![]);
         }
-        let data = {
-            let cache = self.block_cache.clone();
-            cache.read(self.graph_file_id, start, length).await
-        }
-        .map_err(|e| anyhow!("Failed to read edge offsets: {}", e))?;
+        let data = self
+            .file_io
+            .read(start, length)
+            .await
+            .map_err(|e| anyhow!("Failed to read edge offsets: {}", e))?;
 
         let num_elements = data.len() / 8;
         let mut result = Vec::with_capacity(num_elements);
@@ -298,11 +284,11 @@ impl BlockBasedHnswGraphStorage {
         if length == 0 {
             return Ok(vec![]);
         }
-        let data = {
-            let cache = self.block_cache.clone();
-            cache.read(self.graph_file_id, start, length).await
-        }
-        .map_err(|e| anyhow!("Failed to read points: {}", e))?;
+        let data = self
+            .file_io
+            .read(start, length)
+            .await
+            .map_err(|e| anyhow!("Failed to read points: {}", e))?;
 
         let num_elements = data.len() / 4;
         let mut result = Vec::with_capacity(num_elements);
@@ -327,11 +313,11 @@ impl BlockBasedHnswGraphStorage {
         if length == 0 {
             return Ok(vec![]);
         }
-        let data = {
-            let cache = self.block_cache.clone();
-            cache.read(self.graph_file_id, start, length).await
-        }
-        .map_err(|e| anyhow!("Failed to read level offsets: {}", e))?;
+        let data = self
+            .file_io
+            .read(start, length)
+            .await
+            .map_err(|e| anyhow!("Failed to read level offsets: {}", e))?;
 
         let num_elements = data.len() / 8;
         let mut result = Vec::with_capacity(num_elements);
@@ -358,11 +344,11 @@ impl BlockBasedHnswGraphStorage {
         if length == 0 {
             return Ok(vec![]);
         }
-        let data = {
-            let cache = self.block_cache.clone();
-            cache.read(self.graph_file_id, start, length).await
-        }
-        .map_err(|e| anyhow!("Failed to read doc ID mapping: {}", e))?;
+        let data = self
+            .file_io
+            .read(start, length)
+            .await
+            .map_err(|e| anyhow!("Failed to read doc ID mapping: {}", e))?;
 
         let num_elements = data.len() / 16;
         let mut result = Vec::with_capacity(num_elements);
@@ -384,8 +370,8 @@ impl BlockBasedHnswGraphStorage {
     /// * `Result<u32>` - The parsed value or an error if the read fails.
     async fn get_u32_at(&self, offset: u64) -> Result<u32> {
         let data = self
-            .block_cache
-            .read(self.graph_file_id, offset, 4)
+            .file_io
+            .read(offset, 4)
             .await
             .map_err(|e| anyhow!("Failed to read u32 at {}: {}", offset, e))?;
         Ok(LittleEndian::read_u32(&data))
@@ -400,8 +386,8 @@ impl BlockBasedHnswGraphStorage {
     /// * `Result<u64>` - The parsed value or an error if the read fails.
     async fn get_u64_at(&self, offset: u64) -> Result<u64> {
         let data = self
-            .block_cache
-            .read(self.graph_file_id, offset, 8)
+            .file_io
+            .read(offset, 8)
             .await
             .map_err(|e| anyhow!("Failed to read u64 at {}: {}", offset, e))?;
         Ok(LittleEndian::read_u64(&data))
@@ -416,8 +402,8 @@ impl BlockBasedHnswGraphStorage {
     /// * `Result<u128>` - The parsed value or an error if the read fails.
     async fn get_u128_at(&self, offset: u64) -> Result<u128> {
         let data = self
-            .block_cache
-            .read(self.graph_file_id, offset, 16)
+            .file_io
+            .read(offset, 16)
             .await
             .map_err(|e| anyhow!("Failed to read u128 at {}: {}", offset, e))?;
         Ok(LittleEndian::read_u128(&data))
@@ -448,12 +434,8 @@ impl BlockBasedHnswGraphStorage {
             let batch_end = (current + BATCH_SIZE).min(end_idx);
             let read_len = (batch_end - current) * 4;
             let data = self
-                .block_cache
-                .read(
-                    self.graph_file_id,
-                    points_base + (current * 4) as u64,
-                    read_len as u64,
-                )
+                .file_io
+                .read(points_base + (current * 4) as u64, read_len as u64)
                 .await?;
 
             for (i, chunk) in data.chunks_exact(4).enumerate() {
@@ -524,12 +506,8 @@ impl BlockBasedHnswGraphStorage {
         let edges_base = self.offsets.edges_offset as u64;
         let read_len = (end_idx_edges - start_idx_edges) * 4;
         let data = match self
-            .block_cache
-            .read(
-                self.graph_file_id,
-                edges_base + start_idx_edges * 4,
-                read_len,
-            )
+            .file_io
+            .read(edges_base + start_idx_edges * 4, read_len)
             .await
         {
             Ok(v) => v,
@@ -603,7 +581,7 @@ mod tests {
     use std::sync::Arc;
 
     use tempdir::TempDir;
-    use utils::block_cache::{BlockCache, BlockCacheConfig};
+    use utils::file_io::env::{DefaultEnv, EnvConfig, FileType};
 
     use super::*;
     use crate::hnsw::writer::Version;
@@ -666,10 +644,13 @@ mod tests {
 
         create_test_file(base_directory.clone(), 12, 32, 32);
 
-        let config = BlockCacheConfig::default();
-        let cache = Arc::new(BlockCache::new(config));
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            ..EnvConfig::default()
+        };
+        let env: Arc<Box<dyn Env>> = Arc::new(Box::new(DefaultEnv::new(config)));
 
-        let storage = BlockBasedHnswGraphStorage::new(cache.clone(), base_directory)
+        let storage = BlockBasedHnswGraphStorage::new(env.clone(), base_directory)
             .await
             .unwrap();
 

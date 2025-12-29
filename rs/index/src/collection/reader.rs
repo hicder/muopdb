@@ -4,7 +4,7 @@ use anyhow::{Ok, Result};
 use async_lock::RwLock;
 use config::collection::CollectionConfig;
 use quantization::quantization::Quantizer;
-use utils::block_cache::{BlockCache, BlockCacheConfig};
+use utils::file_io::env::{DefaultEnv, Env, EnvConfig};
 use utils::io::get_latest_version;
 
 use super::core::Collection;
@@ -17,15 +17,15 @@ use crate::segment::{BoxedImmutableSegment, Segment};
 pub struct CollectionReader {
     name: String,
     path: String,
-    block_cache_config: Option<BlockCacheConfig>,
+    env_config: Option<EnvConfig>,
 }
 
 impl CollectionReader {
-    pub fn new(name: String, path: String, block_cache_config: Option<BlockCacheConfig>) -> Self {
+    pub fn new(name: String, path: String, env_config: Option<EnvConfig>) -> Self {
         Self {
             name,
             path,
-            block_cache_config,
+            env_config,
         }
     }
 
@@ -42,10 +42,11 @@ impl CollectionReader {
         let toc_path = format!("{}/version_{}", self.path, latest_version);
         let toc: TableOfContent = serde_json::from_reader(std::fs::File::open(toc_path)?)?;
 
-        let block_cache = self
-            .block_cache_config
-            .as_ref()
-            .map(|config| Arc::new(BlockCache::new(config.clone())));
+        // Create Env for async operations
+        let env: Option<Arc<Box<dyn Env>>> = match &self.env_config {
+            Some(config) => Some(Arc::new(Box::new(DefaultEnv::new(config.clone())))),
+            None => None,
+        };
 
         // Read the segments
         let mut segments: Vec<BoxedImmutableSegment<Q>> = vec![];
@@ -57,12 +58,12 @@ impl CollectionReader {
 
             let spann_path = format!("{}/{}", self.path, name);
             let spann_reader = MultiSpannReader::new(spann_path.clone());
-            let index = if let Some(block_cache) = &block_cache {
+            let index = if let Some(env) = &env {
                 spann_reader
                     .read_async::<Q>(
                         collection_config.posting_list_encoding_type.clone(),
                         collection_config.num_features,
-                        block_cache.clone(),
+                        env.clone(),
                     )
                     .await?
             } else {
@@ -124,7 +125,7 @@ impl CollectionReader {
                 toc,
                 segments,
                 collection_config,
-                block_cache,
+                env,
             )
             .await?,
         );

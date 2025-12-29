@@ -4,7 +4,7 @@ use anyhow::Result;
 use config::enums::IntSeqEncodingType;
 use memmap2::Mmap;
 use quantization::quantization::Quantizer;
-use utils::block_cache::BlockCache;
+use utils::file_io::env::Env;
 
 use crate::multi_spann::index::MultiSpannIndex;
 
@@ -52,12 +52,12 @@ impl MultiSpannReader {
         .await
     }
 
-    /// Reads and initializes an asynchronous `MultiSpannIndex` from disk using block caching.
+    /// Reads and initializes an asynchronous `MultiSpannIndex` from disk using Env abstraction.
     ///
     /// # Arguments
     /// * `ivf_type` - The encoding type used for IVF posting lists.
     /// * `num_features` - The number of dimensions in the vectors.
-    /// * `block_cache` - The shared block cache for asynchronous I/O.
+    /// * `env` - The environment for file I/O.
     ///
     /// # Returns
     /// * `Result<MultiSpannIndex<Q>>` - The initialized multi-user index or an error.
@@ -65,7 +65,7 @@ impl MultiSpannReader {
         &self,
         ivf_type: IntSeqEncodingType,
         num_features: usize,
-        block_cache: Arc<BlockCache>,
+        env: Arc<Box<dyn Env>>,
     ) -> Result<MultiSpannIndex<Q>> {
         let user_index_info_file_path = format!("{}/user_index_info", self.base_directory);
         let user_index_info_file = std::fs::OpenOptions::new()
@@ -73,12 +73,12 @@ impl MultiSpannReader {
             .open(user_index_info_file_path)?;
 
         let user_index_info_mmap = unsafe { Mmap::map(&user_index_info_file)? };
-        MultiSpannIndex::<Q>::new_with_cache(
+        MultiSpannIndex::<Q>::new_with_env(
             self.base_directory.clone(),
             user_index_info_mmap,
             ivf_type,
             num_features,
-            Some(block_cache),
+            Some(env),
         )
         .await
     }
@@ -92,8 +92,8 @@ mod tests {
     use config::search_params::SearchParams;
     use quantization::noq::noq::NoQuantizer;
     use quantization::pq::pq::ProductQuantizer;
-    use utils::block_cache::{BlockCache, BlockCacheConfig};
     use utils::distance::l2::L2DistanceCalculator;
+    use utils::file_io::env::DefaultEnv;
 
     use super::*;
     use crate::multi_spann::builder::MultiSpannBuilder;
@@ -201,14 +201,13 @@ mod tests {
         let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
         multi_spann_writer.write(&mut multi_spann_builder)?;
 
-        let block_cache = Arc::new(BlockCache::new(BlockCacheConfig::default()));
+        let mut env_config = utils::file_io::env::EnvConfig::default();
+        env_config.file_type = utils::file_io::env::FileType::MMap;
+        let env: Arc<Box<dyn Env>> = Arc::new(Box::new(DefaultEnv::new(env_config)));
+
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read_async::<NoQuantizer<L2DistanceCalculator>>(
-                IntSeqEncodingType::EliasFano,
-                4,
-                block_cache,
-            )
+            .read_async::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::EliasFano, 4, env)
             .await?;
 
         let params = SearchParams::new(3, 100, false);
@@ -252,13 +251,16 @@ mod tests {
         let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
         multi_spann_writer.write(&mut multi_spann_builder)?;
 
-        let block_cache = Arc::new(BlockCache::new(BlockCacheConfig::default()));
+        let mut env_config = utils::file_io::env::EnvConfig::default();
+        env_config.file_type = utils::file_io::env::FileType::MMap;
+        let env: Arc<Box<dyn Env>> = Arc::new(Box::new(DefaultEnv::new(env_config)));
+
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
             .read_async::<ProductQuantizer<L2DistanceCalculator>>(
                 IntSeqEncodingType::EliasFano,
                 4,
-                block_cache,
+                env,
             )
             .await
             .unwrap();

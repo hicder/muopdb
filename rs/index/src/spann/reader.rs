@@ -6,8 +6,8 @@ use compression::noc::noc::PlainDecoder;
 use config::enums::IntSeqEncodingType;
 use quantization::noq::noq::NoQuantizer;
 use quantization::quantization::Quantizer;
-use utils::block_cache::BlockCache;
 use utils::distance::l2::L2DistanceCalculator;
+use utils::file_io::env::Env;
 
 use super::index::Spann;
 use crate::hnsw::block_based::index::BlockBasedHnsw;
@@ -111,14 +111,14 @@ impl SpannReader {
         }
     }
 
-    /// Reads and initializes an asynchronous `Spann` index from disk using block caching.
+    /// Reads and initializes an asynchronous `Spann` index from disk using Env abstraction.
     ///
     /// # Arguments
-    /// * `block_cache` - The shared block cache for asynchronous file I/O.
+    /// * `env` - The environment for file I/O.
     ///
     /// # Returns
     /// * `Result<Spann<Q>>` - The initialized SPANN index or an error if reading fails.
-    pub async fn read_async<Q: Quantizer>(&self, block_cache: Arc<BlockCache>) -> Result<Spann<Q>>
+    pub async fn read_async<Q: Quantizer>(&self, env: Arc<Box<dyn Env>>) -> Result<Spann<Q>>
     where
         Q::QuantizedT: Send + Sync,
     {
@@ -126,7 +126,7 @@ impl SpannReader {
         let centroid_path = format!("{}/centroids", self.base_directory);
 
         let centroids = BlockBasedHnsw::new_with_offsets(
-            block_cache.clone(),
+            env.clone(),
             centroid_path,
             self.centroids_index_offset,
             self.centroids_vector_offset,
@@ -134,7 +134,7 @@ impl SpannReader {
         .await?;
 
         let posting_lists = IvfReader::new_block_based_with_offset::<Q>(
-            block_cache,
+            env.clone(),
             posting_list_path,
             self.ivf_index_offset,
             self.ivf_vector_offset,
@@ -153,6 +153,7 @@ mod tests {
     use config::enums::{IntSeqEncodingType, QuantizerType};
     use quantization::pq::pq::ProductQuantizer;
     use tempdir::TempDir;
+    use utils::file_io::env::DefaultEnv;
     use utils::mem::transmute_u8_to_slice;
     use utils::test_utils::generate_random_vector;
 
@@ -357,11 +358,11 @@ mod tests {
 
         let spann_reader =
             SpannReader::new(base_directory.clone(), IntSeqEncodingType::PlainEncoding);
-        let block_cache = Arc::new(BlockCache::new(
-            utils::block_cache::cache::BlockCacheConfig::default(),
-        ));
+        let mut env_config = utils::file_io::env::EnvConfig::default();
+        env_config.file_type = utils::file_io::env::FileType::MMap;
+        let env: Arc<Box<dyn Env>> = Arc::new(Box::new(DefaultEnv::new(env_config)));
         let spann = spann_reader
-            .read_async::<NoQuantizer<L2DistanceCalculator>>(block_cache)
+            .read_async::<NoQuantizer<L2DistanceCalculator>>(env)
             .await
             .unwrap();
 
