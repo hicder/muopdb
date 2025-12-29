@@ -128,10 +128,16 @@ impl Env for DefaultEnv {
 
     async fn open_append(&self, path: &str) -> Result<OpenAppendResult> {
         let file_io: Arc<dyn AppendableFileIO + Send + Sync> = match self.config.file_type {
-            FileType::MMap => {
-                return Err(anyhow!("Append mode is not supported with MMap file type"));
+            FileType::CachedStandard | FileType::MMap => {
+                let file = tokio::fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(path)
+                    .await?;
+                Arc::new(AppendableStandardFile::new(file).await)
             }
-            FileType::CachedStandard | FileType::CachedIoUring => {
+            #[cfg(target_os = "linux")]
+            FileType::CachedIoUring => {
                 let file = tokio::fs::OpenOptions::new()
                     .append(true)
                     .create(true)
@@ -285,23 +291,6 @@ mod tests {
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
         assert_eq!(&buffer, b"hello uring append");
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_default_env_open_append_mmap_error() -> Result<()> {
-        let temp_dir = TempDir::new("env_test_append_mmap")?;
-        let file_path = temp_dir.path().join("test_append_mmap.bin");
-
-        let config = EnvConfig {
-            file_type: FileType::MMap,
-            ..EnvConfig::default()
-        };
-        let env = DefaultEnv::new(config);
-
-        let result = env.open_append(file_path.to_str().unwrap()).await;
-        assert!(result.is_err());
 
         Ok(())
     }
