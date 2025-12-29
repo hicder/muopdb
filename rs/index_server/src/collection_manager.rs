@@ -207,7 +207,7 @@ impl CollectionManager {
                 }
             }
         } else {
-            info!("No new version available");
+            debug!("No new version available");
         }
         Ok(())
     }
