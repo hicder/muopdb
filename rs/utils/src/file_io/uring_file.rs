@@ -105,7 +105,7 @@ impl UringFile {
         info!("[URING] Getting buffer of size {}", length);
         let mut buffers = self.buffers.lock().unwrap();
         if let Some(idx) = buffers.iter().position(|b| b.len() >= length) {
-            std::mem::take(&mut buffers[idx])
+            buffers.swap_remove(idx)
         } else {
             vec![0; length]
         }
