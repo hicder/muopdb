@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use log::warn;
-use utils::block_cache::cache::{BlockCache, FileId};
+use utils::file_io::FileIO;
 
 pub trait CompressionInt:
     Send + Sync +
@@ -173,8 +173,7 @@ pub trait AsyncIntSeqDecoder<T: CompressionInt = u64>: Send + Sync {
 
     /// Creates a decoder
     async fn new_decoder(
-        block_cache: Arc<BlockCache>,
-        file_id: FileId,
+        file_io: Arc<dyn FileIO + Send + Sync>,
         offset: u64,
         buffer_size: usize,
     ) -> Result<Self>

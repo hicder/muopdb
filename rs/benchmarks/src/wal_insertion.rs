@@ -12,7 +12,7 @@ use proto::muopdb::DocumentAttribute;
 use quantization::noq::noq::NoQuantizerL2;
 use tempdir::TempDir;
 use tokio::task::JoinSet;
-use utils::block_cache::BlockCacheConfig;
+use utils::file_io::env::EnvConfig;
 use utils::test_utils::generate_random_vector;
 
 fn bench_wal_insertion(c: &mut Criterion) {
@@ -41,7 +41,7 @@ fn bench_wal_insertion(c: &mut Criterion) {
     let reader = CollectionReader::new(
         collection_name.to_string(),
         base_directory.clone(),
-        Some(BlockCacheConfig::default()),
+        Some(EnvConfig::default()),
     );
     let collection = rt.block_on(reader.read::<NoQuantizerL2>()).unwrap();
 

@@ -8,8 +8,8 @@ use num_traits::ToPrimitive;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
-use utils::block_cache::BlockCache;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
+use utils::file_io::env::Env;
 
 use crate::hnsw::block_based::graph_storage::BlockBasedHnswGraphStorage;
 use crate::hnsw::utils::GraphTraversal;
@@ -66,13 +66,13 @@ impl<Q: Quantizer> BlockBasedHnsw<Q>
 where
     Q::QuantizedT: Send + Sync,
 {
-    pub async fn new(block_cache: Arc<BlockCache>, base_directory: String) -> Result<Self> {
+    pub async fn new(env: Arc<Box<dyn Env>>, base_directory: String) -> Result<Self> {
         let graph_storage =
-            BlockBasedHnswGraphStorage::new(block_cache.clone(), base_directory.clone()).await?;
+            BlockBasedHnswGraphStorage::new(env.clone(), base_directory.clone()).await?;
 
         let vector_path = format!("{}/hnsw/vector_storage", base_directory);
         let vector_storage = AsyncFixedFileVectorStorage::<Q::QuantizedT>::new(
-            block_cache.clone(),
+            env.clone(),
             vector_path,
             graph_storage.header().quantized_dimension as usize,
         )
@@ -92,13 +92,13 @@ where
     }
 
     pub async fn new_with_offsets(
-        block_cache: Arc<BlockCache>,
+        env: Arc<Box<dyn Env>>,
         base_directory: String,
         data_offset: usize,
         vector_offset: usize,
     ) -> Result<Self> {
         let graph_storage = BlockBasedHnswGraphStorage::new_with_offset(
-            block_cache.clone(),
+            env.clone(),
             base_directory.clone(),
             data_offset,
         )
@@ -106,7 +106,7 @@ where
 
         let vector_path = format!("{}/hnsw/vector_storage", base_directory);
         let vector_storage = AsyncFixedFileVectorStorage::<Q::QuantizedT>::new_with_offset(
-            block_cache.clone(),
+            env.clone(),
             vector_path,
             graph_storage.header().quantized_dimension as usize,
             vector_offset,
@@ -324,13 +324,21 @@ mod tests {
     use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig};
     use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
     use quantization::quantization::WritableQuantizer;
-    use utils::block_cache::{BlockCache, BlockCacheConfig};
     use utils::distance::l2::L2DistanceCalculator;
+    use utils::file_io::env::{DefaultEnv, EnvConfig, FileType};
     use utils::test_utils::generate_random_vector;
 
     use super::*;
     use crate::hnsw::builder::HnswBuilder;
     use crate::hnsw::writer::HnswWriter;
+
+    fn create_env() -> Arc<Box<dyn Env>> {
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            ..EnvConfig::default()
+        };
+        Arc::new(Box::new(DefaultEnv::new(config)))
+    }
 
     #[tokio::test]
     async fn test_async_hnsw_search() {
@@ -373,11 +381,10 @@ mod tests {
         let writer = HnswWriter::new(hnsw_dir.clone());
         writer.write(&mut hnsw_builder, false).unwrap();
 
-        let config = BlockCacheConfig::default();
-        let cache = Arc::new(BlockCache::new(config));
+        let env = create_env();
 
         let hnsw = BlockBasedHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(
-            cache.clone(),
+            env.clone(),
             base_directory,
         )
         .await
@@ -415,11 +422,10 @@ mod tests {
         let writer = HnswWriter::new(hnsw_dir.clone());
         writer.write(&mut hnsw_builder, false).unwrap();
 
-        let config = BlockCacheConfig::default();
-        let cache = Arc::new(BlockCache::new(config));
+        let env = create_env();
 
         let hnsw =
-            BlockBasedHnsw::<NoQuantizer<L2DistanceCalculator>>::new(cache.clone(), base_directory)
+            BlockBasedHnsw::<NoQuantizer<L2DistanceCalculator>>::new(env.clone(), base_directory)
                 .await
                 .unwrap();
 
@@ -483,11 +489,10 @@ mod tests {
         writer.write(&mut builder, false).unwrap();
 
         // Now test with AsyncHnsw
-        let config = BlockCacheConfig::default();
-        let cache = Arc::new(BlockCache::new(config));
+        let env = create_env();
 
         let hnsw = BlockBasedHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(
-            cache.clone(),
+            env.clone(),
             base_directory,
         )
         .await
@@ -573,11 +578,10 @@ mod tests {
         writer.write(&mut builder, false).unwrap();
 
         // Now test with AsyncHnsw
-        let config = BlockCacheConfig::default();
-        let cache = Arc::new(BlockCache::new(config));
+        let env = create_env();
 
         let hnsw = BlockBasedHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(
-            cache.clone(),
+            env.clone(),
             base_directory,
         )
         .await
@@ -653,11 +657,10 @@ mod tests {
         let writer = HnswWriter::new(hnsw_dir.clone());
         writer.write(&mut hnsw_builder, false).unwrap();
 
-        let config = BlockCacheConfig::default();
-        let cache = Arc::new(BlockCache::new(config));
+        let env = create_env();
 
         let hnsw = BlockBasedHnsw::<ProductQuantizer<L2DistanceCalculator>>::new(
-            cache.clone(),
+            env.clone(),
             base_directory,
         )
         .await

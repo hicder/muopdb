@@ -6,8 +6,8 @@ use compression::compression::{AsyncIntSeqDecoder, AsyncIntSeqIterator};
 use log::info;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
-use utils::block_cache::BlockCache;
 use utils::distance::l2::L2DistanceCalculator;
+use utils::file_io::env::Env;
 use utils::DistanceCalculator;
 
 use crate::ivf::block_based::storage::BlockBasedPostingListStorage;
@@ -32,7 +32,7 @@ where
 
 /// A block-based Inverted File Index (IVF) implementation.
 ///
-/// This index uses asynchronous I/O and block caching for efficient search
+/// This index uses asynchronous I/O and Env abstraction for efficient search
 /// on large-scale vector datasets that do not fit in memory.
 impl<Q: Quantizer> BlockBasedIvf<Q>
 where
@@ -41,20 +41,18 @@ where
     /// Creates a new `BlockBasedIvf` index by loading components from the specified directory.
     ///
     /// # Arguments
-    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `env` - The environment for file I/O.
     /// * `base_directory` - The directory containing the IVF index files.
     ///
     /// # Returns
     /// * `Result<Self>` - A new IVF index instance or an error if loading fails.
-    pub async fn new(block_cache: Arc<BlockCache>, base_directory: String) -> Result<Self> {
-        let index_storage = BlockBasedPostingListStorage::new(
-            block_cache.clone(),
-            format!("{}/index", base_directory),
-        )
-        .await?;
+    pub async fn new(env: Arc<Box<dyn Env>>, base_directory: String) -> Result<Self> {
+        let index_storage =
+            BlockBasedPostingListStorage::new(env.clone(), format!("{}/index", base_directory))
+                .await?;
 
         let vector_storage = AsyncFixedFileVectorStorage::<Q::QuantizedT>::new(
-            block_cache.clone(),
+            env,
             format!("{}/vectors", base_directory),
             index_storage.header().quantized_dimension as usize,
         )
@@ -77,7 +75,7 @@ where
     /// Creates a new `BlockBasedIvf` index with specific file offsets for the index and vectors.
     ///
     /// # Arguments
-    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `env` - The environment for file I/O.
     /// * `base_directory` - The directory containing the IVF index files.
     /// * `index_offset` - The byte offset within the index file where the IVF data starts.
     /// * `vector_offset` - The byte offset within the vector file where the vector data starts.
@@ -85,20 +83,20 @@ where
     /// # Returns
     /// * `Result<Self>` - A new IVF index instance or an error if loading fails.
     pub async fn new_with_offset(
-        block_cache: Arc<BlockCache>,
+        env: Arc<Box<dyn Env>>,
         base_directory: String,
         index_offset: usize,
         vector_offset: usize,
     ) -> Result<Self> {
         let index_storage = BlockBasedPostingListStorage::new_with_offset(
-            block_cache.clone(),
+            env.clone(),
             format!("{}/index", base_directory),
             index_offset,
         )
         .await?;
 
         let vector_storage = AsyncFixedFileVectorStorage::<Q::QuantizedT>::new_with_offset(
-            block_cache.clone(),
+            env.clone(),
             format!("{}/vectors", base_directory),
             index_storage.header().quantized_dimension as usize,
             vector_offset,
@@ -451,8 +449,8 @@ mod tests {
     use quantization::noq::noq::NoQuantizer;
     use quantization::quantization::WritableQuantizer;
     use tempdir::TempDir;
-    use utils::block_cache::cache::BlockCacheConfig;
     use utils::distance::l2::L2DistanceCalculator;
+    use utils::file_io::env::{DefaultEnv, EnvConfig, FileType};
     use utils::test_utils::generate_random_vector;
 
     use super::*;
@@ -500,11 +498,14 @@ mod tests {
             IvfWriter::<_, EliasFano, L2DistanceCalculator>::new(base_directory.clone(), quantizer);
         writer.write(&mut builder, false).unwrap();
 
-        let config = BlockCacheConfig::default();
-        let block_cache = Arc::new(BlockCache::new(config));
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            ..EnvConfig::default()
+        };
+        let env: Arc<Box<dyn Env>> = Arc::new(Box::new(DefaultEnv::new(config)));
 
         let block_based_ivf =
-            BlockBasedIvf::<NoQuantizer<L2DistanceCalculator>>::new(block_cache, base_directory)
+            BlockBasedIvf::<NoQuantizer<L2DistanceCalculator>>::new(env.clone(), base_directory)
                 .await
                 .unwrap();
 
@@ -567,11 +568,14 @@ mod tests {
             IvfWriter::<_, EliasFano, L2DistanceCalculator>::new(base_directory.clone(), quantizer);
         writer.write(&mut builder, false).unwrap();
 
-        let config = BlockCacheConfig::default();
-        let block_cache = Arc::new(BlockCache::new(config));
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            ..EnvConfig::default()
+        };
+        let env: Arc<Box<dyn Env>> = Arc::new(Box::new(DefaultEnv::new(config)));
 
         let block_based_ivf =
-            BlockBasedIvf::<NoQuantizer<L2DistanceCalculator>>::new(block_cache, base_directory)
+            BlockBasedIvf::<NoQuantizer<L2DistanceCalculator>>::new(env.clone(), base_directory)
                 .await
                 .unwrap();
 

@@ -3,17 +3,17 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use num_traits::ops::bytes::ToBytes;
-use utils::block_cache::BlockCache;
+use utils::file_io::env::{Env, OpenResult};
+use utils::file_io::FileIO;
 
 use crate::vector::{StorageContext, VectorStorageConfig};
 
 /// An asynchronous, block-based storage implementation for fixed-size vectors.
 ///
-/// This storage reads vectors directly from a file using a `BlockCache`,
+/// This storage reads vectors directly from a file using an `Env` abstraction,
 /// supporting efficient random access to large-scale vector data.
 pub struct AsyncFixedFileVectorStorage<T: ToBytes + Clone + Send + Sync> {
-    block_cache: Arc<BlockCache>,
-    vector_file_id: u64,
+    file_io: Arc<dyn FileIO + Send + Sync>,
     num_vectors: usize,
     num_features: usize,
     offset: usize,
@@ -24,32 +24,29 @@ impl<T: ToBytes + Clone + Send + Sync> AsyncFixedFileVectorStorage<T> {
     /// Creates a new `AsyncFixedFileVectorStorage` by opening the specified vector file.
     ///
     /// # Arguments
-    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `env` - The environment for file I/O.
     /// * `file_path` - The path to the binary vector file.
     /// * `num_features` - The number of dimensions/features in each vector.
     ///
     /// # Returns
     /// * `Result<Self>` - A new storage instance or an error if initialization fails.
     pub async fn new(
-        block_cache: Arc<BlockCache>,
+        env: Arc<Box<dyn Env>>,
         file_path: String,
         num_features: usize,
     ) -> Result<Self> {
-        let file_id = block_cache
-            .clone()
-            .open_file(&file_path)
+        let OpenResult { file_io, .. } = env
+            .open(&file_path)
             .await
             .map_err(|e| anyhow!("Failed to open vector file: {}", e))?;
-        let num_vectors_data = block_cache
-            .clone()
-            .read(file_id, 0, 8)
+        let num_vectors_data = file_io
+            .read(0, 8)
             .await
             .map_err(|e| anyhow!("Failed to read num_vectors: {}", e))?;
         let num_vectors = u64::from_le_bytes(num_vectors_data.try_into().unwrap()) as usize;
 
         Ok(Self {
-            block_cache,
-            vector_file_id: file_id,
+            file_io,
             num_vectors,
             num_features,
             offset: 0,
@@ -60,7 +57,7 @@ impl<T: ToBytes + Clone + Send + Sync> AsyncFixedFileVectorStorage<T> {
     /// Creates a new `AsyncFixedFileVectorStorage` starting at a specific file offset.
     ///
     /// # Arguments
-    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `env` - The environment for file I/O.
     /// * `file_path` - The path to the binary vector file.
     /// * `num_features` - The number of dimensions/features in each vector.
     /// * `offset` - The byte offset where the vector data section begins.
@@ -68,27 +65,24 @@ impl<T: ToBytes + Clone + Send + Sync> AsyncFixedFileVectorStorage<T> {
     /// # Returns
     /// * `Result<Self>` - A new storage instance or an error if initialization fails.
     pub async fn new_with_offset(
-        block_cache: Arc<BlockCache>,
+        env: Arc<Box<dyn Env>>,
         file_path: String,
         num_features: usize,
         offset: usize,
     ) -> Result<Self> {
-        let file_id = block_cache
-            .clone()
-            .open_file(&file_path)
+        let OpenResult { file_io, .. } = env
+            .open(&file_path)
             .await
             .map_err(|e| anyhow!("Failed to open vector file: {}", e))?;
 
-        let num_vectors_data = block_cache
-            .clone()
-            .read(file_id, offset as u64, 8)
+        let num_vectors_data = file_io
+            .read(offset as u64, 8)
             .await
             .map_err(|e| anyhow!("Failed to read num_vectors: {}", e))?;
         let num_vectors = u64::from_le_bytes(num_vectors_data.try_into().unwrap()) as usize;
 
         Ok(Self {
-            block_cache,
-            vector_file_id: file_id,
+            file_io,
             num_vectors,
             num_features,
             offset,
@@ -123,9 +117,8 @@ impl<T: ToBytes + Clone + Send + Sync> AsyncFixedFileVectorStorage<T> {
         let length = Self::vector_size_in_bytes(self.num_features) as u64;
 
         let data = self
-            .block_cache
-            .clone()
-            .read(self.vector_file_id, start as u64, length)
+            .file_io
+            .read(start as u64, length)
             .await
             .map_err(|e| anyhow!("Failed to read vector: {}", e))?;
 
@@ -190,7 +183,7 @@ mod tests {
     use std::sync::Arc;
 
     use tempdir::TempDir;
-    use utils::block_cache::{BlockCache, BlockCacheConfig};
+    use utils::file_io::env::{DefaultEnv, EnvConfig, FileType};
 
     use super::*;
     use crate::utils::SearchContext;
@@ -215,10 +208,13 @@ mod tests {
             .write(&mut vectors_buffer_writer)
             .unwrap();
 
-        let config = BlockCacheConfig::default();
-        let cache = Arc::new(BlockCache::new(config));
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            ..EnvConfig::default()
+        };
+        let env: Arc<Box<dyn Env>> = Arc::new(Box::new(DefaultEnv::new(config)));
 
-        let storage = AsyncFixedFileVectorStorage::<u32>::new(cache.clone(), vectors_path, 4)
+        let storage = AsyncFixedFileVectorStorage::<u32>::new(env.clone(), vectors_path, 4)
             .await
             .unwrap();
 
@@ -254,10 +250,13 @@ mod tests {
             .write(&mut vectors_buffer_writer)
             .unwrap();
 
-        let config = BlockCacheConfig::default();
-        let cache = Arc::new(BlockCache::new(config));
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            ..EnvConfig::default()
+        };
+        let env: Arc<Box<dyn Env>> = Arc::new(Box::new(DefaultEnv::new(config)));
 
-        let storage = AsyncFixedFileVectorStorage::<f32>::new(cache.clone(), vectors_path, 4)
+        let storage = AsyncFixedFileVectorStorage::<f32>::new(env.clone(), vectors_path, 4)
             .await
             .unwrap();
 
@@ -289,10 +288,13 @@ mod tests {
             .write(&mut vectors_buffer_writer)
             .unwrap();
 
-        let config = BlockCacheConfig::default();
-        let cache = Arc::new(BlockCache::new(config));
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            ..EnvConfig::default()
+        };
+        let env: Arc<Box<dyn Env>> = Arc::new(Box::new(DefaultEnv::new(config)));
 
-        let storage = AsyncFixedFileVectorStorage::<u32>::new(cache.clone(), vectors_path, 4)
+        let storage = AsyncFixedFileVectorStorage::<u32>::new(env.clone(), vectors_path, 4)
             .await
             .unwrap();
 

@@ -22,7 +22,7 @@ use tokio::spawn;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tonic::transport::Server;
-use utils::block_cache::BlockCacheConfig;
+use utils::file_io::env::{EnvConfig, FileType};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -97,6 +97,13 @@ struct Args {
         help = "Enable io_uring for block cache I/O (Linux only)"
     )]
     block_cache_use_io_uring: bool,
+
+    #[arg(
+        long,
+        default_value_t = String::from("cached_standard"),
+        help = "File type for file I/O (mmap, cached_standard, cached_io_uring)"
+    )]
+    file_type: String,
 }
 
 #[tokio::main]
@@ -112,18 +119,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Number of ingestion workers: {}", arg.num_ingestion_workers);
     info!("Number of flush workers: {}", arg.num_flush_workers);
 
+    // Parse file type
+    let file_type = match arg.file_type.to_lowercase().as_str() {
+        "mmap" => FileType::MMap,
+        "cached_standard" => FileType::CachedStandard,
+        #[cfg(target_os = "linux")]
+        "cached_io_uring" => FileType::CachedIoUring,
+        _ => {
+            eprintln!(
+                "Unknown file type: {}, using cached_standard",
+                arg.file_type
+            );
+            FileType::CachedStandard
+        }
+    };
+
     let collection_catalog = CollectionCatalog::new();
-    let block_cache_config = if arg.block_cache_max_open_files > 0 {
-        Some(BlockCacheConfig::new(
-            arg.block_cache_max_open_files,
-            arg.block_cache_capacity_bytes,
-            arg.block_cache_block_size,
-            arg.block_cache_use_io_uring,
-        ))
+    let env_config = if arg.block_cache_max_open_files > 0 {
+        Some(EnvConfig {
+            file_type,
+            block_size: arg.block_cache_block_size,
+            block_cache_capacity_bytes: arg.block_cache_capacity_bytes,
+            max_open_files: arg.block_cache_max_open_files,
+        })
     } else {
         None
     };
-    let collection_provider = CollectionProvider::new(collection_data_path, block_cache_config);
+    let collection_provider = CollectionProvider::new(collection_data_path, env_config);
     let collection_manager = Arc::new(RwLock::new(CollectionManager::new(
         collection_config_path,
         collection_provider,

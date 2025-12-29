@@ -5,7 +5,7 @@ use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian};
 use memmap2::Mmap;
 use quantization::quantization::Quantizer;
-use utils::block_cache::BlockCache;
+use utils::file_io::env::Env;
 
 use crate::hnsw::block_based::index::BlockBasedHnsw;
 use crate::hnsw::mmap::index::Hnsw;
@@ -123,13 +123,13 @@ impl HnswReader {
 
     pub async fn read_async<Q: Quantizer>(
         &self,
-        block_cache: Arc<BlockCache>,
+        env: Arc<Box<dyn Env>>,
     ) -> Result<BlockBasedHnsw<Q>>
     where
         Q::QuantizedT: Send + Sync,
     {
         BlockBasedHnsw::new_with_offsets(
-            block_cache,
+            env,
             self.base_directory.clone(),
             self.index_offset,
             self.vector_offset,

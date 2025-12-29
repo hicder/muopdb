@@ -5,7 +5,8 @@ use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};
 use compression::compression::AsyncIntSeqDecoder;
 use compression::elias_fano::block_based_decoder::BlockBasedEliasFanoDecoder;
-use utils::block_cache::cache::{BlockCache, FileId};
+use utils::file_io::env::{Env, OpenResult};
+use utils::file_io::FileIO;
 use utils::mem::transmute_u8_to_slice;
 
 use crate::posting_list::combined_file::{Header, Version};
@@ -17,8 +18,7 @@ const PL_METADATA_LEN: usize = 2;
 /// This storage handler manages the binary layout of the IVF index, including
 /// document ID mappings, centroids, and compressed posting lists.
 pub struct BlockBasedPostingListStorage {
-    block_cache: Arc<BlockCache>,
-    file_id: FileId,
+    file_io: Arc<dyn FileIO + Send + Sync>,
     header: Header,
     doc_id_mapping_offset: usize,
     centroid_offset: usize,
@@ -31,37 +31,35 @@ impl BlockBasedPostingListStorage {
     /// Creates a new `AsyncPostingListStorage` handler for the specified file.
     ///
     /// # Arguments
-    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `env` - The environment for file I/O.
     /// * `file_path` - The path to the IVF index file.
     ///
     /// # Returns
     /// * `Result<Self>` - A new storage handler instance or an error if initialization fails.
-    pub async fn new(block_cache: Arc<BlockCache>, file_path: String) -> Result<Self> {
-        Self::new_with_offset(block_cache, file_path, 0).await
+    pub async fn new(env: Arc<Box<dyn Env>>, file_path: String) -> Result<Self> {
+        Self::new_with_offset(env, file_path, 0).await
     }
 
     /// Creates a new `AsyncPostingListStorage` handler starting at a specific file offset.
     ///
     /// # Arguments
-    /// * `block_cache` - The shared block cache for file I/O.
+    /// * `env` - The environment for file I/O.
     /// * `file_path` - The path to the IVF index file.
     /// * `offset` - The byte offset where the IVF storage data begins.
     ///
     /// # Returns
     /// * `Result<Self>` - A new storage handler instance or an error if initialization fails.
     pub async fn new_with_offset(
-        block_cache: Arc<BlockCache>,
+        env: Arc<Box<dyn Env>>,
         file_path: String,
         offset: usize,
     ) -> Result<Self> {
-        let file_id = block_cache
-            .open_file(&file_path)
+        let OpenResult { file_io, .. } = env
+            .open(&file_path)
             .await
             .map_err(|e| anyhow!("Failed to open index file: {}", e))?;
 
-        let header_data = block_cache
-            .read(file_id, offset as u64, 64) // Read enough for header
-            .await?;
+        let header_data = file_io.read(offset as u64, 64).await?;
 
         let (header, section_offset) = Self::read_header(&header_data, 0)?;
         let doc_id_mapping_offset = offset + section_offset;
@@ -74,9 +72,7 @@ impl BlockBasedPostingListStorage {
         let metadata_section_offset =
             Self::align_to_next_boundary(centroid_offset + header.centroids_len as usize, 8);
 
-        let count_data = block_cache
-            .read(file_id, metadata_section_offset as u64, 8)
-            .await?;
+        let count_data = file_io.read(metadata_section_offset as u64, 8).await?;
         let num_posting_lists = LittleEndian::read_u64(&count_data) as usize;
 
         let posting_list_metadata_offset = metadata_section_offset + size_of::<u64>();
@@ -84,8 +80,7 @@ impl BlockBasedPostingListStorage {
             posting_list_metadata_offset + num_posting_lists * PL_METADATA_LEN * size_of::<u64>();
 
         Ok(Self {
-            block_cache,
-            file_id,
+            file_io,
             header,
             doc_id_mapping_offset,
             centroid_offset,
@@ -169,10 +164,7 @@ impl BlockBasedPostingListStorage {
 
         let start = self.doc_id_mapping_offset + size_of::<u128>() + index * size_of::<u128>();
 
-        let data = self
-            .block_cache
-            .read(self.file_id, start as u64, 16)
-            .await?;
+        let data = self.file_io.read(start as u64, 16).await?;
         Ok(u128::from_le_bytes(
             data.try_into()
                 .map_err(|_| anyhow!("Failed to read doc_id"))?,
@@ -196,10 +188,7 @@ impl BlockBasedPostingListStorage {
             + index * self.header.num_features as usize * size_of::<f32>();
         let length = self.header.num_features as usize * size_of::<f32>();
 
-        let data = self
-            .block_cache
-            .read(self.file_id, start as u64, length as u64)
-            .await?;
+        let data = self.file_io.read(start as u64, length as u64).await?;
         Ok(transmute_u8_to_slice::<f32>(&data).to_vec())
     }
 
@@ -225,17 +214,13 @@ impl BlockBasedPostingListStorage {
         let metadata_offset =
             self.posting_list_metadata_offset + index * PL_METADATA_LEN * size_of::<u64>();
 
-        let metadata_data = self
-            .block_cache
-            .read(self.file_id, metadata_offset as u64, 16)
-            .await?;
+        let metadata_data = self.file_io.read(metadata_offset as u64, 16).await?;
         let _pl_len = LittleEndian::read_u64(&metadata_data[0..8]) as usize;
         let pl_offset =
             LittleEndian::read_u64(&metadata_data[8..16]) as usize + self.posting_list_start_offset;
 
         BlockBasedEliasFanoDecoder::new_decoder(
-            self.block_cache.clone(),
-            self.file_id,
+            self.file_io.clone(),
             pl_offset as u64,
             4096, // default buffer size
         )

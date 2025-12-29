@@ -13,7 +13,7 @@ use proto::muopdb::DocumentAttribute;
 use quantization::quantization::Quantizer;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, Mutex as AsyncMutex};
-use utils::block_cache::BlockCache;
+use utils::file_io::env::Env;
 
 use super::snapshot::Snapshot;
 use super::{OpChannelEntry, TableOfContent, VersionsInfo};
@@ -182,8 +182,8 @@ pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
 
     write_coordinator: Arc<AsyncMutex<WalWriteCoordinator>>,
 
-    // Optional block cache for async I/O operations
-    block_cache: Option<Arc<BlockCache>>,
+    // Optional env for async I/O operations
+    env: Option<Arc<Box<dyn Env>>>,
 }
 
 impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
@@ -250,7 +250,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             write_coordinator: Arc::new(AsyncMutex::new(WalWriteCoordinator::new(
                 wal_write_group_size,
             ))),
-            block_cache: None,
+            env: None,
         })
     }
 
@@ -284,7 +284,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         toc: TableOfContent,
         segments: Vec<BoxedImmutableSegment<Q>>,
         segment_config: CollectionConfig,
-        block_cache: Option<Arc<BlockCache>>,
+        env: Option<Arc<Box<dyn Env>>>,
     ) -> Result<Self> {
         let versions_info = RwLock::new(VersionsInfo::new());
         versions_info.write().await.current_version = version;
@@ -452,7 +452,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             write_coordinator: Arc::new(AsyncMutex::new(WalWriteCoordinator::new(
                 wal_write_group_size,
             ))),
-            block_cache,
+            env,
         })
     }
 
@@ -1290,12 +1290,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         )?;
 
         // Replace the pending segment with the new segment
-        let index = if let Some(block_cache) = &self.block_cache {
+        let index = if let Some(env) = &self.env {
             MultiSpannReader::new(new_segment_path.clone())
                 .read_async::<Q>(
                     self.segment_config.posting_list_encoding_type.clone(),
                     self.segment_config.num_features,
-                    block_cache.clone(),
+                    env.clone(),
                 )
                 .await?
         } else {
