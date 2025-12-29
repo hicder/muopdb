@@ -933,7 +933,13 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         );
         std::fs::create_dir_all(&terms_path).ok();
         let segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
-            ImmutableSegment::new(index, name_for_new_segment.clone(), Some(terms_path)),
+            ImmutableSegment::new_with_env(
+                index,
+                name_for_new_segment.clone(),
+                Some(terms_path),
+                self.env.clone(),
+            )
+            .await,
         )));
 
         // Must grab the write lock to prevent further invalidations when applying pending deletions
@@ -1317,7 +1323,13 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         };
         let terms_path = format!("{}/{}/terms", self.base_directory, random_name.clone());
         let new_segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
-            ImmutableSegment::new(index, random_name.clone(), Some(terms_path)),
+            ImmutableSegment::new_with_env(
+                index,
+                random_name.clone(),
+                Some(terms_path),
+                self.env.clone(),
+            )
+            .await,
         )));
         self.replace_segment(
             new_segment,

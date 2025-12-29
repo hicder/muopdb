@@ -56,6 +56,19 @@ pub trait Env: Send + Sync {
     async fn close(&self, file_id: FileId) -> Result<()>;
 }
 
+#[async_trait]
+impl Env for Box<dyn Env> {
+    async fn open(&self, path: &str) -> Result<OpenResult> {
+        (**self).open(path).await
+    }
+    async fn open_append(&self, path: &str) -> Result<OpenAppendResult> {
+        (**self).open_append(path).await
+    }
+    async fn close(&self, file_id: FileId) -> Result<()> {
+        (**self).close(file_id).await
+    }
+}
+
 pub struct DefaultEnv {
     pub config: EnvConfig,
     pub block_cache: Option<Arc<BlockCache>>,

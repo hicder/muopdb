@@ -5,6 +5,7 @@ use config::attribute_schema::AttributeSchema;
 use config::search_params::SearchParams;
 use proto::muopdb::DocumentFilter;
 use quantization::quantization::Quantizer;
+use utils::file_io::env::Env;
 
 use crate::multi_spann::index::MultiSpannIndex;
 use crate::multi_terms::index::MultiTermIndex;
@@ -15,6 +16,7 @@ use crate::query::planner::Planner;
 use crate::segment::Segment;
 use crate::spann::iter::SpannIter;
 use crate::utils::SearchResult;
+
 /// This is an immutable segment. This usually contains a single index.
 pub struct ImmutableSegment<Q: Quantizer> {
     index: MultiSpannIndex<Q>,
@@ -34,6 +36,27 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
                 }
             }
         });
+        Self {
+            index,
+            name,
+            multi_term_index,
+        }
+    }
+
+    pub async fn new_with_env(
+        index: MultiSpannIndex<Q>,
+        name: String,
+        terms_dir: Option<String>,
+        env: Option<Arc<Box<dyn Env>>>,
+    ) -> Self {
+        let multi_term_index = match (terms_dir, env) {
+            (Some(dir), Some(env)) => MultiTermIndex::new_with_env(dir, env)
+                .await
+                .ok()
+                .map(Arc::new),
+            (Some(dir), None) => MultiTermIndex::new(dir).ok().map(Arc::new),
+            _ => None,
+        };
         Self {
             index,
             name,
@@ -197,14 +220,19 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
             (*filter).clone(),
             multi_term_index,
             attribute_schema,
-        ) {
+        )
+        .await
+        {
             Ok(p) => p,
             Err(_) => return vec![],
         };
 
         let mut iter = match planner.plan().await {
             Ok(iter) => iter,
-            Err(_) => return vec![],
+            Err(e) => {
+                eprintln!("Failed to plan search: {}", e);
+                return vec![];
+            }
         };
 
         let mut result = Vec::new();

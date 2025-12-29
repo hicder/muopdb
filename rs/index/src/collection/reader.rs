@@ -82,7 +82,15 @@ impl CollectionReader {
                 None
             };
             segments.push(BoxedImmutableSegment::FinalizedSegment(Arc::new(
-                RwLock::new(ImmutableSegment::new(index, name.clone(), term_path)),
+                RwLock::new(
+                    ImmutableSegment::new_with_env(
+                        index,
+                        name.clone(),
+                        term_path,
+                        env.clone(),
+                    )
+                    .await,
+                ),
             )));
         }
 

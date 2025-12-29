@@ -20,13 +20,13 @@ pub struct AsyncPlanner {
 }
 
 impl AsyncPlanner {
-    pub fn new(
+    pub async fn new(
         user_id: u128,
         query: DocumentFilter,
         multi_term_index: Arc<MultiTermIndex>,
         attribute_schema: Option<AttributeSchema>,
     ) -> Result<Self> {
-        let term_index = multi_term_index.get_or_create_index(user_id)?;
+        let term_index = multi_term_index.get_or_create_index_async(user_id).await?;
         Ok(Self {
             user_id,
             query,
@@ -220,7 +220,7 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::Ids(ids_filter)),
         };
 
-        let planner = AsyncPlanner::new(user_id, document_filter, multi_term_index, None).unwrap();
+        let planner = AsyncPlanner::new(user_id, document_filter, multi_term_index, None).await.unwrap();
         let mut iter = planner.plan().await.unwrap();
 
         assert_eq!(iter.next().await.unwrap(), Some(1));
