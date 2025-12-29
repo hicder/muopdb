@@ -18,6 +18,7 @@ pub mod uring_engine;
 #[cfg(target_os = "linux")]
 pub mod uring_file;
 
+pub use env::{Env, OpenAppendResult, OpenResult};
 pub use standard_file::{AppendableStandardFile, StandardFile};
 #[cfg(target_os = "linux")]
 pub use uring_file::{AppendableUringFile, UringFile};

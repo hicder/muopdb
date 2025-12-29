@@ -8,7 +8,8 @@ use dashmap::DashMap;
 use crate::block_cache::cache::{BlockCache, BlockCacheConfig, FileId};
 use crate::file_io::cached_file::CachedFileIO;
 use crate::file_io::mmap_file::MMapFileIO;
-use crate::file_io::FileIO;
+use crate::file_io::standard_file::AppendableStandardFile;
+use crate::file_io::{AppendableFileIO, FileIO};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileType {
@@ -42,9 +43,15 @@ pub struct OpenResult {
     pub file_io: Arc<dyn FileIO + Send + Sync>,
 }
 
+pub struct OpenAppendResult {
+    pub file_id: FileId,
+    pub file_io: Arc<dyn AppendableFileIO + Send + Sync>,
+}
+
 #[async_trait]
 pub trait Env: Send + Sync {
     async fn open(&self, path: &str) -> Result<OpenResult>;
+    async fn open_append(&self, path: &str) -> Result<OpenAppendResult>;
     async fn close(&self, file_id: FileId) -> Result<()>;
 }
 
@@ -53,6 +60,7 @@ pub struct DefaultEnv {
     pub block_cache: Option<Arc<BlockCache>>,
     file_id_generator: AtomicU64,
     open_files: DashMap<FileId, Arc<dyn FileIO + Send + Sync>>,
+    appendable_files: DashMap<FileId, Arc<dyn AppendableFileIO + Send + Sync>>,
 }
 
 impl DefaultEnv {
@@ -85,6 +93,7 @@ impl DefaultEnv {
             block_cache,
             file_id_generator: AtomicU64::new(1),
             open_files: DashMap::new(),
+            appendable_files: DashMap::new(),
         }
     }
 }
@@ -117,8 +126,31 @@ impl Env for DefaultEnv {
         Ok(OpenResult { file_id, file_io })
     }
 
+    async fn open_append(&self, path: &str) -> Result<OpenAppendResult> {
+        let file_io: Arc<dyn AppendableFileIO + Send + Sync> = match self.config.file_type {
+            FileType::MMap => {
+                return Err(anyhow!("Append mode is not supported with MMap file type"));
+            }
+            FileType::CachedStandard | FileType::CachedIoUring => {
+                let file = tokio::fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(path)
+                    .await?;
+                Arc::new(AppendableStandardFile::new(file).await)
+            }
+        };
+
+        let file_id = self.file_id_generator.fetch_add(1, Ordering::SeqCst);
+        self.appendable_files.insert(file_id, file_io.clone());
+
+        Ok(OpenAppendResult { file_id, file_io })
+    }
+
     async fn close(&self, file_id: FileId) -> Result<()> {
-        if self.open_files.remove(&file_id).is_none() {
+        if self.open_files.remove(&file_id).is_none()
+            && self.appendable_files.remove(&file_id).is_none()
+        {
             return Err(anyhow!("FileId {} not found", file_id));
         }
         Ok(())
@@ -128,7 +160,7 @@ impl Env for DefaultEnv {
 #[cfg(test)]
 mod tests {
     use std::fs::File;
-    use std::io::Write;
+    use std::io::{Read, Write};
 
     use tempdir::TempDir;
 
@@ -202,6 +234,151 @@ mod tests {
         assert_eq!(res.file_io.read(12, 3).await?, b"env");
 
         env.close(res.file_id).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_default_env_open_append_cached_standard() -> Result<()> {
+        let temp_dir = TempDir::new("env_test_append_cached")?;
+        let file_path = temp_dir.path().join("test_append.bin");
+
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            block_size: 1024,
+            ..EnvConfig::default()
+        };
+        let env = DefaultEnv::new(config);
+
+        let res = env.open_append(file_path.to_str().unwrap()).await?;
+        res.file_io.append(b"hello append").await?;
+        res.file_io.flush().await?;
+
+        env.close(res.file_id).await?;
+
+        let mut file = File::open(&file_path)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        assert_eq!(&buffer, b"hello append");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn test_default_env_open_append_cached_uring() -> Result<()> {
+        let temp_dir = TempDir::new("env_test_append_uring")?;
+        let file_path = temp_dir.path().join("test_append_uring.bin");
+
+        let config = EnvConfig {
+            file_type: FileType::CachedIoUring,
+            ..EnvConfig::default()
+        };
+        let env = DefaultEnv::new(config);
+
+        let res = env.open_append(file_path.to_str().unwrap()).await?;
+        res.file_io.append(b"hello uring append").await?;
+        res.file_io.flush().await?;
+
+        env.close(res.file_id).await?;
+
+        let mut file = File::open(&file_path)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        assert_eq!(&buffer, b"hello uring append");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_default_env_open_append_mmap_error() -> Result<()> {
+        let temp_dir = TempDir::new("env_test_append_mmap")?;
+        let file_path = temp_dir.path().join("test_append_mmap.bin");
+
+        let config = EnvConfig {
+            file_type: FileType::MMap,
+            ..EnvConfig::default()
+        };
+        let env = DefaultEnv::new(config);
+
+        let result = env.open_append(file_path.to_str().unwrap()).await;
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_default_env_open_append_multiple_appends() -> Result<()> {
+        let temp_dir = TempDir::new("env_test_append_multiple")?;
+        let file_path = temp_dir.path().join("test_append_multiple.bin");
+
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            block_size: 1024,
+            ..EnvConfig::default()
+        };
+        let env = DefaultEnv::new(config);
+
+        let res = env.open_append(file_path.to_str().unwrap()).await?;
+        res.file_io.append(b"First ").await?;
+        res.file_io.append(b"Second ").await?;
+        res.file_io.append(b"Third").await?;
+        res.file_io.flush().await?;
+
+        env.close(res.file_id).await?;
+
+        let mut file = File::open(&file_path)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        assert_eq!(&buffer, b"First Second Third");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_default_env_open_append_and_sync() -> Result<()> {
+        let temp_dir = TempDir::new("env_test_append_sync")?;
+        let file_path = temp_dir.path().join("test_append_sync.bin");
+
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            block_size: 1024,
+            ..EnvConfig::default()
+        };
+        let env = DefaultEnv::new(config);
+
+        let res = env.open_append(file_path.to_str().unwrap()).await?;
+        res.file_io.append(b"sync test").await?;
+        res.file_io.sync_all().await?;
+
+        env.close(res.file_id).await?;
+
+        let mut file = File::open(&file_path)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        assert_eq!(&buffer, b"sync test");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_default_env_close_appendable_file() -> Result<()> {
+        let temp_dir = TempDir::new("env_test_close_appendable")?;
+        let file_path = temp_dir.path().join("test_close_appendable.bin");
+
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            block_size: 1024,
+            ..EnvConfig::default()
+        };
+        let env = DefaultEnv::new(config);
+
+        let res = env.open_append(file_path.to_str().unwrap()).await?;
+        res.file_io.append(b"close test").await?;
+        res.file_io.flush().await?;
+
+        env.close(res.file_id).await?;
+        assert!(env.close(res.file_id).await.is_err());
+
         Ok(())
     }
 }
