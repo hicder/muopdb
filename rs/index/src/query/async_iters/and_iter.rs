@@ -139,7 +139,9 @@ mod tests {
     use super::*;
 
     fn ids(ids: &[u32]) -> AsyncIter {
-        AsyncIter::Ids(crate::query::async_iters::ids_iter::AsyncIdsIter::new(ids.to_vec()))
+        AsyncIter::Ids(crate::query::async_iters::ids_iter::AsyncIdsIter::new(
+            ids.to_vec(),
+        ))
     }
 
     #[tokio::test]

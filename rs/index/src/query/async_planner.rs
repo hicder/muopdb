@@ -6,7 +6,9 @@ use futures::future::{BoxFuture, FutureExt};
 use proto::muopdb::{AndFilter, DocumentFilter, IdsFilter, OrFilter};
 
 use crate::multi_terms::index::MultiTermIndex;
-use crate::query::async_iters::{AsyncAndIter, AsyncIdsIter, AsyncIter, AsyncOrIter, AsyncTermIter};
+use crate::query::async_iters::{
+    AsyncAndIter, AsyncIdsIter, AsyncIter, AsyncOrIter, AsyncTermIter,
+};
 use crate::terms::index::TermIndex;
 use crate::tokenizer::stemming_tokenizer::StemmingTokenizer;
 use crate::tokenizer::tokenizer::{TokenStream, Tokenizer};
@@ -167,18 +169,18 @@ impl AsyncPlanner {
 mod tests {
     use std::fs;
     use std::sync::Arc;
-    use tempdir::TempDir;
 
     use config::collection::CollectionConfig;
     use proto::muopdb::{DocumentFilter, IdsFilter};
+    use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
 
+    use super::AsyncPlanner;
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_terms::builder::MultiTermBuilder;
     use crate::multi_terms::index::MultiTermIndex;
     use crate::multi_terms::writer::MultiTermWriter;
     use crate::query::async_iters::AsyncInvertedIndexIter;
-    use super::AsyncPlanner;
 
     async fn create_test_indexes(temp_dir: &TempDir) -> (Arc<MultiTermIndex>, u128, String) {
         let base_dir = temp_dir.path().to_str().unwrap();
@@ -191,23 +193,35 @@ mod tests {
             num_features,
             ..CollectionConfig::default_test_config()
         };
-        let multi_spann_builder = MultiSpannBuilder::new(collection_config, base_dir.to_string()).unwrap();
+        let multi_spann_builder =
+            MultiSpannBuilder::new(collection_config, base_dir.to_string()).unwrap();
 
         let doc_ids = [1u128, 2, 3, 4, 5];
-        let point_ids: Vec<u32> = doc_ids.iter().map(|&doc_id| {
-            multi_spann_builder.insert(user_id, doc_id, &generate_random_vector(num_features)).unwrap()
-        }).collect();
+        let point_ids: Vec<u32> = doc_ids
+            .iter()
+            .map(|&doc_id| {
+                multi_spann_builder
+                    .insert(user_id, doc_id, &generate_random_vector(num_features))
+                    .unwrap()
+            })
+            .collect();
 
         let multi_builder = MultiTermBuilder::new();
         point_ids.iter().for_each(|&pid| {
-            multi_builder.add(user_id, pid, format!("field:term{}", pid)).unwrap();
+            multi_builder
+                .add(user_id, pid, format!("field:term{}", pid))
+                .unwrap();
         });
         multi_builder.build().unwrap();
 
         let multi_writer = MultiTermWriter::new(term_dir.clone());
         multi_writer.write(&multi_builder).unwrap();
 
-        (Arc::new(MultiTermIndex::new(term_dir).unwrap()), user_id, format!("{}/terms/combined", base_dir))
+        (
+            Arc::new(MultiTermIndex::new(term_dir).unwrap()),
+            user_id,
+            format!("{}/terms/combined", base_dir),
+        )
     }
 
     #[tokio::test]
@@ -220,7 +234,9 @@ mod tests {
             filter: Some(proto::muopdb::document_filter::Filter::Ids(ids_filter)),
         };
 
-        let planner = AsyncPlanner::new(user_id, document_filter, multi_term_index, None).await.unwrap();
+        let planner = AsyncPlanner::new(user_id, document_filter, multi_term_index, None)
+            .await
+            .unwrap();
         let mut iter = planner.plan().await.unwrap();
 
         assert_eq!(iter.next().await.unwrap(), Some(1));

@@ -34,10 +34,7 @@ impl MultiTermIndex {
     }
 
     /// Load the MultiTermIndex with an Env for async file I/O
-    pub async fn new_with_env(
-        base_directory: String,
-        env: Arc<Box<dyn Env>>,
-    ) -> Result<Self> {
+    pub async fn new_with_env(base_directory: String, env: Arc<Box<dyn Env>>) -> Result<Self> {
         // Load the user index info hash table
         let info_file_path = format!("{}/user_term_index_info", base_directory);
         let user_index_info = TermIndexInfoHashTable::load(info_file_path)?;
