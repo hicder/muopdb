@@ -204,8 +204,30 @@ impl BlockCache {
     /// # Arguments
     ///
     /// * `file_id` - The file identifier returned from `open_file`.
-    pub fn close_file(&mut self, file_id: FileId) {
+    pub fn close_file(&self, file_id: FileId) {
         self.file_descriptor_cache.remove(&file_id);
+    }
+
+    /// Returns the length of the file in bytes.
+    pub async fn file_length(&self, file_id: FileId) -> Result<u64> {
+        let file_entry = self.file_descriptor_cache.get(&file_id).ok_or_else(|| {
+            anyhow!(
+                "FileId {} not found. Did you call open_file first?",
+                file_id
+            )
+        })?;
+        file_entry.file.file_length().await
+    }
+
+    /// Returns the metadata of the file.
+    pub async fn metadata(&self, file_id: FileId) -> Result<std::fs::Metadata> {
+        let file_entry = self.file_descriptor_cache.get(&file_id).ok_or_else(|| {
+            anyhow!(
+                "FileId {} not found. Did you call open_file first?",
+                file_id
+            )
+        })?;
+        file_entry.file.metadata().await
     }
 
     /// Reads data from a file at the specified offset and length.
@@ -327,7 +349,7 @@ mod tests {
         file.write_all(b"Hello, World!").unwrap();
 
         let config = BlockCacheConfig::default();
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -347,7 +369,7 @@ mod tests {
         file.write_all(test_content).unwrap();
 
         let config = BlockCacheConfig::default();
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -369,7 +391,7 @@ mod tests {
         file.write_all(&test_content).unwrap();
 
         let config = BlockCacheConfig::default();
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -392,7 +414,7 @@ mod tests {
         file.write_all(test_content).unwrap();
 
         let config = BlockCacheConfig::default();
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -414,7 +436,7 @@ mod tests {
         file.write_all(&test_content).unwrap();
 
         let config = BlockCacheConfig::new(10, 8192, 4096, false);
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -473,7 +495,7 @@ mod tests {
         file.write_all(&test_content).unwrap();
 
         let config = BlockCacheConfig::default();
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -510,7 +532,7 @@ mod tests {
         file.write_all(test_content).unwrap();
 
         let config = BlockCacheConfig::default();
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -539,7 +561,7 @@ mod tests {
         file.write_all(&test_content).unwrap();
 
         let config = BlockCacheConfig::new(10, 4096, 2048, false);
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -556,7 +578,7 @@ mod tests {
     #[tokio::test]
     async fn test_close_nonexistent_file() {
         let config = BlockCacheConfig::default();
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         cache.close_file(999);
     }
@@ -583,7 +605,7 @@ mod tests_io_uring {
         file.write_all(b"Hello, World!").unwrap();
 
         let config = BlockCacheConfig::new(1000, 1024 * 1024 * 1024, 4096, true);
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -603,7 +625,7 @@ mod tests_io_uring {
         file.write_all(test_content).unwrap();
 
         let config = BlockCacheConfig::new(1000, 1024 * 1024 * 1024, 4096, true);
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -625,7 +647,7 @@ mod tests_io_uring {
         file.write_all(&test_content).unwrap();
 
         let config = BlockCacheConfig::new(1000, 1024 * 1024 * 1024, 4096, true);
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -648,7 +670,7 @@ mod tests_io_uring {
         file.write_all(test_content).unwrap();
 
         let config = BlockCacheConfig::new(1000, 1024 * 1024 * 1024, 4096, true);
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -670,7 +692,7 @@ mod tests_io_uring {
         file.write_all(&test_content).unwrap();
 
         let config = BlockCacheConfig::new(10, 8192, 4096, true);
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -729,7 +751,7 @@ mod tests_io_uring {
         file.write_all(&test_content).unwrap();
 
         let config = BlockCacheConfig::new(1000, 1024 * 1024 * 1024, 4096, true);
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -766,7 +788,7 @@ mod tests_io_uring {
         file.write_all(test_content).unwrap();
 
         let config = BlockCacheConfig::new(1000, 1024 * 1024 * 1024, 4096, true);
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -795,7 +817,7 @@ mod tests_io_uring {
         file.write_all(&test_content).unwrap();
 
         let config = BlockCacheConfig::new(10, 4096, 2048, true);
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         let file_id = cache
             .open_file(test_file_path.to_str().unwrap())
@@ -812,7 +834,7 @@ mod tests_io_uring {
     #[tokio::test]
     async fn test_close_nonexistent_file_uring() {
         let config = BlockCacheConfig::new(1000, 1024 * 1024 * 1024, 4096, true);
-        let mut cache = BlockCache::new(config);
+        let cache = BlockCache::new(config);
 
         cache.close_file(999);
     }

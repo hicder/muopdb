@@ -7,6 +7,9 @@ use std::fs::Metadata;
 use anyhow::Result;
 use async_trait::async_trait;
 
+pub mod cached_file;
+pub mod env;
+pub mod mmap_file;
 pub mod standard_file;
 
 #[cfg(target_os = "linux")]
