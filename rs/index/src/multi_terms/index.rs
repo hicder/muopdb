@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use dashmap::DashMap;
+use utils::file_io::env::Env;
 
 use crate::terms::index::TermIndex;
 use crate::terms::term_index_info::TermIndexInfoHashTable;
@@ -13,6 +14,8 @@ pub struct MultiTermIndex {
     user_index_info: TermIndexInfoHashTable,
     /// Base directory for the term indexes
     base_directory: String,
+    /// Optional Env for async file I/O
+    env: Option<Arc<Box<dyn Env>>>,
 }
 
 impl MultiTermIndex {
@@ -26,6 +29,21 @@ impl MultiTermIndex {
             base_directory,
             term_indexes: DashMap::new(),
             user_index_info,
+            env: None,
+        })
+    }
+
+    /// Load the MultiTermIndex with an Env for async file I/O
+    pub async fn new_with_env(base_directory: String, env: Arc<Box<dyn Env>>) -> Result<Self> {
+        // Load the user index info hash table
+        let info_file_path = format!("{}/user_term_index_info", base_directory);
+        let user_index_info = TermIndexInfoHashTable::load(info_file_path)?;
+
+        Ok(Self {
+            base_directory,
+            term_indexes: DashMap::new(),
+            user_index_info,
+            env: Some(env),
         })
     }
 
@@ -51,6 +69,46 @@ impl MultiTermIndex {
             index_info.length as usize,
         )
         .map_err(|e| anyhow!("Failed to create TermIndex: {e}"))?;
+
+        let term_index_arc = Arc::new(term_index);
+        self.term_indexes.insert(user_id, term_index_arc.clone());
+        Ok(term_index_arc)
+    }
+
+    /// Lazily load or return cached TermIndex for a user asynchronously, with file_io support if Env is available
+    pub async fn get_or_create_index_async(&self, user_id: u128) -> Result<Arc<TermIndex>> {
+        // Try to get from cache first
+        if let Some(term_index) = self.term_indexes.get(&user_id) {
+            return Ok(term_index.clone());
+        }
+
+        // Not in cache, create new one
+        let index_info = self
+            .user_index_info
+            .hash_table
+            .get(&user_id)
+            .ok_or_else(|| anyhow!("User not found"))?;
+
+        let combined_path = format!("{}/combined", self.base_directory);
+
+        let term_index = if let Some(env) = &self.env {
+            let file_io = env.open(&combined_path).await?.file_io;
+            TermIndex::new_with_file_io(
+                file_io,
+                combined_path,
+                index_info.offset as usize,
+                index_info.length as usize,
+            )
+            .await
+            .map_err(|e| anyhow!("Failed to create TermIndex with file_io: {e}"))?
+        } else {
+            TermIndex::new(
+                combined_path,
+                index_info.offset as usize,
+                index_info.length as usize,
+            )
+            .map_err(|e| anyhow!("Failed to create TermIndex: {e}"))?
+        };
 
         let term_index_arc = Arc::new(term_index);
         self.term_indexes.insert(user_id, term_index_arc.clone());
@@ -100,7 +158,9 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
+    use compression::AsyncIntSeqIterator;
     use tempdir::TempDir;
+    use utils::file_io::env::{DefaultEnv, Env, EnvConfig, FileType};
 
     use super::MultiTermIndex;
     use crate::multi_terms::builder::MultiTermBuilder;
@@ -271,5 +331,32 @@ mod tests {
         // Should fail for unknown user
         let unknown_user = 99999u128;
         assert!(index.get_or_create_index(unknown_user).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_multi_term_index_async_with_env() {
+        let tmp = TempDir::new("multi_term_index_async").unwrap();
+        let base_dir = tmp.path().to_str().unwrap().to_string();
+
+        let (users, _) = build_and_write_index(&base_dir);
+        let user1 = users[0];
+
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            ..EnvConfig::default()
+        };
+        let env: Arc<Box<dyn Env>> = Arc::new(Box::new(DefaultEnv::new(config)));
+
+        let index = MultiTermIndex::new_with_env(base_dir, env).await.unwrap();
+        let term_index = index.get_or_create_index_async(user1).await.unwrap();
+
+        // Verify it works by trying block-based iterator
+        let term_id = index.get_term_id_for_user(user1, "apple:red").unwrap();
+        let mut it = term_index
+            .get_posting_list_iterator_block_based(term_id)
+            .await
+            .unwrap();
+        assert_eq!(it.next().await.unwrap(), Some(10u32));
+        assert_eq!(it.next().await.unwrap(), None);
     }
 }

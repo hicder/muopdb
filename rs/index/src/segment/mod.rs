@@ -163,7 +163,7 @@ impl<Q: Quantizer + Clone + Send + Sync> BoxedImmutableSegment<Q> {
                 immutable_segment
                     .read()
                     .await
-                    .search_terms_for_user(user_id, filter, attribute_schema)
+                    .search_terms_for_user_async(user_id, filter, attribute_schema)
                     .await
             }
             _ => vec![],

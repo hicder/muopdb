@@ -12,7 +12,7 @@ use term_iter::TermIter;
 /// Used internally by various iterators to track their position.
 /// T represents the state data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum IterState<T> {
+pub enum IterState<T> {
     NotStarted,
     At(T),
     Exhausted,
