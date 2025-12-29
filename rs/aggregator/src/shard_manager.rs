@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use log::info;
+use log::debug;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use utils::io::get_latest_version;
@@ -41,7 +41,7 @@ impl ShardManager {
         if latest_version > self.config.read().await.version {
             self.load_version(latest_version).await?;
         } else {
-            info!("No new version available");
+            debug!("No new version available");
         }
         Ok(())
     }
