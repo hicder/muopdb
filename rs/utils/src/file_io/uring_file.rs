@@ -1,12 +1,14 @@
 use std::fs::Metadata;
 use std::os::fd::AsRawFd;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use log::info;
+use parking_lot::Mutex as ParkingLotMutex;
 
 use crate::file_io::uring_engine::UringEngineHandle;
-use crate::file_io::FileIO;
+use crate::file_io::{AppendableFileIO, FileIO};
 
 /// A file wrapper providing asynchronous I/O using io_uring.
 ///
@@ -218,10 +220,125 @@ impl FileIO for UringFile {
     }
 }
 
+/// A file wrapper providing asynchronous I/O using io_uring for writing.
+///
+/// This struct wraps a standard file handle with write permissions and provides
+/// an async `append` interface backed by the `UringEngine`. It implements the
+/// `AppendableFileIO` trait, making it compatible with the file I/O
+/// abstraction layer.
+///
+/// # Thread Safety
+///
+/// This struct uses `Arc` for the underlying file, `AtomicU64` for offset
+/// tracking, and `Mutex` for write serialization, making it safe to use
+/// from multiple async tasks concurrently.
+pub struct AppendableUringFile {
+    file: Arc<std::fs::File>,
+    engine: UringEngineHandle,
+    offset: AtomicU64,
+    write_lock: ParkingLotMutex<()>,
+}
+
+impl AppendableUringFile {
+    /// Opens a file for asynchronous writing using io_uring.
+    ///
+    /// This function opens the file at the given path and prepares it for
+    /// async writes through the provided engine handle. The file must exist
+    /// and have write permissions.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The file system path to open
+    /// * `engine` - A handle to the `UringEngine` that will perform async writes
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the new `AppendableUringFile` instance, or an error
+    /// if the file cannot be opened or its metadata cannot be read.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The file does not exist or cannot be opened with write permissions
+    /// - File metadata cannot be retrieved
+    pub async fn new(path: &str, engine: UringEngineHandle) -> Result<Self> {
+        info!("[URING] Opening file for writing: {}", path);
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .with_context(|| format!("Failed to open file for writing: {}", path))?;
+
+        let metadata = file
+            .metadata()
+            .with_context(|| format!("Failed to get metadata for: {}", path))?;
+        let file_length = metadata.len();
+
+        Ok(AppendableUringFile {
+            file: Arc::new(file),
+            engine,
+            offset: AtomicU64::new(file_length),
+            write_lock: ParkingLotMutex::new(()),
+        })
+    }
+}
+
+#[async_trait::async_trait]
+impl AppendableFileIO for AppendableUringFile {
+    /// Appends data to the end of the file asynchronously.
+    ///
+    /// This method uses io_uring for efficient asynchronous I/O. The write
+    /// is performed at the current tracked offset, which is then updated.
+    /// A mutex ensures concurrent writes are serialized.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - Byte slice to append
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the number of bytes written, or an error if the
+    /// write fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The io_uring operation fails
+    /// - The file descriptor becomes invalid
+    async fn append(&self, data: &[u8]) -> Result<u64> {
+        let _lock = self.write_lock.lock();
+        let offset = self.offset.fetch_add(data.len() as u64, Ordering::SeqCst);
+        let fd = self.file.as_raw_fd();
+
+        self.engine.submit_write(fd, offset, data.to_vec()).await?;
+
+        Ok(data.len() as u64)
+    }
+
+    /// Flushes buffered writes to disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the flush operation fails.
+    async fn flush(&self) -> Result<()> {
+        let file = self.file.clone();
+        tokio::task::spawn_blocking(move || file.sync_data().context("Failed to sync data")).await?
+    }
+
+    /// Syncs file metadata and data to disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sync operation fails.
+    async fn sync_all(&self) -> Result<()> {
+        let file = self.file.clone();
+        tokio::task::spawn_blocking(move || file.sync_all().context("Failed to sync all")).await?
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs::File;
-    use std::io::Write;
+    use std::io::{Read, Write};
 
     use tempdir::TempDir;
 
@@ -393,5 +510,142 @@ mod tests {
 
         let length = uring_file.file_length().await.unwrap();
         assert_eq!(length, 0);
+    }
+
+    #[tokio::test]
+    async fn test_appendable_append_basic() {
+        let temp_dir = TempDir::new("uring_file_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_append.txt");
+
+        let mut file = File::create(&test_file_path).unwrap();
+        file.write_all(b"").unwrap();
+
+        let engine = UringEngine::new(256);
+        let appendable =
+            AppendableUringFile::new(test_file_path.to_str().unwrap(), engine.handle())
+                .await
+                .unwrap();
+
+        appendable.append(b"Hello, World!").await.unwrap();
+        appendable.flush().await.unwrap();
+
+        let mut read_file = File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+        assert_eq!(&buffer, b"Hello, World!");
+    }
+
+    #[tokio::test]
+    async fn test_appendable_append_multiple() {
+        let temp_dir = TempDir::new("uring_file_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_append_multiple.txt");
+
+        let mut file = File::create(&test_file_path).unwrap();
+        file.write_all(b"").unwrap();
+
+        let engine = UringEngine::new(256);
+        let appendable =
+            AppendableUringFile::new(test_file_path.to_str().unwrap(), engine.handle())
+                .await
+                .unwrap();
+
+        appendable.append(b"Hello, ").await.unwrap();
+        appendable.append(b"World!").await.unwrap();
+        appendable.flush().await.unwrap();
+
+        let mut read_file = File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+        assert_eq!(&buffer, b"Hello, World!");
+    }
+
+    #[tokio::test]
+    async fn test_appendable_append_empty() {
+        let temp_dir = TempDir::new("uring_file_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_append_empty.txt");
+
+        let mut file = File::create(&test_file_path).unwrap();
+        file.write_all(b"").unwrap();
+
+        let engine = UringEngine::new(256);
+        let appendable =
+            AppendableUringFile::new(test_file_path.to_str().unwrap(), engine.handle())
+                .await
+                .unwrap();
+
+        let bytes_written = appendable.append(b"").await.unwrap();
+        assert_eq!(bytes_written, 0);
+        appendable.flush().await.unwrap();
+
+        let metadata = std::fs::metadata(&test_file_path).unwrap();
+        assert_eq!(metadata.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_appendable_append_large() {
+        let temp_dir = TempDir::new("uring_file_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_append_large.txt");
+
+        let mut file = File::create(&test_file_path).unwrap();
+        file.write_all(b"").unwrap();
+
+        let engine = UringEngine::new(256);
+        let appendable =
+            AppendableUringFile::new(test_file_path.to_str().unwrap(), engine.handle())
+                .await
+                .unwrap();
+
+        let large_data = vec![42u8; 1024 * 1024];
+        appendable.append(&large_data).await.unwrap();
+        appendable.flush().await.unwrap();
+
+        let metadata = std::fs::metadata(&test_file_path).unwrap();
+        assert_eq!(metadata.len(), 1024 * 1024);
+    }
+
+    #[tokio::test]
+    async fn test_appendable_flush() {
+        let temp_dir = TempDir::new("uring_file_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_flush.txt");
+
+        let mut file = File::create(&test_file_path).unwrap();
+        file.write_all(b"").unwrap();
+
+        let engine = UringEngine::new(256);
+        let appendable =
+            AppendableUringFile::new(test_file_path.to_str().unwrap(), engine.handle())
+                .await
+                .unwrap();
+
+        appendable.append(b"Test data").await.unwrap();
+        appendable.flush().await.unwrap();
+
+        let mut read_file = File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+        assert_eq!(&buffer, b"Test data");
+    }
+
+    #[tokio::test]
+    async fn test_appendable_sync_all() {
+        let temp_dir = TempDir::new("uring_file_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_sync_all.txt");
+
+        let mut file = File::create(&test_file_path).unwrap();
+        file.write_all(b"").unwrap();
+
+        let engine = UringEngine::new(256);
+        let appendable =
+            AppendableUringFile::new(test_file_path.to_str().unwrap(), engine.handle())
+                .await
+                .unwrap();
+
+        appendable.append(b"Sync test").await.unwrap();
+        appendable.sync_all().await.unwrap();
+
+        let mut read_file = File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+        assert_eq!(&buffer, b"Sync test");
     }
 }

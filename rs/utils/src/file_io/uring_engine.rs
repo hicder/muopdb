@@ -80,9 +80,16 @@ pub struct UringEngineHandle {
     inflight: Arc<DashMap<u64, InFlightEntry>>,
 }
 
-struct InFlightEntry {
-    response_tx: tokio::sync::oneshot::Sender<Result<Vec<u8>>>,
-    buffer: Pin<Box<Vec<u8>>>,
+enum InFlightEntry {
+    Read {
+        response_tx: tokio::sync::oneshot::Sender<Result<Vec<u8>>>,
+        buffer: Pin<Box<Vec<u8>>>,
+    },
+    #[allow(dead_code)]
+    Write {
+        response_tx: tokio::sync::oneshot::Sender<Result<()>>,
+        buffer: Pin<Box<Vec<u8>>>,
+    },
 }
 
 impl UringEngine {
@@ -165,29 +172,46 @@ impl UringEngine {
             return;
         }
 
-        let (
-            _key,
-            InFlightEntry {
+        let (_key, entry) = entry.unwrap();
+
+        match entry {
+            InFlightEntry::Read {
                 response_tx,
                 buffer,
-            },
-        ) = entry.unwrap();
+            } => {
+                let result = if cqe.result() < 0 {
+                    Err(anyhow!(
+                        "uring read failed for request {}: {}",
+                        id,
+                        cqe.result()
+                    ))
+                } else {
+                    let bytes_read = cqe.result() as usize;
+                    let boxed_buffer = Pin::into_inner(buffer);
+                    let mut buffer = *boxed_buffer;
+                    buffer.truncate(bytes_read);
+                    Ok(buffer)
+                };
 
-        let result = if cqe.result() < 0 {
-            Err(anyhow!(
-                "uring read failed for request {}: {}",
-                id,
-                cqe.result()
-            ))
-        } else {
-            let bytes_read = cqe.result() as usize;
-            let boxed_buffer = Pin::into_inner(buffer);
-            let mut buffer = *boxed_buffer;
-            buffer.truncate(bytes_read);
-            Ok(buffer)
-        };
+                let _ = response_tx.send(result);
+            }
+            InFlightEntry::Write {
+                response_tx,
+                buffer: _,
+            } => {
+                let result = if cqe.result() < 0 {
+                    Err(anyhow!(
+                        "uring write failed for request {}: {}",
+                        id,
+                        cqe.result()
+                    ))
+                } else {
+                    Ok(())
+                };
 
-        let _ = response_tx.send(result);
+                let _ = response_tx.send(result);
+            }
+        }
     }
 
     /// Creates a handle for submitting read requests to this engine.
@@ -269,7 +293,6 @@ impl UringEngineHandle {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
-        // Pin the buffer to ensure it doesn't move
         let mut pinned_buffer = Box::pin(buffer);
         let sqe = io_uring::opcode::Read::new(
             io_uring::types::Fd(fd),
@@ -288,7 +311,7 @@ impl UringEngineHandle {
 
             self.inflight.insert(
                 id,
-                InFlightEntry {
+                InFlightEntry::Read {
                     response_tx,
                     buffer: pinned_buffer,
                 },
@@ -303,12 +326,52 @@ impl UringEngineHandle {
             .map_err(|e| anyhow!("Failed to receive read result: {}", e))?
             .with_context(|| format!("uring read failed at offset {} (len {})", offset, length))
     }
+
+    pub async fn submit_write(&self, fd: RawFd, offset: u64, data: Vec<u8>) -> Result<()> {
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+
+        let mut pinned_buffer = Box::pin(data);
+        let length = pinned_buffer.len();
+
+        let sqe = io_uring::opcode::Write::new(
+            io_uring::types::Fd(fd),
+            pinned_buffer.as_mut().get_mut().as_ptr(),
+            length as u32,
+        )
+        .offset(offset)
+        .build()
+        .user_data(id);
+
+        {
+            let mut uring_guard = self.uring.lock();
+            unsafe {
+                uring_guard.submission().push(&sqe).unwrap();
+            }
+
+            self.inflight.insert(
+                id,
+                InFlightEntry::Write {
+                    response_tx,
+                    buffer: pinned_buffer,
+                },
+            );
+
+            if let Err(e) = uring_guard.submit() {
+                log::error!("io_uring submit error: {}", e);
+            }
+        }
+        response_rx
+            .await
+            .map_err(|e| anyhow!("Failed to receive write result: {}", e))?
+            .with_context(|| format!("uring write failed at offset {} (len {})", offset, length))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs::File;
-    use std::io::Write;
+    use std::io::{Read, Write};
     use std::os::fd::AsRawFd;
 
     use tempdir::TempDir;
@@ -496,5 +559,164 @@ mod tests {
         drop(file);
         drop(engine);
         drop(handle);
+    }
+
+    #[tokio::test]
+    async fn test_write_basic() {
+        let temp_dir = TempDir::new("uring_engine_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_write.txt");
+
+        let engine = UringEngine::new(256);
+        let handle = engine.handle();
+
+        let file = std::fs::File::create(&test_file_path).unwrap();
+        let fd = file.as_raw_fd();
+
+        handle
+            .submit_write(fd, 0, b"Hello, World!".to_vec())
+            .await
+            .unwrap();
+
+        drop(file);
+
+        let mut read_file = File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+        assert_eq!(&buffer, b"Hello, World!");
+    }
+
+    #[tokio::test]
+    async fn test_write_from_offset() {
+        let temp_dir = TempDir::new("uring_engine_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_write_offset.txt");
+
+        let engine = UringEngine::new(256);
+        let handle = engine.handle();
+
+        let file = std::fs::File::create(&test_file_path).unwrap();
+        let fd = file.as_raw_fd();
+
+        handle
+            .submit_write(fd, 0, b"0000000000".to_vec())
+            .await
+            .unwrap();
+
+        handle.submit_write(fd, 3, b"ABCDE".to_vec()).await.unwrap();
+
+        drop(file);
+
+        let mut read_file = File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+        assert_eq!(&buffer, b"000ABCDE00");
+    }
+
+    #[tokio::test]
+    async fn test_write_multiple() {
+        let temp_dir = TempDir::new("uring_engine_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_write_multiple.txt");
+
+        let engine = UringEngine::new(256);
+        let handle = engine.handle();
+
+        let file = std::fs::File::create(&test_file_path).unwrap();
+        let fd = file.as_raw_fd();
+
+        handle
+            .submit_write(fd, 0, b"Hello, ".to_vec())
+            .await
+            .unwrap();
+
+        handle
+            .submit_write(fd, 7, b"World!".to_vec())
+            .await
+            .unwrap();
+
+        drop(file);
+
+        let mut read_file = File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+        assert_eq!(&buffer, b"Hello, World!");
+    }
+
+    #[tokio::test]
+    async fn test_write_large() {
+        let temp_dir = TempDir::new("uring_engine_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_write_large.txt");
+
+        let engine = UringEngine::new(256);
+        let handle = engine.handle();
+
+        let file = std::fs::File::create(&test_file_path).unwrap();
+        let fd = file.as_raw_fd();
+
+        let data = vec![42u8; 16384];
+        handle.submit_write(fd, 0, data).await.unwrap();
+
+        drop(file);
+
+        let mut read_file = File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+        assert_eq!(buffer.len(), 16384);
+        assert!(buffer.iter().all(|&b| b == 42));
+    }
+
+    #[tokio::test]
+    async fn test_write_empty() {
+        let temp_dir = TempDir::new("uring_engine_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_write_empty.txt");
+
+        let engine = UringEngine::new(256);
+        let handle = engine.handle();
+
+        let file = std::fs::File::create(&test_file_path).unwrap();
+        let fd = file.as_raw_fd();
+
+        handle.submit_write(fd, 0, vec![]).await.unwrap();
+
+        drop(file);
+
+        let mut read_file = File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+        assert_eq!(buffer.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_writes() {
+        let temp_dir = TempDir::new("uring_engine_test").unwrap();
+        let test_file_path = temp_dir.path().join("test_concurrent_writes.txt");
+
+        let engine = UringEngine::new(256);
+        let handle = engine.handle();
+
+        let file = std::fs::File::create(&test_file_path).unwrap();
+        let fd = file.as_raw_fd();
+
+        let handle = std::sync::Arc::new(handle);
+        let mut handles = Vec::new();
+        for i in 0..2 {
+            let handle = handle.clone();
+            let data = format!("Write {}", i).into_bytes();
+            let handle = tokio::spawn(async move {
+                handle
+                    .submit_write(fd, (i * 100) as u64, data)
+                    .await
+                    .unwrap()
+            });
+            handles.push(handle);
+        }
+
+        futures::future::join_all(handles).await;
+
+        drop(file);
+
+        let mut read_file = File::open(&test_file_path).unwrap();
+        let mut buffer = Vec::new();
+        read_file.read_to_end(&mut buffer).unwrap();
+        assert_eq!(&buffer[0..7], b"Write 0");
+        assert_eq!(&buffer[100..107], b"Write 1");
     }
 }
