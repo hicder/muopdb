@@ -67,7 +67,9 @@ mod tests {
                 collection_name.to_string(),
                 base_directory,
                 CollectionConfig::default(),
+                None,
             )
+            .await
             .unwrap(),
         ));
         catalog
