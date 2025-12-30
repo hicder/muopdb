@@ -116,7 +116,7 @@ impl BlockKey {
 pub struct BlockCache {
     config: BlockCacheConfig,
     file_descriptor_cache: DashMap<FileId, FileEntry>,
-    block_cache: Cache<BlockKey, Vec<u8>>,
+    block_cache: Cache<BlockKey, Arc<Vec<u8>>>,
     file_id_generator: AtomicU64,
     #[cfg(target_os = "linux")]
     engine: Option<UringEngine>,
@@ -146,7 +146,7 @@ impl BlockCache {
             file_descriptor_cache: DashMap::new(),
             block_cache: Cache::builder()
                 .max_capacity(config.block_cache_capacity_bytes)
-                .weigher(|_key, value: &Vec<u8>| value.len() as u32)
+                .weigher(|_key, value: &Arc<Vec<u8>>| value.len() as u32)
                 .build(),
             file_id_generator: AtomicU64::new(1),
             #[cfg(target_os = "linux")]
@@ -280,30 +280,42 @@ impl BlockCache {
         let block_size = self.config.block_size as u64;
         let start_block = offset / block_size;
         let end_block = (end_offset - 1) / block_size;
-        let aligned_offset = start_block * block_size;
 
-        let mut aligned_data = Vec::new();
+        // Pre-allocate the result buffer with exact size
+        let mut result = vec![0u8; length as usize];
+        let mut result_offset = 0usize;
 
         for block_number in start_block..=end_block {
             let block_offset = block_number * block_size;
             let block_key = BlockKey::new(file_id, block_number);
             let file = file_entry.file.clone();
 
-            let block_data = self
+            let block_data: Arc<Vec<u8>> = self
                 .block_cache
                 .try_get_with(block_key, async move {
-                    Self::read_block_from_disk(&file, block_offset, 4096).await
+                    let data =
+                        Self::read_block_from_disk(&file, block_offset, self.config.block_size)
+                            .await?;
+                    Ok::<_, anyhow::Error>(Arc::new(data))
                 })
                 .await
-                .map_err(|e| anyhow!("Failed to read block: {}", e))?;
+                .map_err(|e: Arc<anyhow::Error>| anyhow!("Failed to read block: {}", e))?;
 
-            aligned_data.extend_from_slice(&block_data);
+            // Calculate the intersection of this block with the requested byte range
+            let block_start = block_offset;
+
+            let source_start = offset.saturating_sub(block_start) as usize;
+            let source_end =
+                (end_offset.saturating_sub(block_start)).min(block_size as u64) as usize;
+            let source_len = source_end - source_end.min(source_start);
+
+            // Copy directly into the result buffer
+            result[result_offset..result_offset + source_len]
+                .copy_from_slice(&block_data[source_start..source_end]);
+            result_offset += source_len;
         }
 
-        let start_pos = (offset - aligned_offset) as usize;
-        let end_pos = start_pos + length as usize;
-
-        Ok(aligned_data[start_pos..end_pos].to_vec())
+        Ok(result)
     }
 
     async fn read_block_from_disk(
