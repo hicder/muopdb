@@ -177,6 +177,7 @@ This time it should give you something else
   - [x] Optimizing deletion with bloom filter
   - [x] Optimizing WAL write with thread-safe write group
   - [x] Automatic segment optimizer
+  - [x] Non-mmap implementation of SPANN and Term index
 
 ### Building
 
