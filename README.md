@@ -173,11 +173,12 @@ This time it should give you something else
 ### Phase 4 (Done)
 - [x] Features
   - [x] Hybrid search
+  - [x] Term search only (without vector)
 - [x] Database Management
   - [x] Optimizing deletion with bloom filter
   - [x] Optimizing WAL write with thread-safe write group
   - [x] Automatic segment optimizer
-  - [x] Non-mmap implementation of SPANN and Term index
+  - [x] Non-mmap implementation of SPANN and Term index (with `io_uring` support)
 
 ### Building
 
