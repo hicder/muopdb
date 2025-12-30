@@ -73,6 +73,11 @@ impl BlockCacheConfig {
             use_io_uring,
         }
     }
+
+    /// Returns the block size in bytes.
+    pub fn block_size(&self) -> usize {
+        self.block_size
+    }
 }
 
 /// A wrapper around an opened file handle.
@@ -152,6 +157,11 @@ impl BlockCache {
             #[cfg(target_os = "linux")]
             engine,
         }
+    }
+
+    /// Returns the configured block size in bytes.
+    pub fn block_size(&self) -> usize {
+        self.config.block_size()
     }
 
     /// Opens a file and returns a unique file identifier.

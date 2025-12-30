@@ -47,6 +47,14 @@ pub trait FileIO {
 
     /// Returns the length of the file in bytes.
     async fn file_length(&self) -> Result<u64>;
+
+    /// Returns the block size used for I/O operations.
+    ///
+    /// For cached implementations, returns the configured block size.
+    /// For others, returns a default of 4096 bytes.
+    fn get_block_size(&self) -> usize {
+        4096 // default implementation
+    }
 }
 
 #[async_trait]
