@@ -3040,7 +3040,7 @@ mod tests {
         env_logger::try_init().ok();
 
         // Group size = 0 : every write is its own leader
-        // test_collection_concurrent_wal_write_groups_with_size(0).await?;
+        test_collection_concurrent_wal_write_groups_with_size(0).await?;
 
         // Group size < number of writes - 1 : multiple groups with leaders without timeout, except
         // possibly the last one
@@ -3050,15 +3050,15 @@ mod tests {
         )
         .await?;
 
-        // // Group size = number of writes - 1 : last write is the leader
-        // test_collection_concurrent_wal_write_groups_with_size(
-        //     NUM_GROUPS * OPERATIONS_PER_GROUP - 1,
-        // )
-        // .await?;
+        // Group size = number of writes - 1 : last write is the leader
+        test_collection_concurrent_wal_write_groups_with_size(
+            NUM_GROUPS * OPERATIONS_PER_GROUP - 1,
+        )
+        .await?;
 
-        // // Group size = number of writes : last write takes over and becomes leader after timeout
-        // test_collection_concurrent_wal_write_groups_with_size(NUM_GROUPS * OPERATIONS_PER_GROUP)
-        //     .await?;
+        // Group size = number of writes : last write takes over and becomes leader after timeout
+        test_collection_concurrent_wal_write_groups_with_size(NUM_GROUPS * OPERATIONS_PER_GROUP)
+            .await?;
 
         Ok(())
     }

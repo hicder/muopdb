@@ -103,10 +103,6 @@ impl Wal {
         op_type: WalOpType<&[f32]>,
         attributes: Option<Arc<Vec<DocumentAttribute>>>,
     ) -> Result<u64> {
-        eprintln!(
-            "Append to wal, doc_ids: {:?}, op_type: {:?}",
-            doc_ids, op_type
-        );
         let last_file = self.files.back().unwrap();
         if last_file.get_file_size()? >= self.max_file_size {
             let seq_no = last_file.get_last_seq_no();
