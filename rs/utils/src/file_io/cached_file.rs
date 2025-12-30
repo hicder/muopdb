@@ -50,6 +50,11 @@ impl FileIO for CachedFileIO {
     async fn file_length(&self) -> Result<u64> {
         self.block_cache.file_length(self.file_id).await
     }
+
+    /// Returns the block size from the block cache configuration.
+    fn get_block_size(&self) -> usize {
+        self.block_cache.block_size()
+    }
 }
 
 impl Drop for CachedFileIO {

@@ -171,6 +171,80 @@ impl BlockBasedPostingListStorage {
         ))
     }
 
+    /// Retrieves multiple document IDs, grouping I/O by block boundaries.
+    ///
+    /// This method minimizes file reads by batching requests that fall within
+    /// the same block. indices must be sorted.
+    ///
+    /// # Arguments
+    /// * `indices` - Vector indices to look up
+    ///
+    /// # Returns
+    /// * `Result<Vec<u128>>` - Document IDs in the same order as input indices.
+    pub async fn get_doc_ids(&self, indices: &[usize]) -> Result<Vec<u128>> {
+        if indices.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        if !indices.is_sorted() {
+            return Err(anyhow!("Indices must be sorted"));
+        }
+
+        // Validate all indices are in bounds first (only check last since sorted)
+        if let Some(&last_index) = indices.last() {
+            if last_index >= self.header.num_vectors as usize {
+                return Err(anyhow!("Index out of bound: {}", last_index));
+            }
+        }
+
+        let block_size = self.file_io.get_block_size();
+        let doc_id_size = size_of::<u128>();
+        // Data starts after a skip of 1 u128 (reserved/header)
+        let data_start = self.doc_id_mapping_offset + doc_id_size;
+
+        // Group indices by block
+        // A block read at `block_start` gives us bytes from `block_start` to `block_start + block_size`
+        // We need to find which blocks each doc_id falls into
+        let mut blocks: Vec<(u64, Vec<(usize, usize)>)> = Vec::new();
+
+        for (input_idx, &index) in indices.iter().enumerate() {
+            let byte_pos = data_start + index * doc_id_size;
+            let block_start = (byte_pos as u64 / block_size as u64) * block_size as u64;
+
+            if let Some((last_block_start, positions)) = blocks.last_mut() {
+                if *last_block_start == block_start {
+                    positions.push((byte_pos, input_idx));
+                    continue;
+                }
+            }
+            blocks.push((block_start, vec![(byte_pos, input_idx)]));
+        }
+
+        // Now read each block and extract doc_ids
+        let mut result = vec![0u128; indices.len()];
+
+        for (_, byte_positions) in blocks.into_iter() {
+            // Find the block bounds we need to read
+            // byte_positions are already sorted since indices are sorted
+            let (min_byte_pos, _) = *byte_positions.first().unwrap();
+            let (max_byte_pos, _) = *byte_positions.last().unwrap();
+            let block_start = (min_byte_pos as u64 / block_size as u64) * block_size as u64;
+            let read_size = (max_byte_pos - block_start as usize) + doc_id_size;
+
+            let data = self.file_io.read(block_start, read_size as u64).await?;
+
+            for (byte_pos, input_idx) in byte_positions {
+                let offset_in_block = byte_pos - block_start as usize;
+                let doc_id_bytes: [u8; 16] = data[offset_in_block..offset_in_block + 16]
+                    .try_into()
+                    .map_err(|_| anyhow!("Failed to read doc_id"))?;
+                result[input_idx] = u128::from_le_bytes(doc_id_bytes);
+            }
+        }
+
+        Ok(result)
+    }
+
     /// Retrieves the centroid vector for a given cluster index.
     ///
     /// # Arguments

@@ -292,14 +292,19 @@ where
             .search_with_centroids(query, nearest_centroid_ids, k, record_pages, planner)
             .await?;
 
-        let mut id_with_scores = Vec::with_capacity(results.point_and_distances.len());
-        for pd in results.point_and_distances {
-            let doc_id = self
-                .posting_list_storage
-                .get_doc_id(pd.point_id as usize)
-                .await?;
+        // Batch fetch all document IDs to minimize I/O
+        let mut point_ids: Vec<u32> = results
+            .point_and_distances
+            .iter()
+            .map(|pd| pd.point_id)
+            .collect();
+        point_ids.sort();
+        let doc_ids = self.get_doc_ids(&point_ids).await?;
+
+        let mut id_with_scores = Vec::with_capacity(doc_ids.len());
+        for (i, pd) in results.point_and_distances.iter().enumerate() {
             id_with_scores.push(IdWithScore {
-                doc_id,
+                doc_id: doc_ids[i],
                 score: *pd.distance,
             });
         }
@@ -330,6 +335,19 @@ where
         self.posting_list_storage
             .get_doc_id(point_id as usize)
             .await
+    }
+
+    /// Retrieves multiple document IDs for the given point IDs, using batched I/O.
+    /// point_ids must be sorted
+    ///
+    /// # Arguments
+    /// * `point_ids` - The internal point IDs to look up.
+    ///
+    /// # Returns
+    /// * `Result<Vec<u128>>` - Document IDs in the same order as input point IDs.
+    pub async fn get_doc_ids(&self, point_ids: &[u32]) -> Result<Vec<u128>> {
+        let indices: Vec<usize> = point_ids.iter().map(|&id| id as usize).collect();
+        self.posting_list_storage.get_doc_ids(&indices).await
     }
 
     /// Retrieves the vector data for a given point ID.
