@@ -167,8 +167,6 @@ You should see something else
 This time it should give you something else
 
 6. TermSearch only
-<img width="603" alt="Screenshot 2025-03-26 at 8 26 30 PM" src="https://github.com/user-attachments/assets/33ab4e14-785c-4bd9-a9a0-668cc4c554c0" />
-
 ```
 {
     "collection_name": "test-collection-2",
