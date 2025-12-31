@@ -13,3 +13,5 @@ rs/proto/src/muopdb.rs
 .zed/
 .aider*
 .claude
+.roo
+plan.md
