@@ -47,7 +47,21 @@ docker-compose up --build
     "num_features": 10,
     "wal_file_size": 1024000000,
     "max_time_to_flush_ms": 5000,
-    "max_pending_ops": 10
+    "max_pending_ops": 10,
+    "attribute_schema": {
+        "attributes": [
+            {
+                "name": "title",
+                "type": "ATTRIBUTE_TYPE_TEXT",
+                "language": "english"
+            },
+            {
+                "name": "content",
+                "type": "ATTRIBUTE_TYPE_TEXT",
+                "language": "english"
+            }
+        ]
+    }
 }
 ```
 
@@ -70,7 +84,21 @@ docker-compose up --build
     ],
     "vectors": [
         100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0
-    ]
+    ],
+    "attributes": {
+        "values": [
+            {
+                "value": {
+                    "title": {
+                        "text_value": "Example Document"
+                    },
+                    "content": {
+                        "text_value": "This is an example document for search demonstration"
+                    }
+                }
+            }
+        ]
+    }
 }
 ```
 
@@ -137,6 +165,29 @@ You should see something else
 ```
 
 This time it should give you something else
+
+6. TermSearch only
+<img width="603" alt="Screenshot 2025-03-26 at 8 26 30 PM" src="https://github.com/user-attachments/assets/33ab4e14-785c-4bd9-a9a0-668cc4c554c0" />
+
+```
+{
+    "collection_name": "test-collection-2",
+    "user_ids": [
+        {
+            "uuid": "00000000-0000-0000-0000-000000000000"
+        }
+    ],
+    "limit": 10,
+    "filter": {
+        "contains": {
+            "path": "content",
+            "value": "search"
+        }
+    }
+}
+```
+
+This performs a text-only search without requiring a vector, returning documents where the `content` field contains the term "search". You can also search the `title` field or combine multiple filters using `and`/`or` operators.
 
 ## Plans
 ### Phase 0 (Done)
