@@ -228,6 +228,13 @@ This performs a text-only search without requiring a vector, returning documents
   - [x] Optimizing WAL write with thread-safe write group
   - [x] Automatic segment optimizer
   - [x] Non-mmap implementation of SPANN and Term index (with `io_uring` support)
+### Phase 5 (Ongoing)
+- [ ] Features
+  - [ ] Search relevance score (BM25, TF/IDF)
+- [ ] Database management / Optimization
+  - [ ] MuopDB with consensus protocol (Raft)
+  - [ ] Cloud MuopDB (native on object store)
+  - [ ] Improve skip_to performance on Elias-Fano encoding
 
 ### Building
 
