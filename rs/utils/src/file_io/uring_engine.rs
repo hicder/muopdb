@@ -1,4 +1,3 @@
-use std::cell::UnsafeCell;
 use std::os::fd::RawFd;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -9,47 +8,44 @@ use dashmap::DashMap;
 use log::info;
 use parking_lot::Mutex;
 
-/// High-performance asynchronous I/O engine using Linux io_uring.
+/// # Architecture - Split-Queue & Leader-Follower
 ///
-/// This engine provides efficient file reading by leveraging Linux's io_uring
-/// interface, which enables asynchronous operations without traditional
-/// thread-per-request overhead. It uses a leader-follower pattern where
-/// the submitting thread also handles completion queue processing.
-///
-/// The engine is designed for high-throughput scenarios where many concurrent
-/// file reads are needed, such as database systems reading from disk.
-///
-/// # Architecture - Leader-Follower Pattern
+/// This engine uses a **split-queue architecture** where the submission queue (SQ)
+/// and completion queue (CQ) are decoupled and protected by independent locks.
+/// This enables **granular locking**, allowing one thread to submit new requests
+/// while another thread concurrently processes completions.
 ///
 /// ```text
 /// ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-/// │  Thread 1       │────▶│  submit_read     │────▶│  io_uring       │
-/// │  (Leader)       │     │  (inline submit) │     │  (kernel)       │
+/// │  Thread 1       │────▶│  SQ (Locked)     │────▶│  io_uring       │
+/// │  (Submitter)    │     │  push & submit   │     │  (kernel)       │
 /// └─────────────────┘     └──────────────────┘     └─────────────────┘
 ///                                                         │
 ///                                                         ▼
-///                         ┌──────────────────┐     ┌─────────────────┐
-///                         │  In-Flight Map   │◀────│  Leader polls   │
-///                         │  (DashMap)       │     │  & sends        │
-///                         └──────────────────┘     └─────────────────┘
-///                              │  ▲
-///                              │  │ oneshot
-///                              ▼  │
-///                         ┌──────────────────┐
-///                         │  Thread 2+       │
-///                         │  (Followers)     │
-///                         │  wait on Notify  │
+/// ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+/// │  Thread 2       │◀────│  CQ (Locked)     │◀────│  Kernel writes  │
+/// │  (Leader/Poller)│     │  poll & notify   │     │  completions    │
+/// └─────────────────┘     └──────────────────┘     └─────────────────┘
+///          │                       ▲
+///          │          ┌────────────┘
+///          ▼          │
+/// ┌─────────────────┐ │   ┌──────────────────┐
+/// │  In-Flight Map  │─┘   │  Thread 3+       │
+/// │  (DashMap)      │◀────│  (Followers)     │
+/// └─────────────────┘     │  wait on Notify  │
 ///                         └──────────────────┘
 /// ```
 ///
-/// # Leader-Follower Pattern
+/// # Concurrency Design
 ///
-/// - Each thread submitting an I/O request tries to become the **leader**
-/// - The leader acquires the `leader_lock`, submits to io_uring, and processes
-///   all available completions
-/// - Followers wait via `tokio::select!` on either their response channel
-///   or a notification from the leader
-/// - This eliminates the 1ms sleep latency from the background thread design
+/// - **Granular Locking**: By calling `io_uring::split()`, we separate the SQ and CQ.
+///   Submissions only lock the SQ, and completion polling only locks the CQ.
+/// - **Leader-Follower Pattern**: To avoid multiple threads competing for the CQ,
+///   whichever thread first acquires the CQ lock becomes the **leader**.
+/// - **Notification**: The leader processes all available completions and updates
+///   the `DashMap`. It then signals **followers** via `tokio::sync::Notify`.
+/// - **Safety**: The engine uses pinned memory (`Pin<Box<IoUring>>`) to ensure the
+///   split queue handles remain valid throughout the engine's lifetime.
 ///
 /// # Example
 ///
@@ -74,37 +70,73 @@ pub struct UringEngine {
 }
 
 struct InnerUring {
-    ring: UnsafeCell<io_uring::IoUring>,
-    sq_lock: Mutex<()>,
-    cq_lock: Mutex<()>,
+    // The Submission Queue (SQ) handle, protected by a mutex for independent access.
+    sq: Mutex<io_uring::squeue::SubmissionQueue<'static>>,
+    // The Completion Queue (CQ) handle, used by the leader to poll for results.
+    cq: Mutex<io_uring::cqueue::CompletionQueue<'static>>,
+    // The Submitter is a thread-safe wrapper that initiates I/O after SQ synchronization.
+    submitter: io_uring::Submitter<'static>,
+    // The underlying ring is pinned in memory to ensure split handles remain valid.
+    _ring: Pin<Box<io_uring::IoUring>>,
 }
 
-// Safety: We protect access to the ring via SQ and CQ locks.
-// io_uring queues are designed to be accessed independently.
+// Safety: We manage the split handles' lifetimes via pinned owner storage.
+// Submitter is inherently Sync, and SQ/CQ are protected by independent Mutexes.
 unsafe impl Send for InnerUring {}
 unsafe impl Sync for InnerUring {}
 
 impl InnerUring {
     fn new(depth: u32) -> Result<Self> {
-        let ring = io_uring::IoUring::new(depth)
-            .map_err(|e| anyhow!("Failed to create io_uring: {}", e))?;
+        let mut ring = Box::pin(
+            io_uring::IoUring::new(depth)
+                .map_err(|e| anyhow!("Failed to create io_uring: {}", e))?,
+        );
+
+        // Safety: We are casting to 'static because we're storing the references
+        // in the same struct as the pinned owner. The owner (_ring) is guaranteed
+        // to outlive these because it's last in the struct.
+        let (submitter, sq, cq) = unsafe {
+            let ring_ptr = ring.as_mut().get_unchecked_mut() as *mut io_uring::IoUring;
+            let (s, q, c) = (*ring_ptr).split();
+            // Erase lifetimes to 'static
+            (
+                std::mem::transmute::<io_uring::Submitter<'_>, io_uring::Submitter<'static>>(s),
+                std::mem::transmute::<
+                    io_uring::squeue::SubmissionQueue<'_, _>,
+                    io_uring::squeue::SubmissionQueue<'static, _>,
+                >(q),
+                std::mem::transmute::<
+                    io_uring::cqueue::CompletionQueue<'_, _>,
+                    io_uring::cqueue::CompletionQueue<'static, _>,
+                >(c),
+            )
+        };
+
         Ok(Self {
-            ring: UnsafeCell::new(ring),
-            sq_lock: Mutex::new(()),
-            cq_lock: Mutex::new(()),
+            sq: Mutex::new(sq),
+            cq: Mutex::new(cq),
+            submitter,
+            _ring: ring,
         })
     }
 
     fn push_and_submit(&self, sqe: &io_uring::squeue::Entry) -> Result<()> {
-        let _guard = self.sq_lock.lock();
-        unsafe {
-            let ring = &mut *self.ring.get();
-            ring.submission()
-                .push(sqe)
-                .map_err(|_| anyhow!("io_uring submission queue is full"))?;
-            ring.submit()
-                .map_err(|e| anyhow!("io_uring submit failed: {}", e))?;
+        {
+            let mut sq = self.sq.lock();
+            unsafe {
+                sq.push(sqe)
+                    .map_err(|_| anyhow!("io_uring submission queue is full"))?;
+            }
+            // sync() is required to update the tail index in the shared memory
+            sq.sync();
         }
+
+        // We can submit without holding the SQ lock because Submitter is thread-safe
+        // and we've already synced our push.
+        self.submitter
+            .submit()
+            .map_err(|e| anyhow!("io_uring submit failed: {}", e))?;
+
         Ok(())
     }
 
@@ -112,21 +144,22 @@ impl InnerUring {
     where
         F: FnMut(io_uring::cqueue::Entry),
     {
-        let Some(_guard) = self.cq_lock.try_lock() else {
-            return (false, false);
+        let mut cq = match self.cq.try_lock() {
+            Some(guard) => guard,
+            None => return (false, false),
         };
+
+        // sync() is required to see the latest completions from the kernel
+        cq.sync();
+
         let mut found = false;
-        unsafe {
-            let ring = &mut *self.ring.get();
-            let mut cq = ring.completion();
-            while let Some(cqe) = cq.next() {
-                let id = cqe.user_data();
-                f(cqe);
-                if let Some(target) = target_id {
-                    if id == target {
-                        found = true;
-                        break;
-                    }
+        while let Some(cqe) = cq.next() {
+            let id = cqe.user_data();
+            f(cqe);
+            if let Some(target) = target_id {
+                if id == target {
+                    found = true;
+                    break;
                 }
             }
         }
