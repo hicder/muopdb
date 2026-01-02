@@ -32,13 +32,14 @@ pub struct HashIdx {
     h2: u32,
 }
 
-pub trait BloomFilter {
+#[async_trait::async_trait]
+pub trait BloomFilter: Sync + Send {
     // Required methods (implementors must provide these)
     fn num_blocks(&self) -> usize;
     fn num_hash_functions(&self) -> usize;
 
     /// Implementors must define how to check if a bit is set at `bit_pos_in_block`.
-    fn is_bit_set(&self, block_idx: usize, bit_pos_in_block: usize) -> bool;
+    async fn is_bit_set(&self, block_idx: usize, bit_pos_in_block: usize) -> anyhow::Result<bool>;
 
     // Provided helper methods (shared logic)
     fn hash_key<T: Hash + ?Sized>(&self, key: &T) -> HashIdx {
@@ -57,21 +58,21 @@ pub trait BloomFilter {
     }
 
     /// Fully shared `check_bits` implementation.
-    fn check_bits(&self, mut h: u32, block_idx: usize) -> bool {
+    async fn check_bits(&self, mut h: u32, block_idx: usize) -> anyhow::Result<bool> {
         for _ in 0..self.num_hash_functions() {
             let bit_pos_in_block = (h >> (32 - BLOCK_SIZE_IN_BITS.trailing_zeros())) as usize;
-            if !self.is_bit_set(block_idx, bit_pos_in_block) {
-                return false;
+            if !self.is_bit_set(block_idx, bit_pos_in_block).await? {
+                return Ok(false);
             }
             h = h.wrapping_mul(0x9e3779b9);
         }
-        true
+        Ok(true)
     }
 
     /// Fully shared `may_contain` implementation.
-    fn may_contain<T: Hash + ?Sized>(&self, key: &T) -> bool {
+    async fn may_contain<T: Hash + ?Sized + Sync>(&self, key: &T) -> anyhow::Result<bool> {
         let hash_idx = self.hash_key(key);
         let block_idx = self.get_block_idx(hash_idx.h1);
-        self.check_bits(hash_idx.h2, block_idx)
+        self.check_bits(hash_idx.h2, block_idx).await
     }
 }

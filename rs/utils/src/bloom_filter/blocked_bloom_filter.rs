@@ -57,6 +57,7 @@ impl BlockedBloomFilter {
     }
 }
 
+#[async_trait::async_trait]
 impl BloomFilter for BlockedBloomFilter {
     fn num_hash_functions(&self) -> usize {
         self.num_hash_functions
@@ -66,9 +67,9 @@ impl BloomFilter for BlockedBloomFilter {
         self.num_blocks
     }
 
-    fn is_bit_set(&self, block_idx: usize, bit_pos_in_block: usize) -> bool {
+    async fn is_bit_set(&self, block_idx: usize, bit_pos_in_block: usize) -> anyhow::Result<bool> {
         let block_offset = block_idx * BLOCK_SIZE_IN_BITS;
-        self.bits[block_offset + bit_pos_in_block]
+        Ok(self.bits[block_offset + bit_pos_in_block])
     }
 }
 
@@ -76,17 +77,17 @@ impl BloomFilter for BlockedBloomFilter {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_blocked_bloom_filter() {
+    #[tokio::test]
+    async fn test_blocked_bloom_filter() {
         // Create a Bloom filter up to 400 documents and 1% false positive rate
         let mut str_filter = BlockedBloomFilter::new(400, 0.01);
         str_filter.insert::<str>("hello");
-        assert!(str_filter.may_contain::<str>("hello"));
-        assert!(!str_filter.may_contain::<str>("world"));
+        assert!(str_filter.may_contain::<str>("hello").await.unwrap());
+        assert!(!str_filter.may_contain::<str>("world").await.unwrap());
 
         let mut u64_filter = BlockedBloomFilter::new(400, 0.01);
         u64_filter.insert::<u64>(&42);
-        assert!(u64_filter.may_contain::<u64>(&42));
-        assert!(!u64_filter.may_contain::<u64>(&41));
+        assert!(u64_filter.may_contain::<u64>(&42).await.unwrap());
+        assert!(!u64_filter.may_contain::<u64>(&41).await.unwrap());
     }
 }
