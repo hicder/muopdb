@@ -68,15 +68,74 @@ use parking_lot::Mutex;
 /// ```
 pub struct UringEngine {
     next_id: Arc<AtomicU64>,
-    uring: Arc<UnsafeCell<io_uring::IoUring>>,
+    uring: Arc<InnerUring>,
     inflight: Arc<DashMap<u64, InFlightEntry>>,
-    leader_lock: Arc<Mutex<()>>,
     completion_notify: Arc<tokio::sync::Notify>,
 }
 
-// SAFETY: Access to uring is serialized by leader_lock
-unsafe impl Send for UringEngine {}
-unsafe impl Sync for UringEngine {}
+struct InnerUring {
+    ring: UnsafeCell<io_uring::IoUring>,
+    sq_lock: Mutex<()>,
+    cq_lock: Mutex<()>,
+}
+
+// Safety: We protect access to the ring via SQ and CQ locks.
+// io_uring queues are designed to be accessed independently.
+unsafe impl Send for InnerUring {}
+unsafe impl Sync for InnerUring {}
+
+impl InnerUring {
+    fn new(depth: u32) -> Result<Self> {
+        let ring = io_uring::IoUring::new(depth)
+            .map_err(|e| anyhow!("Failed to create io_uring: {}", e))?;
+        Ok(Self {
+            ring: UnsafeCell::new(ring),
+            sq_lock: Mutex::new(()),
+            cq_lock: Mutex::new(()),
+        })
+    }
+
+    fn push_and_submit(&self, sqe: &io_uring::squeue::Entry) -> Result<()> {
+        let _guard = self.sq_lock.lock();
+        unsafe {
+            let ring = &mut *self.ring.get();
+            ring.submission()
+                .push(sqe)
+                .map_err(|_| anyhow!("io_uring submission queue is full"))?;
+            ring.submit()
+                .map_err(|e| anyhow!("io_uring submit failed: {}", e))?;
+        }
+        Ok(())
+    }
+
+    fn try_process_completions<F>(&self, mut f: F, target_id: Option<u64>) -> (bool, bool)
+    where
+        F: FnMut(io_uring::cqueue::Entry),
+    {
+        let Some(_guard) = self.cq_lock.try_lock() else {
+            return (false, false);
+        };
+        let mut found = false;
+        unsafe {
+            let ring = &mut *self.ring.get();
+            let mut cq = ring.completion();
+            while let Some(cqe) = cq.next() {
+                let id = cqe.user_data();
+                f(cqe);
+                if let Some(target) = target_id {
+                    if id == target {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+        }
+        (true, found)
+    }
+}
+
+// AtomicRefCell is Send/Sync if the inner type is Send/Sync.
+// io_uring::IoUring is Send/Sync.
 
 /// A cloneable handle for submitting read requests to the UringEngine.
 ///
@@ -98,15 +157,10 @@ unsafe impl Sync for UringEngine {}
 #[derive(Clone)]
 pub struct UringEngineHandle {
     next_id: Arc<AtomicU64>,
-    uring: Arc<UnsafeCell<io_uring::IoUring>>,
+    uring: Arc<InnerUring>,
     inflight: Arc<DashMap<u64, InFlightEntry>>,
-    leader_lock: Arc<Mutex<()>>,
     completion_notify: Arc<tokio::sync::Notify>,
 }
-
-// SAFETY: Access to uring is serialized by leader_lock
-unsafe impl Send for UringEngineHandle {}
-unsafe impl Sync for UringEngineHandle {}
 
 enum InFlightEntry {
     Read {
@@ -199,21 +253,17 @@ impl UringEngine {
     /// ```
     pub fn new(queue_depth: u32) -> Self {
         info!("Creating UringEngine with queue depth {}", queue_depth);
-        let uring = io_uring::IoUring::new(queue_depth)
-            .map_err(|e| anyhow!("Failed to create io_uring: {}", e))
-            .unwrap();
+        let uring = InnerUring::new(queue_depth).unwrap();
 
         let inflight: DashMap<u64, InFlightEntry> = DashMap::new();
         let inflight = Arc::new(inflight);
         let next_id = Arc::new(AtomicU64::new(0));
-        let leader_lock = Arc::new(Mutex::new(()));
         let completion_notify = Arc::new(tokio::sync::Notify::new());
 
         UringEngine {
             next_id,
-            uring: Arc::new(UnsafeCell::new(uring)),
+            uring: Arc::new(uring),
             inflight,
-            leader_lock,
             completion_notify,
         }
     }
@@ -242,7 +292,6 @@ impl UringEngine {
             next_id: self.next_id.clone(),
             uring: self.uring.clone(),
             inflight: self.inflight.clone(),
-            leader_lock: self.leader_lock.clone(),
             completion_notify: self.completion_notify.clone(),
         }
     }
@@ -308,7 +357,7 @@ impl UringEngineHandle {
         .build()
         .user_data(id);
 
-        // Add to inflight map first (before acquiring leader lock)
+        // Add to inflight map first
         self.inflight.insert(
             id,
             InFlightEntry::Read {
@@ -317,59 +366,36 @@ impl UringEngineHandle {
             },
         );
 
-        // Try to become leader and process completions
-        self.process_as_leader_or_wait(id, sqe, response_rx, offset, length)
+        // Submit immediately (separate lock from completions)
+        self.uring.push_and_submit(&sqe)?;
+
+        // Wait for results
+        self.wait_for_completion(id, response_rx, offset, length)
             .await
     }
 
     /// Leader-follower pattern: Try to become the leader or wait for notification.
-    ///
-    /// - If we become the leader: push our SQE, submit, process all completions
-    /// - If we can't become leader: wait for either our response or a notification
-    async fn process_as_leader_or_wait(
+    async fn wait_for_completion(
         &self,
         my_id: u64,
-        sqe: io_uring::squeue::Entry,
         mut response_rx: tokio::sync::oneshot::Receiver<Result<Vec<u8>>>,
         offset: u64,
         length: usize,
     ) -> Result<Vec<u8>> {
-        let mut sqe = Some(sqe);
-
         loop {
-            // Try to become the leader
-            if let Some(_guard) = self.leader_lock.try_lock() {
-                // SAFETY: We hold the leader_lock, so we have exclusive access to uring
-                let uring = unsafe { &mut *self.uring.get() };
-
-                // Push our SQE if we haven't yet
-                if let Some(entry) = sqe.take() {
-                    unsafe {
-                        uring.submission().push(&entry).unwrap();
-                    }
-                }
-
-                // Submit all pending entries
-                if let Err(e) = uring.submit() {
-                    log::error!("io_uring submit error: {}", e);
-                }
-
-                // Process all available completions
-                let mut found_my_completion = false;
-                while let Some(cqe) = uring.completion().next() {
-                    let completed_id = cqe.user_data();
+            // Try to become the leader and process completions
+            let (is_leader, found) = self.uring.try_process_completions(
+                |cqe| {
                     process_cqe(cqe, &self.inflight);
+                },
+                Some(my_id),
+            );
 
-                    if completed_id == my_id {
-                        found_my_completion = true;
-                    }
-                }
-
-                // Notify all waiters that completions were processed
+            if is_leader {
+                // Notify all waiters (required after break in leader loop)
                 self.completion_notify.notify_waiters();
 
-                if found_my_completion {
-                    // Our request completed - receive the result
+                if found {
                     return response_rx
                         .await
                         .map_err(|e| anyhow!("Failed to receive read result: {}", e))?
@@ -377,21 +403,28 @@ impl UringEngineHandle {
                             format!("uring read failed at offset {} (len {})", offset, length)
                         });
                 }
-                // Our request didn't complete yet, loop back and try again
-            } else {
-                // Not the leader: wait for either our response or a notification
-                tokio::select! {
-                    result = &mut response_rx => {
-                        // Our response arrived
-                        return result
-                            .map_err(|e| anyhow!("Failed to receive read result: {}", e))?
-                            .with_context(|| {
-                                format!("uring read failed at offset {} (len {})", offset, length)
-                            });
+            }
+
+            // Not the leader: wait for either our response or a notification
+            // If we WERE the leader, we shouldn't wait for notification (as we just sent one),
+            // instead we yield and loop back to try to be leader again.
+            tokio::select! {
+                biased;
+                result = &mut response_rx => {
+                    return result
+                        .map_err(|e| anyhow!("Failed to receive read result: {}", e))?
+                        .with_context(|| {
+                            format!("uring read failed at offset {} (len {})", offset, length)
+                        });
+                }
+                _ = async {
+                    if is_leader {
+                        tokio::task::yield_now().await;
+                    } else {
+                        self.completion_notify.notified().await;
                     }
-                    _ = self.completion_notify.notified() => {
-                        // Leader processed some completions, loop back and try to become leader
-                    }
+                } => {
+                    // loop back
                 }
             }
         }
@@ -413,7 +446,7 @@ impl UringEngineHandle {
         .build()
         .user_data(id);
 
-        // Add to inflight map first (before acquiring leader lock)
+        // Add to inflight map first
         self.inflight.insert(
             id,
             InFlightEntry::Write {
@@ -422,56 +455,35 @@ impl UringEngineHandle {
             },
         );
 
-        // Try to become leader and process completions
-        self.process_as_leader_or_wait_write(id, sqe, response_rx, offset, length)
+        // Submit immediately (separate lock from completions)
+        self.uring.push_and_submit(&sqe)?;
+
+        // Wait for results
+        self.wait_for_completion_write(id, response_rx, offset, length)
             .await
     }
 
     /// Leader-follower pattern for write operations.
-    async fn process_as_leader_or_wait_write(
+    async fn wait_for_completion_write(
         &self,
         my_id: u64,
-        sqe: io_uring::squeue::Entry,
         mut response_rx: tokio::sync::oneshot::Receiver<Result<()>>,
         offset: u64,
         length: usize,
     ) -> Result<()> {
-        let mut sqe = Some(sqe);
-
         loop {
-            // Try to become the leader
-            if let Some(_guard) = self.leader_lock.try_lock() {
-                // SAFETY: We hold the leader_lock, so we have exclusive access to uring
-                let uring = unsafe { &mut *self.uring.get() };
-
-                // Push our SQE if we haven't yet
-                if let Some(entry) = sqe.take() {
-                    unsafe {
-                        uring.submission().push(&entry).unwrap();
-                    }
-                }
-
-                // Submit all pending entries
-                if let Err(e) = uring.submit() {
-                    log::error!("io_uring submit error: {}", e);
-                }
-
-                // Process all available completions
-                let mut found_my_completion = false;
-                while let Some(cqe) = uring.completion().next() {
-                    let completed_id = cqe.user_data();
+            // Try to become the leader and process completions
+            let (is_leader, found) = self.uring.try_process_completions(
+                |cqe| {
                     process_cqe(cqe, &self.inflight);
+                },
+                Some(my_id),
+            );
 
-                    if completed_id == my_id {
-                        found_my_completion = true;
-                    }
-                }
-
-                // Notify all waiters that completions were processed
+            if is_leader {
                 self.completion_notify.notify_waiters();
 
-                if found_my_completion {
-                    // Our request completed - receive the result
+                if found {
                     return response_rx
                         .await
                         .map_err(|e| anyhow!("Failed to receive write result: {}", e))?
@@ -479,21 +491,25 @@ impl UringEngineHandle {
                             format!("uring write failed at offset {} (len {})", offset, length)
                         });
                 }
-                // Our request didn't complete yet, loop back and try again
-            } else {
-                // Not the leader: wait for either our response or a notification
-                tokio::select! {
-                    result = &mut response_rx => {
-                        // Our response arrived
-                        return result
-                            .map_err(|e| anyhow!("Failed to receive write result: {}", e))?
-                            .with_context(|| {
-                                format!("uring write failed at offset {} (len {})", offset, length)
-                            });
+            }
+
+            tokio::select! {
+                biased;
+                result = &mut response_rx => {
+                    return result
+                        .map_err(|e| anyhow!("Failed to receive write result: {}", e))?
+                        .with_context(|| {
+                            format!("uring write failed at offset {} (len {})", offset, length)
+                        });
+                }
+                _ = async {
+                    if is_leader {
+                        tokio::task::yield_now().await;
+                    } else {
+                        self.completion_notify.notified().await;
                     }
-                    _ = self.completion_notify.notified() => {
-                        // Leader processed some completions, loop back and try to become leader
-                    }
+                } => {
+                    // loop back
                 }
             }
         }
