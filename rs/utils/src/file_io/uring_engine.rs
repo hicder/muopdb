@@ -120,22 +120,14 @@ impl InnerUring {
         })
     }
 
-    fn push_and_submit(&self, sqe: &io_uring::squeue::Entry) -> Result<()> {
-        {
-            let mut sq = self.sq.lock();
-            unsafe {
-                sq.push(sqe)
-                    .map_err(|_| anyhow!("io_uring submission queue is full"))?;
-            }
-            // sync() is required to update the tail index in the shared memory
-            sq.sync();
+    fn push_to_sq(&self, sqe: &io_uring::squeue::Entry) -> Result<()> {
+        let mut sq = self.sq.lock();
+        unsafe {
+            sq.push(sqe)
+                .map_err(|_| anyhow!("io_uring submission queue is full"))?;
         }
-
-        // We can submit without holding the SQ lock because Submitter is thread-safe
-        // and we've already synced our push.
-        self.submitter
-            .submit()
-            .map_err(|e| anyhow!("io_uring submit failed: {}", e))?;
+        // sync() is required to update the tail index in the shared memory
+        sq.sync();
 
         Ok(())
     }
@@ -150,6 +142,8 @@ impl InnerUring {
         };
 
         // sync() is required to see the latest completions from the kernel
+        // Before syncing, we ensure any pending submissions from push_to_sq are sent to the kernel.
+        let _ = self.submitter.submit();
         cq.sync();
 
         let mut found = false;
@@ -399,8 +393,9 @@ impl UringEngineHandle {
             },
         );
 
-        // Submit immediately (separate lock from completions)
-        self.uring.push_and_submit(&sqe)?;
+        // Add to SQ (separate lock from completions).
+        // Submission to kernel is handled by the leader in wait_for_completion.
+        self.uring.push_to_sq(&sqe)?;
 
         // Wait for results
         self.wait_for_completion(id, response_rx, offset, length)
@@ -488,8 +483,9 @@ impl UringEngineHandle {
             },
         );
 
-        // Submit immediately (separate lock from completions)
-        self.uring.push_and_submit(&sqe)?;
+        // Add to SQ (separate lock from completions).
+        // Submission to kernel is handled by the leader in wait_for_completion.
+        self.uring.push_to_sq(&sqe)?;
 
         // Wait for results
         self.wait_for_completion_write(id, response_rx, offset, length)
