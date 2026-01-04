@@ -1,12 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_lock::RwLock;
 use config::collection::CollectionConfig;
 use config::search_params::SearchParams;
 use quantization::quantization::Quantizer;
+use utils::file_io::env::Env;
 
 use super::{BoxedImmutableSegment, Segment};
 use crate::ivf::files::invalidated_ids::InvalidatedIdsStorage;
@@ -57,6 +59,7 @@ pub struct PendingSegment<Q: Quantizer + Clone + Send + Sync> {
     index: RwLock<Option<MultiSpannIndex<Q>>>,
 
     collection_config: CollectionConfig,
+    env: Arc<Box<dyn Env>>,
 }
 
 impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
@@ -64,6 +67,7 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
         inner_segments: Vec<BoxedImmutableSegment<Q>>,
         data_directory: String,
         collection_config: CollectionConfig,
+        env: Arc<Box<dyn Env>>,
     ) -> Self {
         let path = PathBuf::from(&data_directory);
         // name is the last portion of the data_directory
@@ -109,6 +113,7 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
             temp_invalidated_ids_storage: RwLock::new(temp_invalidated_ids_storage),
             temp_invalidated_ids: RwLock::new(temp_invalidated_ids),
             collection_config,
+            env,
         }
     }
 
@@ -136,10 +141,7 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
         let current_directory = format!("{}/{}", self.parent_directory, self.name);
         let reader = MultiSpannReader::new(current_directory);
         let index = reader
-            .read::<Q>(
-                self.collection_config.posting_list_encoding_type.clone(),
-                self.collection_config.num_features,
-            )
+            .read::<Q>(self.collection_config.num_features, self.env.clone())
             .await?;
         self.index.write().await.replace(index);
         Ok(())
@@ -345,16 +347,21 @@ mod tests {
     use std::sync::Arc;
 
     use config::collection::CollectionConfig;
-    use config::enums::IntSeqEncodingType;
     use config::search_params::SearchParams;
     use quantization::noq::noq::{NoQuantizer, NoQuantizerL2};
     use rand::Rng;
     use utils::distance::l2::L2DistanceCalculator;
+    use utils::file_io::env::{DefaultEnv, Env, EnvConfig};
 
     use super::*;
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::writer::MultiSpannWriter;
     use crate::segment::immutable_segment::ImmutableSegment;
+
+    fn create_env() -> Arc<Box<dyn Env>> {
+        let config = EnvConfig::default();
+        Arc::new(Box::new(DefaultEnv::new(config)))
+    }
 
     fn build_segment(base_directory: String, starting_doc_id: u128) -> Result<()> {
         let mut starting_doc_id = starting_doc_id;
@@ -380,11 +387,12 @@ mod tests {
         Ok(())
     }
 
-    async fn read_segment(base_directory: String) -> Result<MultiSpannIndex<NoQuantizerL2>> {
+    async fn read_segment(
+        base_directory: String,
+        env: Arc<Box<dyn Env>>,
+    ) -> Result<MultiSpannIndex<NoQuantizerL2>> {
         let reader = MultiSpannReader::new(base_directory);
-        let index = reader
-            .read::<NoQuantizerL2>(IntSeqEncodingType::PlainEncoding, 4)
-            .await?;
+        let index = reader.read::<NoQuantizerL2>(4, env).await?;
         Ok(index)
     }
 
@@ -398,13 +406,13 @@ mod tests {
         let segment1_dir = format!("{base_dir}/segment_1");
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
-        let segment1 = read_segment(segment1_dir.clone()).await?;
+        let env = create_env();
+        let segment1 = read_segment(segment1_dir.clone(), env.clone()).await?;
         let segment1 = BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(
-            Arc::new(RwLock::new(ImmutableSegment::new(
-                segment1,
-                "segment_1".to_string(),
-                None,
-            ))),
+            Arc::new(RwLock::new(
+                ImmutableSegment::new(segment1, "segment_1".to_string(), None, Some(env.clone()))
+                    .await,
+            )),
         );
 
         let random_name = format!(
@@ -419,6 +427,7 @@ mod tests {
             vec![segment1],
             pending_dir.clone(),
             CollectionConfig::default_test_config(),
+            env,
         )
         .await;
 
@@ -444,13 +453,13 @@ mod tests {
         let segment1_dir = format!("{base_dir}/segment_1");
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
-        let segment1 = read_segment(segment1_dir.clone()).await?;
+        let env = create_env();
+        let segment1 = read_segment(segment1_dir.clone(), env.clone()).await?;
         let segment1 = BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(
-            Arc::new(RwLock::new(ImmutableSegment::new(
-                segment1,
-                "segment_1".to_string(),
-                None,
-            ))),
+            Arc::new(RwLock::new(
+                ImmutableSegment::new(segment1, "segment_1".to_string(), None, Some(env.clone()))
+                    .await,
+            )),
         );
 
         let random_name = format!(
@@ -465,6 +474,7 @@ mod tests {
             vec![segment1],
             pending_dir.clone(),
             CollectionConfig::default_test_config(),
+            env,
         )
         .await;
 
@@ -492,13 +502,13 @@ mod tests {
         let segment1_dir = format!("{base_dir}/segment_1");
         std::fs::create_dir_all(segment1_dir.clone()).unwrap();
         build_segment(segment1_dir.clone(), 0)?;
-        let segment1 = read_segment(segment1_dir.clone()).await?;
+        let env = create_env();
+        let segment1 = read_segment(segment1_dir.clone(), env.clone()).await?;
         let segment1 = BoxedImmutableSegment::<NoQuantizer<L2DistanceCalculator>>::FinalizedSegment(
-            Arc::new(RwLock::new(ImmutableSegment::new(
-                segment1,
-                "segment_1".to_string(),
-                None,
-            ))),
+            Arc::new(RwLock::new(
+                ImmutableSegment::new(segment1, "segment_1".to_string(), None, Some(env.clone()))
+                    .await,
+            )),
         );
 
         let random_name = format!(
@@ -521,6 +531,7 @@ mod tests {
             vec![segment1],
             pending_dir.clone(),
             CollectionConfig::default_test_config(),
+            env,
         )
         .await;
 

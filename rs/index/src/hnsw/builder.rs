@@ -10,11 +10,10 @@ use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use rand::Rng;
 
-use crate::hnsw::mmap::index::Hnsw;
 use crate::hnsw::utils::{BuilderContext, GraphTraversal};
 use crate::utils::PointAndDistance;
 use crate::vector::file::FileBackedAppendableVectorStorage;
-use crate::vector::{StorageContext, VectorStorageConfig};
+use crate::vector::StorageContext;
 
 /// TODO(hicder): support bare vector in addition to quantized one.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,78 +88,6 @@ impl<Q: Quantizer> HnswBuilder<Q> {
             ef_contruction: ef_construction,
             entry_point: vec![],
             doc_id_mapping: Vec::new(),
-        }
-    }
-
-    pub fn from_hnsw(
-        hnsw: Hnsw<Q>,
-        output_directory: String,
-        vector_storage_config: VectorStorageConfig,
-        max_neighbors: usize,
-    ) -> Self {
-        let num_layers = hnsw.get_header().num_layers as usize;
-        let mut current_top_layer = (num_layers - 1) as u8;
-
-        let mut layers = vec![];
-        for _ in 0..num_layers {
-            layers.push(Layer {
-                edges: HashMap::new(),
-            });
-        }
-
-        let tmp_vector_storage_dir = format!("{}/vector_storage_tmp", output_directory);
-        let mut vector_storage = FileBackedAppendableVectorStorage::<Q::QuantizedT>::new(
-            tmp_vector_storage_dir,
-            vector_storage_config.memory_threshold,
-            vector_storage_config.file_size,
-            vector_storage_config.num_features,
-        );
-
-        // Copy over the vectors
-        for i in 0..hnsw.get_doc_id_mapping_slice().len() {
-            let vector = hnsw.vector_storage.get_no_context(i as u32).unwrap();
-            vector_storage
-                .append(vector)
-                .unwrap_or_else(|_| panic!("append failed"));
-        }
-
-        loop {
-            let layer = &mut layers[current_top_layer as usize];
-            hnsw.visit(current_top_layer, |from: u32, to: u32| {
-                let from_v = hnsw.vector_storage.get_no_context(from).unwrap();
-                let to_v = hnsw.vector_storage.get_no_context(to).unwrap();
-                let distance = Q::QuantizedT::distance(from_v, to_v, &hnsw.quantizer);
-                layer.edges.entry(from).or_default().push(PointAndDistance {
-                    point_id: to,
-                    distance: NotNan::new(distance).unwrap(),
-                });
-                true
-            });
-
-            debug!(
-                "Layer {}, number of edges: {}",
-                current_top_layer,
-                layer.edges.len()
-            );
-            if current_top_layer == 0 {
-                break;
-            }
-            current_top_layer -= 1;
-        }
-
-        let all_entry_points = hnsw.get_all_entry_points();
-        let doc_id_mapping = hnsw.get_doc_id_mapping_slice().to_vec();
-
-        Self {
-            vectors: vector_storage,
-            max_neighbors,
-            max_layer: num_layers as u8,
-            layers,
-            current_top_layer: num_layers as u8 - 1,
-            quantizer: hnsw.quantizer,
-            ef_contruction: 100,
-            entry_point: all_entry_points,
-            doc_id_mapping,
         }
     }
 

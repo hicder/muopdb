@@ -182,8 +182,8 @@ pub struct Collection<Q: Quantizer + Clone + Send + Sync> {
 
     write_coordinator: Arc<AsyncMutex<WalWriteCoordinator>>,
 
-    // Optional env for async I/O operations
-    env: Option<Arc<Box<dyn Env>>>,
+    // Required env for async I/O operations
+    env: Arc<Box<dyn Env>>,
 }
 
 impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
@@ -253,7 +253,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             write_coordinator: Arc::new(AsyncMutex::new(WalWriteCoordinator::new(
                 wal_write_group_size,
             ))),
-            env,
+            env: env.unwrap_or_else(|| {
+                let env_config = utils::file_io::env::EnvConfig::default();
+                Arc::new(Box::new(utils::file_io::env::DefaultEnv::new(env_config)))
+            }),
         })
     }
 
@@ -461,7 +464,10 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             write_coordinator: Arc::new(AsyncMutex::new(WalWriteCoordinator::new(
                 wal_write_group_size,
             ))),
-            env,
+            env: env.unwrap_or_else(|| {
+                let env_config = utils::file_io::env::EnvConfig::default();
+                Arc::new(Box::new(utils::file_io::env::DefaultEnv::new(env_config)))
+            }),
         })
     }
 
@@ -921,10 +927,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             name_for_new_segment.clone()
         ));
         let index = spann_reader
-            .read::<Q>(
-                self.segment_config.posting_list_encoding_type.clone(),
-                self.segment_config.num_features,
-            )
+            .read::<Q>(self.segment_config.num_features, self.env.clone())
             .await?;
         let terms_path = format!(
             "{}/{}/terms",
@@ -933,11 +936,11 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         );
         std::fs::create_dir_all(&terms_path).ok();
         let segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
-            ImmutableSegment::new_with_env(
+            ImmutableSegment::new(
                 index,
                 name_for_new_segment.clone(),
                 Some(terms_path),
-                self.env.clone(),
+                Some(self.env.clone()),
             )
             .await,
         )));
@@ -1266,6 +1269,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             current_segments.clone(),
             pending_segment_path,
             self.segment_config.clone(),
+            self.env.clone(),
         )
         .await;
         let new_boxed_segment =
@@ -1305,29 +1309,16 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
         )?;
 
         // Replace the pending segment with the new segment
-        let index = if let Some(env) = &self.env {
-            MultiSpannReader::new(new_segment_path.clone())
-                .read_async::<Q>(
-                    self.segment_config.posting_list_encoding_type.clone(),
-                    self.segment_config.num_features,
-                    env.clone(),
-                )
-                .await?
-        } else {
-            MultiSpannReader::new(new_segment_path.clone())
-                .read::<Q>(
-                    self.segment_config.posting_list_encoding_type.clone(),
-                    self.segment_config.num_features,
-                )
-                .await?
-        };
+        let index = MultiSpannReader::new(new_segment_path.clone())
+            .read::<Q>(self.segment_config.num_features, self.env.clone())
+            .await?;
         let terms_path = format!("{}/{}/terms", self.base_directory, random_name.clone());
         let new_segment = BoxedImmutableSegment::FinalizedSegment(Arc::new(RwLock::new(
-            ImmutableSegment::new_with_env(
+            ImmutableSegment::new(
                 index,
                 random_name.clone(),
                 Some(terms_path),
-                self.env.clone(),
+                Some(self.env.clone()),
             )
             .await,
         )));
@@ -2148,6 +2139,7 @@ mod tests {
 
         let mut segment_config = CollectionConfig::default_test_config();
         segment_config.num_features = 4;
+        segment_config.initial_num_centroids = 1;
 
         let mut schema_map = HashMap::new();
         schema_map.insert("title".to_string(), AttributeType::Text(Language::English));

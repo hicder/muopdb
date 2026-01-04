@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_lock::RwLock;
-use config::enums::IntSeqEncodingType;
 use config::search_params::SearchParams;
 use dashmap::DashMap;
 use memmap2::Mmap;
@@ -27,55 +26,26 @@ pub struct MultiSpannIndex<Q: Quantizer> {
     user_index_infos: HashTableOwned<HashConfig>,
     invalidated_ids_storage: RwLock<InvalidatedIdsStorage>,
     pending_invalidations: DashMap<u128, HashSet<u128>>,
-    ivf_type: IntSeqEncodingType,
     num_features: usize,
-    env: Option<Arc<Box<dyn Env>>>,
+    env: Arc<Box<dyn Env>>,
 }
 
 impl<Q: Quantizer> MultiSpannIndex<Q> {
-    /// Creates a new `MultiSpannIndex` without block caching.
+    /// Creates a new `MultiSpannIndex` with a required Env for asynchronous I/O.
     ///
     /// # Arguments
     /// * `base_directory` - The base directory where user indices are stored.
     /// * `user_index_info_mmap` - Mmapped memory containing user index mapping information.
-    /// * `ivf_type` - The encoding type for IVF posting lists.
     /// * `num_features` - The number of features in the vectors.
+    /// * `env` - An Arc<dyn Env> for file I/O.
     ///
     /// # Returns
     /// * `Result<Self>` - A new `MultiSpannIndex` instance or an error.
     pub async fn new(
         base_directory: String,
         user_index_info_mmap: Mmap,
-        ivf_type: IntSeqEncodingType,
         num_features: usize,
-    ) -> Result<Self> {
-        Self::new_with_env(
-            base_directory,
-            user_index_info_mmap,
-            ivf_type,
-            num_features,
-            None,
-        )
-        .await
-    }
-
-    /// Creates a new `MultiSpannIndex` with an optional Env for asynchronous I/O.
-    ///
-    /// # Arguments
-    /// * `base_directory` - The base directory where user indices are stored.
-    /// * `user_index_info_mmap` - Mmapped memory containing user index mapping information.
-    /// * `ivf_type` - The encoding type for IVF posting lists.
-    /// * `num_features` - The number of features in the vectors.
-    /// * `env` - An optional Arc<dyn Env> for file I/O.
-    ///
-    /// # Returns
-    /// * `Result<Self>` - A new `MultiSpannIndex` instance or an error.
-    pub async fn new_with_env(
-        base_directory: String,
-        user_index_info_mmap: Mmap,
-        ivf_type: IntSeqEncodingType,
-        num_features: usize,
-        env: Option<Arc<Box<dyn Env>>>,
+        env: Arc<Box<dyn Env>>,
     ) -> Result<Self> {
         let user_index_infos = HashTableOwned::from_raw_bytes(&user_index_info_mmap).unwrap();
         let invalidated_ids_directory = format!("{base_directory}/invalidated_ids_storage");
@@ -87,7 +57,6 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             user_index_infos,
             pending_invalidations: DashMap::new(),
             invalidated_ids_storage: RwLock::new(invalidated_ids_storage),
-            ivf_type,
             num_features,
             env,
         };
@@ -144,14 +113,9 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             index_info.centroid_vector_offset as usize,
             index_info.ivf_index_offset as usize,
             index_info.ivf_vectors_offset as usize,
-            self.ivf_type.clone(),
         );
 
-        let index = if let Some(env) = &self.env {
-            reader.read_async::<Q>(env.clone()).await?
-        } else {
-            reader.read::<Q>()?
-        };
+        let index = reader.read::<Q>(self.env.clone()).await?;
 
         if let Some(invalidated_docs) = self.pending_invalidations.get(&user_id) {
             let doc_ids: Vec<u128> = invalidated_docs.iter().cloned().collect();
@@ -285,7 +249,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
     #[cfg(test)]
     pub async fn get_point_id(&self, user_id: u128, doc_id: u128) -> Option<u32> {
         match self.get_or_create_index(user_id).await {
-            Ok(index) => index.get_point_id(doc_id),
+            Ok(index) => index.get_point_id(doc_id).await,
             Err(_) => None,
         }
     }
@@ -367,11 +331,11 @@ mod tests {
     use std::sync::Arc;
 
     use config::collection::CollectionConfig;
-    use config::enums::IntSeqEncodingType;
     use config::search_params::SearchParams;
     use proto::muopdb::{ContainsFilter, DocumentFilter};
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
+    use utils::file_io::env::{DefaultEnv, Env, EnvConfig, FileType};
 
     use crate::ivf::files::invalidated_ids::{InvalidatedIdsStorage, InvalidatedUserDocId};
     use crate::multi_spann::builder::MultiSpannBuilder;
@@ -381,6 +345,14 @@ mod tests {
     use crate::multi_terms::index::MultiTermIndex;
     use crate::multi_terms::writer::MultiTermWriter;
     use crate::query::planner::Planner;
+
+    fn create_env() -> Arc<Box<dyn Env>> {
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            ..EnvConfig::default()
+        };
+        Arc::new(Box::new(DefaultEnv::new(config)))
+    }
 
     #[tokio::test]
     async fn test_multi_spann_search() {
@@ -415,12 +387,10 @@ mod tests {
         let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
         assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
 
+        let env = create_env();
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(
-                IntSeqEncodingType::PlainEncoding,
-                num_features,
-            )
+            .read::<NoQuantizer<L2DistanceCalculator>>(num_features, env)
             .await
             .expect("Failed to read Multi-SPANN index");
 
@@ -474,12 +444,10 @@ mod tests {
         let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
         assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
 
+        let env = create_env();
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(
-                IntSeqEncodingType::PlainEncoding,
-                num_features,
-            )
+            .read::<NoQuantizer<L2DistanceCalculator>>(num_features, env)
             .await
             .expect("Failed to read Multi-SPANN index");
 
@@ -520,12 +488,10 @@ mod tests {
         let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
         assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
 
+        let env = create_env();
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(
-                IntSeqEncodingType::PlainEncoding,
-                num_features,
-            )
+            .read::<NoQuantizer<L2DistanceCalculator>>(num_features, env)
             .await
             .expect("Failed to read Multi-SPANN index");
 
@@ -596,12 +562,10 @@ mod tests {
         let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
         assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
 
+        let env = create_env();
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(
-                IntSeqEncodingType::PlainEncoding,
-                num_features,
-            )
+            .read::<NoQuantizer<L2DistanceCalculator>>(num_features, env)
             .await
             .expect("Failed to read Multi-SPANN index");
         assert!(multi_spann_index
@@ -665,12 +629,10 @@ mod tests {
         let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
         assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
 
+        let env = create_env();
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(
-                IntSeqEncodingType::PlainEncoding,
-                num_features,
-            )
+            .read::<NoQuantizer<L2DistanceCalculator>>(num_features, env)
             .await
             .expect("Failed to read Multi-SPANN index");
 
@@ -736,9 +698,10 @@ mod tests {
         let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
         assert!(multi_spann_writer.write(&mut multi_spann_builder).is_ok());
 
+        let env = create_env();
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(IntSeqEncodingType::PlainEncoding, 4)
+            .read::<NoQuantizer<L2DistanceCalculator>>(4, env)
             .await
             .expect("Failed to read Multi-SPANN index");
 
@@ -875,12 +838,10 @@ mod tests {
 
         let multi_term_index = MultiTermIndex::new(term_dir.clone()).unwrap();
 
+        let env = create_env();
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(
-                IntSeqEncodingType::PlainEncoding,
-                num_features,
-            )
+            .read::<NoQuantizer<L2DistanceCalculator>>(num_features, env)
             .await
             .expect("Failed to read Multi-SPANN index");
 
@@ -965,12 +926,10 @@ mod tests {
 
         let multi_term_index = MultiTermIndex::new(term_dir).unwrap();
 
+        let env = create_env();
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(
-                IntSeqEncodingType::PlainEncoding,
-                num_features,
-            )
+            .read::<NoQuantizer<L2DistanceCalculator>>(num_features, env)
             .await
             .expect("Failed to read Multi-SPANN index");
 

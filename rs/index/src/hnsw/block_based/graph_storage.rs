@@ -554,6 +554,12 @@ impl BlockBasedHnswGraphStorage {
             .unwrap_or(0)
     }
 
+    pub async fn get_doc_id(&self, point_id: u32) -> Result<u128> {
+        let mapping_base = self.offsets.doc_id_mapping_offset as u64;
+        self.get_u128_at(mapping_base + (point_id as u64 * 16))
+            .await
+    }
+
     /// Maps a batch of point IDs to their corresponding document IDs.
     ///
     /// # Arguments

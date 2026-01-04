@@ -251,16 +251,17 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
         flattened_centroids: &[f32],
         dimension: usize,
     ) -> usize {
-        let mut max_distance = f32::MIN;
+        let mut min_distance = f32::MAX;
         let mut centroid_index = 0;
         for i in 0..flattened_centroids.len() / dimension {
             let centroid = &flattened_centroids[i * dimension..(i + 1) * dimension];
             let dist = D::calculate(vector, centroid);
-            if dist > max_distance {
-                max_distance = dist;
+            if dist < min_distance {
+                min_distance = dist;
                 centroid_index = i;
             }
         }
+
         centroid_index
     }
 
@@ -457,8 +458,6 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
     }
 
     pub fn build_centroids(&mut self) -> Result<()> {
-        debug!("Building centroids");
-
         // First pass to get the initial centroids
         let num_clusters = self.compute_actual_num_clusters(
             self.get_num_valid_vectors(),
@@ -506,7 +505,6 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             heap.push(posting_list_info);
         }
 
-        let mut num_iter = 0;
         while !heap.is_empty() {
             match heap.peek() {
                 None => break,
@@ -519,7 +517,6 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
             }
 
             let longest_posting_list = heap.pop().unwrap();
-            num_iter += 1;
             let new_posting_list_infos = self.cluster_docs(
                 longest_posting_list.posting_list.clone(),
                 self.config.max_posting_list_size,
@@ -530,7 +527,6 @@ impl<D: DistanceCalculator + CalculateSquared + Send + Sync> IvfBuilder<D> {
                 heap.push(posting_list_info);
             }
         }
-        debug!("Number of iterations to cluster: {}", num_iter);
 
         // Add the centroids to the centroid storage
         // We don't need to add the posting lists to the posting list storage, since later on

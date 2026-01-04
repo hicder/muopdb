@@ -233,7 +233,6 @@ impl SpannBuilder {
     /// * `Result<()>` - Ok if the build process completes successfully, or an error.
     pub fn build(&mut self) -> Result<()> {
         self.ivf_builder.build()?;
-        debug!("Finish building IVF index");
 
         let centroid_storage = self.ivf_builder.centroids();
         let num_centroids = centroid_storage.num_vectors();
