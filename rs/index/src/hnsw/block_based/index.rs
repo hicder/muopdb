@@ -130,12 +130,30 @@ where
         &self.header
     }
 
-    async fn get_vector(
+    pub async fn get_vector(
         &self,
         point_id: u32,
         context: &mut impl StorageContext,
     ) -> Result<Vec<Q::QuantizedT>> {
         self.vector_storage.get(point_id, context).await
+    }
+    pub async fn get_entry_point_top_layer(&self) -> u32 {
+        self.graph_storage.get_entry_point_top_layer().await
+    }
+
+    pub async fn get_doc_id(&self, point_id: u32) -> Result<u128> {
+        self.graph_storage.get_doc_id(point_id).await
+    }
+
+    #[cfg(test)]
+    pub async fn get_doc_id_test(&self, point_ids: &[u32]) -> Vec<u128> {
+        let mut doc_ids = Vec::new();
+        for &point_id in point_ids {
+            if let Ok(doc_id) = self.get_doc_id(point_id).await {
+                doc_ids.push(doc_id);
+            }
+        }
+        doc_ids
     }
 
     pub async fn ann_search(
@@ -277,6 +295,13 @@ where
         let point = self.get_vector(point_id, context).await.unwrap();
         self.quantizer
             .distance(query, point.as_slice(), StreamingSIMD)
+    }
+
+    #[cfg(test)]
+    pub async fn get_edges_for_point_async(&self, point_id: u32, layer: u8) -> Option<Vec<u32>> {
+        self.graph_storage
+            .get_edges_for_point(point_id, layer)
+            .await
     }
 }
 

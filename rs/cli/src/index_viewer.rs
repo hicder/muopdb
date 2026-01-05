@@ -22,7 +22,12 @@ struct Args {
     points_per_layer_0: usize,
 }
 
-pub fn main() {
+use std::sync::Arc;
+
+use utils::file_io::env::{DefaultEnv, Env, EnvConfig, FileType};
+
+#[tokio::main]
+pub async fn main() {
     env_logger::init();
 
     let arg = Args::parse();
@@ -32,15 +37,21 @@ pub fn main() {
     let points_per_layer = arg.points_per_layer;
     let points_per_layer_0 = arg.points_per_layer_0;
 
+    let env: Arc<Box<dyn Env>> = Arc::new(Box::new(DefaultEnv::new(EnvConfig {
+        file_type: FileType::CachedStandard,
+        ..EnvConfig::default()
+    })));
+
     let reader = HnswReader::new(arg.index_path);
     let hnsw = reader
-        .read::<ProductQuantizer<L2DistanceCalculator>>()
+        .read::<ProductQuantizer<L2DistanceCalculator>>(env)
+        .await
         .unwrap();
 
     let header = hnsw.get_header();
     println!("Header: {:?}", header);
 
-    let entry_points = hnsw.get_entry_point_top_layer();
+    let entry_points = hnsw.get_entry_point_top_layer().await;
     println!("Entry points: {:?}", entry_points);
 
     for layer in layers {

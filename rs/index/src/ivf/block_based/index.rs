@@ -292,22 +292,23 @@ where
             .search_with_centroids(query, nearest_centroid_ids, k, record_pages, planner)
             .await?;
 
-        // Batch fetch all document IDs to minimize I/O
-        let mut point_ids: Vec<u32> = results
-            .point_and_distances
-            .iter()
-            .map(|pd| pd.point_id)
-            .collect();
-        point_ids.sort();
+        // Sort by point_id to match the requirement of get_doc_ids and ensure correct mapping
+        let mut point_and_distances = results.point_and_distances;
+        point_and_distances.sort_by_key(|pd| pd.point_id);
+
+        let point_ids: Vec<u32> = point_and_distances.iter().map(|pd| pd.point_id).collect();
         let doc_ids = self.get_doc_ids(&point_ids).await?;
 
         let mut id_with_scores = Vec::with_capacity(doc_ids.len());
-        for (i, pd) in results.point_and_distances.iter().enumerate() {
+        for (i, pd) in point_and_distances.iter().enumerate() {
             id_with_scores.push(IdWithScore {
                 doc_id: doc_ids[i],
                 score: *pd.distance,
             });
         }
+
+        // Sort back by distance for the final result
+        id_with_scores.sort();
 
         Ok(SearchResult {
             id_with_scores,
@@ -442,12 +443,15 @@ where
 
     /// Resolves a document ID to its internal point ID.
     ///
+    /// # Warning
+    /// This is very expensive and should only be used for testing as it performs a scan.
+    ///
     /// # Arguments
     /// * `doc_id` - The document ID to lookup.
     ///
     /// # Returns
     /// * `Result<Option<u32>>` - The internal point ID if found, or `None`.
-    async fn get_point_id(&self, doc_id: u128) -> Result<Option<u32>> {
+    pub async fn get_point_id(&self, doc_id: u128) -> Result<Option<u32>> {
         for point_id in 0..self.vector_storage.num_vectors() {
             if let Ok(stored_doc_id) = self.posting_list_storage.get_doc_id(point_id).await {
                 if stored_doc_id == doc_id {
@@ -456,6 +460,20 @@ where
             }
         }
         Ok(None)
+    }
+
+    /// Returns a decoder for the posting list at the given cluster index.
+    ///
+    /// # Warning
+    /// This is exposed for testing/debugging purposes only.
+    #[cfg(test)]
+    pub async fn get_posting_list_decoder(
+        &self,
+        index: usize,
+    ) -> Result<compression::elias_fano::block_based_decoder::BlockBasedEliasFanoDecoder<u64>> {
+        self.posting_list_storage
+            .get_posting_list_decoder(index)
+            .await
     }
 }
 

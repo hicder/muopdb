@@ -43,9 +43,12 @@ impl CollectionReader {
         let toc: TableOfContent = serde_json::from_reader(std::fs::File::open(toc_path)?)?;
 
         // Create Env for async operations
-        let env: Option<Arc<Box<dyn Env>>> = match &self.env_config {
-            Some(config) => Some(Arc::new(Box::new(DefaultEnv::new(config.clone())))),
-            None => None,
+        let env = match &self.env_config {
+            Some(config) => Arc::new(Box::new(DefaultEnv::new(config.clone())) as Box<dyn Env>),
+            None => {
+                let env_config = EnvConfig::default();
+                Arc::new(Box::new(DefaultEnv::new(env_config)) as Box<dyn Env>)
+            }
         };
 
         // Read the segments
@@ -58,22 +61,9 @@ impl CollectionReader {
 
             let spann_path = format!("{}/{}", self.path, name);
             let spann_reader = MultiSpannReader::new(spann_path.clone());
-            let index = if let Some(env) = &env {
-                spann_reader
-                    .read_async::<Q>(
-                        collection_config.posting_list_encoding_type.clone(),
-                        collection_config.num_features,
-                        env.clone(),
-                    )
-                    .await?
-            } else {
-                spann_reader
-                    .read::<Q>(
-                        collection_config.posting_list_encoding_type.clone(),
-                        collection_config.num_features,
-                    )
-                    .await?
-            };
+            let index = spann_reader
+                .read::<Q>(collection_config.num_features, env.clone())
+                .await?;
 
             // If terms exists, we read it
             let term_path = if std::fs::exists(format!("{}/terms", spann_path.clone())).unwrap() {
@@ -83,8 +73,7 @@ impl CollectionReader {
             };
             segments.push(BoxedImmutableSegment::FinalizedSegment(Arc::new(
                 RwLock::new(
-                    ImmutableSegment::new_with_env(index, name.clone(), term_path, env.clone())
-                        .await,
+                    ImmutableSegment::new(index, name.clone(), term_path, Some(env.clone())).await,
                 ),
             )));
         }
@@ -114,6 +103,7 @@ impl CollectionReader {
                         inner_segments,
                         pending_segment_path,
                         collection_config.clone(),
+                        env.clone(),
                     )
                     .await,
                 ),
@@ -128,7 +118,7 @@ impl CollectionReader {
                 toc,
                 segments,
                 collection_config,
-                env,
+                Some(env),
             )
             .await?,
         );

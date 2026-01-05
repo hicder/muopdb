@@ -25,25 +25,7 @@ pub struct ImmutableSegment<Q: Quantizer> {
 }
 
 impl<Q: Quantizer> ImmutableSegment<Q> {
-    pub fn new(index: MultiSpannIndex<Q>, name: String, terms_dir: Option<String>) -> Self {
-        let multi_term_index = terms_dir.and_then(|dir| {
-            let result = MultiTermIndex::new(dir.clone());
-            match result {
-                Ok(mi) => Some(Arc::new(mi)),
-                Err(e) => {
-                    eprintln!("Failed to load MultiTermIndex from dir = {}: {}", dir, e);
-                    None
-                }
-            }
-        });
-        Self {
-            index,
-            name,
-            multi_term_index,
-        }
-    }
-
-    pub async fn new_with_env(
+    pub async fn new(
         index: MultiSpannIndex<Q>,
         name: String,
         terms_dir: Option<String>,
@@ -252,11 +234,21 @@ unsafe impl<Q: Quantizer> Sync for ImmutableSegment<Q> {}
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use config::collection::CollectionConfig;
-    use config::enums::IntSeqEncodingType;
     use config::search_params::SearchParams;
     use quantization::noq::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
+    use utils::file_io::env::{DefaultEnv, Env, EnvConfig, FileType};
+
+    fn create_env() -> Arc<Box<dyn Env>> {
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            ..EnvConfig::default()
+        };
+        Arc::new(Box::new(DefaultEnv::new(config)))
+    }
 
     use crate::multi_spann::builder::MultiSpannBuilder;
     use crate::multi_spann::reader::MultiSpannReader;
@@ -272,6 +264,7 @@ mod tests {
             .to_str()
             .expect("Failed to convert temporary directory path to string")
             .to_string();
+        let env = create_env();
 
         let num_vectors = 1000;
         let num_features = 4;
@@ -298,16 +291,18 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(
-                IntSeqEncodingType::PlainEncoding,
-                num_features,
-            )
+            .read::<NoQuantizer<L2DistanceCalculator>>(num_features, env.clone())
             .await
             .expect("Failed to read Multi-SPANN index");
 
         let name_for_new_segment = format!("segment_{}", rand::random::<u64>());
-        let immutable_segment =
-            ImmutableSegment::new(multi_spann_index, name_for_new_segment.clone(), None);
+        let immutable_segment = ImmutableSegment::new(
+            multi_spann_index,
+            name_for_new_segment.clone(),
+            None,
+            Some(env.clone()),
+        )
+        .await;
 
         let query = vec![1.4, 2.4, 3.4, 4.4];
         let k = 3;
@@ -335,6 +330,7 @@ mod tests {
             .to_str()
             .expect("Failed to convert temporary directory path to string")
             .to_string();
+        let env = create_env();
 
         let num_vectors = 1000;
         let num_features = 4;
@@ -366,16 +362,18 @@ mod tests {
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
         let multi_spann_index = multi_spann_reader
-            .read::<NoQuantizer<L2DistanceCalculator>>(
-                IntSeqEncodingType::PlainEncoding,
-                num_features,
-            )
+            .read::<NoQuantizer<L2DistanceCalculator>>(num_features, env.clone())
             .await
             .expect("Failed to read Multi-SPANN index");
 
         let name_for_new_segment = format!("segment_{}", rand::random::<u64>());
-        let immutable_segment =
-            ImmutableSegment::new(multi_spann_index, name_for_new_segment.clone(), None);
+        let immutable_segment = ImmutableSegment::new(
+            multi_spann_index,
+            name_for_new_segment.clone(),
+            None,
+            Some(env.clone()),
+        )
+        .await;
 
         let query = vec![1.4, 2.4, 3.4, 4.4];
         let k = 3;

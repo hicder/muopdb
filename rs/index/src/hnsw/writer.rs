@@ -269,6 +269,7 @@ impl<Q: Quantizer> HnswWriter<Q> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::sync::Arc;
     use std::vec;
 
     use ordered_float::NotNan;
@@ -276,13 +277,21 @@ mod tests {
     use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
     use quantization::quantization::WritableQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
+    use utils::file_io::env::{DefaultEnv, Env, EnvConfig, FileType};
     use utils::test_utils::generate_random_vector;
 
     use super::*;
     use crate::hnsw::builder::Layer;
     use crate::hnsw::reader::HnswReader;
-    use crate::hnsw::utils::GraphTraversal;
     use crate::utils::PointAndDistance;
+
+    fn create_env() -> Arc<Box<dyn Env>> {
+        let config = EnvConfig {
+            file_type: FileType::CachedStandard,
+            ..EnvConfig::default()
+        };
+        Arc::new(Box::new(DefaultEnv::new(config)))
+    }
 
     fn construct_layers(hnsw_builder: &mut HnswBuilder<ProductQuantizer<L2DistanceCalculator>>) {
         // Prepare all layers
@@ -501,8 +510,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_write() {
+    #[tokio::test]
+    async fn test_write() {
         // Generate 10000 vectors of f32, dimension 128
         let datapoints: Vec<Vec<f32>> = (0..10000).map(|_| generate_random_vector(128)).collect();
 
@@ -569,35 +578,37 @@ mod tests {
         hnsw_builder.entry_point = vec![1];
 
         // Write to disk
-        let hnsw_dir = format!("{}/hnsw", base_directory);
+        let hnsw_dir = format!("{}/hnsw", base_directory.clone());
         fs::create_dir_all(hnsw_dir.clone()).unwrap();
-        let writer = HnswWriter::new(hnsw_dir);
+        let writer = HnswWriter::new(hnsw_dir.clone());
 
         writer.write(&mut hnsw_builder, false).unwrap();
 
+        let env = create_env();
         let reader = HnswReader::new(base_directory.clone());
         let hnsw = reader
-            .read::<ProductQuantizer<L2DistanceCalculator>>()
+            .read::<ProductQuantizer<L2DistanceCalculator>>(env)
+            .await
             .unwrap();
         {
-            let egdes = hnsw.get_edges_for_point(1, 2);
+            let egdes = hnsw.get_edges_for_point_async(1, 2).await;
             assert!(egdes.is_none());
         }
         {
-            let edges = hnsw.get_edges_for_point(1, 1).unwrap();
+            let edges = hnsw.get_edges_for_point_async(1, 1).await.unwrap();
             assert_eq!(edges.len(), 2);
             assert!(edges.contains(&4));
             assert!(edges.contains(&5));
         }
         {
-            let edges = hnsw.get_edges_for_point(0, 0).unwrap();
+            let edges = hnsw.get_edges_for_point_async(0, 0).await.unwrap();
             assert_eq!(edges.len(), 2);
             assert!(edges.contains(&1));
             assert!(edges.contains(&2));
         }
 
         assert_eq!(
-            hnsw.get_doc_id_test(&[0, 1, 2, 3, 4, 5]),
+            hnsw.get_doc_id_test(&[0, 1, 2, 3, 4, 5]).await,
             vec![1, 2, 3, 4, 5, 6]
         );
 

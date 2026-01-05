@@ -227,7 +227,7 @@ impl CollectionConfig {
             num_data_points_for_clustering: 1000,
             max_clusters_per_vector: 1,
             clustering_distance_threshold_pct: 0.1,
-            posting_list_encoding_type: IntSeqEncodingType::PlainEncoding,
+            posting_list_encoding_type: IntSeqEncodingType::EliasFano,
             posting_list_builder_vector_storage_memory_size: 1024,
             posting_list_builder_vector_storage_file_size: 1024,
             max_posting_list_size: usize::MAX,
