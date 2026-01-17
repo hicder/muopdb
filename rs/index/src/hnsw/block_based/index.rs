@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use bit_vec::BitVec;
-use log::info;
 use num_traits::ToPrimitive;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
+use tracing::info;
 use utils::distance::l2::L2DistanceCalculatorImpl::StreamingSIMD;
 use utils::file_io::env::Env;
 

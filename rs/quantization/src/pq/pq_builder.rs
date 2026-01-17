@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use anyhow::Result;
 use kmeans::*;
-use log::debug;
+use tracing::debug;
 use utils::DistanceCalculator;
 
 use crate::pq::pq::{ProductQuantizer, ProductQuantizerConfig};

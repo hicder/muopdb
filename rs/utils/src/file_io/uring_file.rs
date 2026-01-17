@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
-use log::info;
 use parking_lot::Mutex as ParkingLotMutex;
+use tracing::info;
 
 use crate::file_io::uring_engine::UringEngineHandle;
 use crate::file_io::{AppendableFileIO, FileIO};

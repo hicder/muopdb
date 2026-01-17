@@ -4,11 +4,11 @@ use std::vec;
 
 use anyhow::{anyhow, Context, Result};
 use bit_vec::BitVec;
-use log::debug;
 use ordered_float::NotNan;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
 use rand::Rng;
+use tracing::debug;
 
 use crate::hnsw::utils::{BuilderContext, GraphTraversal};
 use crate::utils::PointAndDistance;

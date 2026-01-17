@@ -4,8 +4,8 @@ use std::time::Instant;
 use anyhow::{Ok, Result};
 use config::attribute_schema::{AttributeSchema, AttributeType};
 use config::collection::CollectionConfig;
-use log::info;
 use proto::muopdb::DocumentAttribute;
+use tracing::info;
 
 use crate::multi_spann::builder::MultiSpannBuilder;
 use crate::multi_spann::writer::MultiSpannWriter;

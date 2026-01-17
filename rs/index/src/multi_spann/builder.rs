@@ -6,8 +6,8 @@ use config::collection::CollectionConfig;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use lock_api::RwLockUpgradableReadGuard;
-use log::debug;
 use parking_lot::RwLock;
+use tracing::debug;
 use utils::bloom_filter::blocked_bloom_filter::BlockedBloomFilter;
 
 use crate::spann::builder::{SpannBuilder, SpannBuilderConfig};

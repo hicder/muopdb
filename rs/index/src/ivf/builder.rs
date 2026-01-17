@@ -5,10 +5,10 @@ use std::io::ErrorKind;
 use std::marker::PhantomData;
 
 use anyhow::{anyhow, Result};
-use log::debug;
 use rand::seq::SliceRandom;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use sorted_vec::SortedVec;
+use tracing::debug;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::kmeans_builder::kmeans_builder::{KMeansBuilder, KMeansVariant};
 use utils::{ceil_div, CalculateSquared, DistanceCalculator};

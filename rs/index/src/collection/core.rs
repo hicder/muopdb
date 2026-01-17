@@ -7,12 +7,12 @@ use atomic_refcell::AtomicRefCell;
 use config::collection::CollectionConfig;
 use dashmap::DashMap;
 use fs_extra::dir::CopyOptions;
-use log::{debug, info, warn};
 use metrics::INTERNAL_METRICS;
 use proto::muopdb::DocumentAttribute;
 use quantization::quantization::Quantizer;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, Mutex as AsyncMutex};
+use tracing::{debug, info, warn};
 use utils::file_io::env::Env;
 
 use super::snapshot::Snapshot;
@@ -532,6 +532,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     /// This method uses a group-commit strategy to batch multiple concurrent WAL writes
     /// for improved performance. Once persisted to the WAL, operations are sent to
     /// an internal channel for asynchronous application to the memory segments.
+    #[tracing::instrument(skip(self, doc_ids, user_ids, wal_op_type, document_attributes))]
     pub async fn write_to_wal(
         &self,
         doc_ids: Arc<[u128]>,
@@ -815,6 +816,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     ///
     /// This applies the insertion to the active mutable segment, ensuring the document
     /// is associated with each of the provided user IDs and includes specified attributes.
+    #[tracing::instrument(skip(self, user_ids, data, document_attribute))]
     pub async fn insert_for_users(
         &self,
         user_ids: &[u128],
@@ -860,6 +862,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
     /// 5. Trimming the WAL up to the flushed sequence number.
     ///
     /// Returns the name of the newly created segment on success.
+    #[tracing::instrument(skip(self))]
     pub async fn flush(&self) -> Result<String> {
         // Try to acquire the flushing lock. If it fails, then another thread is already flushing.
         // This is a best effort approach, and we don't want to block the main thread.

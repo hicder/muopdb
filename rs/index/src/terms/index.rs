@@ -7,8 +7,8 @@ use compression::elias_fano::block_based_decoder::{
     BlockBasedEliasFanoDecoder, BlockBasedEliasFanoIterator,
 };
 use compression::elias_fano::mmap_decoder::{EliasFanoMMapDecodingIterator, EliasFanoMmapDecoder};
-use log::debug;
 use ouroboros::self_referencing;
+use tracing::debug;
 use utils::file_io::FileIO;
 use utils::on_disk_ordered_map::encoder::VarintIntegerCodec;
 use utils::on_disk_ordered_map::map::OnDiskOrderedMap;

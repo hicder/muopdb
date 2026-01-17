@@ -9,7 +9,7 @@ use index::ivf::builder::{IvfBuilder, IvfBuilderConfig};
 use index::ivf::writer::IvfWriter;
 use index::spann::builder::{SpannBuilder, SpannBuilderConfig};
 use index::spann::writer::SpannWriter;
-use log::{debug, info};
+use tracing::{debug, info};
 use quantization::noq::noq::{NoQuantizer, NoQuantizerConfig};
 use quantization::noq::noq_builder::NoQuantizerBuilder;
 use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig};

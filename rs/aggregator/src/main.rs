@@ -5,13 +5,14 @@ mod shard_manager;
 use std::sync::Arc;
 
 use clap::Parser;
-use log::{error, info};
 use node_manager::NodeManager;
 use proto::aggregator::aggregator_server::AggregatorServer;
 use shard_manager::ShardManager;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tonic::transport::Server;
+use tracing::{error, info};
+use utils::tracing::{init_tracing, shutdown_tracing, TracingConfig};
 
 use crate::aggregator::AggregatorServerImpl;
 
@@ -26,12 +27,35 @@ struct Args {
 
     #[arg(long)]
     node_manager_config_directory: String,
+
+    #[arg(long, default_value_t = false, help = "Enable distributed tracing")]
+    tracing_enabled: bool,
+
+    #[arg(
+        long,
+        default_value = "http://localhost:4317",
+        help = "OTLP endpoint for tracing"
+    )]
+    otlp_endpoint: String,
+
+    #[arg(long, default_value_t = 1.0, help = "Tracing sampling rate (0.0-1.0)")]
+    tracing_sampling_rate: f64,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
     let arg = Args::parse();
+
+    if arg.tracing_enabled {
+        init_tracing(&TracingConfig {
+            service_name: "muopdb-aggregator".to_string(),
+            otlp_endpoint: arg.otlp_endpoint.clone(),
+            sampling_rate: arg.tracing_sampling_rate,
+            enabled: true,
+        })?;
+    } else {
+        env_logger::init();
+    }
 
     let addr = format!("0.0.0.0:{}", arg.port)
         .parse()
@@ -93,5 +117,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .map_err(|e| format!("Node manager thread error: {}", e))?;
 
+    if arg.tracing_enabled {
+        shutdown_tracing();
+    }
     Ok(())
 }

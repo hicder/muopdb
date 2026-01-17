@@ -1,13 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use log::info;
 use proto::aggregator::aggregator_server::Aggregator;
 use proto::aggregator::{GetRequest, GetResponse};
 use proto::muopdb::index_server_client::IndexServerClient;
 use proto::muopdb::SearchRequest;
 use tokio::sync::RwLock;
+use tracing::info;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use utils::mem::id_to_u128;
+use utils::tracing::MetadataInjector;
 
 use crate::node_manager::{self, NodeManager};
 use crate::shard_manager::ShardManager;
@@ -36,13 +38,15 @@ struct IdAndScore {
 
 #[tonic::async_trait]
 impl Aggregator for AggregatorServerImpl {
+    #[tracing::instrument(skip(self, request), fields(index = tracing::field::Empty))]
     async fn get(
         &self,
         request: tonic::Request<GetRequest>,
     ) -> Result<tonic::Response<GetResponse>, tonic::Status> {
-        info!("Got a request: {:?}", request);
         let req = request.into_inner();
         let index_name = &req.index;
+        tracing::Span::current().record("index", index_name);
+        info!("Got a request: {:?}", req);
         let shard_nodes = self
             .shard_manager
             .read()
@@ -91,14 +95,24 @@ impl Aggregator for AggregatorServerImpl {
                     })?;
 
             let index_name_for_shard = format!("{}--{}", index_name, shard_node.shard_id);
+            let mut search_request = tonic::Request::new(SearchRequest {
+                collection_name: index_name_for_shard,
+                vector: req.vector.clone(),
+                params: Some(params.clone()),
+                user_ids: req.user_ids.clone(),
+                where_document: req.where_document.clone(),
+            });
+
+            // Inject trace context
+            opentelemetry::global::get_text_map_propagator(|propagator| {
+                propagator.inject_context(
+                    &tracing::Span::current().context(),
+                    &mut MetadataInjector(search_request.metadata_mut()),
+                );
+            });
+
             let ret = client
-                .search(tonic::Request::new(SearchRequest {
-                    collection_name: index_name_for_shard,
-                    vector: req.vector.clone(),
-                    params: Some(params.clone()),
-                    user_ids: req.user_ids.clone(),
-                    where_document: req.where_document.clone(),
-                }))
+                .search(search_request)
                 .await
                 .map_err(|e| tonic::Status::internal(format!("Search request failed: {}", e)))?;
 

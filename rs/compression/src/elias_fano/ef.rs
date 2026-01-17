@@ -401,7 +401,7 @@ mod tests {
             let mut byte_slice = Vec::new();
             assert!(file.read_to_end(&mut byte_slice).is_ok());
 
-            let decoder = EliasFanoMmapDecoder::new_decoder(&byte_slice)
+            let decoder = EliasFanoMmapDecoder::<u64>::new_decoder(&byte_slice)
                 .expect("Failed to create posting list decoder");
             for (i, idx) in decoder.get_iterator(&byte_slice).enumerate() {
                 assert_eq!(values[i], idx);

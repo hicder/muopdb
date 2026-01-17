@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 tonic.workspace = true
 log.workspace = true
+tracing.workspace = true
 env_logger.workspace = true
 anyhow.workspace = true
 proto.workspace = true

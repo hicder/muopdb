@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use dashmap::DashMap;
-use log::info;
 use parking_lot::Mutex;
+use tracing::info;
 
 /// # Architecture - Split-Queue & Leader-Follower
 ///

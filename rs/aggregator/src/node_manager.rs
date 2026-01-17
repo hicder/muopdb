@@ -68,8 +68,8 @@ impl NodeManager {
 // Test
 #[cfg(test)]
 mod tests {
-    use log::error;
     use tempdir::TempDir;
+    use tracing::error;
 
     use super::*;
 

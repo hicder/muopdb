@@ -2,8 +2,8 @@ use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 
 use anyhow::{Context, Result};
-use log::debug;
 use quantization::quantization::Quantizer;
+use tracing::debug;
 use utils::io::{append_file_to_writer, wrap_write};
 
 use crate::hnsw::builder::HnswBuilder;

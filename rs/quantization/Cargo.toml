@@ -14,6 +14,7 @@ criterion.workspace = true
 env_logger.workspace = true
 kmeans.workspace = true
 log.workspace = true
+tracing.workspace = true
 ndarray-linalg.workspace = true
 ndarray-rand.workspace = true
 ndarray.workspace = true

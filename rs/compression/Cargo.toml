@@ -9,6 +9,7 @@ bitvec.workspace = true
 env_logger.workspace = true
 num-traits.workspace = true
 log.workspace = true
+tracing.workspace = true
 async-trait.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tempdir.workspace = true

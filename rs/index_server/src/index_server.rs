@@ -6,7 +6,6 @@ use config::collection::CollectionConfig;
 use config::search_params::SearchParams;
 use index::collection::snapshot::SnapshotWithQuantizer;
 use index::wal::entry::WalOpType;
-use log::info;
 use metrics::API_METRICS;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
@@ -16,7 +15,10 @@ use proto::muopdb::{
     TermSearchResponse,
 };
 use tokio::sync::RwLock;
+use tracing::info;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use utils::mem::{bytes_to_u128s, ids_to_u128s, transmute_u8_to_slice, u128_to_id};
+use utils::tracing::MetadataExtractor;
 
 use crate::collection_manager::CollectionManager;
 
@@ -32,14 +34,22 @@ impl IndexServerImpl {
 
 #[tonic::async_trait]
 impl IndexServer for IndexServerImpl {
+    #[tracing::instrument(skip(self, request), fields(collection_name))]
     async fn create_collection(
         &self,
         request: tonic::Request<CreateCollectionRequest>,
     ) -> Result<tonic::Response<CreateCollectionResponse>, tonic::Status> {
+        // Extract parent trace context
+        let parent_cx = opentelemetry::global::get_text_map_propagator(|prop| {
+            prop.extract(&MetadataExtractor(request.metadata()))
+        });
+        tracing::Span::current().set_parent(parent_cx);
+
         let start = std::time::Instant::now();
         let mut collection_config = CollectionConfig::default();
         let req = request.into_inner();
         let collection_name = req.collection_name;
+        tracing::Span::current().record("collection_name", &collection_name);
         API_METRICS.num_requests_inc("create_collection", &collection_name);
 
         if let Some(num_features) = req.num_features {
@@ -157,13 +167,25 @@ impl IndexServer for IndexServerImpl {
         }
     }
 
+    #[tracing::instrument(skip(self, request), fields(collection_name, user_count = tracing::field::Empty, top_k = tracing::field::Empty))]
     async fn search(
         &self,
         request: tonic::Request<SearchRequest>,
     ) -> Result<tonic::Response<SearchResponse>, tonic::Status> {
+        // Extract parent trace context
+        let parent_cx = opentelemetry::global::get_text_map_propagator(|prop| {
+            prop.extract(&MetadataExtractor(request.metadata()))
+        });
+        tracing::Span::current().set_parent(parent_cx);
+
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
+        tracing::Span::current().record("collection_name", &collection_name);
+        tracing::Span::current().record("user_count", req.user_ids.len());
+        if let Some(ref params) = req.params {
+            tracing::Span::current().record("top_k", params.top_k);
+        }
         API_METRICS.num_requests_inc("search", &collection_name);
 
         let vec = req.vector;
@@ -252,13 +274,23 @@ impl IndexServer for IndexServerImpl {
         ))
     }
 
+    #[tracing::instrument(skip(self, request), fields(collection_name, user_count = tracing::field::Empty, limit = tracing::field::Empty))]
     async fn term_search(
         &self,
         request: tonic::Request<TermSearchRequest>,
     ) -> Result<tonic::Response<TermSearchResponse>, tonic::Status> {
+        // Extract parent trace context
+        let parent_cx = opentelemetry::global::get_text_map_propagator(|prop| {
+            prop.extract(&MetadataExtractor(request.metadata()))
+        });
+        tracing::Span::current().set_parent(parent_cx);
+
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
+        tracing::Span::current().record("collection_name", &collection_name);
+        tracing::Span::current().record("user_count", req.user_ids.len());
+        tracing::Span::current().record("limit", req.limit);
         API_METRICS.num_requests_inc("term_search", &collection_name);
 
         let user_ids = ids_to_u128s(&req.user_ids)
@@ -320,13 +352,22 @@ impl IndexServer for IndexServerImpl {
         ))
     }
 
+    #[tracing::instrument(skip(self, request), fields(collection_name, doc_count = tracing::field::Empty))]
     async fn insert(
         &self,
         request: tonic::Request<InsertRequest>,
     ) -> Result<tonic::Response<InsertResponse>, tonic::Status> {
+        // Extract parent trace context
+        let parent_cx = opentelemetry::global::get_text_map_propagator(|prop| {
+            prop.extract(&MetadataExtractor(request.metadata()))
+        });
+        tracing::Span::current().set_parent(parent_cx);
+
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
+        tracing::Span::current().record("collection_name", &collection_name);
+        tracing::Span::current().record("doc_count", req.doc_ids.len());
         API_METRICS.num_requests_inc("insert", &collection_name);
 
         let doc_ids = ids_to_u128s(&req.doc_ids)
@@ -413,13 +454,22 @@ impl IndexServer for IndexServerImpl {
         }
     }
 
+    #[tracing::instrument(skip(self, request), fields(collection_name, doc_count = tracing::field::Empty))]
     async fn remove(
         &self,
         request: tonic::Request<RemoveRequest>,
     ) -> Result<tonic::Response<RemoveResponse>, tonic::Status> {
+        // Extract parent trace context
+        let parent_cx = opentelemetry::global::get_text_map_propagator(|prop| {
+            prop.extract(&MetadataExtractor(request.metadata()))
+        });
+        tracing::Span::current().set_parent(parent_cx);
+
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
+        tracing::Span::current().record("collection_name", &collection_name);
+        tracing::Span::current().record("doc_count", req.doc_ids.len());
         API_METRICS.num_requests_inc("remove", &collection_name);
 
         let ids = ids_to_u128s(&req.doc_ids)
@@ -477,13 +527,21 @@ impl IndexServer for IndexServerImpl {
         }
     }
 
+    #[tracing::instrument(skip(self, request), fields(collection_name))]
     async fn flush(
         &self,
         request: tonic::Request<FlushRequest>,
     ) -> Result<tonic::Response<FlushResponse>, tonic::Status> {
+        // Extract parent trace context
+        let parent_cx = opentelemetry::global::get_text_map_propagator(|prop| {
+            prop.extract(&MetadataExtractor(request.metadata()))
+        });
+        tracing::Span::current().set_parent(parent_cx);
+
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
+        tracing::Span::current().record("collection_name", &collection_name);
         API_METRICS.num_requests_inc("flush", &collection_name);
 
         let collection_opt = self
@@ -514,13 +572,21 @@ impl IndexServer for IndexServerImpl {
         }
     }
 
+    #[tracing::instrument(skip(self, request), fields(collection_name, doc_count = tracing::field::Empty))]
     async fn insert_packed(
         &self,
         request: tonic::Request<InsertPackedRequest>,
     ) -> Result<tonic::Response<InsertPackedResponse>, tonic::Status> {
+        // Extract parent trace context
+        let parent_cx = opentelemetry::global::get_text_map_propagator(|prop| {
+            prop.extract(&MetadataExtractor(request.metadata()))
+        });
+        tracing::Span::current().set_parent(parent_cx);
+
         let start = std::time::Instant::now();
         let req = request.into_inner();
         let collection_name = req.collection_name;
+        tracing::Span::current().record("collection_name", &collection_name);
         API_METRICS.num_requests_inc("insert_packed", &collection_name);
 
         let doc_ids = bytes_to_u128s(&req.doc_ids);
