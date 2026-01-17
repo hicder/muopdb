@@ -12,6 +12,7 @@ pub mod kmeans_builder;
 pub mod mem;
 pub mod on_disk_ordered_map;
 pub mod test_utils;
+pub mod tracing;
 
 pub trait DistanceCalculator: Send + Sync {
     /// Compute distance between two vectors.

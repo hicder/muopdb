@@ -1,9 +1,9 @@
 use anyhow::{Ok, Result};
 use config::collection::CollectionConfig;
 use config::enums::{IntSeqEncodingType, QuantizerType};
-use log::debug;
 use quantization::noq::noq::NoQuantizer;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 use utils::distance::l2::L2DistanceCalculator;
 
 use crate::hnsw::builder::HnswBuilder;

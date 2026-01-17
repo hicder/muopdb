@@ -3,7 +3,7 @@ use std::io::BufWriter;
 use std::sync::Arc;
 
 use anyhow::Result;
-use log::warn;
+use tracing::warn;
 use utils::file_io::FileIO;
 
 pub trait CompressionInt:

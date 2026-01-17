@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use log::info;
 use proto::aggregator::aggregator_client::AggregatorClient;
 use proto::aggregator::GetRequest;
 use proto::muopdb::index_server_client::IndexServerClient;
 use proto::muopdb::{Id, SearchParams, SearchRequest};
+use tracing::info;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]

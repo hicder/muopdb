@@ -1,7 +1,7 @@
 use std::cmp::min;
 
 use anyhow::Result;
-use log::error;
+use tracing::error;
 use ndarray::s;
 
 use super::{Input, Row};

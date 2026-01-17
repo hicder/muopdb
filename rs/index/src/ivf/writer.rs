@@ -5,10 +5,10 @@ use std::marker::PhantomData;
 
 use anyhow::{anyhow, Context, Result};
 use compression::compression::IntSeqEncoder;
-use log::debug;
 use num_traits::ToBytes;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
+use tracing::debug;
 use utils::io::{append_file_to_writer, wrap_write, write_pad};
 use utils::{CalculateSquared, DistanceCalculator};
 

@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Result};
 use dashmap::DashMap;
-use log::info;
 use moka::future::Cache;
 use tokio::fs::File;
+use tracing::info;
 
 use crate::file_io::standard_file::StandardFile;
 #[cfg(target_os = "linux")]

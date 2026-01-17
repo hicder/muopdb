@@ -4,7 +4,7 @@ use std::io::{BufWriter, Write};
 use anyhow::{anyhow, Result};
 use compression::compression::IntSeqEncoder;
 use compression::elias_fano::ef::EliasFano;
-use log::debug;
+use tracing::debug;
 use utils::io::{append_file_to_writer, wrap_write};
 use utils::on_disk_ordered_map::encoder::{IntegerCodec, VarintIntegerCodec};
 

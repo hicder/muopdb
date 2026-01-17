@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use log::{info, LevelFilter};
+use tracing::{info, LevelFilter};
 use proto::muopdb::index_server_client::IndexServerClient;
 use proto::muopdb::{Id, SearchParams, SearchRequest};
 use serde_json::{json, json_internal};

@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use log::debug;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+use tracing::debug;
 use utils::io::get_latest_version;
 
 #[derive(Debug, Deserialize, Serialize)]

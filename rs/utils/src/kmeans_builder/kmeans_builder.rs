@@ -4,10 +4,10 @@ use std::simd::{LaneCount, Simd, SupportedLaneCount};
 
 use anyhow::{anyhow, Ok, Result};
 use kmeans::KMeansConfig;
-use log::debug;
 use rand::seq::SliceRandom;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::slice::ParallelSlice;
+use tracing::debug;
 
 use crate::distance::lane_conforming::LaneConformingDistanceCalculator;
 use crate::{CalculateSquared, DistanceCalculator};

@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use index::collection::BoxedCollection;
 use index::optimizers::engine::{OptimizerEngine, OptimizingType};
-use log::info;
 use proto::admin::index_server_admin_server::IndexServerAdmin;
 use proto::admin::{
     GetSegmentsRequest, GetSegmentsResponse, MergeSegmentsRequest, MergeSegmentsResponse,
     SegmentInfo,
 };
 use tokio::sync::RwLock;
+use tracing::info;
 
 use crate::collection_manager::CollectionManager;
 

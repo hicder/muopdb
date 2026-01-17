@@ -2,12 +2,12 @@ use anyhow::Result;
 use compression::elias_fano::ef::EliasFano;
 use compression::noc::noc::PlainEncoder;
 use config::enums::{IntSeqEncodingType, QuantizerType};
-use log::debug;
 use quantization::noq::noq::NoQuantizer;
 use quantization::pq::pq::ProductQuantizerConfig;
 use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
 use quantization::quantization::WritableQuantizer;
 use rand::prelude::SliceRandom;
+use tracing::debug;
 use utils::distance::l2::L2DistanceCalculator;
 
 use super::builder::SpannBuilder;

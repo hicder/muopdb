@@ -5,10 +5,10 @@ use anyhow::{Context, Result};
 use config::enums::QuantizerType;
 use index::collection::core::Collection;
 use index::collection::BoxedCollection;
-use log::{debug, info, warn};
 use quantization::noq::noq::NoQuantizerL2;
 use quantization::pq::pq::ProductQuantizerL2;
 use serde::{Deserialize, Serialize};
+use tracing::{debug, info, warn};
 use utils::io::get_latest_version;
 
 use crate::collection_catalog::CollectionCatalog;

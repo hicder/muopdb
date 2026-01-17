@@ -20,6 +20,7 @@ clap.workspace = true
 env_logger.workspace = true
 index.workspace = true
 log.workspace = true
+tracing.workspace = true
 proto.workspace = true
 quantization.workspace = true
 rand.workspace = true

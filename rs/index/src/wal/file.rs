@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use byteorder::{LittleEndian, ReadBytesExt};
-use log::{info, warn};
 use proto::muopdb::DocumentAttribute;
 use rkyv::util::AlignedVec;
+use tracing::{info, warn};
 use utils::file_io::env::{Env, FileId};
 use utils::file_io::AppendableFileIO;
 use utils::mem::{transmute_slice_to_u8, transmute_u8_to_val_unaligned};

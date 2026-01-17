@@ -35,6 +35,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
         self.version
     }
 
+    #[tracing::instrument(skip(snapshot, user_ids, query, params, filter), fields(user_count = user_ids.len()))]
     pub async fn search_for_users(
         snapshot: Arc<Snapshot<Q>>,
         user_ids: &[u128],
@@ -113,6 +114,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
 
     /// Search only the term index across all segments and users.
     /// Returns up to `limit` document IDs.
+    #[tracing::instrument(skip(self, user_ids, filter), fields(user_count = user_ids.len()))]
     pub async fn search_terms_for_users(
         &self,
         user_ids: &[u128],

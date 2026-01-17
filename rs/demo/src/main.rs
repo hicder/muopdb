@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use hdf5::File;
-use log::{info, LevelFilter};
+use tracing::{info, LevelFilter};
 use ndarray::s;
 use proto::muopdb::index_server_client::IndexServerClient;
 use proto::muopdb::{FlushRequest, Id, InsertPackedRequest};

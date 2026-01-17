@@ -3,9 +3,9 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
 use anyhow::Result;
-use log::info;
 use proto::muopdb::DocumentAttribute;
 use tokio::sync::watch;
+use tracing::info;
 use utils::file_io::env::Env;
 
 use crate::wal::entry::WalOpType;

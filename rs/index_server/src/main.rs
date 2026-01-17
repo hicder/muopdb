@@ -14,7 +14,6 @@ use collection_manager::CollectionManager;
 use collection_provider::CollectionProvider;
 use http_server::HttpServer;
 use index_server::IndexServerImpl;
-use log::{debug, error, info};
 use proto::admin::index_server_admin_server::IndexServerAdminServer;
 use proto::muopdb::index_server_server::IndexServerServer;
 use proto::muopdb::FILE_DESCRIPTOR_SET;
@@ -22,7 +21,9 @@ use tokio::spawn;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tonic::transport::Server;
+use tracing::{debug, error, info};
 use utils::file_io::env::{EnvConfig, FileType};
+use utils::tracing::{init_tracing, shutdown_tracing, TracingConfig};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -104,12 +105,37 @@ struct Args {
         help = "File type for file I/O (mmap, cached_standard, cached_io_uring)"
     )]
     file_type: String,
+
+    #[arg(long, default_value_t = false, help = "Enable distributed tracing")]
+    tracing_enabled: bool,
+
+    #[arg(
+        long,
+        default_value = "http://localhost:4317",
+        help = "OTLP endpoint for tracing"
+    )]
+    otlp_endpoint: String,
+
+    #[arg(long, default_value_t = 1.0, help = "Tracing sampling rate (0.0-1.0)")]
+    tracing_sampling_rate: f64,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
     let arg = Args::parse();
+    let node_id = arg.node_id;
+
+    if arg.tracing_enabled {
+        init_tracing(&TracingConfig {
+            service_name: format!("muopdb-index-server-{}", node_id),
+            otlp_endpoint: arg.otlp_endpoint.clone(),
+            sampling_rate: arg.tracing_sampling_rate,
+            enabled: true,
+        })?;
+    } else {
+        env_logger::init();
+    }
+
     let addr: SocketAddr = format!("0.0.0.0:{}", arg.port).parse()?;
     let collection_config_path = arg.index_config_path;
     let collection_data_path = arg.index_data_path;
@@ -267,6 +293,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     for thread in flush_worker_threads {
         thread.await?;
+    }
+    if arg.tracing_enabled {
+        shutdown_tracing();
     }
     Ok(())
 }

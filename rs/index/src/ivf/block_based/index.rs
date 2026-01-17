@@ -3,9 +3,9 @@ use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
 use compression::compression::{AsyncIntSeqDecoder, AsyncIntSeqIterator};
-use log::info;
 use quantization::quantization::Quantizer;
 use quantization::typing::VectorOps;
+use tracing::info;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::file_io::env::Env;
 use utils::DistanceCalculator;

@@ -2,9 +2,9 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 
 use config::search_params::SearchParams;
-use log::debug;
 use quantization::noq::noq::NoQuantizer;
 use quantization::quantization::Quantizer;
+use tracing::debug;
 use utils::distance::l2::L2DistanceCalculator;
 
 use crate::hnsw::block_based::index::BlockBasedHnsw;
