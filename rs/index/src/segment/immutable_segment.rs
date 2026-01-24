@@ -176,11 +176,8 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
 
         // Manually collect since iters::Iter doesn't implement Iterator trait directly
         let mut result = Vec::new();
-        loop {
-            match iter.next() {
-                Some(point_id) => result.push(point_id),
-                None => break,
-            }
+        while let Some(point_id) = iter.next() {
+            result.push(point_id);
         }
         result
     }

@@ -56,10 +56,10 @@ impl MultiTermWriter {
             .as_ref()
             .ok_or_else(|| anyhow!("segment_dir is not set"))?;
 
-        let mut files = std::fs::read_dir(segment_dir)
+        let files = std::fs::read_dir(segment_dir)
             .map_err(|e| anyhow!("Failed to read segment directory '{}': {}", segment_dir, e))?;
 
-        while let Some(file_result) = files.next() {
+        for file_result in files {
             let file = file_result.map_err(|e| anyhow!("Failed to read directory entry: {}", e))?;
 
             let file_name = file
@@ -70,7 +70,7 @@ impl MultiTermWriter {
             if file_name.starts_with("reassigned_mappings.") {
                 let user_id_str = file_name
                     .split('.')
-                    .last()
+                    .next_back()
                     .ok_or_else(|| anyhow!("Invalid file name format: {}", file_name))?;
 
                 let user_id = user_id_str.parse::<u128>().map_err(|e| {
@@ -105,7 +105,7 @@ impl MultiTermWriter {
     /// # Arguments
     /// * `builder` - A built MultiTermBuilder
     /// * `id_mappings` - Optional mapping from user IDs to their respective ID mappings.
-    ///                   If None, no remapping is applied.
+    ///   If None, no remapping is applied.
     pub fn write_with_reindex(
         &self,
         builder: &MultiTermBuilder,

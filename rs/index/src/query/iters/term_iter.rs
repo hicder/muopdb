@@ -25,8 +25,8 @@ impl<'a> InvertedIndexIter for TermIter<'a> {
             IterState::NotStarted => {
                 let point = self.iter.current();
                 self.iter.next();
-                self.state = if point.is_some() {
-                    IterState::At(point.unwrap())
+                self.state = if let Some(p) = point {
+                    IterState::At(p)
                 } else {
                     IterState::Exhausted
                 };
@@ -34,8 +34,8 @@ impl<'a> InvertedIndexIter for TermIter<'a> {
             }
             IterState::At(_) => {
                 let point = self.iter.next();
-                self.state = if point.is_some() {
-                    IterState::At(point.unwrap())
+                self.state = if let Some(p) = point {
+                    IterState::At(p)
                 } else {
                     IterState::Exhausted
                 };
@@ -48,8 +48,8 @@ impl<'a> InvertedIndexIter for TermIter<'a> {
     fn skip_to(&mut self, point_id: u32) {
         self.iter.skip_to(point_id);
         let point = self.iter.current();
-        self.state = if point.is_some() {
-            IterState::At(point.unwrap())
+        self.state = if let Some(p) = point {
+            IterState::At(p)
         } else {
             IterState::Exhausted
         };

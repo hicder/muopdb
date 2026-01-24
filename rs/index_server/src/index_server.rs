@@ -199,11 +199,7 @@ impl IndexServer for IndexServerImpl {
             .await
             .get_collection(&collection_name)
             .await;
-        let filter = if let Some(filter) = where_document {
-            Some(Arc::new(filter))
-        } else {
-            None
-        };
+        let filter = where_document.map(Arc::new);
 
         let params = req
             .params
@@ -385,7 +381,7 @@ impl IndexServer for IndexServerImpl {
         match collection_opt {
             Some(collection) => {
                 let dimensions = collection.dimensions();
-                if vectors.len() % dimensions != 0 {
+                if !vectors.len().is_multiple_of(dimensions) {
                     return Err(tonic::Status::new(
                         tonic::Code::InvalidArgument,
                         "Vectors must be a multiple of the number of dimensions",
@@ -607,7 +603,7 @@ impl IndexServer for IndexServerImpl {
                 let dimensions = collection.dimensions();
                 let vectors = transmute_u8_to_slice::<f32>(&vectors_buffer);
 
-                if vectors.len() % dimensions != 0 {
+                if !vectors.len().is_multiple_of(dimensions) {
                     return Err(tonic::Status::new(
                         tonic::Code::InvalidArgument,
                         "Vectors must be a multiple of the number of dimensions",

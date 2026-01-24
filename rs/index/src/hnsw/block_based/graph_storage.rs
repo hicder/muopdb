@@ -465,18 +465,17 @@ impl BlockBasedHnswGraphStorage {
         let level_idx_start = self.level_offsets[num_layers - 1 - layer as usize] as usize;
         let level_idx_end = self.level_offsets[num_layers - layer as usize] as usize;
 
-        let idx_at_layer: i64;
-        if layer > 0 {
-            idx_at_layer = match self
+        let idx_at_layer: i64 = if layer > 0 {
+            match self
                 .find_point_in_range(point_id, level_idx_start, level_idx_end)
                 .await
             {
                 Ok(Some(idx)) => (idx - level_idx_start) as i64,
                 _ => -1,
-            };
+            }
         } else {
-            idx_at_layer = point_id as i64;
-        }
+            point_id as i64
+        };
 
         if idx_at_layer < 0 {
             return None;
