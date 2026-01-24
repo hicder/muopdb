@@ -11,7 +11,7 @@ use crate::query::async_iters::{
 };
 use crate::terms::index::TermIndex;
 use crate::tokenizer::stemming_tokenizer::StemmingTokenizer;
-use crate::tokenizer::tokenizer::{TokenStream, Tokenizer};
+use crate::tokenizer::{TokenStream, Tokenizer};
 
 #[allow(dead_code)]
 pub struct AsyncPlanner {

@@ -47,8 +47,8 @@ impl IvfReader {
 mod tests {
     use std::sync::Arc;
 
-    use compression::noc::noc::PlainEncoder;
-    use quantization::noq::noq::NoQuantizer;
+    use compression::noc::PlainEncoder;
+    use quantization::noq::NoQuantizer;
     use quantization::quantization::WritableQuantizer;
     use tempdir::TempDir;
     use utils::distance::l2::L2DistanceCalculator;

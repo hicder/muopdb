@@ -12,7 +12,7 @@ use crate::multi_spann::writer::MultiSpannWriter;
 use crate::multi_terms::builder::MultiTermBuilder;
 use crate::multi_terms::writer::MultiTermWriter;
 use crate::tokenizer::stemming_tokenizer::StemmingTokenizer;
-use crate::tokenizer::tokenizer::{TokenStream, Tokenizer};
+use crate::tokenizer::{TokenStream, Tokenizer};
 
 pub struct MutableSegment {
     multi_spann_builder: MultiSpannBuilder,

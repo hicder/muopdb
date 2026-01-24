@@ -118,9 +118,7 @@ mod tests {
         let base_dir_str = base_directory.to_str().unwrap().to_string();
 
         let mut builder = TermBuilder::new().unwrap();
-        for i in [0] {
-            builder.add(i, "apple".to_string()).unwrap();
-        }
+        builder.add(0, "apple".to_string()).unwrap();
 
         builder.build().unwrap();
         let writer = TermWriter::new(base_dir_str.clone());
@@ -195,9 +193,7 @@ mod tests {
         let base_dir_str = base_directory.to_str().unwrap().to_string();
 
         let mut builder = TermBuilder::new().unwrap();
-        for i in [0] {
-            builder.add(i, "apple".to_string()).unwrap();
-        }
+        builder.add(0, "apple".to_string()).unwrap();
 
         builder.build().unwrap();
         let writer = TermWriter::new(base_dir_str.clone());

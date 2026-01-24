@@ -4,7 +4,7 @@ use index::hnsw::reader::HnswReader;
 use index::hnsw::writer::HnswWriter;
 use index::vector::VectorStorageConfig;
 use tracing::error;
-use quantization::pq::pq::ProductQuantizer;
+use quantization::pq::ProductQuantizer;
 use utils::distance::l2::L2DistanceCalculator;
 
 #[derive(Parser)]

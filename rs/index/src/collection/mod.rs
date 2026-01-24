@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use proto::muopdb::DocumentAttribute;
-use quantization::noq::noq::NoQuantizer;
-use quantization::pq::pq::ProductQuantizer;
+use quantization::noq::NoQuantizer;
+use quantization::pq::ProductQuantizer;
 use serde::{Deserialize, Serialize};
 use snapshot::SnapshotWithQuantizer;
 use utils::distance::l2::L2DistanceCalculator;

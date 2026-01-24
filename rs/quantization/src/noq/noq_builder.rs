@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use anyhow::Result;
 use utils::DistanceCalculator;
 
-use crate::noq::noq::{NoQuantizer, NoQuantizerConfig};
+use crate::noq::{NoQuantizer, NoQuantizerConfig};
 
 pub struct NoQuantizerBuilder<D: DistanceCalculator> {
     config: NoQuantizerConfig,

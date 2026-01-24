@@ -196,7 +196,7 @@ mod tests {
         ];
 
         // Add padding to align to 8 bytes
-        while header.len() % 8 != 0 {
+        while !header.len().is_multiple_of(8) {
             header.push(0);
         }
         assert!(file.write_all(&header).is_ok());

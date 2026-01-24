@@ -107,7 +107,7 @@ impl<T: CompressionInt> BlockBasedEliasFanoIterator<T> {
         let byte_start = self.base_offset + self.lower_bits_byte_offset + (bit_offset / 8) as u64;
         let bit_in_first_byte = bit_offset % 8;
 
-        let bytes_needed = (bit_in_first_byte + self.lower_bit_length + 7) / 8;
+        let bytes_needed = (bit_in_first_byte + self.lower_bit_length).div_ceil(8);
         let data = self.file_io.read(byte_start, bytes_needed as u64).await?;
 
         let bits = BitSlice::<u8, Lsb0>::from_slice(&data);

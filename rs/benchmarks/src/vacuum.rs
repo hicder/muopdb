@@ -4,7 +4,7 @@ use index::collection::core::Collection;
 use index::collection::reader::CollectionReader;
 use index::optimizers::vacuum::VacuumOptimizer;
 use proto::muopdb::DocumentAttribute;
-use quantization::noq::noq::NoQuantizerL2;
+use quantization::noq::NoQuantizerL2;
 use tempdir::TempDir;
 use utils::file_io::env::EnvConfig;
 use utils::test_utils::generate_random_vector;

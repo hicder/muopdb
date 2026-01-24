@@ -1,6 +1,6 @@
 use rust_stemmers::{Algorithm, Stemmer};
 
-use super::tokenizer::{Token, TokenStream, Tokenizer};
+use super::{Token, TokenStream, Tokenizer};
 use crate::tokenizer::white_space_tokenizer::WhiteSpaceTokenStream;
 
 /// A tokenizer that stems words using the Snowball algorithm.

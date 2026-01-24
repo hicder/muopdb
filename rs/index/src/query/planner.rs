@@ -12,7 +12,7 @@ use crate::query::iters::term_iter::TermIter;
 use crate::query::iters::Iter;
 use crate::terms::index::TermIndex;
 use crate::tokenizer::stemming_tokenizer::StemmingTokenizer;
-use crate::tokenizer::tokenizer::{TokenStream, Tokenizer};
+use crate::tokenizer::{TokenStream, Tokenizer};
 
 #[allow(unused)]
 pub struct Planner {

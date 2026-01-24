@@ -5,7 +5,7 @@ use kmeans::*;
 use tracing::debug;
 use utils::DistanceCalculator;
 
-use crate::pq::pq::{ProductQuantizer, ProductQuantizerConfig};
+use crate::pq::{ProductQuantizer, ProductQuantizerConfig};
 
 pub struct ProductQuantizerBuilderConfig {
     pub max_iteration: usize,

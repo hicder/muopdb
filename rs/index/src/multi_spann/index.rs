@@ -67,7 +67,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
                 index
                     .pending_invalidations
                     .entry(invalidated_id.user_id)
-                    .or_insert_with(HashSet::new)
+                    .or_default()
                     .insert(invalidated_id.doc_id);
                 if let Some(spann_index) = index.user_to_spann.get(&invalidated_id.user_id) {
                     let _ = spann_index.invalidate(invalidated_id.doc_id).await;
@@ -169,7 +169,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
         if effectively_invalidated {
             self.pending_invalidations
                 .entry(user_id)
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(doc_id);
             self.invalidated_ids_storage
                 .write()
@@ -212,7 +212,7 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
             for pair in &effectively_invalidated_pairs {
                 self.pending_invalidations
                     .entry(pair.user_id)
-                    .or_insert_with(HashSet::new)
+                    .or_default()
                     .insert(pair.doc_id);
             }
             let mut invalidated_ids_storage_write = self.invalidated_ids_storage.write().await;
@@ -333,7 +333,7 @@ mod tests {
     use config::collection::CollectionConfig;
     use config::search_params::SearchParams;
     use proto::muopdb::{ContainsFilter, DocumentFilter};
-    use quantization::noq::noq::NoQuantizer;
+    use quantization::noq::NoQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
     use utils::file_io::env::{DefaultEnv, Env, EnvConfig, FileType};
 
@@ -818,11 +818,11 @@ mod tests {
         for (i, &point_id) in point_ids.iter().enumerate() {
             if i % 2 == 0 {
                 multi_builder
-                    .add(0, point_id, format!("field:even"))
+                    .add(0, point_id, "field:even".to_string())
                     .unwrap();
             } else {
                 multi_builder
-                    .add(0, point_id, format!("field:odd"))
+                    .add(0, point_id, "field:odd".to_string())
                     .unwrap();
             }
         }

@@ -9,7 +9,7 @@ use index::collection::core::Collection;
 use index::collection::reader::CollectionReader;
 use index::wal::entry::WalOpType;
 use proto::muopdb::DocumentAttribute;
-use quantization::noq::noq::NoQuantizerL2;
+use quantization::noq::NoQuantizerL2;
 use tempdir::TempDir;
 use tokio::task::JoinSet;
 use utils::file_io::env::EnvConfig;

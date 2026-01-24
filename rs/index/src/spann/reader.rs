@@ -97,8 +97,8 @@ impl SpannReader {
 #[cfg(test)]
 mod tests {
     use config::enums::QuantizerType;
-    use quantization::noq::noq::NoQuantizer;
-    use quantization::pq::pq::ProductQuantizer;
+    use quantization::noq::NoQuantizer;
+    use quantization::pq::ProductQuantizer;
     use tempdir::TempDir;
     use utils::distance::l2::L2DistanceCalculator;
     use utils::file_io::env::{DefaultEnv, EnvConfig, FileType};

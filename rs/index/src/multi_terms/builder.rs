@@ -14,6 +14,12 @@ pub struct MultiTermBuilder {
     is_built: AtomicBool,
 }
 
+impl Default for MultiTermBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MultiTermBuilder {
     pub fn new() -> Self {
         Self {

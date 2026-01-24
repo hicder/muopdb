@@ -43,7 +43,7 @@ mod tests {
     use config::collection::CollectionConfig;
     use index::collection::core::Collection;
     use metrics::INTERNAL_METRICS;
-    use quantization::noq::noq::NoQuantizer;
+    use quantization::noq::NoQuantizer;
     use tempdir::TempDir;
     use utils::distance::l2::L2DistanceCalculator;
 

@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 
 use config::search_params::SearchParams;
-use quantization::noq::noq::NoQuantizer;
+use quantization::noq::NoQuantizer;
 use quantization::quantization::Quantizer;
 use tracing::debug;
 use utils::distance::l2::L2DistanceCalculator;
@@ -272,8 +272,8 @@ mod tests {
 
     use config::enums::{IntSeqEncodingType, QuantizerType};
     use config::search_params::SearchParams;
-    use quantization::noq::noq::NoQuantizer;
-    use quantization::pq::pq::ProductQuantizer;
+    use quantization::noq::NoQuantizer;
+    use quantization::pq::ProductQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
     use utils::file_io::env::{DefaultEnv, Env, EnvConfig, FileType};
 

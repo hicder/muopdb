@@ -6,8 +6,8 @@ use anyhow::{Ok, Result};
 use config::collection::CollectionConfig;
 use config::enums::QuantizerType;
 use odht::HashTableOwned;
-use quantization::noq::noq::NoQuantizer;
-use quantization::pq::pq::{ProductQuantizerConfig, CODEBOOK_NAME, CONFIG_FILE_NAME};
+use quantization::noq::NoQuantizer;
+use quantization::pq::{ProductQuantizerConfig, CODEBOOK_NAME, CONFIG_FILE_NAME};
 use quantization::quantization::WritableQuantizer;
 use utils::bloom_filter::writer::BloomFilterWriter;
 use utils::distance::l2::L2DistanceCalculator;
@@ -290,7 +290,7 @@ mod tests {
     use std::path::PathBuf;
 
     use config::collection::CollectionConfig;
-    use quantization::pq::pq::CONFIG_FILE_NAME;
+    use quantization::pq::CONFIG_FILE_NAME;
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
 

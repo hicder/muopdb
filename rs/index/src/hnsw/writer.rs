@@ -273,8 +273,8 @@ mod tests {
     use std::vec;
 
     use ordered_float::NotNan;
-    use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig};
     use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
+    use quantization::pq::{ProductQuantizer, ProductQuantizerConfig};
     use quantization::quantization::WritableQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
     use utils::file_io::env::{DefaultEnv, Env, EnvConfig, FileType};

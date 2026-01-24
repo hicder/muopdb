@@ -449,7 +449,7 @@ impl<Q: Quantizer> GraphTraversal<Q> for HnswBuilder<Q> {
 mod tests {
     use std::fs;
 
-    use quantization::pq::pq::ProductQuantizer;
+    use quantization::pq::ProductQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
     use utils::test_utils::generate_random_vector;
 

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use quantization::noq::noq::NoQuantizerL2;
+use quantization::noq::NoQuantizerL2;
 use quantization::quantization::Quantizer;
 
 use super::SegmentOptimizer;
