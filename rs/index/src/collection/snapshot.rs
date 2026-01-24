@@ -79,9 +79,9 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
         let mut scored_results = SearchResult::new();
         for segment in &self.segments {
             let multi_term_index = segment.get_multi_term_index().await;
-            let planner = if let Some(multi_term_index) = multi_term_index {
-                if let Some(filter) = &filter {
-                    Some(Arc::new(
+            let planner = multi_term_index.as_ref().and_then(|multi_term_index| {
+                filter.as_ref().map(|filter| {
+                    Arc::new(
                         Planner::new(
                             user_id,
                             filter.as_ref().clone(),
@@ -89,13 +89,9 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
                             self.collection.config().attribute_schema.clone(),
                         )
                         .unwrap(),
-                    ))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+                    )
+                })
+            });
             let s = segment.clone();
             let q = query.clone();
             if let Some(results) =

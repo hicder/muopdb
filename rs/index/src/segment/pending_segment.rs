@@ -180,7 +180,7 @@ impl<Q: Quantizer + Clone + Send + Sync> PendingSegment<Q> {
                 // invalidating doesn't result in error, no need to verify the effectively
                 // invalidated element count.
                 let temp_invalidated_ids_guard = self.temp_invalidated_ids.read().await;
-                let _ = index.invalidate_batch(&*temp_invalidated_ids_guard).await?;
+                let _ = index.invalidate_batch(&temp_invalidated_ids_guard).await?;
                 Ok(())
             }
             None => Err(anyhow!("Internal index does not exist")),

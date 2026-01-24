@@ -61,7 +61,7 @@ impl TermWriter {
     /// # Arguments
     /// * `builder` - A mutable reference to a built TermBuilder
     /// * `id_mapping` - Optional mapping from original point IDs to new point IDs.
-    ///                  If None, no remapping is applied.
+    ///   If None, no remapping is applied.
     pub fn write_with_reindex(
         &self,
         builder: &mut TermBuilder,
