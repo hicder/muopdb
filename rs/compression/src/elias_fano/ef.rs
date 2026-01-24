@@ -614,7 +614,7 @@ mod tests {
         for (i, expected) in values.iter().enumerate() {
             let decoded = iterator
                 .next()
-                .expect(&format!("Missing value at index {}", i));
+                .unwrap_or_else(|| panic!("Missing value at index {}", i));
             assert_eq!(*expected, decoded, "Mismatch at index {}", i);
         }
 
@@ -643,7 +643,9 @@ mod tests {
 
         // Verify all values can be decoded
         for (i, &expected) in values.iter().enumerate() {
-            let decoded = ef.get(i).expect(&format!("Failed to decode index {}", i));
+            let decoded = ef
+                .get(i)
+                .unwrap_or_else(|_| panic!("Failed to decode index {}", i));
             assert_eq!(expected, decoded, "Mismatch at index {}", i);
         }
     }

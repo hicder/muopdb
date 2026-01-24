@@ -362,9 +362,9 @@ mod tests {
 
     use byteorder::{LittleEndian, ReadBytesExt};
     use compression::elias_fano::ef::EliasFano;
-    use compression::noc::noc::PlainEncoder;
-    use quantization::noq::noq::NoQuantizer;
-    use quantization::pq::pq::ProductQuantizer;
+    use compression::noc::PlainEncoder;
+    use quantization::noq::NoQuantizer;
+    use quantization::pq::ProductQuantizer;
     use tempdir::TempDir;
     use utils::distance::l2::L2DistanceCalculator;
     use utils::test_utils::generate_random_vector;
@@ -441,7 +441,7 @@ mod tests {
         ];
 
         // Add padding to align to 8 bytes
-        while expected_header.len() % 8 != 0 {
+        while !expected_header.len().is_multiple_of(8) {
             expected_header.push(0);
         }
 
@@ -464,7 +464,7 @@ mod tests {
 
         // Check for padding after centroids
         next_offset += 4;
-        while next_offset % 8 != 0 {
+        while !next_offset.is_multiple_of(8) {
             assert_eq!(combined_content[next_offset], 0);
             next_offset += 1;
         }

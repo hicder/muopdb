@@ -1,6 +1,6 @@
 use std::str::CharIndices;
 
-use super::tokenizer::{Token, TokenStream, Tokenizer};
+use super::{Token, TokenStream, Tokenizer};
 
 pub struct WhiteSpaceTokenizer {}
 
@@ -122,8 +122,8 @@ impl<'a> TokenStream for WhiteSpaceTokenStream<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::tokenizer::tokenizer::{TokenStream, Tokenizer};
     use crate::tokenizer::white_space_tokenizer::{WhiteSpaceTokenStream, WhiteSpaceTokenizer};
+    use crate::tokenizer::{TokenStream, Tokenizer};
 
     #[test]
     fn test_token_stream_simple() {

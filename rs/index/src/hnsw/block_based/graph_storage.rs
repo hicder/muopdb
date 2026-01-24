@@ -59,7 +59,7 @@ impl BlockBasedHnswGraphStorage {
         let offsets = Self::calculate_offsets(&header, 49);
 
         let mut storage = Self {
-            file_io: file_io,
+            file_io,
             header,
             offsets,
             level_offsets: vec![],
@@ -547,7 +547,7 @@ impl BlockBasedHnswGraphStorage {
             return 0;
         }
 
-        let top_layer_start = self.level_offsets[0] as u64;
+        let top_layer_start = self.level_offsets[0];
         let points_base = self.offsets.points_offset as u64;
         self.get_u32_at(points_base + top_layer_start * 4)
             .await

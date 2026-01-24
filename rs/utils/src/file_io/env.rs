@@ -18,6 +18,15 @@ pub enum FileType {
     CachedStandard,
     #[cfg(target_os = "linux")]
     CachedIoUring,
+    ObjectStore,
+}
+
+#[derive(Debug, Clone)]
+pub struct ObjectStoreConfig {
+    pub endpoint: Option<String>,
+    pub region: Option<String>,
+    pub access_key_id: Option<String>,
+    pub secret_access_key: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -26,6 +35,8 @@ pub struct EnvConfig {
     pub block_size: usize,
     pub block_cache_capacity_bytes: u64,
     pub max_open_files: u64,
+    pub object_store_config: Option<ObjectStoreConfig>,
+    pub disk_cache_config: Option<crate::block_cache::disk_cache::DiskCacheConfig>,
 }
 
 impl Default for EnvConfig {
@@ -35,6 +46,8 @@ impl Default for EnvConfig {
             block_size: 4096,
             block_cache_capacity_bytes: 1024 * 1024 * 1024, // 1GB
             max_open_files: 1024,
+            object_store_config: None,
+            disk_cache_config: None,
         }
     }
 }
@@ -81,23 +94,27 @@ impl DefaultEnv {
     pub fn new(config: EnvConfig) -> Self {
         let block_cache = match config.file_type {
             FileType::MMap => None,
-            FileType::CachedStandard => {
-                let cache_config = BlockCacheConfig::new(
+            FileType::CachedStandard | FileType::ObjectStore => {
+                let mut cache_config = BlockCacheConfig::new(
                     config.max_open_files,
                     config.block_cache_capacity_bytes,
                     config.block_size,
                     false,
                 );
+                cache_config.disk_cache_config = config.disk_cache_config.clone();
+                cache_config.object_store_config = config.object_store_config.clone();
                 Some(Arc::new(BlockCache::new(cache_config)))
             }
             #[cfg(target_os = "linux")]
             FileType::CachedIoUring => {
-                let cache_config = BlockCacheConfig::new(
+                let mut cache_config = BlockCacheConfig::new(
                     config.max_open_files,
                     config.block_cache_capacity_bytes,
                     config.block_size,
                     true,
                 );
+                cache_config.disk_cache_config = config.disk_cache_config.clone();
+                cache_config.object_store_config = config.object_store_config.clone();
                 Some(Arc::new(BlockCache::new(cache_config)))
             }
         };
@@ -132,6 +149,13 @@ impl Env for DefaultEnv {
                     .ok_or_else(|| anyhow!("Block cache not initialized"))?;
                 Arc::new(CachedFileIO::new(cache.clone(), path).await?)
             }
+            FileType::ObjectStore => {
+                let cache = self
+                    .block_cache
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("Block cache not initialized"))?;
+                Arc::new(CachedFileIO::new(cache.clone(), path).await?)
+            }
         };
 
         let file_id = self.file_id_generator.fetch_add(1, Ordering::SeqCst);
@@ -158,6 +182,9 @@ impl Env for DefaultEnv {
                     .open(path)
                     .await?;
                 Arc::new(AppendableStandardFile::new(file).await)
+            }
+            FileType::ObjectStore => {
+                return Err(anyhow!("Append not supported for ObjectStore"));
             }
         };
 

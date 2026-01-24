@@ -167,7 +167,7 @@ mod tests {
     use crate::multi_terms::writer::MultiTermWriter;
 
     fn build_and_write_index(base_dir: &str) -> (Vec<u128>, MultiTermIndex) {
-        let mut multi_builder = MultiTermBuilder::new();
+        let multi_builder = MultiTermBuilder::new();
         let user1 = 1001u128;
         let user2 = 2002u128;
         let user3 = 3003u128;
@@ -201,7 +201,7 @@ mod tests {
 
         multi_builder.build().unwrap();
         let writer = MultiTermWriter::new(base_dir.to_string());
-        writer.write(&mut multi_builder).unwrap();
+        writer.write(&multi_builder).unwrap();
 
         let index = MultiTermIndex::new(base_dir.to_string()).unwrap();
         (vec![user1, user2, user3], index)
@@ -261,11 +261,11 @@ mod tests {
         let tmp = TempDir::new("multi_term_index_empty").unwrap();
         let base_dir = tmp.path().to_str().unwrap().to_string();
 
-        let mut builder = MultiTermBuilder::new();
+        let builder = MultiTermBuilder::new();
         builder.build().unwrap();
 
         let writer = MultiTermWriter::new(base_dir.clone());
-        writer.write(&mut builder).unwrap();
+        writer.write(&builder).unwrap();
 
         let combined_path = format!("{}/combined", base_dir);
         assert!(Path::new(&combined_path).exists());

@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use config::search_params::SearchParams;
 use proto::muopdb::DocumentFilter;
-use quantization::noq::noq::NoQuantizerL2;
-use quantization::pq::pq::ProductQuantizerL2;
+use quantization::noq::NoQuantizerL2;
+use quantization::pq::ProductQuantizerL2;
 use quantization::quantization::Quantizer;
 
 use super::core::Collection;

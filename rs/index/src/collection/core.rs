@@ -1571,7 +1571,7 @@ mod tests {
     use dashmap::DashMap;
     use metrics::INTERNAL_METRICS;
     use proto::muopdb::DocumentAttribute;
-    use quantization::noq::noq::NoQuantizerL2;
+    use quantization::noq::NoQuantizerL2;
     use rand::Rng;
     use tempdir::TempDir;
     use tokio::task::JoinSet;

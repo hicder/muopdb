@@ -59,8 +59,8 @@ mod tests {
     use config::collection::CollectionConfig;
     use config::enums::QuantizerType;
     use config::search_params::SearchParams;
-    use quantization::noq::noq::NoQuantizer;
-    use quantization::pq::pq::ProductQuantizer;
+    use quantization::noq::NoQuantizer;
+    use quantization::pq::ProductQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
     use utils::file_io::env::DefaultEnv;
 
@@ -179,8 +179,10 @@ mod tests {
         let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
         multi_spann_writer.write(&mut multi_spann_builder)?;
 
-        let mut env_config = utils::file_io::env::EnvConfig::default();
-        env_config.file_type = utils::file_io::env::FileType::MMap;
+        let env_config = utils::file_io::env::EnvConfig {
+            file_type: utils::file_io::env::FileType::MMap,
+            ..Default::default()
+        };
         let env: Arc<Box<dyn Env>> = Arc::new(Box::new(DefaultEnv::new(env_config)));
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);
@@ -228,8 +230,10 @@ mod tests {
         let multi_spann_writer = MultiSpannWriter::new(base_directory.clone());
         multi_spann_writer.write(&mut multi_spann_builder)?;
 
-        let mut env_config = utils::file_io::env::EnvConfig::default();
-        env_config.file_type = utils::file_io::env::FileType::MMap;
+        let env_config = utils::file_io::env::EnvConfig {
+            file_type: utils::file_io::env::FileType::MMap,
+            ..Default::default()
+        };
         let env: Arc<Box<dyn Env>> = Arc::new(Box::new(DefaultEnv::new(env_config)));
 
         let multi_spann_reader = MultiSpannReader::new(base_directory);

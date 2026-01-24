@@ -7,7 +7,7 @@ use ndarray_linalg::solve::Inverse;
 use ndarray_rand::rand_distr::StandardNormal;
 use ndarray_rand::RandomExt;
 
-use crate::rabitq::rabitq::RabitQ;
+use crate::rabitq::RabitQ;
 
 pub struct RabitQBuilder {
     dimension: usize,

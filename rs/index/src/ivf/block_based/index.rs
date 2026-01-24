@@ -482,7 +482,7 @@ mod tests {
     use std::fs;
 
     use compression::elias_fano::ef::EliasFano;
-    use quantization::noq::noq::NoQuantizer;
+    use quantization::noq::NoQuantizer;
     use quantization::quantization::WritableQuantizer;
     use tempdir::TempDir;
     use utils::distance::l2::L2DistanceCalculator;

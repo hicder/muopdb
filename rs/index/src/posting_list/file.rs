@@ -35,7 +35,7 @@ impl BackingFiles {
     }
 
     pub fn is_current_backing_file_full(&self) -> bool {
-        self.current_overall_offset % self.file_size == 0
+        self.current_overall_offset.is_multiple_of(self.file_size)
     }
 
     pub fn get_current_offset(&self) -> usize {

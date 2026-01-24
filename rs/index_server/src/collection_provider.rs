@@ -2,8 +2,8 @@ use config::collection::CollectionConfig;
 use config::enums::QuantizerType;
 use index::collection::reader::CollectionReader;
 use index::collection::BoxedCollection;
-use quantization::noq::noq::NoQuantizer;
-use quantization::pq::pq::ProductQuantizer;
+use quantization::noq::NoQuantizer;
+use quantization::pq::ProductQuantizer;
 use utils::distance::l2::L2DistanceCalculator;
 use utils::file_io::env::EnvConfig;
 

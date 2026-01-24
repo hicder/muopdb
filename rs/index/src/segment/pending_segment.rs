@@ -348,7 +348,7 @@ mod tests {
 
     use config::collection::CollectionConfig;
     use config::search_params::SearchParams;
-    use quantization::noq::noq::{NoQuantizer, NoQuantizerL2};
+    use quantization::noq::{NoQuantizer, NoQuantizerL2};
     use rand::Rng;
     use utils::distance::l2::L2DistanceCalculator;
     use utils::file_io::env::{DefaultEnv, Env, EnvConfig};

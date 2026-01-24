@@ -10,6 +10,7 @@ use async_trait::async_trait;
 pub mod cached_file;
 pub mod env;
 pub mod mmap_file;
+pub mod object_store_file;
 pub mod standard_file;
 
 #[cfg(target_os = "linux")]

@@ -52,9 +52,9 @@ impl HnswReader {
 mod tests {
     use std::fs;
 
-    use quantization::noq::noq::NoQuantizer;
-    use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig};
+    use quantization::noq::NoQuantizer;
     use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
+    use quantization::pq::{ProductQuantizer, ProductQuantizerConfig};
     use quantization::quantization::WritableQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
     use utils::file_io::env::{DefaultEnv, EnvConfig, FileType};

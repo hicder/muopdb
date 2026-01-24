@@ -1,5 +1,5 @@
 use anyhow::Result;
-use quantization::noq::noq::NoQuantizerL2;
+use quantization::noq::NoQuantizerL2;
 use quantization::quantization::Quantizer;
 
 use super::SegmentOptimizer;
@@ -644,13 +644,14 @@ mod tests {
 
         // Test search with term filter "tag:a"
         let snapshot = collection.get_snapshot().await?;
-        let mut filter = proto::muopdb::DocumentFilter::default();
-        filter.filter = Some(proto::muopdb::document_filter::Filter::Contains(
-            proto::muopdb::ContainsFilter {
-                path: "tag".to_string(),
-                value: "a".to_string(),
-            },
-        ));
+        let filter = proto::muopdb::DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                proto::muopdb::ContainsFilter {
+                    path: "tag".to_string(),
+                    value: "a".to_string(),
+                },
+            )),
+        };
 
         let params = SearchParams::new(10, 10, false);
         let result = snapshot
@@ -794,13 +795,14 @@ mod tests {
         let params = SearchParams::new(10, 10, false);
 
         // Test search with term filter "tag:a" - should find Doc 1 and Doc 3
-        let mut filter = proto::muopdb::DocumentFilter::default();
-        filter.filter = Some(proto::muopdb::document_filter::Filter::Contains(
-            proto::muopdb::ContainsFilter {
-                path: "tag".to_string(),
-                value: "a".to_string(),
-            },
-        ));
+        let filter = proto::muopdb::DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                proto::muopdb::ContainsFilter {
+                    path: "tag".to_string(),
+                    value: "a".to_string(),
+                },
+            )),
+        };
 
         let result = snapshot
             .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
@@ -813,13 +815,14 @@ mod tests {
         assert_eq!(doc_ids, vec![1, 3]);
 
         // Test search with term filter "color:red" - should find Doc 1 and Doc 4
-        let mut filter = proto::muopdb::DocumentFilter::default();
-        filter.filter = Some(proto::muopdb::document_filter::Filter::Contains(
-            proto::muopdb::ContainsFilter {
-                path: "color".to_string(),
-                value: "red".to_string(),
-            },
-        ));
+        let filter = proto::muopdb::DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                proto::muopdb::ContainsFilter {
+                    path: "color".to_string(),
+                    value: "red".to_string(),
+                },
+            )),
+        };
 
         let result = snapshot
             .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
@@ -832,13 +835,14 @@ mod tests {
         assert_eq!(doc_ids, vec![1, 4]);
 
         // Test search with term filter "color:blue" - should find Doc 2 and Doc 3
-        let mut filter = proto::muopdb::DocumentFilter::default();
-        filter.filter = Some(proto::muopdb::document_filter::Filter::Contains(
-            proto::muopdb::ContainsFilter {
-                path: "color".to_string(),
-                value: "blue".to_string(),
-            },
-        ));
+        let filter = proto::muopdb::DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                proto::muopdb::ContainsFilter {
+                    path: "color".to_string(),
+                    value: "blue".to_string(),
+                },
+            )),
+        };
 
         let result = snapshot
             .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
@@ -977,13 +981,14 @@ mod tests {
         let params = SearchParams::new(10, 10, false);
 
         // Test User 0: search for tag:x - should find Doc 1
-        let mut filter = proto::muopdb::DocumentFilter::default();
-        filter.filter = Some(proto::muopdb::document_filter::Filter::Contains(
-            proto::muopdb::ContainsFilter {
-                path: "tag".to_string(),
-                value: "x".to_string(),
-            },
-        ));
+        let filter = proto::muopdb::DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                proto::muopdb::ContainsFilter {
+                    path: "tag".to_string(),
+                    value: "x".to_string(),
+                },
+            )),
+        };
 
         let result = snapshot
             .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
@@ -993,13 +998,14 @@ mod tests {
         assert_eq!(result.id_with_scores[0].doc_id, 1);
 
         // Test User 1: search for tag:p - should find Doc 2
-        let mut filter = proto::muopdb::DocumentFilter::default();
-        filter.filter = Some(proto::muopdb::document_filter::Filter::Contains(
-            proto::muopdb::ContainsFilter {
-                path: "tag".to_string(),
-                value: "p".to_string(),
-            },
-        ));
+        let filter = proto::muopdb::DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                proto::muopdb::ContainsFilter {
+                    path: "tag".to_string(),
+                    value: "p".to_string(),
+                },
+            )),
+        };
 
         let result = snapshot
             .search_for_user(1, vec![2.0, 2.0, 2.0], &params, Some(Arc::new(filter)))
@@ -1145,13 +1151,14 @@ mod tests {
         let params = SearchParams::new(10, 10, false);
 
         // Search for tag:m - should find Doc 3 only (Doc 1 was invalidated but we check)
-        let mut filter = proto::muopdb::DocumentFilter::default();
-        filter.filter = Some(proto::muopdb::document_filter::Filter::Contains(
-            proto::muopdb::ContainsFilter {
-                path: "tag".to_string(),
-                value: "m".to_string(),
-            },
-        ));
+        let filter = proto::muopdb::DocumentFilter {
+            filter: Some(proto::muopdb::document_filter::Filter::Contains(
+                proto::muopdb::ContainsFilter {
+                    path: "tag".to_string(),
+                    value: "m".to_string(),
+                },
+            )),
+        };
 
         let result = snapshot
             .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
@@ -1159,7 +1166,7 @@ mod tests {
             .unwrap();
         // Doc 1 was invalidated but its term may still be in index
         // The search returns whatever is in the term index
-        assert!(result.id_with_scores.len() >= 1);
+        assert!(!result.id_with_scores.is_empty());
 
         Ok(())
     }

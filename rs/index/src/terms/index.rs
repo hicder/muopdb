@@ -43,7 +43,7 @@ struct TermIndexInner {
 impl TermIndex {
     pub fn new(path: String, start: usize, len: usize) -> Result<Self> {
         // Make sure start is 8 bytes aligned
-        if start % 8 != 0 {
+        if !start.is_multiple_of(8) {
             return Err(anyhow::anyhow!(
                 "Start offset {} must be 8 bytes aligned",
                 start
@@ -95,7 +95,7 @@ impl TermIndex {
         len: usize,
     ) -> Result<Self> {
         // Make sure start is 8 bytes aligned
-        if start % 8 != 0 {
+        if !start.is_multiple_of(8) {
             return Err(anyhow::anyhow!(
                 "Start offset {} must be 8 bytes aligned",
                 start
@@ -208,7 +208,7 @@ impl TermIndex {
         let offset_len = match offset_len {
             Some(ol) => ol,
             None => {
-                return Err(anyhow!("Term ID {} is out of bound", term_id));
+                return Err(anyhow!("Term ID {term_id} is out of bound"));
             }
         };
         let offset = offset_len.offset;
@@ -229,7 +229,7 @@ impl TermIndex {
     ) -> Result<BlockBasedEliasFanoIterator<u32>> {
         let offset_len = self
             .get_term_offset_len(term_id)
-            .ok_or_else(|| anyhow!("Term ID {} is out of bound", term_id))?;
+            .ok_or_else(|| anyhow!("Term ID {term_id} is out of bound"))?;
 
         let file_io = self
             .inner

@@ -1,10 +1,10 @@
 use anyhow::Result;
 use compression::elias_fano::ef::EliasFano;
-use compression::noc::noc::PlainEncoder;
+use compression::noc::PlainEncoder;
 use config::enums::{IntSeqEncodingType, QuantizerType};
-use quantization::noq::noq::NoQuantizer;
-use quantization::pq::pq::ProductQuantizerConfig;
+use quantization::noq::NoQuantizer;
 use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
+use quantization::pq::ProductQuantizerConfig;
 use quantization::quantization::WritableQuantizer;
 use rand::prelude::SliceRandom;
 use tracing::debug;

@@ -17,7 +17,7 @@ pub fn example_multiterm_reindex() -> Result<(), Box<dyn std::error::Error>> {
     let base_dir = temp_dir.path().to_str().unwrap().to_string();
 
     // Create a MultiTermBuilder and add terms for multiple users
-    let mut builder = MultiTermBuilder::new();
+    let builder = MultiTermBuilder::new();
 
     // User 1: Document IDs 0, 1, 2, 3, 4
     let user1 = 100u128;
@@ -45,7 +45,7 @@ pub fn example_multiterm_reindex() -> Result<(), Box<dyn std::error::Error>> {
 
     // Write the multiterm index with reindexing applied
     let writer = MultiTermWriter::new(base_dir.clone());
-    writer.write_with_reindex(&mut builder, Some(&id_mappings))?;
+    writer.write_with_reindex(&builder, Some(&id_mappings))?;
 
     // Load the index and verify the reindexing worked
     let index = MultiTermIndex::new(base_dir)?;

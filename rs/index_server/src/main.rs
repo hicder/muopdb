@@ -167,6 +167,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             block_size: arg.block_cache_block_size,
             block_cache_capacity_bytes: arg.block_cache_capacity_bytes,
             max_open_files: arg.block_cache_max_open_files,
+            ..Default::default()
         })
     } else {
         None

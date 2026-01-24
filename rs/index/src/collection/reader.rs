@@ -131,7 +131,7 @@ impl CollectionReader {
 mod tests {
     use anyhow::Result;
     use config::collection::CollectionConfig;
-    use quantization::noq::noq::NoQuantizerL2;
+    use quantization::noq::NoQuantizerL2;
     use tempdir::TempDir;
     use utils::test_utils::generate_random_vector;
 

@@ -345,9 +345,9 @@ mod tests {
     use std::fs;
     use std::sync::Arc;
 
-    use quantization::noq::noq::NoQuantizer;
-    use quantization::pq::pq::{ProductQuantizer, ProductQuantizerConfig};
+    use quantization::noq::NoQuantizer;
     use quantization::pq::pq_builder::{ProductQuantizerBuilder, ProductQuantizerBuilderConfig};
+    use quantization::pq::{ProductQuantizer, ProductQuantizerConfig};
     use quantization::quantization::WritableQuantizer;
     use utils::distance::l2::L2DistanceCalculator;
     use utils::file_io::env::{DefaultEnv, EnvConfig, FileType};
@@ -415,7 +415,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(hnsw.get_header().num_layers > 0, true);
+        assert!(hnsw.get_header().num_layers > 0);
 
         let query = generate_random_vector(128);
         let result = hnsw.ann_search(&query, 10, 100, false).await;
