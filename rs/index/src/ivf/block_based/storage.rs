@@ -301,6 +301,28 @@ impl BlockBasedPostingListStorage {
         .await
     }
 
+    /// Returns all document IDs in the index.
+    pub async fn get_all_doc_ids(&self) -> Result<Vec<u128>> {
+        let num_vectors = self.header.num_vectors as usize;
+        let mut result = Vec::with_capacity(num_vectors);
+
+        let start = self.doc_id_mapping_offset + size_of::<u128>();
+        let length = num_vectors * size_of::<u128>();
+
+        let data = self.file_io.read(start as u64, length as u64).await?;
+
+        for i in 0..num_vectors {
+            let offset = i * 16;
+            result.push(u128::from_le_bytes(
+                data[offset..offset + 16]
+                    .try_into()
+                    .map_err(|_| anyhow!("Failed to parse doc_id at index {}", i))?,
+            ));
+        }
+
+        Ok(result)
+    }
+
     /// Returns a reference to the IVF storage header.
     ///
     /// # Returns
