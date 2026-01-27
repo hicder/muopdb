@@ -7,6 +7,7 @@ use atomic_refcell::AtomicRefCell;
 use config::collection::CollectionConfig;
 use dashmap::DashMap;
 use fs_extra::dir::CopyOptions;
+use futures::future::join_all;
 use metrics::INTERNAL_METRICS;
 use proto::muopdb::DocumentAttribute;
 use quantization::quantization::Quantizer;
@@ -1422,10 +1423,16 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             seg.invalidate(user_id, doc_id)?;
         }
 
+        let mut futures = Vec::new();
         for segment_name in version.toc.iter() {
             if let Some(segment) = all_segments.get(segment_name) {
-                segment.remove(user_id, doc_id).await?;
+                let segment = segment.clone();
+                futures.push(async move { segment.remove(user_id, doc_id).await });
             }
+        }
+
+        for res in join_all(futures).await {
+            res?;
         }
 
         Ok(())

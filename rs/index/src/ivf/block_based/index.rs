@@ -1,5 +1,5 @@
-use std::collections::{BinaryHeap, HashSet};
-use std::sync::{Arc, RwLock};
+use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::sync::Arc;
 
 use anyhow::Result;
 use compression::compression::{AsyncIntSeqDecoder, AsyncIntSeqIterator};
@@ -27,7 +27,8 @@ where
     posting_list_storage: BlockBasedPostingListStorage,
     num_clusters: usize,
     quantizer: Q,
-    invalid_point_ids: RwLock<HashSet<u32>>,
+    invalid_point_ids: dashmap::DashSet<u32>,
+    doc_id_to_point_id: HashMap<u128, u32>,
 }
 
 /// A block-based Inverted File Index (IVF) implementation.
@@ -63,12 +64,21 @@ where
 
         let num_clusters = index_storage.header().num_clusters as usize;
 
+        let doc_id_to_point_id = index_storage
+            .get_all_doc_ids()
+            .await?
+            .into_iter()
+            .enumerate()
+            .map(|(i, doc_id)| (doc_id, i as u32))
+            .collect();
+
         Ok(Self {
             vector_storage,
             posting_list_storage: index_storage,
             num_clusters,
             quantizer,
-            invalid_point_ids: RwLock::new(HashSet::new()),
+            invalid_point_ids: dashmap::DashSet::new(),
+            doc_id_to_point_id,
         })
     }
 
@@ -108,12 +118,21 @@ where
 
         let num_clusters = index_storage.header().num_clusters as usize;
 
+        let doc_id_to_point_id = index_storage
+            .get_all_doc_ids()
+            .await?
+            .into_iter()
+            .enumerate()
+            .map(|(i, doc_id)| (doc_id, i as u32))
+            .collect();
+
         Ok(Self {
             vector_storage,
             posting_list_storage: index_storage,
             num_clusters,
             quantizer,
-            invalid_point_ids: RwLock::new(HashSet::new()),
+            invalid_point_ids: dashmap::DashSet::new(),
+            doc_id_to_point_id,
         })
     }
 
@@ -176,11 +195,7 @@ where
 
         while let Some(point_id_u64) = iterator.next().await? {
             let point_id = point_id_u64 as u32;
-            let is_invalidated = {
-                let invalidated_ids = self.invalid_point_ids.read().unwrap();
-                invalidated_ids.contains(&point_id)
-            };
-            if is_invalidated {
+            if self.invalid_point_ids.contains(&point_id) {
                 continue;
             }
 
@@ -405,7 +420,7 @@ where
     /// * `Result<bool>` - `true` if the document was successfully marked as invalid, `false` if it wasn't found.
     pub async fn invalidate(&self, doc_id: u128) -> Result<bool> {
         match self.get_point_id(doc_id).await? {
-            Some(point_id) => Ok(self.invalid_point_ids.write().unwrap().insert(point_id)),
+            Some(point_id) => Ok(self.invalid_point_ids.insert(point_id)),
             None => Ok(false),
         }
     }
@@ -436,7 +451,7 @@ where
     /// * `Result<bool>` - `true` if invalid, `false` otherwise.
     pub async fn is_invalidated(&self, doc_id: u128) -> Result<bool> {
         match self.get_point_id(doc_id).await? {
-            Some(point_id) => Ok(self.invalid_point_ids.read().unwrap().contains(&point_id)),
+            Some(point_id) => Ok(self.invalid_point_ids.contains(&point_id)),
             None => Ok(false),
         }
     }
@@ -452,14 +467,7 @@ where
     /// # Returns
     /// * `Result<Option<u32>>` - The internal point ID if found, or `None`.
     pub async fn get_point_id(&self, doc_id: u128) -> Result<Option<u32>> {
-        for point_id in 0..self.vector_storage.num_vectors() {
-            if let Ok(stored_doc_id) = self.posting_list_storage.get_doc_id(point_id).await {
-                if stored_doc_id == doc_id {
-                    return Ok(Some(point_id as u32));
-                }
-            }
-        }
-        Ok(None)
+        Ok(self.doc_id_to_point_id.get(&doc_id).copied())
     }
 
     /// Returns a decoder for the posting list at the given cluster index.
