@@ -35,6 +35,8 @@ prometheus-client.workspace = true
 http-body-util.workspace = true
 hyper-util.workspace = true
 metrics.workspace = true
+pprof.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 tempdir.workspace = true

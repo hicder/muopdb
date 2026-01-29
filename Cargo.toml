@@ -66,6 +66,7 @@ odht = "0.3.1"
 ordered-float = "4.3.0"
 ouroboros = "0.18.5"
 parking_lot = { version = "0.12.3", features = ["send_guard"] }
+pprof = { version = "0.14", features = ["prost-codec"] }
 prometheus-client = "0.23.1"
 prost = "0.13.4"
 proto = { path = './rs/proto' }
@@ -97,5 +98,6 @@ tracing-opentelemetry = "0.28"
 utils = { path = './rs/utils' }
 uuid = { version = "1.16.0", features = ["v4"] }
 rust-stemmers = "1.2"
+url = "2.5"
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 
