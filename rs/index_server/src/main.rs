@@ -118,6 +118,9 @@ struct Args {
 
     #[arg(long, default_value_t = 1.0, help = "Tracing sampling rate (0.0-1.0)")]
     tracing_sampling_rate: f64,
+
+    #[arg(long, help = "Directory to write pprof profiles (disabled if not set)")]
+    profile_output_dir: Option<String>,
 }
 
 #[tokio::main]
@@ -261,9 +264,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start the metrics server
     let http_server_addr = SocketAddr::new(addr.ip(), arg.http_port);
+    let profile_output_dir = arg.profile_output_dir.clone();
     info!("Starting HTTP server on {http_server_addr}");
     spawn(async move {
-        if let Err(e) = HttpServer::new().serve(http_server_addr).await {
+        if let Err(e) = HttpServer::new(profile_output_dir)
+            .serve(http_server_addr)
+            .await
+        {
             error!("HTTP server error: {e}");
         }
     });
