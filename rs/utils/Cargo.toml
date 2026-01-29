@@ -40,8 +40,8 @@ nix.workspace = true
 crossbeam.workspace = true
 parking_lot = { workspace = true }
 atomic_refcell = { workspace = true }
-object_store = { version = "0.11", features = ["aws"] }
-url = "2.5"
+object_store = { workspace = true, features = ["aws"] }
+url.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = "0.6"

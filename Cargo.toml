@@ -62,11 +62,12 @@ ndarray = "0.16.1"
 ndarray-linalg = { version = "0.17.0", features = ["openblas-system"] }
 ndarray-rand = "0.15.0"
 num-traits = "0.2.19"
+object_store = { version = "0.13.1", features = ["aws"] }
 odht = "0.3.1"
 ordered-float = "4.3.0"
 ouroboros = "0.18.5"
 parking_lot = { version = "0.12.3", features = ["send_guard"] }
-pprof = { version = "0.14", features = ["prost-codec"] }
+pprof = { version = "0.15", features = ["prost-codec"] }
 prometheus-client = "0.23.1"
 prost = "0.13.4"
 proto = { path = './rs/proto' }
@@ -77,7 +78,7 @@ reqwest = { version = "0.12.11", features = ["json"] }
 rkyv = "0.8.10"
 roaring = "0.10.6"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "=1.0.1"
+serde_json = {version = "1", features = ["std"] }
 serde_yaml = "0.9"
 sorted-vec = "0.8.5"
 strum = { version = "0.25.0", features = ["derive"] }

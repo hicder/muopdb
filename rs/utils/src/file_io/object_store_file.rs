@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use object_store::aws::AmazonS3Builder;
 use object_store::path::Path;
-use object_store::ObjectStore;
+use object_store::{ObjectStore, ObjectStoreExt};
 use tracing::debug;
 use url::Url;
 
@@ -77,7 +77,7 @@ impl FileIO for ObjectStoreFileIO {
             "[OBJECT_STORE] Reading: {} offset {} length {}",
             self.path, offset, length
         );
-        let range = offset as usize..(offset + length) as usize;
+        let range = offset..(offset + length);
         let bytes = self
             .store
             .get_range(&self.path, range)
