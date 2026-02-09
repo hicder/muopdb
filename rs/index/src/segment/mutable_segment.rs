@@ -1,12 +1,15 @@
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicU64;
 use std::time::Instant;
 
 use anyhow::{Ok, Result};
 use config::attribute_schema::{AttributeSchema, AttributeType};
 use config::collection::CollectionConfig;
+use dashmap::DashMap;
 use proto::muopdb::DocumentAttribute;
 use tracing::info;
 
+use crate::ivf::files::invalidated_ids::{InvalidatedIdsStorage, InvalidatedUserDocId};
 use crate::multi_spann::builder::MultiSpannBuilder;
 use crate::multi_spann::writer::MultiSpannWriter;
 use crate::multi_terms::builder::MultiTermBuilder;
@@ -24,6 +27,9 @@ pub struct MutableSegment {
     last_sequence_number: AtomicU64,
     num_docs: AtomicU64,
     created_at: Instant,
+
+    // Pending invalidations tracked in-memory only. Written to disk during build().
+    pending_invalidations: DashMap<u128, HashSet<u128>>,
 }
 
 impl MutableSegment {
@@ -39,6 +45,7 @@ impl MutableSegment {
             last_sequence_number: AtomicU64::new(0),
             num_docs: AtomicU64::new(0),
             created_at: Instant::now(),
+            pending_invalidations: DashMap::new(),
         })
     }
 
@@ -118,7 +125,26 @@ impl MutableSegment {
     pub fn invalidate(&self, user_id: u128, doc_id: u128, sequence_number: u64) -> Result<bool> {
         self.last_sequence_number
             .store(sequence_number, std::sync::atomic::Ordering::SeqCst);
-        self.multi_spann_builder.invalidate(user_id, doc_id)
+        // Track invalidation in memory. Will be written to disk during build().
+        // Also invalidate in the builder so the doc is not included in the built segment.
+        let builder_result = self.multi_spann_builder.invalidate(user_id, doc_id)?;
+        if builder_result {
+            self.pending_invalidations
+                .entry(user_id)
+                .or_default()
+                .insert(doc_id);
+        }
+        Ok(builder_result)
+    }
+
+    /// Returns a copy of all pending invalidations.
+    /// Used during segment build to write invalidations to disk.
+    pub fn get_pending_invalidations(&self) -> HashMap<u128, Vec<u128>> {
+        let mut result = HashMap::new();
+        for entry in self.pending_invalidations.iter() {
+            result.insert(*entry.key(), entry.value().iter().cloned().collect());
+        }
+        result
     }
 
     pub fn build(&mut self, base_directory: String, name: String) -> Result<()> {
@@ -144,6 +170,22 @@ impl MutableSegment {
 
         // Remove all reassigned_mappings file.
         self.remove_reassigned_mappings(&segment_directory)?;
+
+        // Write pending invalidations to disk
+        let invalidated_ids_dir = format!("{segment_directory}/invalidated_ids_storage");
+        std::fs::create_dir_all(&invalidated_ids_dir)?;
+        let mut invalidated_storage = InvalidatedIdsStorage::new(&invalidated_ids_dir, 1024 * 1024);
+
+        let pending_invalidations = self.get_pending_invalidations();
+        if !pending_invalidations.is_empty() {
+            let mut invalidated_pairs = Vec::new();
+            for (user_id, doc_ids) in pending_invalidations {
+                for doc_id in doc_ids {
+                    invalidated_pairs.push(InvalidatedUserDocId { user_id, doc_id });
+                }
+            }
+            invalidated_storage.invalidate_batch(&invalidated_pairs)?;
+        }
 
         self.finalized = true;
         Ok(())

@@ -157,6 +157,8 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
 
     /// Invalidates a document for a specific user.
     ///
+    /// This only updates in-memory state. Use `flush_invalidations()` to persist to disk.
+    ///
     /// # Arguments
     /// * `user_id` - The ID of the user.
     /// * `doc_id` - The ID of the document to invalidate.
@@ -171,15 +173,15 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
                 .entry(user_id)
                 .or_default()
                 .insert(doc_id);
-            self.invalidated_ids_storage
-                .write()
-                .await
-                .invalidate(user_id, doc_id)?;
+            // Note: We no longer write to disk here. flush_invalidations() should be called
+            // during segment flush/build to persist these invalidations.
         }
         Ok(effectively_invalidated)
     }
 
     /// Invalidates a batch of documents across multiple users.
+    ///
+    /// This only updates in-memory state. Use `flush_invalidations()` to persist to disk.
     ///
     /// # Arguments
     /// * `user_to_doc_ids` - A mapping from user IDs to lists of document IDs to invalidate.
@@ -215,11 +217,47 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
                     .or_default()
                     .insert(pair.doc_id);
             }
-            let mut invalidated_ids_storage_write = self.invalidated_ids_storage.write().await;
-            invalidated_ids_storage_write.invalidate_batch(&effectively_invalidated_pairs)?;
+            // Note: We no longer write to disk here. flush_invalidations() should be called
+            // during segment flush/build to persist these invalidations.
         }
 
         Ok(total_effectively_invalidated)
+    }
+
+    /// Flushes all pending invalidations to disk.
+    ///
+    /// This should be called during segment flush/build operations to persist
+    /// accumulated invalidations. After successful write, pending invalidations
+    /// are cleared.
+    ///
+    /// # Returns
+    /// * `Result<usize>` - The number of invalidations written to disk.
+    pub async fn flush_invalidations(&self) -> Result<usize> {
+        let mut invalidated_pairs = Vec::new();
+
+        // Collect all pending invalidations
+        for entry in self.pending_invalidations.iter() {
+            let user_id = *entry.key();
+            for doc_id in entry.value().iter() {
+                invalidated_pairs.push(InvalidatedUserDocId {
+                    user_id,
+                    doc_id: *doc_id,
+                });
+            }
+        }
+
+        if invalidated_pairs.is_empty() {
+            return Ok(0);
+        }
+
+        // Write to storage
+        let mut invalidated_ids_storage_write = self.invalidated_ids_storage.write().await;
+        invalidated_ids_storage_write.invalidate_batch(&invalidated_pairs)?;
+
+        // Clear pending invalidations after successful write
+        self.pending_invalidations.clear();
+
+        Ok(invalidated_pairs.len())
     }
 
     /// Checks if a document is invalidated for a given user.
@@ -302,10 +340,18 @@ impl<Q: Quantizer> MultiSpannIndex<Q> {
 
     /// Returns the total number of deleted documents across all users.
     ///
+    /// This includes both persisted invalidations and pending in-memory invalidations.
+    ///
     /// # Returns
     /// * `usize` - The count of invalidated documents.
     pub async fn get_deleted_docs_count(&self) -> usize {
-        return self.invalidated_ids_storage.read().await.num_entries();
+        let persisted_count = self.invalidated_ids_storage.read().await.num_entries();
+        let pending_count: usize = self
+            .pending_invalidations
+            .iter()
+            .map(|entry| entry.value().len())
+            .sum();
+        persisted_count + pending_count
     }
 
     /// Returns the total number of documents (including deleted ones) in the multi-user index.
@@ -640,6 +686,14 @@ mod tests {
             .invalidate(0, 0)
             .await
             .expect("Failed to invalidate"));
+
+        // Flush invalidations to disk before checking storage
+        let flushed = multi_spann_index
+            .flush_invalidations()
+            .await
+            .expect("Failed to flush");
+        assert_eq!(flushed, 1);
+
         assert_eq!(
             multi_spann_index
                 .invalidated_ids_storage
@@ -655,6 +709,14 @@ mod tests {
             .invalidate(0, num_vectors)
             .await
             .expect("Failed to invalidate"));
+
+        // No new invalidations to flush
+        let flushed = multi_spann_index
+            .flush_invalidations()
+            .await
+            .expect("Failed to flush");
+        assert_eq!(flushed, 0);
+
         assert_eq!(
             multi_spann_index
                 .invalidated_ids_storage
@@ -724,6 +786,13 @@ mod tests {
         // Verify that only valid doc_ids were effectively invalidated
         assert_eq!(effectively_invalidated_count, 2); // Only (0, 0) and (0, 1) are valid
 
+        // Flush invalidations to disk before checking storage
+        let flushed = multi_spann_index
+            .flush_invalidations()
+            .await
+            .expect("Failed to flush");
+        assert_eq!(flushed, 2);
+
         // Verify that the invalidated IDs are stored persistently
         let invalidated_ids: Vec<_> = multi_spann_index
             .invalidated_ids_storage
@@ -760,6 +829,13 @@ mod tests {
 
         // Verify that only the new valid doc_id was effectively invalidated
         assert_eq!(new_effectively_invalidated_count, 1); // Only (0, 2) is valid and not already invalidated
+
+        // Flush invalidations to disk before checking storage
+        let flushed = multi_spann_index
+            .flush_invalidations()
+            .await
+            .expect("Failed to flush");
+        assert_eq!(flushed, 1);
 
         // Verify that the invalidated IDs are updated persistently
         let updated_invalidated_ids: Vec<_> = multi_spann_index

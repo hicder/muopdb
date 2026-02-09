@@ -1,10 +1,10 @@
 use std::fs::Metadata;
 use std::os::fd::AsRawFd;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use parking_lot::Mutex as ParkingLotMutex;
+use tokio::sync::Mutex;
 use tracing::info;
 
 use crate::file_io::uring_engine::UringEngineHandle;
@@ -51,6 +51,11 @@ pub struct UringFile {
     engine: UringEngineHandle,
     buffers: Mutex<Vec<Vec<u8>>>,
 }
+
+// Safety: UringFile is safe to send between threads because all its fields are Send
+unsafe impl Send for UringFile {}
+// Safety: UringFile is safe to share between threads because all its fields are Sync
+unsafe impl Sync for UringFile {}
 
 impl UringFile {
     /// Opens a file for asynchronous reading using io_uring.
@@ -103,18 +108,18 @@ impl UringFile {
         })
     }
 
-    fn get_buffer(&self, length: usize) -> Vec<u8> {
+    async fn get_buffer(&self, length: usize) -> Vec<u8> {
         info!("[URING] Getting buffer of size {}", length);
-        let mut buffers = self.buffers.lock().unwrap();
-        if let Some(idx) = buffers.iter().position(|b| b.len() >= length) {
+        let mut buffers = self.buffers.lock().await;
+        if let Some(idx) = buffers.iter().position(|b: &Vec<u8>| b.len() >= length) {
             buffers.swap_remove(idx)
         } else {
             vec![0; length]
         }
     }
 
-    fn return_buffer(&self, buffer: Vec<u8>) {
-        let mut buffers = self.buffers.lock().unwrap();
+    async fn return_buffer(&self, buffer: Vec<u8>) {
+        let mut buffers = self.buffers.lock().await;
         buffers.push(buffer);
     }
 }
@@ -164,7 +169,7 @@ impl FileIO for UringFile {
             return Ok(vec![]);
         }
 
-        let buffer = self.get_buffer(length as usize);
+        let buffer = self.get_buffer(length as usize).await;
         let fd = self.file.as_raw_fd();
 
         let result = self
@@ -174,11 +179,11 @@ impl FileIO for UringFile {
 
         match result {
             Ok(buffer) => {
-                self.return_buffer(buffer.clone());
+                self.return_buffer(buffer.clone()).await;
                 Ok(buffer)
             }
             Err(e) => {
-                self.return_buffer(vec![0; length as usize]);
+                self.return_buffer(vec![0; length as usize]).await;
                 Err(e)
             }
         }
@@ -236,7 +241,7 @@ pub struct AppendableUringFile {
     file: Arc<std::fs::File>,
     engine: UringEngineHandle,
     offset: AtomicU64,
-    write_lock: ParkingLotMutex<()>,
+    write_lock: Mutex<()>,
 }
 
 impl AppendableUringFile {
@@ -277,7 +282,7 @@ impl AppendableUringFile {
             file: Arc::new(file),
             engine,
             offset: AtomicU64::new(file_length),
-            write_lock: ParkingLotMutex::new(()),
+            write_lock: Mutex::new(()),
         })
     }
 }
@@ -305,7 +310,7 @@ impl AppendableFileIO for AppendableUringFile {
     /// - The io_uring operation fails
     /// - The file descriptor becomes invalid
     async fn append(&self, data: &[u8]) -> Result<u64> {
-        let _lock = self.write_lock.lock();
+        let _lock = self.write_lock.lock().await;
         let offset = self.offset.fetch_add(data.len() as u64, Ordering::SeqCst);
         let fd = self.file.as_raw_fd();
 

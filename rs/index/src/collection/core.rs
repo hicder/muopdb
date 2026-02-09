@@ -959,6 +959,12 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Collection<Q> {
             }
             *pending_segment_write = None;
 
+            // Flush any invalidations that occurred during the flush (deletions above)
+            // to disk immediately as per design decision
+            if let BoxedImmutableSegment::FinalizedSegment(ref seg) = segment {
+                seg.write().await.flush_invalidations().await?;
+            }
+
             // Add segments while holding write lock to prevent insertions/invalidations
             self.add_segments(
                 vec![name_for_new_segment.clone()],
