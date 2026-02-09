@@ -1,6 +1,8 @@
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use async_lock::RwLock;
 use config::attribute_schema::AttributeSchema;
 use config::search_params::SearchParams;
 use proto::muopdb::DocumentFilter;
@@ -22,6 +24,9 @@ pub struct ImmutableSegment<Q: Quantizer> {
     index: MultiSpannIndex<Q>,
     name: String,
     multi_term_index: Option<Arc<MultiTermIndex>>,
+    // Pending invalidations tracked in-memory only. These should be flushed to disk
+    // periodically or during optimization operations.
+    pending_invalidations: RwLock<HashMap<u128, HashSet<u128>>>,
 }
 
 impl<Q: Quantizer> ImmutableSegment<Q> {
@@ -43,6 +48,7 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
             index,
             name,
             multi_term_index,
+            pending_invalidations: RwLock::new(HashMap::new()),
         }
     }
 
@@ -96,6 +102,39 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
     pub async fn get_doc_id(&self, user_id: u128, point_id: u32) -> Option<u128> {
         self.index.get_doc_id(user_id, point_id).await
     }
+
+    /// Flushes all pending invalidations to disk.
+    ///
+    /// This should be called periodically or during optimization operations
+    /// to persist buffered invalidations. After successful write, pending
+    /// invalidations are cleared.
+    ///
+    /// # Returns
+    /// * `Result<usize>` - The number of invalidations written to disk.
+    pub async fn flush_invalidations(&self) -> Result<usize> {
+        // Take the pending invalidations (replace with empty map)
+        let pending = {
+            let mut pending_guard = self.pending_invalidations.write().await;
+            std::mem::take(&mut *pending_guard)
+        };
+
+        if pending.is_empty() {
+            return Ok(0);
+        }
+
+        // Convert to the format expected by invalidate_batch
+        let mut user_to_doc_ids: HashMap<u128, Vec<u128>> = HashMap::new();
+        for (user_id, doc_ids) in pending {
+            user_to_doc_ids.insert(user_id, doc_ids.into_iter().collect());
+        }
+
+        // Call invalidate_batch on the index (which now only updates in-memory state)
+        // Then flush to disk
+        let _count = self.index.invalidate_batch(&user_to_doc_ids).await?;
+        let flushed = self.index.flush_invalidations().await?;
+
+        Ok(flushed)
+    }
 }
 
 /// This is the implementation of Segment for ImmutableSegment.
@@ -106,9 +145,19 @@ impl<Q: Quantizer> Segment for ImmutableSegment<Q> {
         Err(anyhow!("ImmutableSegment does not support insertion"))
     }
 
-    /// ImmutableSegment does not support actual removal, we are just invalidating documents.
+    /// ImmutableSegment buffers invalidations in memory instead of writing to disk immediately.
+    /// Use flush_invalidations() to persist buffered invalidations to disk.
     async fn remove(&self, user_id: u128, doc_id: u128) -> Result<bool> {
-        self.index.invalidate(user_id, doc_id).await
+        // Invalidate in the in-memory index first
+        let effectively_invalidated = self.index.invalidate(user_id, doc_id).await?;
+
+        if effectively_invalidated {
+            // Buffer the invalidation in memory instead of immediately writing to disk
+            let mut pending = self.pending_invalidations.write().await;
+            pending.entry(user_id).or_default().insert(doc_id);
+        }
+
+        Ok(effectively_invalidated)
     }
 
     /// ImmutableSegment does not support contains.

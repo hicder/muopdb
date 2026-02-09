@@ -147,7 +147,7 @@ impl InnerUring {
         cq.sync();
 
         let mut found = false;
-        while let Some(cqe) = cq.next() {
+        for cqe in cq.by_ref() {
             let id = cqe.user_data();
             f(cqe);
             if let Some(target) = target_id {
@@ -192,12 +192,12 @@ pub struct UringEngineHandle {
 enum InFlightEntry {
     Read {
         response_tx: tokio::sync::oneshot::Sender<Result<Vec<u8>>>,
-        buffer: Pin<Box<Vec<u8>>>,
+        buffer: Pin<Vec<u8>>,
     },
     #[allow(dead_code)]
     Write {
         response_tx: tokio::sync::oneshot::Sender<Result<()>>,
-        buffer: Pin<Box<Vec<u8>>>,
+        buffer: Pin<Vec<u8>>,
     },
 }
 
@@ -226,8 +226,7 @@ fn process_cqe(cqe: io_uring::cqueue::Entry, inflight: &DashMap<u64, InFlightEnt
                 ))
             } else {
                 let bytes_read = cqe.result() as usize;
-                let boxed_buffer = Pin::into_inner(buffer);
-                let mut buffer = *boxed_buffer;
+                let mut buffer = Pin::into_inner(buffer);
                 buffer.truncate(bytes_read);
                 Ok(buffer)
             };
@@ -374,10 +373,11 @@ impl UringEngineHandle {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
-        let mut pinned_buffer = Box::pin(buffer);
+        let pinned_buffer = Pin::new(buffer);
+        let buffer_ptr = pinned_buffer.as_ref().get_ref().as_ptr();
         let sqe = io_uring::opcode::Read::new(
             io_uring::types::Fd(fd),
-            pinned_buffer.as_mut().get_mut().as_mut_ptr(),
+            buffer_ptr as *mut u8,
             length as u32,
         )
         .offset(offset)
@@ -462,17 +462,14 @@ impl UringEngineHandle {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
-        let mut pinned_buffer = Box::pin(data);
-        let length = pinned_buffer.len();
+        let length = data.len();
+        let pinned_buffer = Pin::new(data);
+        let buffer_ptr = pinned_buffer.as_ref().get_ref().as_ptr();
 
-        let sqe = io_uring::opcode::Write::new(
-            io_uring::types::Fd(fd),
-            pinned_buffer.as_mut().get_mut().as_ptr(),
-            length as u32,
-        )
-        .offset(offset)
-        .build()
-        .user_data(id);
+        let sqe = io_uring::opcode::Write::new(io_uring::types::Fd(fd), buffer_ptr, length as u32)
+            .offset(offset)
+            .build()
+            .user_data(id);
 
         // Add to inflight map first
         self.inflight.insert(
@@ -650,7 +647,6 @@ mod tests {
         let handle = std::sync::Arc::new(handle);
         let mut handles = Vec::new();
         for i in 0..2 {
-            let fd = fd;
             let handle = handle.clone();
             let handle = tokio::spawn(async move {
                 handle

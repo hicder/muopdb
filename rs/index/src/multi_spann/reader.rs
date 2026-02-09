@@ -117,6 +117,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests reading a multi-user SPANN index with Product Quantization.
     #[tokio::test]
     async fn test_multi_spann_reader_pq() -> Result<()> {
         let temp_dir = tempdir::TempDir::new("test_multi_spann_reader_pq")?;
@@ -163,6 +164,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests reading a multi-user SPANN index asynchronously.
     #[tokio::test]
     async fn test_multi_spann_reader_async() -> Result<()> {
         let temp_dir = tempdir::TempDir::new("test_multi_spann_reader_async")?;
