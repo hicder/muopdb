@@ -210,7 +210,7 @@ where
     /// * `Option<SearchResult>` - The search results if any, or `None`.
     pub async fn search(
         &self,
-        query: Vec<f32>,
+        query: &[f32],
         params: &SearchParams,
         planner: Option<Arc<Planner>>,
     ) -> Option<SearchResult> {
@@ -218,7 +218,7 @@ where
         let nearest_centroids = self
             .centroids
             .ann_search(
-                &query,
+                query,
                 num_explored_centroids,
                 params.ef_construction,
                 params.record_pages,
@@ -253,7 +253,7 @@ where
         let mut results = self
             .posting_lists
             .search_with_centroids_and_remap(
-                &query,
+                query,
                 nearest_centroid_ids,
                 params.top_k,
                 params.record_pages,
@@ -356,7 +356,7 @@ mod tests {
         let params = SearchParams::new(k, num_probes, false);
 
         let results = spann
-            .search(query, &params, None)
+            .search(&query, &params, None)
             .await
             .expect("IVF search should return a result");
 
@@ -435,7 +435,7 @@ mod tests {
         let params = SearchParams::new(k, num_probes, false);
 
         let results = spann
-            .search(query, &params, None)
+            .search(&query, &params, None)
             .await
             .expect("IVF search should return a result");
 
@@ -511,7 +511,7 @@ mod tests {
         let params = SearchParams::new(k, num_probes, false);
 
         let results = spann
-            .search(query, &params, None)
+            .search(&query, &params, None)
             .await
             .expect("IVF search should return a result");
 

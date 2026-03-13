@@ -126,7 +126,7 @@ impl<Q: Quantizer> ImmutableSegment<Q> {
     pub async fn search_for_user(
         &self,
         user_id: u128,
-        query: Vec<f32>,
+        query: &[f32],
         params: &SearchParams,
         planner: Option<Arc<Planner>>,
     ) -> Option<SearchResult> {
@@ -308,7 +308,7 @@ mod tests {
         let params = SearchParams::new(k, num_probes, false);
 
         let results = immutable_segment
-            .search_for_user(0, query.clone(), &params, None)
+            .search_for_user(0, &query, &params, None)
             .await
             .expect("Failed to search with Multi-SPANN index");
 
@@ -384,7 +384,7 @@ mod tests {
         let params = SearchParams::new(k, num_probes, false);
 
         let results = immutable_segment
-            .search_for_user(0, query.clone(), &params, None)
+            .search_for_user(0, &query, &params, None)
             .await
             .expect("Failed to search with Multi-SPANN index");
 

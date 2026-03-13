@@ -217,7 +217,7 @@ impl IndexServer for IndexServerImpl {
                 let result = SnapshotWithQuantizer::search_for_users(
                     snapshot,
                     &user_ids,
-                    vec,
+                    &vec,
                     &search_params,
                     filter,
                 )

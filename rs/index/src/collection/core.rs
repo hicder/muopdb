@@ -1830,7 +1830,7 @@ mod tests {
         let result = Snapshot::search_for_users(
             snapshot,
             &[0],
-            vec![1.0, 2.0, 3.0, 4.0],
+            &[1.0, 2.0, 3.0, 4.0],
             &SearchParams::new(10, 10, false),
             None,
         )
@@ -1930,7 +1930,7 @@ mod tests {
                 let result = Snapshot::search_for_users(
                     snapshot,
                     &[0],
-                    vec![1.0, 2.0, 3.0, 4.0],
+                    &[1.0, 2.0, 3.0, 4.0],
                     &SearchParams::new(10, 10, false),
                     None,
                 )
@@ -2246,7 +2246,7 @@ mod tests {
 
         let params = SearchParams::new(k, ef_construction, record_pages);
         let result =
-            Snapshot::search_for_users(snapshot.clone(), &[0], query.clone(), &params, None)
+            Snapshot::search_for_users(snapshot.clone(), &[0], &query, &params, None)
                 .await
                 .unwrap();
 
@@ -2265,7 +2265,7 @@ mod tests {
         let result = Snapshot::search_for_users(
             snapshot.clone(),
             &[0],
-            query.clone(),
+            &query,
             &params,
             Some(Arc::new(document_filter)),
         )
@@ -2297,7 +2297,7 @@ mod tests {
         let result = Snapshot::search_for_users(
             snapshot.clone(),
             &[0],
-            query.clone(),
+            &query,
             &params,
             Some(Arc::new(document_filter)),
         )
@@ -2329,7 +2329,7 @@ mod tests {
         let result = Snapshot::search_for_users(
             snapshot,
             &[0],
-            query.clone(),
+            &query,
             &params,
             Some(Arc::new(document_filter)),
         )

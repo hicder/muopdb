@@ -191,7 +191,7 @@ mod tests {
         let snapshot = Arc::new(snapshot);
         let params = SearchParams::new(3, 10, false);
         let result = snapshot
-            .search_for_user(0, vec![100.0, 101.0, 102.0], &params, None)
+            .search_for_user(0, &[100.0, 101.0, 102.0], &params, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -205,7 +205,7 @@ mod tests {
         assert_eq!(result_ids, vec![4, 5, 6]);
 
         let result = snapshot
-            .search_for_user(0, vec![1.0, 2.0, 3.0], &params, None)
+            .search_for_user(0, &[1.0, 2.0, 3.0], &params, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -315,7 +315,7 @@ mod tests {
 
         let params = SearchParams::new(3, 10, false);
         let result = snapshot
-            .search_for_user(0, vec![1.0, 2.0, 3.0], &params, None)
+            .search_for_user(0, &[1.0, 2.0, 3.0], &params, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -412,7 +412,7 @@ mod tests {
         let snapshot = collection.get_snapshot().await?;
         let params = SearchParams::new(3, 10, false);
         let result = snapshot
-            .search_for_user(0, vec![1.0, 2.0, 3.0], &params, None)
+            .search_for_user(0, &[1.0, 2.0, 3.0], &params, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -426,7 +426,7 @@ mod tests {
         assert_eq!(result_ids, vec![1, 2, 3]);
 
         let result = snapshot
-            .search_for_user(1, vec![10.0, 11.0, 12.0], &params, None)
+            .search_for_user(1, &[10.0, 11.0, 12.0], &params, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 3);
@@ -535,7 +535,7 @@ mod tests {
         let snapshot = collection.get_snapshot().await?;
         let params = SearchParams::new(3, 10, false);
         let result = snapshot
-            .search_for_user(0, vec![1.0, 2.0, 3.0], &params, None)
+            .search_for_user(0, &[1.0, 2.0, 3.0], &params, None)
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 2);
@@ -655,7 +655,7 @@ mod tests {
 
         let params = SearchParams::new(10, 10, false);
         let result = snapshot
-            .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
+            .search_for_user(0, &[1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
             .await
             .unwrap();
 
@@ -805,7 +805,7 @@ mod tests {
         };
 
         let result = snapshot
-            .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
+            .search_for_user(0, &[1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
             .await
             .unwrap();
 
@@ -825,7 +825,7 @@ mod tests {
         };
 
         let result = snapshot
-            .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
+            .search_for_user(0, &[1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
             .await
             .unwrap();
 
@@ -845,7 +845,7 @@ mod tests {
         };
 
         let result = snapshot
-            .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
+            .search_for_user(0, &[1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
             .await
             .unwrap();
 
@@ -991,7 +991,7 @@ mod tests {
         };
 
         let result = snapshot
-            .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
+            .search_for_user(0, &[1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
@@ -1008,7 +1008,7 @@ mod tests {
         };
 
         let result = snapshot
-            .search_for_user(1, vec![2.0, 2.0, 2.0], &params, Some(Arc::new(filter)))
+            .search_for_user(1, &[2.0, 2.0, 2.0], &params, Some(Arc::new(filter)))
             .await
             .unwrap();
         assert_eq!(result.id_with_scores.len(), 1);
@@ -1161,7 +1161,7 @@ mod tests {
         };
 
         let result = snapshot
-            .search_for_user(0, vec![1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
+            .search_for_user(0, &[1.0, 1.0, 1.0], &params, Some(Arc::new(filter)))
             .await
             .unwrap();
         // Doc 1 was invalidated but its term may still be in index

@@ -286,7 +286,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
     pub async fn search_with_id(
         &self,
         id: u128,
-        query: Vec<f32>,
+        query: &[f32],
         params: &SearchParams,
     ) -> Option<SearchResult>
     where
@@ -314,14 +314,9 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
             .with_centroid_distance_ratio(params.centroid_distance_ratio);
             for segment in &self.inner_segments {
                 let s = segment.clone();
-                let segment_result = BoxedImmutableSegment::search_with_id(
-                    s,
-                    id,
-                    query.clone(),
-                    &adjusted_params,
-                    None,
-                )
-                .await;
+                let segment_result =
+                    BoxedImmutableSegment::search_with_id(s, id, query, &adjusted_params, None)
+                        .await;
                 if let Some(mut result) = segment_result {
                     result
                         .id_with_scores
@@ -335,7 +330,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> PendingSegment<Q> {
         } else {
             let index = self.index.read().await;
             match &*index {
-                Some(index) => index.search_for_user(id, query.clone(), params, None).await,
+                Some(index) => index.search_for_user(id, query, params, None).await,
                 None => unreachable!("Index should not be None if use_internal_index is set"),
             }
         }
@@ -434,7 +429,7 @@ mod tests {
         let params = SearchParams::new(1, 10, false);
 
         let results = pending_segment
-            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], &params)
+            .search_with_id(0, &vec![1.0, 2.0, 3.0, 4.0], &params)
             .await;
         let res = results.unwrap();
         assert_eq!(res.id_with_scores.len(), 1);
@@ -483,7 +478,7 @@ mod tests {
         let params = SearchParams::new(1, 10, false);
 
         let results = pending_segment
-            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], &params)
+            .search_with_id(0, &[1.0, 2.0, 3.0, 4.0], &params)
             .await;
         let res = results.unwrap();
         assert_eq!(res.id_with_scores.len(), 1);
@@ -538,7 +533,7 @@ mod tests {
         let params = SearchParams::new(1, 10, false);
 
         let results = pending_segment
-            .search_with_id(0, vec![1.0, 2.0, 3.0, 4.0], &params)
+            .search_with_id(0, &[1.0, 2.0, 3.0, 4.0], &params)
             .await;
         let res = results.unwrap();
         assert_eq!(res.id_with_scores.len(), 1);

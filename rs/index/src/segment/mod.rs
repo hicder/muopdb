@@ -176,7 +176,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
     pub fn search_with_id<'a>(
         s: BoxedImmutableSegment<Q>,
         id: u128,
-        query: Vec<f32>,
+        query: &'a [f32],
         params: &'a SearchParams,
         planner: Option<Arc<Planner>>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<SearchResult>> + Send + 'a>>
@@ -189,21 +189,21 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> BoxedImmutableSegment<Q> {
                     immutable_segment
                         .read()
                         .await
-                        .search_for_user(id, query.clone(), params, planner)
+                        .search_for_user(id, query, params, planner)
                         .await
                 }
                 BoxedImmutableSegment::PendingSegment(pending_segment) => {
                     pending_segment
                         .read()
                         .await
-                        .search_with_id(id, query.clone(), params)
+                        .search_with_id(id, query, params)
                         .await
                 }
                 BoxedImmutableSegment::MockedNoQuantizationSegment(mocked_segment) => {
                     mocked_segment
                         .read()
                         .await
-                        .search_with_id(id, query.clone(), params)
+                        .search_with_id(id, query, params)
                         .await
                 }
             }
@@ -306,7 +306,7 @@ impl MockedSegment {
     pub async fn search_with_id(
         &self,
         id: u128,
-        query: Vec<f32>,
+        query: &[f32],
         params: &SearchParams,
     ) -> Option<SearchResult> {
         todo!()

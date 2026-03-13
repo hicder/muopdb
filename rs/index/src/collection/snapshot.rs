@@ -39,7 +39,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
     pub async fn search_for_users(
         snapshot: Arc<Snapshot<Q>>,
         user_ids: &[u128],
-        query: Vec<f32>,
+        query: &[f32],
         params: &SearchParams,
         filter: Option<Arc<DocumentFilter>>,
     ) -> Option<SearchResult>
@@ -49,7 +49,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
         let mut results = SearchResult::new();
         for user_id in user_ids {
             if let Some(id_results) = snapshot
-                .search_for_user(*user_id, query.clone(), params, filter.clone())
+                .search_for_user(*user_id, query, params, filter.clone())
                 .await
             {
                 results.id_with_scores.extend(id_results.id_with_scores);
@@ -69,7 +69,7 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
     pub async fn search_for_user(
         &self,
         user_id: u128,
-        query: Vec<f32>,
+        query: &[f32],
         params: &SearchParams,
         filter: Option<Arc<DocumentFilter>>,
     ) -> Option<SearchResult>
@@ -93,9 +93,8 @@ impl<Q: Quantizer + Clone + Send + Sync + 'static> Snapshot<Q> {
                 })
             });
             let s = segment.clone();
-            let q = query.clone();
             if let Some(results) =
-                BoxedImmutableSegment::search_with_id(s, user_id, q, params, planner).await
+                BoxedImmutableSegment::search_with_id(s, user_id, query, params, planner).await
             {
                 scored_results.id_with_scores.extend(results.id_with_scores);
                 scored_results.stats.merge(&results.stats);
@@ -174,7 +173,7 @@ impl SnapshotWithQuantizer {
     pub async fn search_for_users(
         snapshot: SnapshotWithQuantizer,
         user_ids: &[u128],
-        query: Vec<f32>,
+        query: &[f32],
         params: &SearchParams,
         filter: Option<Arc<DocumentFilter>>,
     ) -> Option<SearchResult> {
