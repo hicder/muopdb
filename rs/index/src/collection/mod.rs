@@ -1,6 +1,7 @@
 pub mod core;
 pub mod reader;
 pub mod snapshot;
+pub mod text_search;
 
 use core::{Collection, SegmentInfoAndVersion};
 use std::collections::HashMap;
@@ -318,6 +319,35 @@ impl BoxedCollection {
             BoxedCollection::CollectionNoQuantizationL2(collection) => collection.sync_wal().await,
             BoxedCollection::CollectionProductQuantization(collection) => {
                 collection.sync_wal().await
+            }
+        }
+    }
+
+    /// Execute hybrid search combining BM25 text search and vector similarity search.
+    ///
+    /// # Arguments
+    /// * `user_id` - The user whose documents to search
+    /// * `text_query` - The text query for BM25 search
+    /// * `vector_query` - The vector query for similarity search
+    /// * `k` - Maximum number of results to return
+    /// * `alpha` - Weight for BM25 scores [0.0, 1.0]
+    ///
+    /// # Returns
+    /// A Result containing a vector of (doc_id, hybrid_score) pairs sorted by score descending
+    pub async fn search_hybrid(
+        &self,
+        user_id: u128,
+        text_query: String,
+        vector_query: Vec<f32>,
+        k: usize,
+        alpha: f32,
+    ) -> Result<Vec<(u128, f32)>> {
+        match self {
+            BoxedCollection::CollectionNoQuantizationL2(collection) => {
+                collection.search_hybrid(user_id, text_query, vector_query, k, alpha).await
+            }
+            BoxedCollection::CollectionProductQuantization(collection) => {
+                collection.search_hybrid(user_id, text_query, vector_query, k, alpha).await
             }
         }
     }

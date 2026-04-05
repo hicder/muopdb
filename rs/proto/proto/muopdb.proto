@@ -19,6 +19,8 @@ service IndexServer {
 
   rpc TermSearch(TermSearchRequest) returns (TermSearchResponse) {}
 
+  rpc HybridSearch(HybridSearchRequest) returns (HybridSearchResponse) {}
+
   rpc Insert(InsertRequest) returns (InsertResponse) {}
 
   rpc Remove(RemoveRequest) returns (RemoveResponse) {}
@@ -137,6 +139,58 @@ message SearchResponse {
 
   // For metrics, not enabled by default
   uint64 num_pages_accessed = 3;
+}
+
+// Hybrid query mode for hybrid search
+enum HybridQueryMode {
+  HYBRID = 0;       // Both text and vector
+  TEXT_ONLY = 1;    // BM25 search only
+  VECTOR_ONLY = 2;  // Vector search only
+}
+
+// Hybrid search request combining text and vector search
+message HybridSearchRequest {
+  string collection_name = 1;
+  
+  // Text query (required for HYBRID or TEXT_ONLY modes)
+  optional string text_query = 2;
+  
+  // Vector query (required for HYBRID or VECTOR_ONLY modes)
+  repeated float vector = 3;
+  
+  // Fusion parameter: weight for BM25 (0.0 to 1.0)
+  // 1.0 = text only, 0.0 = vector only, 0.5 = equal weight
+  float alpha = 4;
+  
+  // Search parameters
+  SearchParams params = 5;
+  
+  // Users to search for
+  repeated Id user_ids = 6;
+  
+  // Query mode override (defaults to HYBRID=0)
+  HybridQueryMode mode = 7;
+  
+  // Optional filter for document attributes
+  optional DocumentFilter where_document = 8;
+}
+
+// Hybrid search response with combined scores
+message HybridSearchResponse {
+  repeated Id doc_ids = 1;
+  
+  // Final hybrid scores
+  repeated float scores = 2;
+  
+  // Individual score components (for debugging/analysis)
+  repeated float bm25_scores = 3;
+  repeated float vector_scores = 4;
+  
+  // Number of documents considered
+  uint64 num_docs_considered = 5;
+  
+  // For metrics
+  uint64 num_pages_accessed = 6;
 }
 
 message TermSearchRequest {

@@ -10,9 +10,9 @@ use metrics::API_METRICS;
 use proto::muopdb::index_server_server::IndexServer;
 use proto::muopdb::{
     CreateCollectionRequest, CreateCollectionResponse, DocumentAttribute, FlushRequest,
-    FlushResponse, InsertPackedRequest, InsertPackedResponse, InsertRequest, InsertResponse,
-    RemoveRequest, RemoveResponse, SearchRequest, SearchResponse, TermSearchRequest,
-    TermSearchResponse,
+    FlushResponse, HybridQueryMode, HybridSearchRequest, HybridSearchResponse, InsertPackedRequest,
+    InsertPackedResponse, InsertRequest, InsertResponse, RemoveRequest, RemoveResponse,
+    SearchRequest, SearchResponse, TermSearchRequest, TermSearchResponse,
 };
 use tokio::sync::RwLock;
 use tracing::info;
@@ -672,6 +672,166 @@ impl IndexServer for IndexServerImpl {
                 tonic::Code::NotFound,
                 "Collection not found",
             )),
+        }
+    }
+
+    #[tracing::instrument(skip(self, request), fields(collection_name, user_count = tracing::field::Empty, top_k = tracing::field::Empty))]
+    async fn hybrid_search(
+        &self,
+        request: tonic::Request<HybridSearchRequest>,
+    ) -> Result<tonic::Response<HybridSearchResponse>, tonic::Status> {
+        // Extract parent trace context
+        let parent_cx = opentelemetry::global::get_text_map_propagator(|prop| {
+            prop.extract(&MetadataExtractor(request.metadata()))
+        });
+        tracing::Span::current().set_parent(parent_cx);
+
+        let start = std::time::Instant::now();
+        let req = request.into_inner();
+        let collection_name = req.collection_name;
+        tracing::Span::current().record("collection_name", &collection_name);
+        tracing::Span::current().record("user_count", req.user_ids.len());
+        if let Some(ref params) = req.params {
+            tracing::Span::current().record("top_k", params.top_k);
+        }
+        API_METRICS.num_requests_inc("hybrid_search", &collection_name);
+
+        let user_ids = ids_to_u128s(&req.user_ids)
+            .map_err(|e| tonic::Status::invalid_argument(format!("Invalid user_ids: {}", e)))?;
+
+        // Validate inputs
+        let has_text = req.text_query.as_ref().map_or(false, |t| !t.is_empty());
+        let has_vector = !req.vector.is_empty();
+
+        if !has_text && !has_vector {
+            return Err(tonic::Status::invalid_argument(
+                "Either text_query or vector must be provided"
+            ));
+        }
+
+        // Validate mode requirements
+        let mode_value = req.mode;
+        if mode_value == HybridQueryMode::TextOnly as i32 {
+            if !has_text {
+                return Err(tonic::Status::invalid_argument(
+                    "TEXT_ONLY mode requires text_query to be provided"
+                ));
+            }
+        } else if mode_value == HybridQueryMode::VectorOnly as i32 {
+            if !has_vector {
+                return Err(tonic::Status::invalid_argument(
+                    "VECTOR_ONLY mode requires vector to be provided"
+                ));
+            }
+        }
+
+        // Clamp alpha to [0, 1]
+        let alpha = req.alpha.clamp(0.0, 1.0);
+
+        // Determine effective alpha based on mode
+        let effective_alpha = if mode_value == HybridQueryMode::TextOnly as i32 {
+            1.0
+        } else if mode_value == HybridQueryMode::VectorOnly as i32 {
+            0.0
+        } else {
+            alpha
+        };
+
+        let params = req
+            .params
+            .ok_or_else(|| tonic::Status::invalid_argument("params is required"))?;
+        let top_k = params.top_k as usize;
+
+        let collection_opt = self
+            .collection_manager
+            .read()
+            .await
+            .get_collection(&collection_name)
+            .await;
+
+        if let Some(collection) = collection_opt {
+            // Execute hybrid search for all users
+            let mut all_results: Vec<(u128, f32, f32, f32)> = Vec::new(); // (doc_id, hybrid_score, bm25_score, vector_score)
+
+            for user_id in user_ids {
+                let text_query = req.text_query.clone().unwrap_or_default();
+                let vector_query = req.vector.clone();
+
+                let results = collection
+                    .search_hybrid(user_id, text_query, vector_query, top_k, effective_alpha)
+                    .await;
+
+                match results {
+                    Ok(user_results) => {
+                        // search_hybrid returns (doc_id, hybrid_score) pairs
+                        // We need to also get the component scores - for now, use hybrid_score for both
+                        for (doc_id, hybrid_score) in user_results {
+                            // Store the result - component scores will be approximated
+                            // In a full implementation, search_hybrid would return component scores
+                            let bm25_score = if effective_alpha > 0.0 { hybrid_score * effective_alpha } else { 0.0 };
+                            let vector_score = if effective_alpha < 1.0 { hybrid_score * (1.0 - effective_alpha) } else { 0.0 };
+                            all_results.push((doc_id, hybrid_score, bm25_score, vector_score));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Hybrid search failed for user {}: {}", user_id, e);
+                    }
+                }
+            }
+
+            // Deduplicate by doc_id, keeping highest hybrid score
+            let mut best_results: std::collections::HashMap<u128, (f32, f32, f32)> = std::collections::HashMap::new();
+            for (doc_id, hybrid_score, bm25_score, vector_score) in all_results {
+                best_results
+                    .entry(doc_id)
+                    .and_modify(|(existing_hybrid, existing_bm25, existing_vector)| {
+                        if hybrid_score > *existing_hybrid {
+                            *existing_hybrid = hybrid_score;
+                            *existing_bm25 = bm25_score;
+                            *existing_vector = vector_score;
+                        }
+                    })
+                    .or_insert((hybrid_score, bm25_score, vector_score));
+            }
+
+            // Convert to sorted vector (by hybrid_score descending)
+            let mut sorted_results: Vec<(u128, f32, f32, f32)> = best_results
+                .into_iter()
+                .map(|(doc_id, (hybrid, bm25, vector))| (doc_id, hybrid, bm25, vector))
+                .collect();
+
+            sorted_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            // Limit to top_k results
+            let num_docs_considered = sorted_results.len();
+            if sorted_results.len() > top_k {
+                sorted_results.truncate(top_k);
+            }
+
+            // Extract fields for response
+            let doc_ids: Vec<_> = sorted_results.iter().map(|(id, _, _, _)| u128_to_id(*id)).collect();
+            let scores: Vec<_> = sorted_results.iter().map(|(_, hybrid, _, _)| *hybrid).collect();
+            let bm25_scores: Vec<_> = sorted_results.iter().map(|(_, _, bm25, _)| *bm25).collect();
+            let vector_scores: Vec<_> = sorted_results.iter().map(|(_, _, _, vector)| *vector).collect();
+
+            let duration = start.elapsed();
+            info!("[{collection_name}] Hybrid searched collection in {duration:?}");
+
+            API_METRICS.request_latency_ms_observe("hybrid_search", duration.as_millis() as f64);
+
+            Ok(tonic::Response::new(HybridSearchResponse {
+                doc_ids,
+                scores,
+                bm25_scores,
+                vector_scores,
+                num_docs_considered: num_docs_considered as u64,
+                num_pages_accessed: 0,
+            }))
+        } else {
+            Err(tonic::Status::new(
+                tonic::Code::NotFound,
+                "Collection not found",
+            ))
         }
     }
 }

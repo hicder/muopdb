@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::time::Instant;
 
@@ -7,6 +8,8 @@ use config::collection::CollectionConfig;
 use proto::muopdb::DocumentAttribute;
 use tracing::info;
 
+use crate::bm25::stats_collector::MultiBm25StatsCollector;
+use crate::bm25::stats_writer::Bm25StatsWriter;
 use crate::multi_spann::builder::MultiSpannBuilder;
 use crate::multi_spann::writer::MultiSpannWriter;
 use crate::multi_terms::builder::MultiTermBuilder;
@@ -17,6 +20,7 @@ use crate::tokenizer::{TokenStream, Tokenizer};
 pub struct MutableSegment {
     multi_spann_builder: MultiSpannBuilder,
     multi_term_builder: MultiTermBuilder,
+    bm25_stats_collector: MultiBm25StatsCollector,
     attribute_schema: Option<AttributeSchema>,
 
     // Prevent a mutable segment from being modified after it is built.
@@ -34,6 +38,7 @@ impl MutableSegment {
         Ok(Self {
             multi_spann_builder: MultiSpannBuilder::new(config.clone(), base_directory)?,
             multi_term_builder: MultiTermBuilder::new(),
+            bm25_stats_collector: MultiBm25StatsCollector::new(),
             attribute_schema: config.attribute_schema,
             finalized: false,
             last_sequence_number: AtomicU64::new(0),
@@ -86,10 +91,19 @@ impl MutableSegment {
                     let stemming_tokenizer = StemmingTokenizer::for_language(language);
                     let mut token_stream = stemming_tokenizer.input(&text);
 
+                    // Collect tokens for BM25 statistics
+                    let mut tokens = Vec::new();
+
                     // Process each token and insert with the term builder
                     while let Some(token) = token_stream.next() {
                         let term = format!("{}:{}", attr_name, token.text);
                         self.multi_term_builder.add(user_id, point_id, term)?;
+                        tokens.push(token.text.to_string());
+                    }
+
+                    // Collect BM25 statistics for this document
+                    if !tokens.is_empty() {
+                        self.bm25_stats_collector.add_document(user_id, point_id, tokens)?;
                     }
                 }
                 Some(proto::muopdb::attribute_value::Value::KeywordValue(keyword)) => {
@@ -141,6 +155,20 @@ impl MutableSegment {
         self.multi_term_builder.build()?;
         let multi_term_writer = MultiTermWriter::new_with_segment_dir(segment_directory.clone());
         multi_term_writer.write(&self.multi_term_builder)?;
+
+        // Write BM25 statistics
+        // Compute max point_id per user for doc_norms array sizing
+        let mut max_point_ids = HashMap::new();
+        for user_id in self.bm25_stats_collector.get_all_user_ids() {
+            if let Some(stats) = self.bm25_stats_collector.get_stats_for_user(user_id) {
+                // Find max point_id in doc_stats
+                let max_id = stats.read().unwrap().doc_stats.keys().copied().max().unwrap_or(0);
+                max_point_ids.insert(user_id, max_id);
+            }
+        }
+        
+        let bm25_stats_writer = Bm25StatsWriter::new(segment_directory.clone());
+        bm25_stats_writer.write(&self.bm25_stats_collector, &max_point_ids)?;
 
         // Remove all reassigned_mappings file.
         self.remove_reassigned_mappings(&segment_directory)?;
@@ -496,5 +524,188 @@ mod tests {
         assert!(multi_term_index
             .get_term_id_for_user(1, "description:cheval")
             .is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_mutable_segment_build_with_bm25_stats() {
+        let tmp_dir = tempdir::TempDir::new("mutable_segment_bm25_stats_test").unwrap();
+        let base_dir = tmp_dir.path().to_str().unwrap().to_string();
+
+        let segment_config = CollectionConfig::default_test_config();
+        let mut mutable_segment = MutableSegment::new(segment_config.clone(), base_dir.clone())
+            .expect("Failed to create mutable segment");
+
+        // Insert a document with text attributes
+        let mut attributes = std::collections::HashMap::new();
+        attributes.insert(
+            "title".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::TextValue(
+                    "apple banana cherry".to_string(),
+                )),
+            },
+        );
+        let doc_attr = proto::muopdb::DocumentAttribute { value: attributes };
+
+        // Insert document with attributes
+        assert!(mutable_segment
+            .insert_for_user(123u128, 1, &[1.0, 2.0, 3.0, 4.0], 0, doc_attr)
+            .is_ok());
+
+        // Build the segment
+        let segment_name = "test_segment_bm25";
+        assert!(mutable_segment
+            .build(base_dir.clone(), segment_name.to_string())
+            .is_ok());
+
+        // Verify bm25_stats directory exists
+        let segment_dir = format!("{}/{}", base_dir, segment_name);
+        let bm25_stats_dir = format!("{}/bm25_stats", segment_dir);
+        assert!(
+            std::path::Path::new(&bm25_stats_dir).exists(),
+            "BM25 stats directory should exist"
+        );
+
+        // Verify user stats file exists
+        let user_stats_file = format!("{}/123.rkyv", bm25_stats_dir);
+        assert!(
+            std::path::Path::new(&user_stats_file).exists(),
+            "User BM25 stats file should exist"
+        );
+
+        // Load and verify stats with Bm25StatsReader
+        let stats_reader = crate::bm25::stats_reader::Bm25StatsReader::new(segment_dir).unwrap();
+        let user_stats = stats_reader
+            .get_stats_for_user(123u128)
+            .expect("Should have stats for user 123");
+
+        assert_eq!(user_stats.num_docs, 1, "Should have 1 document");
+        assert_eq!(user_stats.total_terms, 3, "Should have 3 terms total");
+        assert!((user_stats.avgdl - 3.0).abs() < f64::EPSILON, "avgdl should be 3.0");
+        assert_eq!(user_stats.get_doc_length(0), 3, "Document 0 should have length 3");
+        
+        // Terms are stemmed (without attribute prefix for BM25 stats):
+        // "apple" -> "appl", "banana" -> "banana", "cherry" -> "cherri"
+        assert_eq!(user_stats.get_term_df("appl"), 1, "appl should have DF=1");
+        assert_eq!(user_stats.get_term_df("banana"), 1, "banana should have DF=1");
+        assert_eq!(user_stats.get_term_df("cherri"), 1, "cherri should have DF=1");
+    }
+
+    #[tokio::test]
+    async fn test_bm25_stats_multi_user() {
+        let tmp_dir = tempdir::TempDir::new("mutable_segment_bm25_multi_user_test").unwrap();
+        let base_dir = tmp_dir.path().to_str().unwrap().to_string();
+
+        let segment_config = CollectionConfig::default_test_config();
+        let mut mutable_segment = MutableSegment::new(segment_config.clone(), base_dir.clone())
+            .expect("Failed to create mutable segment");
+
+        // User 1: doc with "apple banana"
+        let mut attrs1 = std::collections::HashMap::new();
+        attrs1.insert(
+            "title".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::TextValue(
+                    "apple banana".to_string(),
+                )),
+            },
+        );
+        let doc1 = proto::muopdb::DocumentAttribute { value: attrs1 };
+
+        // User 2: doc with "apple cherry"
+        let mut attrs2 = std::collections::HashMap::new();
+        attrs2.insert(
+            "title".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::TextValue(
+                    "apple cherry".to_string(),
+                )),
+            },
+        );
+        let doc2 = proto::muopdb::DocumentAttribute { value: attrs2 };
+
+        // Insert documents for different users
+        assert!(mutable_segment
+            .insert_for_user(1u128, 1, &[1.0, 2.0, 3.0, 4.0], 0, doc1)
+            .is_ok());
+        assert!(mutable_segment
+            .insert_for_user(2u128, 1, &[5.0, 6.0, 7.0, 8.0], 1, doc2)
+            .is_ok());
+
+        // Build segment
+        let segment_name = "test_segment_multi_user";
+        assert!(mutable_segment
+            .build(base_dir.clone(), segment_name.to_string())
+            .is_ok());
+
+        // Load and verify stats
+        let segment_dir = format!("{}/{}", base_dir, segment_name);
+        let stats_reader = crate::bm25::stats_reader::Bm25StatsReader::new(segment_dir).unwrap();
+
+        // Verify both users exist
+        assert!(stats_reader.has_user(1u128));
+        assert!(stats_reader.has_user(2u128));
+        assert_eq!(stats_reader.get_user_ids().len(), 2);
+
+        // User 1 stats - terms are stemmed (without attribute prefix)
+        let user1_stats = stats_reader.get_stats_for_user(1u128).unwrap();
+        assert_eq!(user1_stats.get_term_df("appl"), 1);  // apple -> appl
+        assert_eq!(user1_stats.get_term_df("banana"), 1); // banana -> banana
+        assert_eq!(user1_stats.get_term_df("cherri"), 0); // User 1 doesn't have cherry
+
+        // User 2 stats - terms are stemmed (without attribute prefix)
+        let user2_stats = stats_reader.get_stats_for_user(2u128).unwrap();
+        assert_eq!(user2_stats.get_term_df("appl"), 1);  // apple -> appl
+        assert_eq!(user2_stats.get_term_df("banana"), 0); // User 2 doesn't have banana
+        assert_eq!(user2_stats.get_term_df("cherri"), 1); // cherry -> cherri
+    }
+
+    #[tokio::test]
+    async fn test_bm25_stats_term_frequencies() {
+        let tmp_dir = tempdir::TempDir::new("mutable_segment_bm25_tf_test").unwrap();
+        let base_dir = tmp_dir.path().to_str().unwrap().to_string();
+
+        let segment_config = CollectionConfig::default_test_config();
+        let mut mutable_segment = MutableSegment::new(segment_config.clone(), base_dir.clone())
+            .expect("Failed to create mutable segment");
+
+        // Insert doc with repeated terms: "apple apple banana"
+        let mut attributes = std::collections::HashMap::new();
+        attributes.insert(
+            "title".to_string(),
+            proto::muopdb::AttributeValue {
+                value: Some(proto::muopdb::attribute_value::Value::TextValue(
+                    "apple apple banana".to_string(),
+                )),
+            },
+        );
+        let doc_attr = proto::muopdb::DocumentAttribute { value: attributes };
+
+        assert!(mutable_segment
+            .insert_for_user(456u128, 1, &[1.0, 2.0, 3.0, 4.0], 0, doc_attr)
+            .is_ok());
+
+        // Build segment
+        let segment_name = "test_segment_tf";
+        assert!(mutable_segment
+            .build(base_dir.clone(), segment_name.to_string())
+            .is_ok());
+
+        // Load and verify stats
+        let segment_dir = format!("{}/{}", base_dir, segment_name);
+        let stats_reader = crate::bm25::stats_reader::Bm25StatsReader::new(segment_dir).unwrap();
+        let user_stats = stats_reader.get_stats_for_user(456u128).unwrap();
+
+        // Verify document count and length
+        assert_eq!(user_stats.num_docs, 1);
+        assert_eq!(user_stats.total_terms, 3); // "apple" + "apple" + "banana"
+        assert!((user_stats.avgdl - 3.0).abs() < f64::EPSILON);
+
+        // Verify document length for point_id 0
+        assert_eq!(user_stats.get_doc_length(0), 3);
+
+        // Verify document frequencies (DF) - terms are stemmed (without attribute prefix)
+        assert_eq!(user_stats.get_term_df("appl"), 1); // apple -> appl, appears in 1 doc
+        assert_eq!(user_stats.get_term_df("banana"), 1); // banana -> banana, appears in 1 doc
     }
 }
